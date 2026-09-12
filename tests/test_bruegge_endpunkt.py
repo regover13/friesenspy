@@ -668,3 +668,77 @@ def test_die_admin_karte_hat_alles_was_sie_braucht():
     assert "'bg-lon').value = e.latlng.lng" in s
     # Und bgLaden muss den Stand weiterreichen, sonst zeigt die Karte nie etwas an.
     assert "_bgStand = {" in s and "if (_bgKarte) bgKarteFuellen();" in s
+
+
+# ---------------------------------------------------------------------------------------
+# Der Objektkatalog
+#
+# Entstanden aus einer Nutzerforderung (12.09.2026): ein Verzeichnis aller Objekte, die
+# sich hinstellen lassen, je Simulator und mit der Abhaengigkeit dahinter. Die Begruendung
+# steckt in den Zahlen -- von 45 Tiertiteln des 2020er Bestands laufen in MSFS 2024 nur 7,
+# und welche, verraet keine Dokumentation.
+# ---------------------------------------------------------------------------------------
+
+def _admin_kekse():
+    from app.auth import make_admin_token, make_confirm_token
+    import app.main as main
+    s = main.get_settings()
+    return {"fs_admin": make_admin_token(s.SECRET_KEY, s.ADMIN_PASSWORD),
+            "fs_confirm": make_confirm_token(s.SECRET_KEY, s.ADMIN_PASSWORD, 9_999_999_999)}
+
+
+def test_katalog_nimmt_eintraege_und_zaehlt_sie(klient):
+    r = klient.post("/api/admin/bruegge/katalog", cookies=_admin_kekse(), json={"eintraege": [
+        {"simulator": "msfs2024", "titel": "Boat01", "quelle": "bord", "kategorie": "Boats"},
+        {"simulator": "msfs2024", "titel": "ahqa seal moving", "quelle": "community",
+         "paket": "human-library-animated", "kategorie": "Animals"},
+        {"simulator": "xplane12", "titel": "Resources/.../SailBoat.obj", "quelle": "bord"},
+    ]})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["eingetragen"] == 3
+    nach = {(z["simulator"], z["quelle"]): z for z in d["zusammenfassung"]}
+    assert nach[("msfs2024", "community")]["gesamt"] == 1
+    assert nach[("xplane12", "bord")]["gesamt"] == 1
+
+
+def test_ein_pruefergebnis_ueberlebt_das_neue_einlesen(klient):
+    """DER Kernfall: Ein Simulator-Lauf ist teuer, ein Verzeichnislauf billig.
+
+    Wer den Bestand neu einliest, darf die Arbeit eines Sim-Termins nicht wegwerfen --
+    dieselbe Ueberlegung wie bei `gesehener_hash` in den AIP-Blaettern.
+    """
+    ein = {"simulator": "msfs2024", "titel": "Windmill", "quelle": "bord"}
+    klient.post("/api/admin/bruegge/katalog", cookies=_admin_kekse(), json={"eintraege": [ein]})
+    klient.post("/api/admin/bruegge/katalog/ergebnis", cookies=_admin_kekse(), json={
+        "ergebnisse": [{"simulator": "msfs2024", "titel": "Windmill",
+                        "ergebnis": "steht", "hoehe_ft": 1370.0}]})
+    # Jetzt den Bestand NOCHMAL einlesen, mit geaendertem Paketnamen.
+    ein2 = dict(ein, paket="anderes-paket")
+    klient.post("/api/admin/bruegge/katalog", cookies=_admin_kekse(), json={"eintraege": [ein2]})
+
+    d = klient.get("/api/admin/bruegge/katalog?simulator=msfs2024",
+                   cookies=_admin_kekse()).json()
+    z = [x for x in d["eintraege"] if x["titel"] == "Windmill"][0]
+    assert z["ergebnis"] == "steht", "das Pruefergebnis wurde ueberschrieben"
+    assert z["hoehe_ft"] == 1370.0
+    assert z["paket"] == "anderes-paket", "der Bestand wurde NICHT nachgezogen"
+
+
+def test_katalog_verwirft_muell_statt_ihn_zu_speichern(klient):
+    r = klient.post("/api/admin/bruegge/katalog", cookies=_admin_kekse(), json={"eintraege": [
+        {"simulator": "msfs2024", "titel": "gut", "quelle": "bord"},
+        {"simulator": "msfs2024", "titel": "kein_quellentyp", "quelle": "erfunden"},
+        {"titel": "ohne simulator", "quelle": "bord"},
+        "gar kein Objekt",
+    ]})
+    assert r.status_code == 200
+    assert r.json()["eingetragen"] == 1
+
+
+def test_der_katalog_liegt_hinter_dem_admin(klient):
+    """Er verraet, welche Addons auf dem Rechner des Piloten liegen -- das geht niemanden an."""
+    for weg in ("/api/admin/bruegge/katalog",):
+        assert klient.get(weg).status_code in (401, 403)
+    assert klient.post("/api/admin/bruegge/katalog",
+                       json={"eintraege": []}).status_code in (401, 403)

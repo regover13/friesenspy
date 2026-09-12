@@ -1,5 +1,17 @@
 [
   {
+    "version": "14.32.0",
+    "date": "2026-09-12",
+    "highlight": false,
+    "title": "Ein Katalog: was lässt sich im Simulator hinstellen?",
+    "items": [
+      "📚 Neu im Hintergrund: ein Verzeichnis aller Objekte, die sich in einen Simulator stellen lassen — Tiere, Boote, Fahrzeuge, Bauwerke, Rauch, Marken. Für MSFS 2020, MSFS 2024 und X-Plane 12, mit der Angabe, welches Zusatzpaket ein Objekt braucht.",
+      "🔍 Das ist nötiger, als es klingt: Von 45 Tieren, die MSFS 2020 mitbringt, funktionieren in MSFS 2024 nur sieben — und welche, verrät keine Dokumentation. Das sagt nur der Versuch, und der wird jetzt festgehalten statt vergessen.",
+      "🦭 Nebenbei beantwortet sich damit eine Frage, die lange offen war: Robben bringt kein Simulator mit, aber ein frei erhältliches Zusatzpaket hat welche — und sie bewegen sich sogar.",
+      "🔧 Weiterhin nichts davon im Frontend; der Katalog liegt im Admin."
+    ]
+  },
+  {
     "version": "14.31.1",
     "date": "2026-09-12",
     "highlight": false,
@@ -7,7 +19,8 @@
     "items": [
       "🗺 Im Admin lassen sich die Koordinaten für Sim-Objekte jetzt **auf einer Karte anklicken**, statt sie einzutippen. Dieselbe Satellitenansicht wie beim Einpassen der Sichtflugkarten.",
       "🔵 Die Karte zeigt zugleich, was los ist: blau die gemeldeten Positionen aus dem Simulator, grün die Objekte, die wirklich dastehen, rot die, die es nicht tun — und gelb die Stelle, an der das nächste Objekt entstehen soll.",
-      "🔧 Weiterhin nur im Admin sichtbar; für Mitglieder ändert sich nichts."
+      "🔧 Weiterhin nur im Admin sichtbar; für Mitglieder ändert sich nichts.",
+      "⌖ Dazu drei Knöpfe: zum Piloten springen, alles zeigen, oder mitlaufen. Von selbst folgt die Karte bewusst nicht — sonst würde sie beim Setzen von Objekten alle zehn Sekunden zurückspringen."
     ]
   },
   {

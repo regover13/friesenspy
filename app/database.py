@@ -744,6 +744,41 @@ CREATE TABLE IF NOT EXISTS bruegge_steht (
 );
 
 CREATE INDEX IF NOT EXISTS idx_bruegge_steht_id ON bruegge_steht(id);
+
+-- Der OBJEKTKATALOG: was laesst sich in welchem Simulator hinstellen, und was kostet es?
+--
+-- Entstanden am 12.09.2026 aus einer Nutzerforderung, und die Begruendung steckt in den
+-- Zahlen: Von 45 Tiertiteln des MSFS-2020-Bestands funktionieren in MSFS 2024 nur SIEBEN.
+-- Welche das sind, verraet kein Dateiname und keine Dokumentation -- nur der Versuch.
+-- Dieses Wissen war bis dahin in Kommentaren und Messprotokollen verstreut.
+--
+-- `abhaengigkeit` ist die eigentliche Nutzlast: Ein Titel aus einem Community-Paket ist nur
+-- dort zu haben, wo der Pilot das Paket installiert hat. Fuer ein Event entscheidet das
+-- daraufhin, ob es fuer alle funktioniert oder nur fuer einige (s. OBJEKTE.md).
+--
+-- `geprueft_am IS NULL` heisst "noch nicht versucht" -- das ist KEIN Status, sondern die
+-- Abwesenheit eines Versuchs (dieselbe Unterscheidung wie bei `nicht_gefunden` in den
+-- AIP-Blaettern). Nur so laesst sich eine Arbeitsliste abarbeiten.
+CREATE TABLE IF NOT EXISTS bruegge_katalog (
+    simulator    TEXT NOT NULL,     -- msfs2020 | msfs2024 | xplane12
+    titel        TEXT NOT NULL,     -- Container-Titel (MSFS) bzw. OBJ-Pfad (X-Plane)
+    paket        TEXT,              -- Paketordner, in dem der Titel gefunden wurde
+    -- bord     = mit dem Simulator geliefert, jeder Pilot hat es
+    -- community= Addon; NUR verfuegbar, wo `paket` installiert ist
+    -- streamed = Paket ist nur als Platzhalter da, der Inhalt kommt aus der Cloud
+    quelle       TEXT NOT NULL,
+    kategorie    TEXT,              -- Animals | Boats | GroundVehicles | Landmarks | Misc | …
+    -- Wie es ausging. NULL = nie versucht.
+    geprueft_am  TEXT,
+    ergebnis     TEXT,              -- steht | fehlgeschlagen
+    fehler       TEXT,              -- z. B. EXCEPTION_22
+    hoehe_ft     REAL,              -- was das Objekt nach dem Setzen meldete
+    bemerkung    TEXT,
+    PRIMARY KEY (simulator, titel)
+);
+
+CREATE INDEX IF NOT EXISTS idx_bruegge_katalog_quelle ON bruegge_katalog(quelle, ergebnis);
+CREATE INDEX IF NOT EXISTS idx_bruegge_katalog_paket ON bruegge_katalog(paket);
 """
 
 
@@ -2797,6 +2832,74 @@ def _als_ganzzahl(wert) -> int | None:
         return int(wert) if wert is not None else None
     except (TypeError, ValueError):
         return None
+
+
+def katalog_eintragen(conn: sqlite3.Connection, eintraege) -> int:
+    """Titel in den Katalog aufnehmen (kein commit). Gibt die Zahl der Zeilen zurueck.
+
+    **Vorhandene Pruefergebnisse bleiben stehen.** Ein erneutes Einlesen des Bestands soll die
+    Arbeit eines Simulator-Laufs nicht wegwerfen -- deshalb `ON CONFLICT DO UPDATE` nur auf
+    die Bestandsfelder (Paket, Quelle, Kategorie), nie auf `geprueft_am`/`ergebnis`.
+
+    Das ist dieselbe Ueberlegung wie bei `gesehener_hash` in den AIP-Blaettern: Was jemand
+    geprueft hat, ist teurer als das, was sich jederzeit neu einlesen laesst.
+    """
+    n = 0
+    for e in eintraege:
+        conn.execute(
+            "INSERT INTO bruegge_katalog (simulator, titel, paket, quelle, kategorie) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(simulator, titel) DO UPDATE SET "
+            "    paket = excluded.paket, quelle = excluded.quelle, "
+            "    kategorie = excluded.kategorie",
+            (e["simulator"], e["titel"], e.get("paket"), e["quelle"], e.get("kategorie")),
+        )
+        n += 1
+    return n
+
+
+def katalog_ergebnis(conn: sqlite3.Connection, simulator: str, titel: str,
+                     ergebnis: str, fehler: str | None = None,
+                     hoehe_ft: float | None = None) -> None:
+    """Festhalten, wie ein Setzversuch ausging (kein commit)."""
+    conn.execute(
+        "UPDATE bruegge_katalog SET geprueft_am = ?, ergebnis = ?, fehler = ?, hoehe_ft = ? "
+        "WHERE simulator = ? AND titel = ?",
+        (_now_utc(), ergebnis, fehler, hoehe_ft, simulator, titel),
+    )
+
+
+def katalog_lesen(conn: sqlite3.Connection, simulator: str | None = None,
+                  quelle: str | None = None, nur_geprueft: bool = False,
+                  nur_offen: bool = False, grenze: int = 500) -> list[dict]:
+    """Den Katalog abfragen -- fuer den Admin und fuer das Pruefwerkzeug."""
+    wo, werte = [], []
+    if simulator:
+        wo.append("simulator = ?"); werte.append(simulator)
+    if quelle:
+        wo.append("quelle = ?"); werte.append(quelle)
+    if nur_geprueft:
+        wo.append("geprueft_am IS NOT NULL")
+    if nur_offen:
+        wo.append("geprueft_am IS NULL")
+    sql = "SELECT * FROM bruegge_katalog"
+    if wo:
+        sql += " WHERE " + " AND ".join(wo)
+    sql += " ORDER BY simulator, kategorie, titel LIMIT ?"
+    werte.append(int(grenze))
+    return [_row_to_dict(r) for r in conn.execute(sql, werte).fetchall()]
+
+
+def katalog_zusammenfassung(conn: sqlite3.Connection) -> list[dict]:
+    """Wie viel steht drin, und wie viel ist geprueft? Nach Simulator und Quelle."""
+    rows = conn.execute(
+        "SELECT simulator, quelle, COUNT(*) AS gesamt, "
+        "       SUM(CASE WHEN ergebnis = 'steht' THEN 1 ELSE 0 END) AS geht, "
+        "       SUM(CASE WHEN ergebnis = 'fehlgeschlagen' THEN 1 ELSE 0 END) AS geht_nicht, "
+        "       SUM(CASE WHEN geprueft_am IS NULL THEN 1 ELSE 0 END) AS offen "
+        "FROM bruegge_katalog GROUP BY simulator, quelle ORDER BY simulator, quelle"
+    ).fetchall()
+    return [_row_to_dict(r) for r in rows]
 
 
 def bruegge_steht_alle(conn: sqlite3.Connection, hoechstalter_s: int = 60) -> list[dict]:

@@ -1488,13 +1488,30 @@
           <div style="border-top:1px solid #22303f;padding-top:12px;">
             <div style="font-size:0.85rem;color:#cfe0f2;margin-bottom:8px;">Objekte anfordern</div>
             <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;">
+              <!-- Zwei Gruppen, und die Trennung ist die wichtige Information: Was unter
+                   „braucht ein Addon“ steht, fehlt bei Piloten ohne das Paket — die Brügge
+                   meldet dann einen Fehler, statt still etwas anderes hinzustellen. -->
               <select id="bg-art" class="btn btn-sm" style="padding:6px;">
-                <option value="boot_gross">boot_gross (Kreuzfahrtschiff)</option>
-                <option value="boot_klein">boot_klein (Boot)</option>
-                <option value="tier_gross">tier_gross (Bär)</option>
-                <option value="bauwerk">bauwerk (Windmühle)</option>
-                <option value="fahrzeug">fahrzeug (Fahrzeug)</option>
-                <option value="robbe">robbe (Seehund)</option>
+                <optgroup label="Bordmittel — laufen überall">
+                  <option value="tier_gross">tier_gross (Bär)</option>
+                  <option value="tier_wasser">tier_wasser (Buckelwal)</option>
+                  <option value="boot_klein">boot_klein (Boot)</option>
+                  <option value="boot_gross">boot_gross (Kreuzfahrtschiff)</option>
+                  <option value="bauwerk">bauwerk (Windmühle)</option>
+                  <option value="fahrzeug">fahrzeug (Fahrzeug — rollt weg!)</option>
+                  <option value="marke">marke (Flagge)</option>
+                </optgroup>
+                <optgroup label="braucht ein Community-Paket">
+                  <option value="robbe">robbe (Seehund, bewegt)</option>
+                  <option value="tier_klein">tier_klein (Papageitaucher, Möwe)</option>
+                  <option value="tier_vieh">tier_vieh (Kuh, Schaf, Ziege)</option>
+                  <option value="tier_wild">tier_wild (Hirsch, Fuchs, Elch)</option>
+                  <option value="rauch">rauch (Rauchsäule — weit sichtbar)</option>
+                  <option value="feuer">feuer (Signalfeuer)</option>
+                  <option value="punkt">punkt (Landepunkt, farbig)</option>
+                  <option value="kegel">kegel (Pylon)</option>
+                  <option value="himmel">himmel (Polarlicht, Fallschirm)</option>
+                </optgroup>
               </select>
               <input id="bg-lat" placeholder="Breite" style="width:110px;padding:6px;">
               <input id="bg-lon" placeholder="Länge" style="width:110px;padding:6px;">
@@ -1508,6 +1525,13 @@
                  12.09.2026 die haeufigste Fehlerquelle -- ein Vorzeichen, und das Objekt steht
                  in einem anderen Land. -->
             <div id="bg-karte-box" class="hidden" style="margin-bottom:10px;">
+              <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
+                <button class="btn btn-sm" id="bg-karte-zu-mir">⌖ zum Piloten</button>
+                <button class="btn btn-sm" id="bg-karte-alles">⤢ alles zeigen</button>
+                <label style="color:#8aa0b8;font-size:0.78rem;display:flex;align-items:center;gap:4px;">
+                  <input type="checkbox" id="bg-karte-folgen"> mitlaufen
+                </label>
+              </div>
               <div id="bg-karte" style="height:340px;border:1px solid #22303f;border-radius:6px;"></div>
               <p style="color:#8aa0b8;font-size:0.78rem;margin:6px 0 0;">
                 <b>Klicken setzt Breite und Länge.</b> Blau sind die gemeldeten Brügge-Positionen,
@@ -2179,6 +2203,19 @@
         setTimeout(function () { if (_bgKarte) { _bgKarte.invalidateSize(); bgKarteFuellen(); } }, 60);
       });
 
+      // Der Ausschnitt folgt ABSICHTLICH nicht von selbst (sonst springt die Karte zurück,
+      // während jemand sie verschiebt). Diese drei Knöpfe holen ihn auf Zuruf nach.
+      const zuMir = document.getElementById('bg-karte-zu-mir');
+      if (zuMir) zuMir.addEventListener('click', function () {
+        const m = (_bgStand.melder || []).find(x => x.lat != null);
+        if (!m) { alert('Keine Brügge meldet gerade eine Position.'); return; }
+        if (_bgKarte) _bgKarte.setView([m.lat, m.lon], 16);
+      });
+      const alles = document.getElementById('bg-karte-alles');
+      if (alles) alles.addEventListener('click', function () {
+        if (_bgKarte) { _bgKarte._bgGesetzt = false; bgKarteFuellen(); }
+      });
+
       bgLaden();
       setInterval(bgLaden, 10000);
     })();
@@ -2242,6 +2279,15 @@
           radius: 9, color: '#f0a500', weight: 3, fillOpacity: 0,
         }).bindTooltip('hier hinstellen', { permanent: true, direction: 'top' }).addTo(_bgKarte));
         punkte.push([zlat, zlon]);
+      }
+
+      // „Mitlaufen“ heißt: dem Piloten folgen, ohne den Zoom anzufassen. Bewusst ein
+      // Schalter und nicht die Vorgabe -- wer Objekte setzt, verschiebt die Karte und will
+      // sie nicht alle zehn Sekunden zurückgerissen bekommen.
+      const folgen = document.getElementById('bg-karte-folgen');
+      if (folgen && folgen.checked) {
+        const m = (_bgStand.melder || []).find(x => x.lat != null);
+        if (m) _bgKarte.setView([m.lat, m.lon], _bgKarte.getZoom());
       }
 
       // Nur beim ERSTEN Füllen den Ausschnitt setzen. Sonst spränge die Karte alle zehn

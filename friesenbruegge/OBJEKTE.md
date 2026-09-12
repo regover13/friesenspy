@@ -24,6 +24,64 @@ kennt (PROTOKOLL.md, Abschnitt 2).
 
 ---
 
+## ⚠ Woher stammt was — und was mutet das den Piloten zu?
+
+**Die Frage entscheidet über den Zuschnitt** (Nutzerfrage, 12.09.2026): *„Davon hängt ab, was
+wir Piloten zumuten, oder ob wir sie extrahieren und in ein eigenes Paket schneiden."*
+
+### Was GEMESSEN ist
+
+| Gattung | Titel aus | auf diesem Rechner |
+|---|---|---|
+| `tier_gross`, `tier_wasser` | `BlackBear`, `GrizzlyBear`, `SyrianBear`, `HumpbackWhale` | **MSFS-2020-Installation** (`Microsoft.FlightSimulator…`) |
+| `boot_klein`, `boot_gross` | `Boat01` … `CruiseShip02` | ebenda |
+| `bauwerk`, `marke` | `Windmill`, `Flag_*` | ebenda (`windmill` klein auch im 2024-Bestand) |
+| `fahrzeug` | `ASO_*` | ebenda |
+| **`robbe`, `tier_klein/vieh/wild`** | `ahqa …` | **`human-library-animated`** (Superspud, Community) |
+| **`rauch`, `feuer`** | `SIAI_*` | **`SayIntentions-SimObjects-Optional`** (Community) |
+| **`punkt`, `kegel`** | `SI_SimObject_*` | **`sayintentions-fly-in-library`** (Community) |
+| **`himmel`** | `southoakco_aurora1`, `Parachute` | **`southoakco-auroraborealis`** + 2020-Bestand |
+
+### ⚠ Was NICHT gemessen ist — und die wichtigste offene Frage
+
+**Alle Bordmittel-Titel wurden auf diesem Rechner gefunden, und dieser Rechner hat MSFS 2020
+UND 2024 installiert.** Ob ein Pilot mit **nur MSFS 2024** `BlackBear` oder `Boat01` bekommt,
+ist **ungeprüft**.
+
+Zwei Indizien, die sich widersprechen:
+
+- **Dafür:** `UserCfg.opt` von MSFS 2024 zeigt **ausschließlich** auf den eigenen Paketordner
+  (`Microsoft.Limitless…`) — es greift nicht in die 2020-Installation hinein. Die Titel müssen
+  also aus dem eigenen Bestand oder dem Streaming kommen.
+- **Dagegen:** Im eigenen Bestand ist nichts davon zu finden. `Official2020/OneStore` enthält
+  **ein einziges Flugzeug**, und `fs24-asobo-simobjects-animals` ist ein **16-KB-Platzhalter**
+  (`minimal.fsarchive`, eine Datei). Auch die 41 Tierpakete bestehen aus je einer Sounddatei.
+
+**Die wahrscheinliche Erklärung ist das Streaming:** MSFS 2024 lädt Inhalte bei Bedarf aus der
+Cloud, die lokalen Dateien sind nur Marker. Dann hätte jeder Pilot die Titel. **Belegen lässt
+sich das hier nicht** — dafür bräuchte es einen Rechner ohne MSFS 2020.
+
+**Bis dahin gilt:** Die Gattungen sind im Admin in zwei Gruppen geteilt („Bordmittel" und
+„braucht ein Community-Paket"). Fehlt ein Titel, rückt der nächste nach; fehlen alle, meldet
+die Brügge `EXCEPTION_22` statt still etwas Falsches hinzustellen. **Ein Event, das auf
+Bordmittel setzt, ist also in jedem Fall auf der sicheren Seite** — und wenn sich zeigt, dass
+ein Pilot ohne MSFS 2020 leer ausgeht, fällt das sofort auf, statt still falsch zu zählen.
+
+### Und die Idee, Objekte zu extrahieren?
+
+**Technisch** wäre es ein eigenes Paket mit `SimObjects/<Name>/sim.cfg` plus Modell — dass ein
+solcher Titel von der Brügge gesetzt wird, ist belegt (`ahqa seal moving` stammt genau aus so
+einem Paket).
+
+⚠ **Rechtlich ist es etwas anderes.** Asobos und Superspuds Modelle weiterzugeben ist eine
+Weitergabe fremder Werke; **einen Titel zu nennen dagegen nicht** — die Brügge sagt nur
+„stell ein `ahqa seal moving` hin", und ob es existiert, entscheidet die Installation des
+Piloten. Die beschlossene Reihenfolge steht in
+[`../docs/offene-aufgaben.md`](../docs/offene-aufgaben.md): **jetzt Abhängigkeit** (funktioniert,
+braucht keine Erlaubnis), **parallel fragen**, **eigenes Modell nur wenn nötig**.
+
+---
+
 ## MSFS 2020 — `sim.cfg` liegt als Datei vor
 
 ```bash

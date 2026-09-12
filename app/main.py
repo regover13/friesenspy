@@ -106,6 +106,10 @@ from app.database import (
     bruegge_soll_setzen,
     bruegge_steht_melden,
     bruegge_steht_alle,
+    katalog_eintragen,
+    katalog_ergebnis,
+    katalog_lesen,
+    katalog_zusammenfassung,
     bruegge_soll_loeschen,
     bruegge_soll_alle,
     get_panel_prefs,
@@ -761,7 +765,21 @@ _BRUEGGE_TAKT_UNERKANNT_S = 3
 # Fassung 1.4.0 aus einem Community-Paket. Fuer den Server aendert das nichts -- er nennt die
 # Bedeutung, nicht das Modell -- aber ohne den Eintrag hier laesst sich die Gattung im Admin
 # nicht anfordern, und damit ist sie auch nicht messbar.
-_BRUEGGE_GATTUNGEN = ("tier_gross", "bauwerk", "fahrzeug", "boot_klein", "boot_gross", "robbe")
+# Die Gattungen, die der Admin anfordern darf. MUSS zu `g_gattungen` in bruegge.cpp passen --
+# steht hier eine, die das Modul nicht kennt, meldet die Bruegge GATTUNG_UNBEKANNT; fehlt hier
+# eine, die es kennt, weist der Admin sie ab, obwohl sie ginge.
+#
+# Alle Titel dahinter sind am 12.09.2026 einzeln im laufenden MSFS 2024 gesetzt worden
+# (`probe-msfs/titel_schau.py`, s. OBJEKTE.md). Was nicht ging, steht nicht in der Liste.
+_BRUEGGE_GATTUNGEN = (
+    # Bordmittel -- laufen ueberall
+    "tier_gross", "tier_wasser", "bauwerk", "fahrzeug", "boot_klein", "boot_gross",
+    "marke",
+    # brauchen ein Community-Paket; fehlt es, meldet die Bruegge einen Fehler,
+    # statt still etwas anderes hinzustellen
+    "robbe", "tier_klein", "tier_vieh", "tier_wild",
+    "punkt", "kegel", "rauch", "feuer", "himmel",
+)
 _BRUEGGE_TAKT_VORGABE_S = 1          # Regeltakt, gemessen (s. Protokoll, Abschnitt 6)
 
 
@@ -1075,6 +1093,96 @@ async def admin_bruegge_soll_loeschen(request: Request, soll_id: str):
     finally:
         conn.close()
     return {"status": "ok", "geloescht": weg}
+
+
+@app.post("/api/admin/bruegge/katalog")
+async def admin_katalog_eintragen(request: Request):
+    """Den Objektbestand eines Rechners in den Katalog aufnehmen. (Admin)
+
+    Gefuettert von `friesenbruegge/katalog_sammeln.py`, das die `sim.cfg` aller installierten
+    Simulatoren ausliest -- der Server sieht diese Dateien nie. Warum das ueberhaupt sein
+    muss: Von 45 Tiertiteln des MSFS-2020-Bestands funktionieren in MSFS 2024 nur sieben, und
+    welche, verraet keine Dokumentation (12.09.2026 gemessen, s. friesenbruegge/OBJEKTE.md).
+
+    **Vorhandene Pruefergebnisse bleiben stehen** -- ein erneutes Einlesen soll die Arbeit
+    eines Simulator-Laufs nicht wegwerfen.
+    """
+    require_admin(request)
+    daten = await request.json()
+    eintraege = daten.get("eintraege") if isinstance(daten, dict) else daten
+    if not isinstance(eintraege, list):
+        raise HTTPException(status_code=400, detail="Liste von Eintraegen erwartet.")
+    # Zwei Kataloge in einem Zug waeren rund 6000 Zeilen -- gedeckelt, damit ein Tippfehler
+    # im Werkzeug nicht die Datenbank flutet.
+    if len(eintraege) > 20000:
+        raise HTTPException(status_code=400, detail="Zu viele Eintraege (max. 20000).")
+
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        sauber = []
+        for e in eintraege:
+            if not isinstance(e, dict):
+                continue
+            sim = str(e.get("simulator") or "")[:20]
+            titel = str(e.get("titel") or "")[:200]
+            quelle = str(e.get("quelle") or "")[:20]
+            if not sim or not titel or quelle not in ("bord", "community", "streamed"):
+                continue
+            sauber.append({
+                "simulator": sim, "titel": titel, "quelle": quelle,
+                "paket": (str(e["paket"])[:120] if e.get("paket") else None),
+                "kategorie": (str(e["kategorie"])[:60] if e.get("kategorie") else None),
+            })
+        n = katalog_eintragen(conn, sauber)
+        conn.commit()
+        return {"status": "ok", "eingetragen": n, "verworfen": len(eintraege) - n,
+                "zusammenfassung": katalog_zusammenfassung(conn)}
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/bruegge/katalog/ergebnis")
+async def admin_katalog_ergebnis(request: Request):
+    """Festhalten, wie ein Setzversuch ausging. (Admin)
+
+    Gefuettert von `probe-msfs/titel_schau.py --katalog`: Das Werkzeug stellt Titel im
+    laufenden Simulator hin und meldet zurueck, welche der Simulator annimmt.
+    """
+    require_admin(request)
+    daten = await request.json()
+    liste = daten.get("ergebnisse") if isinstance(daten, dict) else daten
+    if not isinstance(liste, list):
+        raise HTTPException(status_code=400, detail="Liste von Ergebnissen erwartet.")
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        n = 0
+        for e in liste:
+            if not isinstance(e, dict) or e.get("ergebnis") not in ("steht", "fehlgeschlagen"):
+                continue
+            katalog_ergebnis(conn, str(e.get("simulator") or "")[:20],
+                             str(e.get("titel") or "")[:200], e["ergebnis"],
+                             (str(e["fehler"])[:120] if e.get("fehler") else None),
+                             e.get("hoehe_ft"))
+            n += 1
+        conn.commit()
+        return {"status": "ok", "vermerkt": n}
+    finally:
+        conn.close()
+
+
+@app.get("/api/admin/bruegge/katalog")
+async def admin_katalog_lesen(request: Request, simulator: str | None = None,
+                              quelle: str | None = None, offen: bool = False,
+                              grenze: int = 500):
+    """Den Katalog abfragen. (Admin)"""
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        return {"zusammenfassung": katalog_zusammenfassung(conn),
+                "eintraege": katalog_lesen(conn, simulator, quelle,
+                                           nur_offen=offen, grenze=min(grenze, 2000))}
+    finally:
+        conn.close()
 
 
 @app.get("/api/admin/bruegge")

@@ -55,7 +55,7 @@
 // Feste Größen
 // ---------------------------------------------------------------------------------------
 
-#define BRUEGGE_VERSION   "1.4.0"
+#define BRUEGGE_VERSION   "1.5.0"
 #define BRUEGGE_URL       "https://friesenspy.devprops.de/api/bruegge/melden"
 #define KENNUNG_DATEI     "\\work\\friesenbruegge.kennung"
 
@@ -162,6 +162,9 @@ static SpurPunkt g_spur[SPUR_MAX];
 static int       g_spur_anzahl = 0;
 
 static char    g_kennung[40] = {0};
+// Steht die Kennung endgueltig fest? Erst dann wird sie geschrieben -- vorher wuerde das
+// Schreiben das eigene, asynchrone Lesen ueberholen (s. kennung_laden_oder_erzeugen).
+static bool    g_kennung_fest = false;
 static int     g_takt_s = 1;              // was der Server zuletzt vorgegeben hat
 static DWORD   g_seit_meldung = 0;
 static FsNetworkRequestId g_laufend = 0;  // 0 = keine Anfrage offen
@@ -231,13 +234,41 @@ static void kennung_laden_oder_erzeugen() {
                  kennung_gelesen, nullptr);
 #endif
     kennung_erzeugen();
-    kennung_schreiben();
+
+    // ⚠ HIER STAND `kennung_schreiben()`, UND DAS WAR EIN WETTLAUF MIT DEM EIGENEN LESEN.
+    //
+    // Das Lesen oben laeuft asynchron, das Schreiben lief sofort -- und `FsIOOpenFlag_TRUNC`
+    // leert die Datei. Wenn der Lese-Callback eintraf, war die gespeicherte Kennung laengst
+    // ueberschrieben. Folge: Die Bruegge zog bei JEDEM Simulator-Start eine neue, obwohl sie
+    // ausdruecklich dafuer gebaut ist, dieselbe zu behalten.
+    //
+    // Gemessen am 12.09.2026: drei Starts, drei Kennungen (9e371e61…, 9e3713f1…,
+    // 9e3713d1…) -- und im Server drei Saetze `bruegge_steht`-Zeilen fuer dieselben Objekte,
+    // weil dort (kennung, id) der Schluessel ist.
+    //
+    // Jetzt wird erst geschrieben, wenn feststeht, dass nichts Altes mehr kommt: entweder
+    // sofort nach einem fehlgeschlagenen Lesen, oder nach KENNUNG_WARTE_S Sekunden
+    // (s. `kennung_pruefen`). Das kostet nichts -- die Kennung geht ohnehin bei jeder
+    // Meldung mit hinaus, sie muss nur nicht auf der Platte stehen.
 }
+
+// Sekunden seit Modulstart, nach denen eine erzeugte Kennung endgueltig gilt und geschrieben
+// wird. Drei Sekunden sind reichlich fuer ein Dateilesen aus dem WASM-Sandkasten und immer
+// noch weit vor der ersten Meldung, die auf `g_welt_da` wartet.
+#define KENNUNG_WARTE_S 3
 
 // Ist die Kennung aus der Datei inzwischen eingetroffen? Dann gilt sie -- sie ist die
 // aeltere und damit die, die der Server schon kennt.
 static void kennung_pruefen() {
 #ifdef KENNUNG_HAELT
+    // Ist die gespeicherte Kennung nach KENNUNG_WARTE_S nicht da, kommt sie nicht mehr --
+    // dann gilt die erzeugte und wird jetzt (und nur jetzt) auf die Platte geschrieben.
+    // Vorher zu schreiben hiesse, das eigene Lesen zu ueberholen (s. kennung_laden_oder_erzeugen).
+    if (!g_kennung_fest && g_sekunden >= KENNUNG_WARTE_S && g_kennung_gelesen[0] == '\0') {
+        g_kennung_fest = true;
+        kennung_schreiben();
+        return;
+    }
     if (g_kennung_gelesen[0] == '\0') return;
     // Nur uebernehmen, wenn sie plausibel aussieht: 16 Hexziffern, wie kennung_erzeugen sie
     // baut. Eine halb geschriebene oder fremde Datei soll nicht durchschlagen.
@@ -248,7 +279,12 @@ static void kennung_pruefen() {
             char c = g_kennung_gelesen[i];
             if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) { hex = false; break; }
         }
-        if (hex) std::snprintf(g_kennung, sizeof(g_kennung), "%s", g_kennung_gelesen);
+        if (hex) {
+            std::snprintf(g_kennung, sizeof(g_kennung), "%s", g_kennung_gelesen);
+            // Sie steht ja schon in der Datei -- erneut zu schreiben waere sinnlos und
+            // braechte nur die Gelegenheit, sie dabei zu zerstoeren.
+            g_kennung_fest = true;
+        }
     }
     g_kennung_gelesen[0] = '\0';
 #endif
@@ -330,6 +366,54 @@ static const Gattung g_gattungen[] = {
     // aufloest, ist noch nicht gemessen.
     { "robbe",       { "ahqa seal moving", "ahqa sea lion moving", "ahqa walrus moving",
                        nullptr } },
+
+    // ===================================================================================
+    // Alles ab hier am 12.09.2026 mit `probe-msfs/titel_schau.py` EINZELN im laufenden
+    // MSFS 2024 gesetzt und gezeichnet -- 127 Bordmittel-Titel und eine Auswahl aus 1417
+    // Addon-Titeln. Was hier steht, hat gestanden; was nicht ging, steht nicht hier.
+    //
+    // Die Ordnung ist dieselbe wie bei `robbe`: erst das schoenere oder passendere Modell,
+    // dahinter der Rueckfall. Ein Addon-Titel darf vorn stehen -- fehlt das Paket, rueckt
+    // der naechste nach, und nur wer es hat, sieht das bessere Modell.
+    // ===================================================================================
+
+    // Kleines Getier -- fuer einen Zaehl-Event naeher an der Sache als ein Baer, und aus der
+    // Luft ueberhaupt erst in Schwaermen erkennbar.
+    { "tier_klein",  { "ahqa puffin walking", "Seagull", "Goose", "Flamingo", nullptr } },
+    // Vieh. Alles aus `human-library-animated` und damit BEWEGT; ohne das Paket bleibt nur
+    // das Pferd aus dem Bordbestand -- das gibt es in MSFS 2024 aber nicht mehr, deshalb
+    // endet die Liste hier ehrlich statt mit einem Titel, der ohnehin scheitert.
+    { "tier_vieh",   { "ahqa cow walking", "ahqa sheep walking", "ahqa goat walking",
+                       "ahqa donkey walking", nullptr } },
+    // Wild.
+    { "tier_wild",   { "ahqa Deer Running", "ahqa stag walking", "ahqa moose bull walking",
+                       "ahqa fox walking", "ahqa boar walking", nullptr } },
+    // Das groesste, was der Bordbestand hergibt -- und das einzige, das ins Wasser gehoert.
+    { "tier_wasser", { "HumpbackWhale", nullptr } },
+
+    // Eine Marke, die nicht wegrollt und aus der Luft auffaellt. Zwoelf Flaggenfarben sind
+    // geprueft; vier genuegen, um Stationen zu unterscheiden, ohne Text lesen zu muessen.
+    { "marke",       { "Flag_Checker", "Flag_Orange", "Flag_Yellow", "Flag_RWB", nullptr } },
+    // Landepunkte aus der SayIntentions-Bibliothek, vier Farben. Flach am Boden, deshalb
+    // erst aus der Naehe zu sehen -- als Ziel gut, als Wegweiser nicht.
+    { "punkt",       { "SI_SimObject_Fly-In_Landing_Green_Dot",
+                       "SI_SimObject_Fly-In_Landing_Red_Dot",
+                       "SI_SimObject_Fly-In_Landing_Blue_Dot",
+                       "SI_SimObject_Fly-In_Landing_Yellow_Dot", nullptr } },
+    { "kegel",       { "SI_SimObejct_Cone", nullptr } },
+
+    // ⭐ RAUCH loest ein gemessenes Problem: Ein `Boat01` ist erst ab rund 1 km eingeblendet
+    // (11.09.2026), ein `CruiseShip01` ab 22 km. Eine Rauchsaeule sieht man kilometerweit --
+    // damit findet ein Pilot eine Station, ohne dass die Koordinate auf zehn Meter stimmen
+    // muss. Fuer jedes Event, bei dem jemand etwas FINDEN soll, ist das wertvoller als jedes
+    // Tiermodell.
+    { "rauch",       { "SIAI_VFX_Smoke_Red", "SIAI_VFX_Smoke_Orange", "SIAI_SmokeCanister",
+                       nullptr } },
+    { "feuer",       { "SIAI_SignalFire", "SIAI_VFX_Fire", "SIAI_VFX_WildFire", nullptr } },
+
+    // Und was sonst noch auffaellt: ein Fallschirm und ein Polarlicht. Beides eher Spielerei,
+    // aber geprueft -- und wer ein Event baut, weiss es lieber, als es zu vermissen.
+    { "himmel",      { "southoakco_aurora1", "Parachute", nullptr } },
 };
 
 // Den n-ten Titel einer Gattung. Gibt nullptr, wenn die Gattung unbekannt ist ODER die Liste
