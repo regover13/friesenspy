@@ -558,18 +558,25 @@ Verliert der VATSIM-Datenfeed einen Piloten kurzzeitig (Feed-Aussetzer), wird di
 | TS-Client | ts3 (ServerQuery, nur bei TS_NOTIFY_ENABLED) |
 | Frontend | Vanilla JS, Leaflet.js (Single-Page-App) |
 | Deployment | Docker, GitHub Actions → GHCR → SSH |
-| Sim-Brügge | C++ → WASM (MSFS-SDK), SimConnect — eigener Build, **nicht** im Docker-Image |
+| Sim-Brügge | C++ — WASM (MSFS-SDK, SimConnect) und `.xpl` (X-Plane-SDK, WinHTTP); eigener Build, **nicht** im Docker-Image |
 
 ### Sim-Brügge (`friesenbruegge/`, in Arbeit)
 
-Ein WASM-Modul im Simulator: Es setzt dort Objekte und meldet die eigene Position zurück
-(`POST /api/bruegge/melden`). **Für Mitglieder gibt es noch nichts zu sehen** — das Paket ist
-nicht verteilt, und die Karte zeigt weiterhin die VATSIM-Positionen.
+Läuft im Simulator: Sie setzt dort Objekte und meldet die eigene Position zurück
+(`POST /api/bruegge/melden`). **Auf der Karte ist davon noch nichts zu sehen** — die zeigt
+weiterhin die VATSIM-Positionen.
 
-Gedacht ist es für den geplanten FriesenKieker, bei dem aus der Luft gezählt wird. Der Server
+**Es gibt sie zweimal:** `msfs/` als WASM-Modul in einem Community-Paket, `xplane/` als
+Plugin (`.xpl`). Beide sprechen Protokollfassung 1 und teilen sich `json.h`; verschieden sind
+nur Lageabfrage, Objektverwaltung und Netzschicht. Beide sind über die Kniebrett-Seite zu
+haben (`/efb`).
+
+Gedacht ist das für den geplanten FriesenKieker, bei dem aus der Luft gezählt wird. Der Server
 fordert dabei **Gattungen** an (`tier_gross`, `robbe`, `boot_klein` …), nie Modellnamen —
-welches Modell daraus wird, entscheidet die Brügge, weil nur sie ihren Simulator kennt. Damit
-bleibt das Protokoll offen für X-Plane, das in `.obj`-Pfaden statt in Container-Titeln spricht.
+welches Modell daraus wird, entscheidet die Brügge, weil nur sie ihren Simulator kennt. In
+MSFS ist ein `tier_gross` ein Bär, in X-Plane ein Hirsch, und der Server merkt davon nichts.
+Was eine Brügge nicht kann, meldet sie nicht in `kann`; die X-Plane-Fassung beherrscht acht
+der sechzehn Gattungen.
 
 Die Unterlagen liegen im Ordner selbst: [`PROTOKOLL.md`](friesenbruegge/PROTOKOLL.md) (der
 Vertrag), [`MESSLISTE.md`](friesenbruegge/MESSLISTE.md) (was im Simulator gemessen ist und was
