@@ -189,8 +189,8 @@ daneben taugt sie, für eines 5 km weiter nicht.
 > | `bauwerk` | 1565,5 ft | **1370,0 ft** | aufgesetzt |
 > | `boot_klein` | 1565,5 ft | **1367,3 ft** | aufgesetzt |
 > | `boot_gross` | 1565,5 ft | **1358,7 ft** | aufgesetzt |
-> | `tier_gross` | — | `EXCEPTION_22` | |
-> | `fahrzeug` | — | `KEINE_ANTWORT` | |
+> | `tier_gross` | 1565,5 ft | **steht** (im Bild) | aufgesetzt — die Meldung log |
+> | `fahrzeug` | — | `KEINE_ANTWORT` | einziger echter Fehlschlag |
 >
 > **Keines steht auf den angeforderten 1565,5 ft.** Der frühere Befund „`OnGround=1` ist aus
 > WASM unbrauchbar" (11.09.2026, nur mit `Boat01` geprüft) gilt so **nicht**.
@@ -213,12 +213,33 @@ daneben taugt sie, für eines 5 km weiter nicht.
 > **Nebenbei bewiesen:** Fassung 1.2.0 läuft — sonst wäre `auf_boden` ignoriert worden und
 > alle fünf hätten 1565,5 gemeldet.
 >
+> ### ⚠ Und ein Bug, den erst der Blick aus dem Cockpit aufdeckte
+>
+> `tier_gross` wurde als **`fehlgeschlagen / EXCEPTION_22`** gemeldet — **der Bär stand aber
+> sichtbar im Gras** (Screenshot). Ursache in `SIMCONNECT_RECV_ID_EXCEPTION`: Die Exception
+> wurde dem *letzten unbestätigten* Erzeugungsversuch zugeschrieben, weil `dwSendID` angeblich
+> nicht zuzuordnen sei. Bei fünf gleichzeitig gesetzten Objekten kam sie vom **Fahrzeug** und
+> landete beim **Bären**, dessen Objekt-ID noch unterwegs war.
+>
+> **Das ist schlimmer als ein falsches Etikett:** Ohne zugeordnete Objekt-ID kann die Brügge
+> das Objekt **nie wieder abräumen** — es steht bis zum Verbindungsende. Und der Server hält
+> die Stelle für unbrauchbar und setzt die nächste Station woanders hin. Zwei Objekte, eines
+> davon für alle Beteiligten unsichtbar.
+>
+> **Behoben in 1.2.1:** `SimConnect_GetLastSentPacketID` merkt beim Erzeugen die Paketnummer,
+> die Exception nennt sie in `dwSendID` — die Zuordnung ist damit **exakt statt geraten**.
+> Passt eine Exception zu keinem Erzeugungsversuch, wird sie **gar keinem** Objekt angehängt;
+> lieber keine Meldung als eine falsche.
+>
+> ⚠ **Rückwirkend erklärt das auch die Vierergruppe (5b-Vorgeschichte):** Dort galt
+> `tier_gross` ebenfalls als `EXCEPTION_22` und `fahrzeug` als `KEINE_ANTWORT` — dasselbe
+> Muster. Daraus wurde damals fälschlich geschlossen, die *Gleichzeitigkeit* sei schuld.
+>
 > ### Offen
 >
-> - **`tier_gross` und `fahrzeug` scheitern mit `OnGround=1`** (`EXCEPTION_22` /
->   `KEINE_ANTWORT`) — dieselbe Gattung `tier_gross` stand vorher mit `OnGround=0`
->   problemlos. Für die Sonde ist das gleichgültig (`bauwerk` genügt), für den Kieker nicht:
->   **Tiere sind das, was gezählt werden soll.**
+> - **`fahrzeug` scheitert weiterhin**, auch einzeln. `ASO_Ambulance_Japan` ist der
+>   Verdächtige — ein Titel aus dem 2020er Bestand. Die Titelsuche der Probe taugt als Beleg
+>   nicht (sie findet `BlackBear` und `Windmill` ebenfalls nicht, beide funktionieren).
 > - Ob die gemeldete Höhe wirklich das Gelände trifft oder nur den Referenzpunkt des
 >   Sondenmodells (2b), ist ungeprüft. Für `bauwerk` (Windmühle, Fundament am Boden) ist die
 >   Verwechslungsgefahr am kleinsten — deshalb ist sie die richtige Sonde.

@@ -15,9 +15,16 @@
 //     ID-Kollision im eigenen Quelltext, kein Simulator-Verhalten.
 //   - Es kann Objekte setzen; sie bleiben stehen (364 s gemessen) und überleben sogar einen
 //     Flugwechsel, solange die SimConnect-Verbindung offen ist.
-//   - `OnGround=1` ist aus WASM heraus unbrauchbar -- es setzt nicht auf, sondern auf einen
-//     ortsabhängigen Wert (49 ft auf Wangerooge, 122-130 ft in Seattle). `OnGround=0` mit
-//     einer gerechneten Höhe trifft dagegen exakt.
+//   - `OnGround=1` WIRKT aus WASM heraus (12.09.2026 gemessen, MSFS 2024): Vier von fünf
+//     Gattungen setzen sauber auf, auch wenn die angeforderte Höhe 200 ft zu hoch liegt.
+//     Nur `fahrzeug` scheitert -- dort ist der Titel der Verdächtige, nicht das Flag.
+//     ⚠ Am 11.09.2026 stand hier das Gegenteil, gestützt auf drei Messungen -- aber alle
+//     drei mit `Boat01` und am selben Ort (Wangerooge: 49 ft bei 5,3 ft Boden). Ein Modell,
+//     ein Platz, und daraus wurde eine allgemeine Regel. Für MSFS 2020 ist es weiterhin
+//     ungemessen.
+//   - Und der eigentliche Ertrag davon: Ein aufgesetztes Objekt meldet seine TATSÄCHLICHE
+//     Höhe zurück -- also die Geländehöhe am ZIELORT. Damit taugt es als Sonde (`auf_boden`
+//     im Protokoll), und die Höhenfrage braucht weder ein Geländemodell noch einen Überflug.
 //   - Nach dem Start liefert der Simulator erst 0/90, dann Seattle, dann den geladenen Flug.
 //     Jeder Wert sieht für sich vernünftig aus; nur der SPRUNG verrät den Ladevorgang.
 
@@ -48,7 +55,7 @@
 // Feste Größen
 // ---------------------------------------------------------------------------------------
 
-#define BRUEGGE_VERSION   "1.2.0"
+#define BRUEGGE_VERSION   "1.2.1"
 #define BRUEGGE_URL       "https://friesenspy.devprops.de/api/bruegge/melden"
 #define KENNUNG_DATEI     "\\work\\friesenbruegge.kennung"
 
@@ -107,6 +114,7 @@ struct SollObjekt {
     bool   in_soll;           // steht in der aktuellen Antwort des Servers
     bool   erzeugt_gerufen;   // AICreateSimulatedObject ist raus
     DWORD  objekt_id;         // vom Simulator vergeben, 0 = noch keine
+    DWORD  sende_id;          // Paketnummer des Erzeugungsaufrufs -- ordnet Exceptions zu
     double hoehe_ft;          // zuletzt gemeldete Hoehe
     DWORD  letzte_meldung_s;  // Sekunde der letzten Lagemeldung
     DWORD  seit_s;            // seit wann im aktuellen Zustand
@@ -452,6 +460,14 @@ static void objekt_erzeugen(int i) {
     pos.OnGround  = o.auf_boden ? 1 : 0;
 
     HRESULT hr = SimConnect_AICreateSimulatedObject(g_sim, titel, pos, REQ_ERZEUGEN + i);
+
+    // Die Paketnummer DIESES Aufrufs merken. Kommt spaeter eine Exception, nennt sie in
+    // `dwSendID` genau diesen Wert -- damit ist zuzuordnen, WELCHES Objekt gescheitert ist,
+    // statt es am letzten unbestaetigten Versuch zu raten (s. SIMCONNECT_RECV_ID_EXCEPTION).
+    DWORD sende = 0;
+    if (SimConnect_GetLastSentPacketID(g_sim, &sende) == S_OK) o.sende_id = sende;
+    else                                                       o.sende_id = 0;
+
     o.erzeugt_gerufen = true;
     o.seit_s = g_sekunden;
     if (hr != S_OK) {
@@ -861,19 +877,39 @@ void CALLBACK dispatch(SIMCONNECT_RECV* pData, DWORD, void*) {
 
     case SIMCONNECT_RECV_ID_EXCEPTION: {
         auto* ex = (SIMCONNECT_RECV_EXCEPTION*)pData;
-        // Die Exception traegt die Anfrage-Nummer im SendID-Feld, das sich ohne
-        // SimConnect_GetLastSentPacketID nicht zuordnen laesst. Statt zu raten, welches
-        // Objekt gemeint ist, wird der letzte Erzeugungsversuch markiert -- er ist der
-        // wahrscheinliche Verursacher, und der Server erfaehrt ueber `steht`, dass es
-        // schiefging.
-        for (int i = SOLL_MAX - 1; i >= 0; --i) {
-            if (g_soll[i].belegt && g_soll[i].erzeugt_gerufen && g_soll[i].objekt_id == 0
-                && !g_soll[i].fehler[0]) {
+
+        // Die Exception nennt in `dwSendID` das Paket, das sie ausgeloest hat -- und genau
+        // dieser Wert wird beim Erzeugen mit `SimConnect_GetLastSentPacketID` gemerkt
+        // (s. objekt_erzeugen). Damit ist die Zuordnung EXAKT statt geraten.
+        //
+        // VORHER WURDE GERATEN, und es ging schief (12.09.2026 im Simulator gemessen): Der
+        // letzte unbestaetigte Erzeugungsversuch wurde markiert. Bei fuenf gleichzeitig
+        // gesetzten Objekten kam eine Exception vom FAHRZEUG herein und landete beim BAEREN,
+        // weil dessen Objekt-ID noch unterwegs war. Der Baer stand sichtbar im Gras, waehrend
+        // die Bruegge ihn als "fehlgeschlagen / EXCEPTION_22" meldete.
+        //
+        // Das ist schlimmer als ein falsches Etikett: Ohne zugeordnete Objekt-ID kann die
+        // Bruegge das Objekt NIE WIEDER ABRAEUMEN. Es steht bis zum Verbindungsende. Fuer den
+        // Kieker hiesse das eine Station, die als gescheitert gilt, in Wahrheit dasteht und
+        // sich nicht mehr entfernen laesst -- und der Server, der die Stelle daraufhin fuer
+        // unbrauchbar haelt, setzt die naechste woanders hin. Zwei Stationen, eine davon
+        // unsichtbar fuer alle Beteiligten.
+        bool zugeordnet = false;
+        for (int i = 0; i < SOLL_MAX; ++i) {
+            if (g_soll[i].belegt && g_soll[i].sende_id != 0
+                && g_soll[i].sende_id == ex->dwSendID) {
                 std::snprintf(g_soll[i].fehler, sizeof(g_soll[i].fehler),
                               "EXCEPTION_%lu", (unsigned long)ex->dwException);
+                zugeordnet = true;
                 break;
             }
         }
+
+        // Passt die Exception zu keinem Erzeugungsversuch, gehoert sie woandershin (eine
+        // Datendefinition, eine Lageabfrage) -- dann darf sie AUF KEINEN FALL einem Objekt
+        // angehaengt werden. Lieber gar keine Meldung als eine falsche: Ein Objekt, das
+        // grundlos als gescheitert gilt, wird vom Server nicht mehr angefordert.
+        (void)zugeordnet;
         break;
     }
     default:
