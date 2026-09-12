@@ -201,14 +201,49 @@ daneben taugt sie, für eines 5 km weiter nicht.
 > Genau die Welligkeit, die in 5c zwölf Boote unterschiedlich tief versenkt hat. Der Boden
 > unter dem Flugzeug lag bei 1365,5 ft — **keiner der drei Orte trifft das.**
 >
-> **Damit ist die Geländehöhe am ZIELORT messbar**, ohne Höhenmodell, ohne Überflug, ohne
-> SRTM (dessen 30-m-Raster genau diese Unterschiede gar nicht abbilden kann, s. 5c):
+> ### ⚠⚠ DER SONDENUMWEG IST GESTRICHEN — `auf_boden: 1` genügt allein
+>
+> **Nutzerentscheidung, 12.09.2026**, nachdem die Messung oben lief: *„Streiche den
+> Sondenumweg! Dass du nicht ständig wieder damit kommst."*
+>
+> Der Gedanke war, mit einer Sonde erst die Geländehöhe zu **messen** und das eigentliche
+> Objekt dann mit `erwartete_hoehe_ft` zu setzen — drei Schritte. **Das ist überflüssig:**
+> Wenn `OnGround=1` wirkt, setzt der Simulator das Objekt selbst auf den Boden. Man muss die
+> Höhe gar nicht wissen.
+>
+> Gemessen mit **vier Gattungen gleichzeitig, alle ohne jede Höhenangabe**:
+>
+> | | gemeldet |
+> |---|---|
+> | `og-tier_gross` | 1367,5 ft |
+> | `og-bauwerk` | 1369,5 ft |
+> | `og-boot_klein` | 1368,6 ft |
+> | `og-fahrzeug` | 1363,0 ft |
+>
+> Alle vier liegen sauber auf ihrem jeweiligen Gelände, und die Werte unterscheiden sich um
+> 6,5 ft — die Welligkeit ist also berücksichtigt, ohne dass jemand sie berechnet hätte.
+>
+> **Der Weg für MSFS 2024 lautet damit schlicht:**
+>
+> ```
+> { "art": "tier_gross", "lat": …, "lon": …, "auf_boden": 1 }
+> ```
+>
+> ### Die Sonden-IDEE bleibt aufgehoben — für MSFS 2020
+>
+> Aufheben, nicht wegwerfen (ebenfalls Nutzerentscheidung): **Für MSFS 2020 ist ungemessen,
+> ob `OnGround=1` dort wirkt.** Tut es das nicht, ist die Sonde der Ausweg, und sie ist dann
+> vollständig durchgemessen und einsatzbereit:
 >
 > ```
 > 1. Sonde setzen    { "art": "bauwerk", "auf_boden": 1, "lat": …, "lon": … }
 > 2. Höhe ablesen    "steht": [{ "id": "sonde", "hoehe_ft": 1370.0 }]
 > 3. Sonde weg, Objekt hin   { "art": "…", "erwartete_hoehe_ft": 1370.0 }
 > ```
+>
+> Ein zweiter Fall bleibt ihr ebenfalls: wenn der **Server** die Geländehöhe wissen will, ohne
+> ein Objekt stehenzulassen — etwa um beim Planen zu prüfen, ob eine Station im Wasser läge.
+> Fürs bloße Platzieren braucht er sie nicht.
 >
 > **Nebenbei bewiesen:** Fassung 1.2.0 läuft — sonst wäre `auf_boden` ignoriert worden und
 > alle fünf hätten 1565,5 gemeldet.
@@ -308,6 +343,38 @@ daneben taugt sie, für eines 5 km weiter nicht.
 > - Ob die gemeldete Höhe wirklich das Gelände trifft oder nur den Referenzpunkt des
 >   Sondenmodells (2b), ist ungeprüft. Für `bauwerk` (Windmühle, Fundament am Boden) ist die
 >   Verwechslungsgefahr am kleinsten — deshalb ist sie die richtige Sonde.
+
+---
+
+## 2d. Tiere und Fahrzeuge BEWEGEN SICH von selbst — ✅ gemessen am 12.09.2026
+
+> Dem Nutzer fiel im Cockpit auf, dass sich das Fahrzeug bewegt. Die Lagemeldungen der Brügge
+> bestätigen es — und zeigen, dass es nicht nur das Fahrzeug betrifft:
+>
+> | Objekt | über 180 s | |
+> |---|---|---|
+> | `bauwerk` | 1369,5 → 1369,5 → 1369,5 | **starr** |
+> | `boot_klein` | 1368,6 → 1368,6 → 1368,6 | **starr** |
+> | `fahrzeug` | 1362,8 → 1362,7 → 1362,7 | **wandert** |
+> | `tier_gross` | 1368,3 → 1368,3 → **1367,5** | **wandert** |
+>
+> Ein `AICreateSimulatedObject` erzeugt eben ein **AI**-Objekt: Tiere und Flughafenfahrzeuge
+> bringen eigenes Verhalten mit, Bauwerke und Boote nicht.
+>
+> ### ⚠ Für den FriesenKieker ist das zweischneidig
+>
+> **Dafür:** Eine Robbenbank aus starren Klötzen wäre tot. Tiere, die sich rühren, sind genau
+> das, was ein Zähl-Event lebendig macht.
+>
+> **Dagegen:** Eine Zählstation, die wandert, ist keine feste Größe mehr. Zwei Piloten sehen
+> dasselbe Tier an verschiedenen Stellen; wer nachträglich prüfen will, ob jemand wirklich
+> hingeflogen ist, hat kein festes Ziel mehr. **Wie weit sie wandern, ist ungemessen** — die
+> 0,8 ft Höhenänderung in drei Minuten sagen nur, DASS es geschieht, nicht wie weit.
+>
+> **Zu messen wäre:** die Position (nicht nur die Höhe) eines Tieres über eine halbe Stunde.
+> Bleibt es im Umkreis von Metern, ist alles gut; läuft es über hunderte Meter davon, braucht
+> der Kieker entweder starre Gattungen als Marken — oder die Brügge muss das Tier
+> regelmäßig zurückholen (Versetzen kann sie seit 1.1.3).
 
 ---
 
