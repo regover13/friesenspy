@@ -2670,6 +2670,18 @@ def bruegge_aufraeumen(conn: sqlite3.Connection, stunden: int = 24) -> int:
     cur = conn.execute(
         "DELETE FROM bruegge_zuordnung "
         "WHERE COALESCE(gesehen_am, zugeordnet_am) < ?", (grenze,))
+
+    # Die Rueckmeldungen gehoeren mit weg. Sie haengen an der KENNUNG und nicht an der cid,
+    # werden also von `bruegge_position_loeschen` beim Loesen der Zuordnung nicht erfasst --
+    # und das Loesen ist ohnehin nur EINER der Wege, auf denen eine Bruegge verschwindet. Wer
+    # den Simulator schliesst, loest gar nichts aus; er hoert einfach auf zu melden.
+    #
+    # Fuer die ANZEIGE reicht der Altersfilter in `bruegge_steht_alle` (60 s) -- eine Zeile,
+    # die niemand mehr bestaetigt, ist dort sofort verschwunden. Aufgeraeumt wird sie damit
+    # aber nicht: Jede neue Kennung liesse sonst eine Zeile liegen, die nie wieder jemand
+    # anfasst. Gefunden am 12.09.2026, als die Zuordnung nach dem Trennen von vPilot geloest
+    # wurde und `bruegge_steht` als einzige Tabelle noch etwas behauptete.
+    conn.execute("DELETE FROM bruegge_steht WHERE gemeldet_am < ?", (grenze,))
     return cur.rowcount or 0
 
 

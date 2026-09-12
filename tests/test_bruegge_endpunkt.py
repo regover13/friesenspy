@@ -544,3 +544,28 @@ def test_steht_ohne_zuordnung_wird_nicht_geschrieben(klient, tmp_path):
     db = str(tmp_path / "t.db")
     klient.post("/api/bruegge/melden", json=_meldung(steht=[{"id": "x", "zustand": "steht"}]))
     assert _steht_lesen(db) == []
+
+
+def test_alte_rueckmeldungen_werden_aufgeraeumt(tmp_path):
+    """Karteileichen: `bruegge_steht` haengt an der Kennung, nicht an der cid.
+
+    `bruegge_position_loeschen` beim Loesen der Zuordnung erfasst sie deshalb nicht -- und
+    das Loesen ist ohnehin nur einer der Wege, auf denen eine Bruegge verschwindet. Wer den
+    Simulator schliesst, loest gar nichts aus.
+    """
+    import sqlite3
+    from app.database import init_db, get_connection, bruegge_steht_melden, bruegge_aufraeumen
+
+    db = str(tmp_path / "t.db")
+    init_db(db)
+    conn = get_connection(db)
+    bruegge_steht_melden(conn, "alte-bruegge", 111, [{"id": "x", "zustand": "steht"}])
+    conn.execute("UPDATE bruegge_steht SET gemeldet_am = '2020-01-01T00:00:00Z'")
+    bruegge_steht_melden(conn, "frische-bruegge", 222, [{"id": "y", "zustand": "steht"}])
+    conn.commit()
+
+    bruegge_aufraeumen(conn)
+    conn.commit()
+    uebrig = [r[0] for r in conn.execute("SELECT kennung FROM bruegge_steht")]
+    conn.close()
+    assert uebrig == ["frische-bruegge"]
