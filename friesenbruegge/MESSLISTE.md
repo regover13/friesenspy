@@ -174,6 +174,57 @@ daneben taugt sie, für eines 5 km weiter nicht.
 
 ---
 
+## 2c. DIE SONDE — ✅ `OnGround=1` wirkt doch, und misst das Gelände am Zielort
+
+> **Gemessen am 12.09.2026, und es ist der wichtigste Befund des Tages.** Die Idee stammt vom
+> Nutzer: erst etwas hinstellen, das sich selbst auf den Boden setzt, die gemeldete Höhe
+> ablesen, dann das eigentliche Objekt mit `erwartete_hoehe_ft` setzen.
+>
+> Fünf Sonden nebeneinander, alle mit `auf_boden: 1` **und einer absichtlich um 200 ft zu
+> hohen** `erwartete_hoehe_ft` — so ist am Rückgabewert eindeutig zu sehen, ob das Flag
+> gewirkt hat:
+>
+> | Sonde | angefordert | **gemeldet** | |
+> |---|---|---|---|
+> | `bauwerk` | 1565,5 ft | **1370,0 ft** | aufgesetzt |
+> | `boot_klein` | 1565,5 ft | **1367,3 ft** | aufgesetzt |
+> | `boot_gross` | 1565,5 ft | **1358,7 ft** | aufgesetzt |
+> | `tier_gross` | — | `EXCEPTION_22` | |
+> | `fahrzeug` | — | `KEINE_ANTWORT` | |
+>
+> **Keines steht auf den angeforderten 1565,5 ft.** Der frühere Befund „`OnGround=1` ist aus
+> WASM unbrauchbar" (11.09.2026, nur mit `Boat01` geprüft) gilt so **nicht**.
+>
+> ### Und der eigentliche Ertrag: die drei Werte sind VERSCHIEDEN
+>
+> 1358,7 — 1367,3 — 1370,0 ft, über 160 m Breite verteilt: **11,3 Fuß Geländeunterschied.**
+> Genau die Welligkeit, die in 5c zwölf Boote unterschiedlich tief versenkt hat. Der Boden
+> unter dem Flugzeug lag bei 1365,5 ft — **keiner der drei Orte trifft das.**
+>
+> **Damit ist die Geländehöhe am ZIELORT messbar**, ohne Höhenmodell, ohne Überflug, ohne
+> SRTM (dessen 30-m-Raster genau diese Unterschiede gar nicht abbilden kann, s. 5c):
+>
+> ```
+> 1. Sonde setzen    { "art": "bauwerk", "auf_boden": 1, "lat": …, "lon": … }
+> 2. Höhe ablesen    "steht": [{ "id": "sonde", "hoehe_ft": 1370.0 }]
+> 3. Sonde weg, Objekt hin   { "art": "…", "erwartete_hoehe_ft": 1370.0 }
+> ```
+>
+> **Nebenbei bewiesen:** Fassung 1.2.0 läuft — sonst wäre `auf_boden` ignoriert worden und
+> alle fünf hätten 1565,5 gemeldet.
+>
+> ### Offen
+>
+> - **`tier_gross` und `fahrzeug` scheitern mit `OnGround=1`** (`EXCEPTION_22` /
+>   `KEINE_ANTWORT`) — dieselbe Gattung `tier_gross` stand vorher mit `OnGround=0`
+>   problemlos. Für die Sonde ist das gleichgültig (`bauwerk` genügt), für den Kieker nicht:
+>   **Tiere sind das, was gezählt werden soll.**
+> - Ob die gemeldete Höhe wirklich das Gelände trifft oder nur den Referenzpunkt des
+>   Sondenmodells (2b), ist ungeprüft. Für `bauwerk` (Windmühle, Fundament am Boden) ist die
+>   Verwechslungsgefahr am kleinsten — deshalb ist sie die richtige Sonde.
+
+---
+
 ## 3. Räumt sie ab, was aus `soll` verschwindet?
 
 Im Admin auf „wegnehmen" klicken. Innerhalb eines Takts (1 s) verschwindet das Objekt aus
