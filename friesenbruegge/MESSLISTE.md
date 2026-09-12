@@ -395,10 +395,32 @@ daneben taugt sie, für eines 5 km weiter nicht.
 > ein Fahrzeug an einem Hang setzt, findet es unten wieder; auf ebenem Grund vermutlich nicht
 > — **das ist ungemessen.**
 >
-> ⚠ Schade ist das trotzdem: Eine Robbenbank aus völlig reglosen Modellen wirkt tot. **Ob
-> sich ein Tier gezielt in Bewegung setzen lässt**, ist ungemessen — Kandidaten wären
-> `SetDataOnSimObject` auf die Objekt-ID (ein neuer Import; die Brügge kennt die IDs bereits)
-> oder ein Animationszustand des Modells. Beides wäre ein eigener Bauschritt.
+> ### Ein Tier in Bewegung setzen — ✅ geht, aber als Notlösung
+>
+> **Gemessen am 12.09.2026:** Der Server schrieb die Koordinate eines `tier_gross` zwanzigmal
+> fort, je 2 m im Sekundentakt. Der Bär legte damit **40 m zurück** — allein über das
+> Versetzen aus Fassung 1.1.3, **ohne eine Zeile neuen Code**.
+>
+> ⚠ **Es sieht aber nicht gut aus:** Das Objekt **blinkt und springt**, weil jedes Versetzen
+> in Wahrheit ein Entfernen und Neuerzeugen ist (vom Nutzer gesehen). Für eine Robbe, die sich
+> auf der Bank rührt, taugt das nicht.
+>
+> **Aufheben, nicht verwerfen** (Nutzerentscheidung): *„das geht :-) aber ist nur eine
+> Notlösung… vielleicht können wir das mal brauchen. Also merken."* Wo ein Sprung nicht
+> stört — ein Schiff, das alle paar Minuten ein Stück weiterfährt, ein Objekt, das
+> verschwindet und anderswo auftaucht — reicht es aus und kostet nichts.
+>
+> ### Der richtige Weg wäre `SetDataOnSimObject`
+>
+> Dem Objekt eine **Geschwindigkeit** geben, statt es umzusetzen — dann bewegt der Simulator
+> es selbst, flüssig und mit der Laufanimation des Modells. Die Brügge kennt die Objekt-IDs
+> bereits (sie bekommt sie bei der Erzeugung), es wäre also **ein neuer Import** und sonst
+> wenig.
+>
+> **Ungemessen ist:** ob sich ein Tier über `SetDataOnSimObject` überhaupt steuern lässt, und
+> welche Variablen dafür taugen (`GROUND VELOCITY`? ein Animationszustand?). Der frühere
+> Verdacht, ein neuer Import lasse das Modul nicht mehr laden, ist widerlegt —
+> `AIRemoveObject` und `GetLastSentPacketID` kamen beide dazu, ohne dass etwas zerbrach.
 
 ---
 
