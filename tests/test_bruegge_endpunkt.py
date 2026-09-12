@@ -883,3 +883,32 @@ def test_ein_xplane_pfad_gehoert_nicht_in_einen_msfs_lauf(klient):
         "/api/admin/bruegge/katalog?offen_fuer=xplane12", cookies=_admin_kekse()
     ).json()["eintraege"]}
     assert fuer_xp == {"Resources/.../SailBoat.obj"}
+
+
+def test_der_admin_setzt_objekte_standardmaessig_auf_den_boden(klient, tmp_path):
+    """`auf_boden` ist die Vorgabe, nicht die Ausnahme.
+
+    `OnGround=1` laesst den Simulator selbst aufsetzen und trifft bis 10 km Entfernung
+    (13.09.2026 gemessen). Die Alternative -- eine gerechnete Hoehe -- gilt nur unter dem
+    Flugzeug: Zwoelf Objekte in einem 180-m-Raster standen damit eines versunken, eines
+    sauber, eines schwebend.
+
+    Bis zum 13.09.2026 nahm der Endpunkt das Feld gar nicht entgegen, und der Admin setzte
+    alles mit gerechneter Hoehe. Aufgefallen an einem Buckelwal, der sechs Fuss ueber dem
+    Boden schwebte.
+    """
+    import sqlite3
+    db = str(tmp_path / "t.db")
+    k = _admin_kekse()
+
+    klient.post("/api/admin/bruegge/soll", cookies=k,
+                json={"art": "tier_wasser", "lat": 53.0, "lon": 7.0, "id": "ohne-angabe"})
+    klient.post("/api/admin/bruegge/soll", cookies=k,
+                json={"art": "tier_wasser", "lat": 53.0, "lon": 7.0, "id": "ausdruecklich-aus",
+                      "auf_boden": False})
+
+    c = sqlite3.connect(db)
+    werte = dict(c.execute("SELECT id, auf_boden FROM bruegge_soll").fetchall())
+    c.close()
+    assert werte["ohne-angabe"] == 1, "ohne Angabe muss auf_boden gelten"
+    assert werte["ausdruecklich-aus"] == 0, "ausdrueckliches False muss durchkommen"

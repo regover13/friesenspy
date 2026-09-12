@@ -1506,6 +1506,10 @@
                        style="width:190px;padding:6px;">
                 <div id="bg-cid-picker" class="ke-c-picker"></div>
               </div>
+              <label style="color:#8aa0b8;font-size:0.78rem;display:flex;align-items:center;gap:4px;"
+                     title="OnGround=1 — der Simulator setzt das Objekt selbst auf den Boden. Trifft bis 10 km Entfernung. Ohne den Haken wird die Höhe unter dem Flugzeug genommen, und die stimmt schon 100 m weiter nicht mehr.">
+                <input type="checkbox" id="bg-auf-boden" checked> auf den Boden
+              </label>
               <button class="btn btn-sm" id="bg-soll-setzen">Hinstellen</button>
               <button class="btn btn-sm" id="bg-karte-auf">🗺 Karte</button>
             </div>
@@ -2180,6 +2184,7 @@
           body: JSON.stringify({
             art: document.getElementById('bg-art').value,
             lat: lat, lon: lon, cid: cid ? parseInt(cid, 10) : null,
+            auf_boden: document.getElementById('bg-auf-boden').checked,
           }),
         });
         if (!r.ok) { alert('Ging nicht: ' + (await r.text())); return; }

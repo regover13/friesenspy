@@ -1117,6 +1117,16 @@ async def admin_bruegge_soll_setzen(request: Request):
                                 if body.get("erwartete_hoehe_ft") is not None else None),
             gilt_bis=str(body["gilt_bis"])[:32] if body.get("gilt_bis") else None,
             bemerkung=str(body.get("bemerkung") or "")[:200] or None,
+            # VORGABE IST `True`, und das ist der Kern der Sache: `OnGround=1` laesst den
+            # Simulator selbst aufsetzen, und das trifft bis auf 10 km Entfernung
+            # (13.09.2026 gemessen). Die Alternative -- eine gerechnete Hoehe -- gilt nur
+            # unter dem Flugzeug: Zwoelf Objekte in einem 180-m-Raster standen damit eines
+            # versunken, eines sauber, eines schwebend.
+            #
+            # Bis eben stand das Feld gar nicht im Endpunkt, und der Admin setzte alles mit
+            # gerechneter Hoehe. Aufgefallen an einem Buckelwal, der sechs Fuss ueber dem
+            # Boden schwebte.
+            auf_boden=bool(body.get("auf_boden", True)),
         )
         conn.commit()
     finally:
