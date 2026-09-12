@@ -10,11 +10,40 @@
 # wurde vom Simulator STILLSCHWEIGEND uebergangen -- kein Fehler, keine Meldung, das Modul
 # lief einfach nicht. Die hier ergaenzten Felder stammen aus dem Vorbild.
 #
+# +++ KEIN BOM IN DIESEN DATEIEN. Das hat einen ganzen Tag gekostet (12.09.2026). +++
+#
+# Hier stand `Set-Content -Encoding UTF8`, und das bedeutet in den beiden PowerShell-Zweigen
+# etwas VERSCHIEDENES: Windows PowerShell 5.1 schreibt UTF-8 MIT BOM (ef bb bf), PowerShell 7
+# ohne. Dasselbe Skript baute also je nach Aufrufweg ein laufendes oder ein totes Paket --
+# und tot heisst hier lautlos tot:
+#
+#   [Packages] RegisterPackage: Package '...friesenbruegge' registered
+#   [Packages] Package '...friesenbruegge' mounted
+#   MyLibrary init of community package friesenbruegge took 0.0002
+#
+# Das Paket wird registriert, gemountet und steht in der Content.xml als "Activated" -- der
+# Ordner ist ja da. Aber die layout.json laesst sich mit BOM nicht parsen, MSFS findet NULL
+# Inhalte (daher die 0.0002 s), sieht die .wasm nie und hat folglich auch nichts, worueber es
+# einen Fehler melden koennte. Kein "WASM: Module ... loaded", keine Ausnahme, nichts.
+#
+# Gegenprobe, die den Fund traegt: KEINES der drei nachweislich laufenden Pakete auf dieser
+# Maschine hat ein BOM -- p42-util-gofish, p42-util-flow-pro und unser eigenes
+# friesenflieger-friesenspy-efb beginnen alle mit 7b ("{"). Nur die Bruegge hatte ef bb bf.
+#
+# Deshalb wird ab hier ueber `UTF8Encoding($false)` geschrieben. Das ist in BEIDEN
+# PowerShell-Zweigen dasselbe und nicht vom Aufrufweg abhaengig. Und weil ein stiller Fehler
+# genau deshalb teuer war, prueft das Skript am Ende selbst nach.
+#
 # Nach dem Ablegen muss der Simulator NEU GESTARTET werden.
 
 param([switch]$Fuer2020)     # ins Community-Verzeichnis von MSFS 2020 statt 2024
 
 $ErrorActionPreference = 'Stop'
+
+function Schreib-OhneBom([string]$Pfad, [string]$Text) {
+    # .NET statt Set-Content: versionsunabhaengig, und $false heisst "kein BOM".
+    [System.IO.File]::WriteAllText($Pfad, $Text, (New-Object System.Text.UTF8Encoding $false))
+}
 $hier = $PSScriptRoot
 $wasm = "$hier\bruegge.wasm"
 if (-not (Test-Path $wasm)) { throw "bruegge.wasm fehlt -- erst .\bauen.ps1 laufen lassen." }
@@ -54,7 +83,7 @@ $filetime = (Get-Item "$paket\modules\bruegge.wasm").LastWriteTimeUtc.ToFileTime
   },
   "total_package_size": "$groesse"
 }
-"@ | Set-Content -Path "$paket\manifest.json" -Encoding UTF8
+"@ | ForEach-Object { Schreib-OhneBom "$paket\manifest.json" $_ }
 
 @"
 {
@@ -66,7 +95,21 @@ $filetime = (Get-Item "$paket\modules\bruegge.wasm").LastWriteTimeUtc.ToFileTime
     }
   ]
 }
-"@ | Set-Content -Path "$paket\layout.json" -Encoding UTF8
+"@ | ForEach-Object { Schreib-OhneBom "$paket\layout.json" $_ }
+
+# Die Selbstpruefung. Sie ist kein Zierat: Der Fehler, den sie faengt, aeussert sich im
+# Simulator ueberhaupt nicht -- weder als Meldung noch als Ausnahme. Wer ihn nicht HIER
+# bemerkt, bemerkt ihn erst nach einem Sim-Neustart, und dann sieht er nur: nichts.
+foreach ($datei in @("$paket\manifest.json", "$paket\layout.json")) {
+    $kopf = [System.IO.File]::ReadAllBytes($datei)[0..2]
+    if ($kopf[0] -eq 0xEF -and $kopf[1] -eq 0xBB -and $kopf[2] -eq 0xBF) {
+        throw "BOM in $datei -- MSFS wuerde das Paket lautlos uebergehen. Nicht ausliefern."
+    }
+    # Und gleich noch pruefen, dass es ueberhaupt gueltiges JSON ist.
+    try { [System.IO.File]::ReadAllText($datei) | ConvertFrom-Json | Out-Null }
+    catch { throw "Kaputtes JSON in ${datei}: $_" }
+}
+Write-Output "JSON geprueft: kein BOM, parsebar."
 
 Write-Output "Paket liegt: $paket"
 Get-ChildItem $paket -Recurse -File | ForEach-Object { "  {0,8}  {1}" -f $_.Length, $_.FullName.Replace($paket, '') }

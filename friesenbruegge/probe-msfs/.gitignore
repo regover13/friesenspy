@@ -1,0 +1,12 @@
+# Bauabfall des Probe-Moduls -- entsteht aus wasm/bauen.ps1
+wasm/*.o
+wasm/*.wasm
+
+# Das aus dem Community-Ordner genommene Probe-Paket (11.09.2026).
+#
+# Es lag dort neben `friesenbruegge` und wurde entfernt, weil MSFS das eigentliche
+# Bruegge-Paket nicht einmal registrierte -- der Ordnername `friesenbruegge` ist ein Praefix
+# von `friesenbruegge-wasm-probe`, und zwei so ineinanderliegende Namen sind ein Kandidat
+# fuer eine Kollision in der Paketverwaltung. Hier liegt es nur, falls es nochmal gebraucht
+# wird; gemessen wird ohnehin mit kieker_probe.py von aussen.
+_paket-ausgebaut/

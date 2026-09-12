@@ -11,7 +11,27 @@ messen. Die laufende Sim-Sitzung ist die knappe Ressource, nicht die Bauzeit.
 ## Vorbereitung (einmal, vor dem Start)
 
 **Der Stand ist schon abgelegt** — Paket `friesenbruegge` liegt im Community-Ordner, Fassung
-**1.1.0**. Nichts mehr zu bauen.
+**1.1.1**. Nichts mehr zu bauen.
+
+> ### ⚠ Zuerst: lädt das Modul überhaupt?
+>
+> Am 12.09.2026 wurde das Paket einen Tag lang **gar nicht geladen**. Ursache war ein
+> UTF-8-BOM in `manifest.json` und `layout.json` — `Set-Content -Encoding UTF8` schreibt
+> unter Windows PowerShell 5.1 eines, unter PowerShell 7 nicht. Das Paket wird damit
+> registriert, gemountet und in der `Content.xml` als „Activated" geführt, aber MSFS kann die
+> `layout.json` nicht parsen, findet null Inhalte und sieht die `.wasm` nie. **Keine
+> Fehlermeldung, keine Logzeile** — von außen sieht es aus wie ein übergangenes Paket.
+> `paket.ps1` schreibt jetzt ohne BOM und prüft sich selbst.
+>
+> **Erste Zeile, auf die zu achten ist** (DevMode-Konsole):
+>
+> ```
+> WASM: Module bruegge.wasm loaded
+> ```
+>
+> Kommt sie nicht, ist jede weitere Messung sinnlos — dann erst das Laden klären.
+> Die Gegenprobe ist schnell: In `.../Community/friesenbruegge` müssen `manifest.json` und
+> `layout.json` mit `7b` („`{`") beginnen, nicht mit `ef bb bf`.
 
 ```
 MSFS 2024 starten  →  Flug laden  →  vPilot verbinden (FRS49 oder FRS49N)
@@ -74,10 +94,34 @@ tatsächlichen abweicht.
 
 ## 3. Räumt sie ab, was aus `soll` verschwindet?
 
-Im Admin auf „wegnehmen" klicken. Innerhalb eines Takts (1 s) sollte das Objekt verschwinden.
+Im Admin auf „wegnehmen" klicken. Innerhalb eines Takts (1 s) verschwindet das Objekt aus
+`steht` — **aber nicht aus dem Simulator.** Das ist in Fassung 1.1.1 so gewollt und kein
+Fehler: `SimConnect_AIRemoveObject` ist vorerst ausgebaut (s. `objekt_entfernen` in
+`bruegge.cpp`), weil beim ersten Lauf nach dem BOM-Fund genau **eine** Sache anders sein
+sollte. Die Brügge vergisst das Objekt also nur; weggeräumt wird es beim Schließen der
+Verbindung.
 
 **Das ist der Kern des Sollzustands-Gedankens:** Die Brügge befolgt keine Befehle, sondern
 gleicht ab. Geht eine Anfrage verloren, holt die nächste den Zustand wieder ein.
+
+### 3b. `AIRemoveObject` zurückholen — derselbe Termin, eigener Schritt
+
+Sobald Punkt 1 und 2 stehen, lohnt der Versuch **in dieser Sitzung**, denn er kostet nur einen
+Neustart und beantwortet eine Frage, die sonst offen bleibt:
+
+```
+# in bruegge.cpp, objekt_entfernen():
+    SimConnect_AIRemoveObject(g_sim, o.objekt_id, REQ_ERZEUGEN + i);
+# dann:  .\bauen.ps1  &&  .\paket.ps1  →  Sim neu starten
+```
+
+| Beobachtung | heißt |
+|---|---|
+| `WASM: Module bruegge.wasm loaded` kommt weiterhin, Objekt verschwindet | ✅ der Import ist da, Ausbau war unnötig — drin lassen |
+| Modul lädt nicht mehr | Der Import fehlt im 2024er SDK wirklich → wieder raus, und der Ausweg ist `SetDataOnSimObject` (weit wegsetzen), **selbst wieder ein neuer Import — also einzeln messen** |
+
+⚠ Nicht mit anderen Änderungen zusammenlegen. Ein Modul, das nicht lädt, sagt nicht, woran es
+lag — genau das hat den 12.09. gekostet.
 
 ---
 
