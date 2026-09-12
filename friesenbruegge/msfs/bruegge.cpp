@@ -295,10 +295,16 @@ static const Gattung g_gattungen[] = {
     // Windmill ist belegt. `windmill` (klein) ist der 2024er Landmark -- Titel sind
     // GROSS-/KLEINSCHREIBUNGSEMPFINDLICH, deshalb steht beides drin.
     { "bauwerk",     { "Windmill", "windmill", "Windsock_05", nullptr } },
-    // ASO_Ambulance_Japan steht bewusst NICHT mehr vorn: in MSFS 2024 nicht vorhanden.
-    // Die uebrigen sind Flughafenfahrzeuge aus demselben Bestand.
-    { "fahrzeug",    { "ASO_Firetruck01", "ASO_FuelTruck01_White", "ASO_CarUtility01",
-                       "ASO_Pushback_White", "ASO_Ambulance_Japan", nullptr } },
+    // NEU SORTIERT am 12.09.2026 (nachts), nach einer Einzelpruefung ALLER 37 Fahrzeugtitel
+    // im laufenden MSFS 2024 (`probe-msfs/titel_schau.py`). Dort fehlen genau sechs:
+    // ASO_Ambulance_Japan, ASO_Firetruck01, ASO_FuelTruck01_Black/_White,
+    // ASO_FuelTruck02_Black/_White, ASO_Ground_Power_Unit -- und zwei davon standen hier
+    // vorn. Die Nachrueck-Mechanik faengt das ab, kostet aber je Fehlschlag einen Takt und
+    // eine Ausnahme, und im Admin stuende als erster Eindruck ein rotes EXCEPTION_22.
+    //
+    // Ab hier also nur noch Titel, die EINZELN im Simulator gesetzt wurden.
+    { "fahrzeug",    { "ASO_CarUtility01", "ASO_Pushback_White", "ASO_Firetruck02",
+                       "ASO_TruckUtility01", "ASO_Tug01_White", nullptr } },
     { "boot_klein",  { "Boat01", "Boat02", "FishingBoat", "Yacht01", nullptr } },
     { "boot_gross",  { "CruiseShip01", "CruiseShip02", "CargoShip01", nullptr } },
     // ROBBE: die einzige Gattung, die NICHT aus dem Bordbestand kommt -- weder MSFS 2020 noch

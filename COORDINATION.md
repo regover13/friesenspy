@@ -6,6 +6,54 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-12 (Nacht) — ÜBERGABE der Robben-Session: `bruegge.cpp` ist frei
+
+**Diese Sitzung macht Schluss.** Der Nutzer arbeitet mit der anderen weiter. Alles ist
+committet und gepusht, nichts liegt halb fertig herum.
+
+### Erledigt
+
+| | |
+|---|---|
+| Gattung `robbe` | drei Titel aus `human-library-animated`, **kein** Rückfall auf eine andere Art |
+| `kann` | wird jetzt aus `g_gattungen` erzeugt statt aufgezählt — die Liste stand zweimal im Modul, und beim Eintragen von `robbe` meldete es prompt, es könne etwas nicht, das es konnte |
+| **`fahrzeug` neu sortiert** | euer Fund, eingebaut: `ASO_CarUtility01`, `ASO_Pushback_White`, `ASO_Firetruck02`, `ASO_TruckUtility01`, `ASO_Tug01_White`. Im abgelegten Modul geprüft — `ASO_Firetruck01` kommt darin nicht mehr vor |
+| Serverseite | `_BRUEGGE_GATTUNGEN` + `robbe`, Admin-Auswahl, Test (war ohne den Fix nachweislich rot), **v14.31.0 deployt** |
+| Doku | `PROTOKOLL.md` (Katalog + Positivliste im Admin), `OBJEKTE.md`, `MESSLISTE.md` Abschnitt 8, **`docs/api.md` + `docs/architecture.md` + README** — die Brügge stand dort bis heute in KEINEM Dokument |
+| Paket | **abgelegt**, 70 721 Bytes, Fassung 1.4.0. ⚠ MSFS läuft seit 21:35, abgelegt wurde um 22:10 → **erst ein Neustart aktiviert es** |
+
+### Was offen ist
+
+1. **Messliste 8, Punkte 1–4** — nach dem Sim-Neustart. Punkt 1 ist von der Existenz- zur
+   Bestätigungsfrage geworden: Dass ein Community-Titel gesetzt werden kann, habt ihr belegt
+   (Screenshot); dass das **WASM-Modul** ihn genauso auflöst wie euer externer Client, nicht.
+   In `bruegge_steht` stand heute Abend keine einzige `robbe`-Zeile.
+2. **Punkt 2 ist der heikelste:** Das Modell heißt `seal moving`, und ihr habt an den
+   `ASO_*`-Fahrzeugen 21 ft Abrutsch in zwei Minuten gemessen. Also hinsetzen, **zwei Minuten
+   warten**, nochmal hinsehen. Eine wandernde Kolonie wäre für einen Zähl-Event das Ende.
+3. **Teil A, vorbereitet aber NICHT gemacht** (Nutzer hat nicht entschieden): Superspuds drei
+   Dateien probeweise **lokal** nach `Community\friesenbruegge\SimObjects\Animals\frs_seehund\`
+   legen, mit eigener `sim.cfg` und eigenem Titel. Damit wäre gemessen, ob ein Paket mit
+   `content_type: MISC` (das ist die Brügge, wegen WASM) überhaupt `SimObjects/` indexiert —
+   Superspuds Paket ist `SCENERY`. Ergebnis entscheidet: ein Paket für alles, oder zwei Ordner
+   in einem Download. Nichts davon würde verteilt oder committet.
+4. **Die Rechtefrage** steht samt fertigem Anfragetext in
+   [`docs/offene-aufgaben.md`](docs/offene-aufgaben.md). Beschlossene Reihenfolge: **jetzt
+   Abhängigkeit** (funktioniert, braucht keine Erlaubnis — einen Titel zu nennen ist keine
+   Weitergabe), **parallel fragen**, **eigenes Modell nur wenn nötig** und dann als *zweiter*
+   Titel hinter seinem. Ein eigenes Modell gehört NICHT ins Repo — es ist öffentlich.
+
+### ⚠ Eine Sache zum Nachschlagen, falls jemand den Bestand neu erhebt
+
+`find` ohne `-L` sieht den Community-Ordner nicht (**9** `sim.cfg` statt **309**) — daher stand
+in `OBJEKTE.md` „keine Robben". Pythons `Path.rglob` dagegen folgt den Junctions und findet
+alle drei; `kieker_probe.py` ist also in Ordnung, dort ist nichts zu reparieren. Ich hatte das
+zwischenzeitlich anders behauptet und eine „Korrektur" in `kieker_probe.py` begonnen — sie ist
+zurückgenommen, die Datei ist unberührt. Mein Gegentest war kaputt (`xargs` zerlegt „ahqa seal
+moving" am Leerzeichen).
+
+---
+
 ## 2026-09-12 (Abend) — GROSSE Bruegge-Sitzung: 1.0.1 → 1.3.0, mehrere Altbefunde widerlegt
 
 **Betrifft `friesenbruegge/` UND `app/` (v14.30.1, ausgeliefert).** Eine zweite Session

@@ -2182,3 +2182,83 @@ sie im Minutentakt ab (`_startPanelUpdateWatch` in `index.html`).
 Warum nicht `/api/frontend-config`: dort hängt der komplette Changelog mit dran (weit über
 hundert Einträge). Der wird beim Seitenaufbau genau einmal gebraucht — ihn jede Minute
 mitzuschleppen, nur um eine Nummer zu vergleichen, wäre Verschwendung.
+
+---
+
+## POST /api/bruegge/melden
+
+Der einzige Endpunkt der **Sim-Brügge** (`friesenbruegge/`, WASM-Modul im Simulator). Eine
+Anfrage, beide Richtungen: Die Brügge meldet ihre Lage und erfährt in derselben Antwort, was
+um sie herum stehen soll. Vollständiger Vertrag in
+[`friesenbruegge/PROTOKOLL.md`](../friesenbruegge/PROTOKOLL.md).
+
+**Keine Anmeldung, kein `Authorization`-Kopf.** Die Brügge weist sich nicht aus — sie meldet
+eine Position, und der Server sucht den Piloten dazu (Positionsmatching gegen
+`live_positions`). Die mitgeschickte `kennung` ist kein Geheimnis, sondern ein
+Wiedererkennungszeichen, das den vollen Match je Meldung erspart.
+
+**Request**
+
+```json
+{
+  "protokoll": 1,
+  "simulator": "msfs2024",
+  "bruegge_version": "1.4.0",
+  "kennung": "a3f9c1e0b2d48576",
+  "kann": ["tier_gross", "bauwerk", "fahrzeug", "boot_klein", "boot_gross", "robbe"],
+  "lage": {"lat": 53.78227, "lon": 7.92593, "alt_msl_ft": 1200.0, "alt_agl_ft": 980.0,
+           "gs_kt": 95.0, "kurs": 210.4, "am_boden": false, "vs_ft_min": 0.0},
+  "spur": [],
+  "steht": [{"id": "og-tier_gross", "zustand": "steht", "hoehe_ft": 1388.2}]
+}
+```
+
+`kann` erzeugt die Brügge aus ihrer Gattungstabelle; der Server wertet es derzeit **nicht**
+aus. `steht` ist die Gegenrichtung: was tatsächlich im Simulator steht — ohne diesen Block
+erführe der Server nie, ob ein angefordertes Objekt existiert (bis zum 12.09.2026 wurde er
+weggeworfen). `antwort_zu_gross` kommt nur mit, wenn unsere letzte Antwort nicht in ihren
+Puffer passte; sie wertet eine abgeschnittene Antwort bewusst nicht aus.
+
+**Response**
+
+```json
+{
+  "protokoll": 1,
+  "naechste_frage_in_s": 1,
+  "gilt_bis_s": 300,
+  "soll": [
+    {"id": "kolonie-norderney-1", "art": "robbe", "lat": 53.7235, "lon": 7.2502,
+     "kurs": null, "erwartete_hoehe_ft": null, "auf_boden": 1}
+  ]
+}
+```
+
+`soll` ist die **vollständige Liste** dessen, was jetzt dastehen soll — kein Strom von
+Befehlen. Geht eine Anfrage verloren, holt die nächste Antwort den Zustand von allein ein.
+
+`art` ist eine **Gattung, kein Modellname**: `tier_gross`, `bauwerk`, `fahrzeug`, `boot_klein`,
+`boot_gross`, `robbe` (Positivliste `_BRUEGGE_GATTUNGEN`). Welches Modell daraus wird,
+entscheidet die Brügge — sie kennt ihren Simulator, der Server nicht. `auf_boden: 1` setzt das
+Objekt auf die Geländehöhe, ohne dass der Server sie kennen müsste.
+
+**Ablehnungen sehen alle gleich aus:** „nicht auf VATSIM", „niemand passt" und „nicht
+authentifiziert" ergeben allesamt HTTP 200 mit leerem `soll` — nur der Takt unterscheidet sie
+intern. Eine Fehlermeldung wäre ein Werkzeug für den, der ausprobiert, welche erfundene
+Position durchgeht. Echte Fehler: `413` (Meldung zu groß), `400` (kaputtes JSON, `lage` fehlt
+oder unplausibel), `426` (Protokollfassung neuer als dieser Server).
+
+---
+
+## Admin: Brügge
+
+Alle vier brauchen eine Admin-Sitzung.
+
+| Endpunkt | Zweck |
+|---|---|
+| `GET /api/admin/bruegge` | Melder, Takt, `soll` **und** `steht` in einer Antwort — der Vergleich ist der Punkt: Ein Objekt in `soll`, das in `steht` fehlt, ist der interessante Fall |
+| `POST /api/admin/bruegge/soll` | Objekt anfordern: `art`, `lat`, `lon`, optional `id`, `cid`, `kurs`, `erwartete_hoehe_ft`, `gilt_bis`, `auf_boden`. Gleiche `id` überschreibt. Unbekannte `art` → `400` |
+| `DELETE /api/admin/bruegge/soll/{id}` | Anforderung zurücknehmen |
+| `POST /api/admin/bruegge/takt` | Die Drossel: `naechste_frage_in_s` für alle Brücken, ohne Deploy. „Aus" ist 900 s, nicht 0 — eine Brügge ohne Antwort könnte Abschaltung nicht von Netzausfall unterscheiden |
+
+`cid: null` heißt „für alle" — damit lässt sich eine Station für ein Event setzen, ohne sie je
+Pilot zu vervielfachen.

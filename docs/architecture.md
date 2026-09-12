@@ -628,6 +628,45 @@ TeamSpeak-Server (port 10011)
 
 **Subjekt-Sichtbarkeit:** Mitglieder stellen über den Board-Login in FriesenSpy selbst ein, wer über sie benachrichtigt wird (`pilot_visibility`, Modi `everyone`/`allowlist`/`nobody`) — für alle Push-Pfade + den Telegram-Online-Kanal. Die frühere `ts_consent`-Tabelle samt `manage_ts_consent.py` ist entfernt; bestehende DBs behalten die tote Tabelle unangetastet. Voraussetzung für die TS-Auflösung ist die beim Login gefüllte `forum_callsign`-Map; ist ein TS-Kürzel nicht auflösbar, greift die Sichtbarkeit dort nicht (Rollout-Voraussetzung: `sso.php` v2 aktiv, Callsign-Profilfelder gepflegt).
 
+## Datenfluss Sim-Brügge (`friesenbruegge/`)
+
+Die Brügge ist ein WASM-Modul im Simulator — sie setzt dort Objekte und meldet die eigene
+Position zurück. Sie gehört **nicht** ins Docker-Image (der Dockerfile kopiert nur `app/` und
+`scripts/`) und läuft auf dem Rechner des Piloten.
+
+```
+MSFS/X-Plane (Pilot)              FastAPI                         SQLite
+   │                                 │                               │
+   │── POST /api/bruegge/melden ────►│                               │
+   │   lage + kennung + steht        │── _bruegge_zuordnen() ───────►│  live_positions
+   │                                 │   Positionsmatch, kein Login  │  forum_callsign (CID!)
+   │                                 │                               │
+   │                                 │── bruegge_steht_melden() ────►│  bruegge_steht
+   │                                 │── bruegge_soll_fuer(cid) ────►│  bruegge_soll
+   │◄── soll + naechste_frage_in_s ──│                               │
+   │                                 │                               │
+   ├─ AICreateSimulatedObject(titel_fuer(art))                       │
+   └─ AIRemoveObject für alles, was aus `soll` verschwindet          │
+```
+
+**Drei Entscheidungen tragen den Entwurf** (ausführlich in
+[`friesenbruegge/PROTOKOLL.md`](../friesenbruegge/PROTOKOLL.md)):
+
+1. **Keine Anmeldung.** Die Brügge schickt weder Schlüssel noch CID; der Server erkennt den
+   Piloten an der Position und prüft die Berechtigung über `forum_callsign` (CID, nicht
+   Callsign — das bricht beim N-Verlust). Ablehnungen sind für sie ununterscheidbar.
+2. **Der Server spricht in Gattungen, nie in Modellnamen.** `tier_gross`, `robbe`, `boot_klein`
+   … — welcher Container-Titel daraus wird, entscheidet allein die Brügge in `titel_fuer`
+   (`msfs/bruegge.cpp`), weil nur sie ihren Simulator kennt. Ein Modellname in der Antwort
+   würde das Protokoll an MSFS ketten; X-Plane spricht in `.obj`-Pfaden.
+3. **`soll` ist ein Zustand, kein Befehlsstrom.** Geht eine Anfrage verloren, holt die nächste
+   Antwort alles ein. Der Takt (`naechste_frage_in_s`) kommt aus `app_settings` und wirkt
+   sofort für alle, ohne Deploy — ein Deploy risse jede offene Sitzung ab.
+
+**Gegenrichtung `steht`:** Die Brügge meldet zurück, was tatsächlich dasteht (`bruegge_steht`,
+Schlüssel `(kennung, id)`). Ohne das könnte eine Station in `soll` stehen, die es im Simulator
+nie gab — und jemand fliegt hin und findet nichts.
+
 ## Datenbankschema
 
 ```sql
