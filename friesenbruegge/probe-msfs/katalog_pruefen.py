@@ -81,9 +81,14 @@ def anmelden(server: str, passwort: str):
     return oeffner
 
 
-def _holen(oeffner, server: str, anzahl: int) -> list[dict]:
+def _holen(oeffner, server: str, anzahl: int, sim: str) -> list[dict]:
+    # `offen_fuer` statt `simulator`: Gefragt ist alles, was in DIESEM Simulator noch nicht
+    # versucht wurde -- unabhaengig davon, WO der Titel gefunden wurde. Beim ersten Lauf
+    # (12.09.2026) filterte das Werkzeug nach dem Fundort und uebersprang dadurch die 200
+    # Titel des 2020er Bestands, obwohl genau an ihnen die interessante Frage haengt:
+    # welche davon in MSFS 2024 ueberlebt haben.
     url = (server.rstrip("/")
-           + f"/api/admin/bruegge/katalog?simulator=msfs2024&offen=true&grenze={anzahl}")
+           + f"/api/admin/bruegge/katalog?offen_fuer={sim}&grenze={anzahl}")
     with oeffner.open(urllib.request.Request(url), timeout=60) as r:
         return json.load(r).get("eintraege", [])
 
@@ -158,6 +163,8 @@ def main() -> int:
                     help="wie weit vom Flugzeug gesetzt wird (Vorgabe 3000)")
     ap.add_argument("--trocken", action="store_true", help="nichts an den Server melden")
     ap.add_argument("--dll", help="Pfad zu SimConnect.dll")
+    ap.add_argument("--simulator", default="msfs2024", choices=["msfs2024", "msfs2020"],
+                    help="in welchem Simulator geprueft wird (Vorgabe msfs2024)")
     a = ap.parse_args()
 
     try:
@@ -165,11 +172,19 @@ def main() -> int:
     except urllib.error.HTTPError as e:
         print(f"Anmeldung fehlgeschlagen: HTTP {e.code} — {e.read()[:200]!r}")
         return 1
-    offen = _holen(oeffner, a.server, a.anzahl)
+    offen = _holen(oeffner, a.server, a.anzahl, a.simulator)
     if not offen:
         print("Nichts Offenes im Katalog — alles geprüft oder noch nichts eingetragen.")
         return 0
-    print(f"{len(offen)} ungeprüfte Titel, in Gruppen zu {a.gruppe}\n")
+    # Woher die Titel stammen, ist für den Lauf gleichgültig -- aber es ist die
+    # aufschlussreichste Zeile: Sie zeigt, wie viel FREMDBESTAND mitgeprüft wird. Genau darin
+    # steckt die interessante Frage: Welche Titel des 2020er Bestands überleben in 2024?
+    woher = {}
+    for e in offen:
+        woher[e["simulator"]] = woher.get(e["simulator"], 0) + 1
+    herkunft = ", ".join(f"{n} aus {k}" for k, n in sorted(woher.items()))
+    print(f"{len(offen)} in {a.simulator} ungeprüfte Titel ({herkunft}), "
+          f"in Gruppen zu {a.gruppe}\n")
 
     dll = dll_finden(a.dll)
     geht = geht_nicht = stumm = 0
@@ -208,7 +223,8 @@ def main() -> int:
                 # nimmt den Titel dann erneut.
                 stumm += 1
                 continue
-            ergebnisse.append({"simulator": e["simulator"], "titel": e["titel"], **r})
+            ergebnisse.append({"simulator": e["simulator"], "titel": e["titel"],
+                               "geprueft_in": a.simulator, **r})
             if r["ergebnis"] == "steht":
                 geht += 1
             else:

@@ -742,3 +742,89 @@ def test_der_katalog_liegt_hinter_dem_admin(klient):
         assert klient.get(weg).status_code in (401, 403)
     assert klient.post("/api/admin/bruegge/katalog",
                        json={"eintraege": []}).status_code in (401, 403)
+
+
+def test_katalog_trennt_fundort_von_pruefort(klient):
+    """`simulator` sagt WO GEFUNDEN, `geprueft_in` WO GESETZT -- und das ist nicht dasselbe.
+
+    Der interessanteste Teil des Katalogs haengt daran: `BlackBear` steht in der
+    MSFS-2020-Installation und laesst sich in MSFS 2024 setzen, waehrend 38 seiner Nachbarn
+    es nicht tun. Beim ersten Lauf am 12.09.2026 filterte das Pruefwerkzeug nach dem FUNDORT
+    und uebersprang dadurch alle 200 Titel des 2020er Bestands.
+    """
+    klient.post("/api/admin/bruegge/katalog", cookies=_admin_kekse(), json={"eintraege": [
+        {"simulator": "msfs2020", "titel": "BlackBear", "quelle": "bord"},
+        {"simulator": "msfs2020", "titel": "AfricanElephant", "quelle": "bord"},
+    ]})
+    # In MSFS 2024 geprueft, obwohl in der 2020er Installation gefunden.
+    klient.post("/api/admin/bruegge/katalog/ergebnis", cookies=_admin_kekse(), json={
+        "ergebnisse": [{"simulator": "msfs2020", "titel": "BlackBear",
+                        "geprueft_in": "msfs2024", "ergebnis": "steht"}]})
+
+    # `offen_fuer=msfs2024` muss den geprueften AUSLASSEN und den anderen liefern --
+    # unabhaengig davon, dass beide als msfs2020 eingetragen sind.
+    d = klient.get("/api/admin/bruegge/katalog?offen_fuer=msfs2024",
+                   cookies=_admin_kekse()).json()
+    offen = {z["titel"] for z in d["eintraege"]}
+    assert "AfricanElephant" in offen, "ein 2020er Titel gehoert im 2024er Lauf geprueft"
+    assert "BlackBear" not in offen, "der wurde in msfs2024 schon geprueft"
+
+
+def test_geratene_titel_kommen_gar_nicht_erst_in_die_pruefung(klient):
+    """Bei gestreamten Paketen ohne entpackten Ordner steht nur der PAKETNAME im Katalog.
+
+    Den zu setzen versuchen hiesse, einen Fehlschlag zu messen, den man selbst verursacht hat
+    -- am 12.09.2026 standen so 49 "gescheiterte" Titel im Katalog, die nie welche waren.
+    """
+    klient.post("/api/admin/bruegge/katalog", cookies=_admin_kekse(), json={"eintraege": [
+        {"simulator": "msfs2024", "titel": "echt", "quelle": "streamed"},
+        {"simulator": "msfs2024", "titel": "animals", "quelle": "streamed",
+         "bemerkung": "Titel unbekannt (Paket gestreamt, kein entpackter Ordner)"},
+    ]})
+    d = klient.get("/api/admin/bruegge/katalog?offen_fuer=msfs2024",
+                   cookies=_admin_kekse()).json()
+    offen = {z["titel"] for z in d["eintraege"]}
+    assert "echt" in offen
+    assert "animals" not in offen, "ein geratener Titel gehoert nicht in die Pruefung"
+
+
+def test_die_gattungsliste_im_admin_passt_zum_server():
+    """Drei Stellen fuehren dieselbe Liste -- Modul, Server, Admin. Laufen sie auseinander,
+    bietet der Admin etwas an, das die Bruegge nicht kennt (GATTUNG_UNBEKANNT), oder er
+    verschweigt etwas, das ginge.
+
+    Geprueft wird hier Admin gegen Server; das Modul laesst sich von Python aus nicht laden,
+    steht aber als Liste in `friesenbruegge/msfs/bruegge.cpp` (`g_gattungen`) und wird beim
+    Bauen mitgeprueft -- `kann` erzeugt die Bruegge seit Fassung 1.4.0 daraus.
+    """
+    import re
+    from pathlib import Path
+    import app.main as main
+
+    html = (Path(__file__).resolve().parents[1] / "app" / "static" / "admin.html").read_text(
+        encoding="utf-8")
+    block = html[html.index("const _bgGattungen = ["):html.index("];", html.index("const _bgGattungen = ["))]
+    im_admin = set(re.findall(r"wert:\s*'([a-z_]+)'", block))
+    im_server = set(main._BRUEGGE_GATTUNGEN)
+
+    assert im_admin == im_server, (
+        f"nur im Admin: {sorted(im_admin - im_server)} · "
+        f"nur im Server: {sorted(im_server - im_admin)}")
+
+
+def test_das_cid_feld_sucht_ueber_callsign_name_und_cid():
+    """Eine CID ist eine siebenstellige Zahl ohne Aussagekraft -- wer sie eintippt, sieht
+    nicht, ob er den richtigen erwischt hat. Nutzerwunsch 13.09.2026: FRS-Callsign davor.
+    """
+    from pathlib import Path
+    s = (Path(__file__).resolve().parents[1] / "app" / "static" / "admin.html").read_text(
+        encoding="utf-8")
+    assert "bgPilotenLaden" in s and "/api/admin/pilots" in s
+    # Callsign zuerst in der Zeile -- danach sucht man.
+    assert "function bgPilotZeile" in s
+    assert "rufe.includes(q)" in s, "es muss auch ueber das Callsign gesucht werden"
+    # mousedown statt click: sonst schliesst der Picker vor dem Klick (Frachtart-Falle).
+    assert "mousedown" in s
+    # Und Freitext darf NICHT als CID durchgehen -- ein Objekt versehentlich fuer ALLE zu
+    # setzen ist der teurere Fehler.
+    assert "ist keine CID" in s

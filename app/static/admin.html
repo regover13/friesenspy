@@ -1488,34 +1488,24 @@
           <div style="border-top:1px solid #22303f;padding-top:12px;">
             <div style="font-size:0.85rem;color:#cfe0f2;margin-bottom:8px;">Objekte anfordern</div>
             <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;">
-              <!-- Zwei Gruppen, und die Trennung ist die wichtige Information: Was unter
-                   „braucht ein Addon“ steht, fehlt bei Piloten ohne das Paket — die Brügge
-                   meldet dann einen Fehler, statt still etwas anderes hinzustellen. -->
-              <select id="bg-art" class="btn btn-sm" style="padding:6px;">
-                <optgroup label="Bordmittel — laufen überall">
-                  <option value="tier_gross">tier_gross (Bär)</option>
-                  <option value="tier_wasser">tier_wasser (Buckelwal)</option>
-                  <option value="boot_klein">boot_klein (Boot)</option>
-                  <option value="boot_gross">boot_gross (Kreuzfahrtschiff)</option>
-                  <option value="bauwerk">bauwerk (Windmühle)</option>
-                  <option value="fahrzeug">fahrzeug (Fahrzeug — rollt weg!)</option>
-                  <option value="marke">marke (Flagge)</option>
-                </optgroup>
-                <optgroup label="braucht ein Community-Paket">
-                  <option value="robbe">robbe (Seehund, bewegt)</option>
-                  <option value="tier_klein">tier_klein (Papageitaucher, Möwe)</option>
-                  <option value="tier_vieh">tier_vieh (Kuh, Schaf, Ziege)</option>
-                  <option value="tier_wild">tier_wild (Hirsch, Fuchs, Elch)</option>
-                  <option value="rauch">rauch (Rauchsäule — weit sichtbar)</option>
-                  <option value="feuer">feuer (Signalfeuer)</option>
-                  <option value="punkt">punkt (Landepunkt, farbig)</option>
-                  <option value="kegel">kegel (Pylon)</option>
-                  <option value="himmel">himmel (Polarlicht, Fallschirm)</option>
-                </optgroup>
-              </select>
+              <!-- Suchfeld statt <select>: Sechzehn Gattungen in einer Klappliste sind
+                   unuebersichtlich, und die wichtige Information -- ob ein Addon noetig ist --
+                   ginge beim Zuklappen verloren. Hier steht sie in jeder Zeile. -->
+              <div style="position:relative;display:flex;flex-direction:column;gap:2px;">
+                <input id="bg-art" placeholder="was hinstellen?" autocomplete="off"
+                       value="tier_gross" style="width:230px;padding:6px;">
+                <div id="bg-art-picker" class="ke-c-picker"></div>
+              </div>
               <input id="bg-lat" placeholder="Breite" style="width:110px;padding:6px;">
               <input id="bg-lon" placeholder="Länge" style="width:110px;padding:6px;">
-              <input id="bg-cid" placeholder="CID (leer = alle)" style="width:140px;padding:6px;">
+              <!-- Suchfeld statt blanker CID-Eingabe. Eine CID ist eine siebenstellige Zahl
+                   ohne jede Aussagekraft -- wer sie eintippt, weiss nicht, ob er den richtigen
+                   erwischt hat. Mit Callsign davor ist es auf einen Blick klar. -->
+              <div style="position:relative;display:flex;flex-direction:column;gap:2px;">
+                <input id="bg-cid" placeholder="wer? (leer = alle)" autocomplete="off"
+                       style="width:190px;padding:6px;">
+                <div id="bg-cid-picker" class="ke-c-picker"></div>
+              </div>
               <button class="btn btn-sm" id="bg-soll-setzen">Hinstellen</button>
               <button class="btn btn-sm" id="bg-karte-auf">🗺 Karte</button>
             </div>
@@ -2174,7 +2164,16 @@
         const lat = parseFloat(document.getElementById('bg-lat').value);
         const lon = parseFloat(document.getElementById('bg-lon').value);
         if (!isFinite(lat) || !isFinite(lon)) { alert('Breite und Länge fehlen.'); return; }
-        const cid = document.getElementById('bg-cid').value.trim();
+        const roh = document.getElementById('bg-cid').value.trim();
+        // Nur eine reine Zahl gilt als CID. Wer etwas anderes stehen laesst -- einen halb
+        // getippten Namen etwa --, bekommt einen Hinweis statt eines Objekts "fuer alle":
+        // Ein Objekt versehentlich fuer ALLE zu setzen ist der teurere Fehler.
+        if (roh && !/^[0-9]+$/.test(roh)) {
+          alert('„' + roh + '" ist keine CID. Bitte aus der Liste wählen oder das Feld leeren '
+                + '(leer = für alle).');
+          return;
+        }
+        const cid = roh;
         const r = await fetch('/api/admin/bruegge/soll', {
           method: 'POST', credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
@@ -2216,6 +2215,8 @@
         if (_bgKarte) { _bgKarte._bgGesetzt = false; bgKarteFuellen(); }
       });
 
+      bgArtPicker();
+      bgPilotenLaden().then(bgCidPicker);
       bgLaden();
       setInterval(bgLaden, 10000);
     })();
@@ -2252,6 +2253,134 @@
       k.title = wie_viele > 1
         ? 'Springt zu dem, der zuletzt gemeldet hat. Die anderen sind blau auf der Karte.'
         : '';
+    }
+
+    // --- Was hinstellen? Die Gattungen ---------------------------------------------------
+    //
+    // MUSS zu `g_gattungen` in msfs/bruegge.cpp und `_BRUEGGE_GATTUNGEN` in main.py passen.
+    // Steht hier eine, die das Modul nicht kennt, meldet die Brügge GATTUNG_UNBEKANNT.
+    //
+    // `addon: true` heißt: Der Titel stammt aus einem Community-Paket. Fehlt es beim Piloten,
+    // meldet die Brügge einen Fehler, statt still etwas anderes hinzustellen — und genau das
+    // muss hier sichtbar sein, sonst setzt jemand eine Station, die nur bei ihm selbst steht.
+    const _bgGattungen = [
+      { wert: 'tier_gross',  text: 'Bär, Grizzly',                    hinweis: '' },
+      { wert: 'tier_wasser', text: 'Buckelwal',                       hinweis: '' },
+      { wert: 'boot_klein',  text: 'Boot, Kutter, Jacht',             hinweis: '' },
+      { wert: 'boot_gross',  text: 'Kreuzfahrtschiff, Frachter',      hinweis: '' },
+      { wert: 'bauwerk',     text: 'Windmühle, Windsack',             hinweis: '' },
+      { wert: 'fahrzeug',    text: 'Flughafenfahrzeug',               hinweis: 'rollt weg!' },
+      { wert: 'marke',       text: 'Flagge',                          hinweis: '' },
+      { wert: 'robbe',       text: 'Seehund, Seelöwe, Walross',       hinweis: 'Addon', addon: true },
+      { wert: 'tier_klein',  text: 'Papageitaucher, Möwe, Gans',      hinweis: 'Addon', addon: true },
+      { wert: 'tier_vieh',   text: 'Kuh, Schaf, Ziege, Esel',         hinweis: 'Addon', addon: true },
+      { wert: 'tier_wild',   text: 'Hirsch, Elch, Fuchs, Wildschwein',hinweis: 'Addon', addon: true },
+      { wert: 'rauch',       text: 'Rauchsäule',        hinweis: 'Addon · weit sichtbar', addon: true },
+      { wert: 'feuer',       text: 'Signalfeuer',                     hinweis: 'Addon', addon: true },
+      { wert: 'punkt',       text: 'Landepunkt, farbig',              hinweis: 'Addon', addon: true },
+      { wert: 'kegel',       text: 'Pylon',                           hinweis: 'Addon', addon: true },
+      { wert: 'himmel',      text: 'Polarlicht, Fallschirm',          hinweis: 'Addon', addon: true },
+    ];
+
+    function bgArtPicker() {
+      const feld = document.getElementById('bg-art');
+      const picker = document.getElementById('bg-art-picker');
+      if (!feld || !picker) return;
+
+      function zeichnen() {
+        const q = feld.value.trim().toLowerCase();
+        // Gesucht wird über Gattungsnamen UND Beschreibung: Wer „Möwe" tippt, findet
+        // `tier_klein`, ohne den technischen Namen zu kennen.
+        const treffer = _bgGattungen.filter(function (g) {
+          return !q || g.wert.includes(q) || g.text.toLowerCase().includes(q);
+        });
+        picker.innerHTML = '';
+        if (!treffer.length) { picker.style.display = 'none'; return; }
+        treffer.forEach(function (g) {
+          const o = document.createElement('div');
+          o.className = 'ke-c-opt';
+          o.innerHTML = '<b>' + g.wert + '</b> <span class="ke-c-optcap">' + g.text
+            + (g.hinweis ? ' — ' + g.hinweis : '') + '</span>';
+          if (g.addon) o.style.opacity = '0.85';
+          o.addEventListener('mousedown', function (e) {
+            e.preventDefault();
+            feld.value = g.wert;
+            picker.style.display = 'none';
+          });
+          picker.appendChild(o);
+        });
+        picker.style.display = 'block';
+      }
+
+      feld.addEventListener('focus', zeichnen);
+      feld.addEventListener('input', zeichnen);
+      feld.addEventListener('blur', function () {
+        setTimeout(function () { picker.style.display = 'none'; }, 150);
+      });
+    }
+
+    // --- Wer? Suchfeld statt CID-Eingabe -------------------------------------------------
+    //
+    // Eine CID ist eine siebenstellige Zahl ohne Aussagekraft. Wer sie eintippt, sieht nicht,
+    // ob er den richtigen erwischt hat -- und ein Objekt beim falschen Piloten faellt
+    // niemandem auf, weil es ja irgendwo steht. Deshalb das FRS-Callsign davor (Nutzerwunsch,
+    // 13.09.2026), und gesucht wird ueber alle drei: Callsign, Name und CID.
+    let _bgPiloten = [];
+
+    async function bgPilotenLaden() {
+      try {
+        const r = await fetch('/api/admin/pilots', { credentials: 'same-origin' });
+        if (r.ok) _bgPiloten = await r.json();
+      } catch (e) { /* der Picker bleibt dann leer, die Eingabe funktioniert weiter */ }
+    }
+
+    /** „FRS49 · Tobias · 1602713“ — Callsign zuerst, weil man danach sucht. */
+    function bgPilotZeile(p) {
+      const rufe = (p.callsigns || []).join(', ');
+      return [rufe || null, p.name || null, p.cid].filter(Boolean).join('  ·  ');
+    }
+
+    function bgCidPicker() {
+      const feld = document.getElementById('bg-cid');
+      const picker = document.getElementById('bg-cid-picker');
+      if (!feld || !picker) return;
+
+      function zeichnen() {
+        const q = feld.value.trim().toLowerCase();
+        // Eine reine Zahl im Feld ist bereits eine gewählte CID -- dann nicht weiter
+        // vorschlagen, sonst klappt der Picker nach jeder Auswahl wieder auf.
+        const treffer = (_bgPiloten || []).filter(function (p) {
+          if (!q) return true;
+          const rufe = (p.callsigns || []).join(' ').toLowerCase();
+          return rufe.includes(q) || String(p.name || '').toLowerCase().includes(q)
+                 || String(p.cid).includes(q);
+        }).slice(0, 30);
+        picker.innerHTML = '';
+        if (!treffer.length) { picker.style.display = 'none'; return; }
+        treffer.forEach(function (p) {
+          const o = document.createElement('div');
+          o.className = 'ke-c-opt';
+          o.textContent = bgPilotZeile(p);
+          // mousedown statt click: Die Auswahl muss VOR dem blur greifen, sonst schliesst
+          // der Picker, bevor der Klick ankommt (dieselbe Falle wie beim Frachtart-Picker).
+          o.addEventListener('mousedown', function (e) {
+            e.preventDefault();
+            feld.value = String(p.cid);
+            feld.dataset.anzeige = bgPilotZeile(p);
+            picker.style.display = 'none';
+            const h = document.getElementById('bg-karte-hinweis');
+            if (h) h.textContent = 'für ' + bgPilotZeile(p);
+          });
+          picker.appendChild(o);
+        });
+        picker.style.display = 'block';
+      }
+
+      feld.addEventListener('focus', zeichnen);
+      feld.addEventListener('input', zeichnen);
+      feld.addEventListener('blur', function () {
+        setTimeout(function () { picker.style.display = 'none'; }, 150);
+      });
     }
 
     function bgKarteAufbauen() {

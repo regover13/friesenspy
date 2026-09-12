@@ -122,6 +122,32 @@
         steht dort in der App-Liste.</li>
     </ol>
 
+    <h2 style="margin-top:2.2rem;">Die Brügge <span style="font-weight:400;font-size:0.72em;color:#8aa0b8;">— neu, für Neugierige</span></h2>
+    <p>
+      Ein zweites, kleines Paket. Es hat kein Fenster und keine Knöpfe: Die Brügge läuft im
+      Hintergrund mit und meldet FriesenSpy, wo du gerade bist — sekundengenau statt im
+      15-Sekunden-Raster von VATSIM. Und sie kann umgekehrt etwas in den Simulator stellen,
+      was der Server ihr nennt.
+    </p>
+    <p>
+      <strong>Was das bringt:</strong> heute noch wenig — die Karte zeigt weiterhin die
+      VATSIM-Positionen. Sie ist die Vorarbeit für Events, bei denen im Simulator etwas zu
+      sehen sein soll: Tiere zum Zählen, Boote, Marken, Rauchsäulen als Wegweiser.
+    </p>
+
+    <div class="kasten">
+      <p style="margin-bottom:0.6rem;"><strong>Herunterladen</strong></p>
+      <a class="lade-knopf" id="bg-lade-knopf" href="/download/bruegge">Brügge herunterladen</a>
+      <div class="paket-info" id="bg-paket-info">wird geprüft&nbsp;…</div>
+    </div>
+
+    <p style="color:#8aa0b8;font-size:0.88rem;">
+      Einbauen genauso wie oben — entpacken, den Ordner <code>friesenbruegge</code> in
+      denselben Community-Ordner, Simulator neu starten. Es gibt nichts einzustellen und
+      nichts anzumelden: Die Brügge erkennt dich an deiner Position, sobald du mit
+      Friesen-Rufzeichen auf VATSIM fliegst. Wer das nicht tut, für den tut sie gar nichts.
+    </p>
+
     <h2>Anmelden</h2>
     <p>
       Beim ersten Start fragt das Tablet nach der Anmeldung übers Forum — dieselben
@@ -193,6 +219,31 @@
           info.textContent = teile.join('  ·  ');
         })
         .catch(function () { info.textContent = ''; });
+
+      // Dasselbe für die Brügge. Bewusst eine eigene Abfrage und kein gemeinsamer Endpunkt:
+      // Die beiden Pakete werden getrennt gebaut und getrennt hochgeladen, also darf auch
+      // das eine verfügbar sein, während das andere fehlt.
+      var bgKnopf = document.getElementById('bg-lade-knopf');
+      var bgInfo = document.getElementById('bg-paket-info');
+      if (bgKnopf && bgInfo) {
+        fetch('/api/bruegge-package', { credentials: 'same-origin' })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (d) {
+            if (!d || !d.verfuegbar) {
+              bgKnopf.setAttribute('aria-disabled', 'true');
+              bgKnopf.removeAttribute('href');
+              bgKnopf.textContent = 'Noch nicht verfügbar';
+              bgInfo.textContent = 'Es ist gerade kein Paket hinterlegt.';
+              return;
+            }
+            var t = [];
+            if (d.version) t.push('Version ' + d.version);
+            if (d.groesse_kb) t.push(d.groesse_kb + ' kB');
+            if (d.stand) t.push('Stand ' + d.stand);
+            bgInfo.textContent = t.join('  ·  ');
+          })
+          .catch(function () { bgInfo.textContent = ''; });
+      }
     })();
   </script>
 </body>

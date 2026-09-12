@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.33.0",
+    "date": "2026-09-13",
+    "highlight": false,
+    "title": "Die Brügge steht zum Herunterladen bereit",
+    "items": [
+      "🌉 Auf der Kniebrett-Seite gibt es jetzt ein zweites Paket: die Brügge. Sie hat kein Fenster und keine Knöpfe — sie läuft im Hintergrund mit, meldet die eigene Position sekundengenau und kann umgekehrt in den Simulator stellen, was der Server ihr nennt.",
+      "🦭 Zu sehen ist davon noch nichts: Die Karte zeigt weiterhin die VATSIM-Positionen. Sie ist die Vorarbeit für Events, bei denen im Simulator etwas dastehen soll — Tiere zum Zählen, Boote, Marken, Rauchsäulen als Wegweiser.",
+      "🎛️ Im Admin lassen sich Objekte jetzt bequemer setzen: Gattung und Pilot sind Suchfelder statt Eingabefelder, und beim Piloten steht das Friesen-Rufzeichen vor der CID — eine siebenstellige Zahl sagt niemandem, wen sie meint."
+    ]
+  },
+  {
     "version": "14.32.0",
     "date": "2026-09-12",
     "highlight": false,

@@ -655,6 +655,48 @@ async def efb_download():
     )
 
 
+# Die Bruegge liegt nach demselben Muster wie das EFB-Paket: als ZIP im Volume, von Hand
+# abgelegt, NICHT im Docker-Image. Der Grund ist derselbe und wiegt hier noch schwerer -- das
+# Paket enthaelt ein WASM-Modul, das mit dem MSFS-SDK unter Windows gebaut wird und in der
+# Linux-CI gar nicht entstehen kann.
+#
+# ⚠ Und es teilt die Falle des EFB-ZIPs (s. Memory „Kniebrett-Download-ZIP"): KEIN Deploy
+# fasst diese Datei an. Wer eine neue Bruegge baut, muss sie selbst hochladen -- sonst laeuft
+# der Download still einer alten Fassung hinterher, und das faellt erst im Simulator auf.
+def _bruegge_zip_path(settings) -> Path:
+    eigen = str(getattr(settings, "BRUEGGE_PACKAGE_PATH", "") or "").strip()
+    if eigen:
+        return Path(eigen)
+    return Path(settings.DB_PATH).parent / "efb" / "friesenbruegge.zip"
+
+
+@app.get("/api/bruegge-package", include_in_schema=False)
+async def bruegge_package_info():
+    """Ist ein Bruegge-Paket hinterlegt, und welches? Speist die Installationsseite."""
+    pfad = _bruegge_zip_path(get_settings())
+    if not pfad.is_file():
+        return {"verfuegbar": False}
+    stat = pfad.stat()
+    return {
+        "verfuegbar": True,
+        # Dieselbe Ueberlegung wie beim EFB: die Version kommt aus dem Archiv selbst, damit
+        # die angezeigte gar nicht erst von der ausgelieferten abweichen kann.
+        "version": _efb_package_version(pfad),
+        "groesse_kb": round(stat.st_size / 1024),
+        "stand": datetime.fromtimestamp(stat.st_mtime, tz=_timezone.utc).strftime("%d.%m.%Y"),
+    }
+
+
+@app.get("/download/bruegge", include_in_schema=False)
+async def bruegge_download():
+    """Das Bruegge-Community-Package als ZIP. Hinter dem Gate wie der Rest der App."""
+    pfad = _bruegge_zip_path(get_settings())
+    if not pfad.is_file():
+        raise HTTPException(status_code=404, detail="Kein Bruegge-Paket hinterlegt")
+    return FileResponse(pfad, media_type="application/zip",
+                        filename="friesenbruegge.zip")
+
+
 @app.get("/impressum", include_in_schema=False)
 async def impressum_page():
     """Impressum (§ 5 DDG) — statische Seite."""
@@ -1132,6 +1174,7 @@ async def admin_katalog_eintragen(request: Request):
                 "simulator": sim, "titel": titel, "quelle": quelle,
                 "paket": (str(e["paket"])[:120] if e.get("paket") else None),
                 "kategorie": (str(e["kategorie"])[:60] if e.get("kategorie") else None),
+                "bemerkung": (str(e["bemerkung"])[:200] if e.get("bemerkung") else None),
             })
         n = katalog_eintragen(conn, sauber)
         conn.commit()
@@ -1162,7 +1205,8 @@ async def admin_katalog_ergebnis(request: Request):
             katalog_ergebnis(conn, str(e.get("simulator") or "")[:20],
                              str(e.get("titel") or "")[:200], e["ergebnis"],
                              (str(e["fehler"])[:120] if e.get("fehler") else None),
-                             e.get("hoehe_ft"))
+                             e.get("hoehe_ft"),
+                             (str(e["geprueft_in"])[:20] if e.get("geprueft_in") else None))
             n += 1
         conn.commit()
         return {"status": "ok", "vermerkt": n}
@@ -1173,14 +1217,21 @@ async def admin_katalog_ergebnis(request: Request):
 @app.get("/api/admin/bruegge/katalog")
 async def admin_katalog_lesen(request: Request, simulator: str | None = None,
                               quelle: str | None = None, offen: bool = False,
-                              grenze: int = 500):
-    """Den Katalog abfragen. (Admin)"""
+                              grenze: int = 500, offen_fuer: str | None = None):
+    """Den Katalog abfragen. (Admin)
+
+    ``offen_fuer=msfs2024`` liefert alles, was in DIESEM Simulator noch nicht versucht wurde
+    -- unabhaengig davon, wo der Titel gefunden wurde. Das braucht das Pruefwerkzeug: Die
+    Titel des 2020er Bestands gehoeren auch in einem 2024er Lauf geprueft, denn genau daran
+    zeigt sich, welche davon ueberlebt haben.
+    """
     require_admin(request)
     conn = get_connection(get_settings().DB_PATH)
     try:
         return {"zusammenfassung": katalog_zusammenfassung(conn),
                 "eintraege": katalog_lesen(conn, simulator, quelle,
-                                           nur_offen=offen, grenze=min(grenze, 2000))}
+                                           nur_offen=offen, grenze=min(grenze, 2000),
+                                           offen_fuer=offen_fuer)}
     finally:
         conn.close()
 

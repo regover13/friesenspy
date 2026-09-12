@@ -769,6 +769,15 @@ CREATE TABLE IF NOT EXISTS bruegge_katalog (
     quelle       TEXT NOT NULL,
     kategorie    TEXT,              -- Animals | Boats | GroundVehicles | Landmarks | Misc | …
     -- Wie es ausging. NULL = nie versucht.
+    --
+    -- ⚠ `geprueft_in` ist NICHT dasselbe wie `simulator`: Der eine sagt, WO der Titel
+    -- gefunden wurde, der andere, WO er gesetzt werden konnte. Der Unterschied ist der
+    -- interessanteste Teil dieses Katalogs -- `BlackBear` steht in der MSFS-2020-Installation
+    -- und funktioniert in MSFS 2024, waehrend 38 seiner Nachbarn es nicht tun.
+    --
+    -- Ohne diese Trennung wurden die 200 Titel des 2020er Bestands beim ersten Lauf gar nicht
+    -- geprueft (12.09.2026), weil das Werkzeug nach `simulator='msfs2024'` filterte.
+    geprueft_in  TEXT,
     geprueft_am  TEXT,
     ergebnis     TEXT,              -- steht | fehlgeschlagen
     fehler       TEXT,              -- z. B. EXCEPTION_22
@@ -902,6 +911,10 @@ _BRUEGGE_MIGRATIONS = [
     "ALTER TABLE bruegge_zuordnung ADD COLUMN vs_spitze_am TEXT",
     # Die Sonden-Idee (12.09.2026): OnGround=1 je Objekt verlangen koennen.
     "ALTER TABLE bruegge_soll ADD COLUMN auf_boden INTEGER NOT NULL DEFAULT 0",
+    # Wo ein Titel GEPRUEFT wurde -- nicht zu verwechseln mit `simulator` (wo er gefunden
+    # wurde). Nachgezogen am 12.09.2026, nachdem der erste Lauf die 200 Titel des 2020er
+    # Bestands uebersprungen hatte.
+    "ALTER TABLE bruegge_katalog ADD COLUMN geprueft_in TEXT",
 ]
 
 _VISIBILITY_MIGRATIONS = [
@@ -2847,12 +2860,14 @@ def katalog_eintragen(conn: sqlite3.Connection, eintraege) -> int:
     n = 0
     for e in eintraege:
         conn.execute(
-            "INSERT INTO bruegge_katalog (simulator, titel, paket, quelle, kategorie) "
-            "VALUES (?, ?, ?, ?, ?) "
+            "INSERT INTO bruegge_katalog (simulator, titel, paket, quelle, kategorie, "
+            "                             bemerkung) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(simulator, titel) DO UPDATE SET "
             "    paket = excluded.paket, quelle = excluded.quelle, "
-            "    kategorie = excluded.kategorie",
-            (e["simulator"], e["titel"], e.get("paket"), e["quelle"], e.get("kategorie")),
+            "    kategorie = excluded.kategorie, bemerkung = excluded.bemerkung",
+            (e["simulator"], e["titel"], e.get("paket"), e["quelle"], e.get("kategorie"),
+             e.get("bemerkung")),
         )
         n += 1
     return n
@@ -2860,20 +2875,42 @@ def katalog_eintragen(conn: sqlite3.Connection, eintraege) -> int:
 
 def katalog_ergebnis(conn: sqlite3.Connection, simulator: str, titel: str,
                      ergebnis: str, fehler: str | None = None,
-                     hoehe_ft: float | None = None) -> None:
-    """Festhalten, wie ein Setzversuch ausging (kein commit)."""
+                     hoehe_ft: float | None = None,
+                     geprueft_in: str | None = None) -> None:
+    """Festhalten, wie ein Setzversuch ausging (kein commit).
+
+    ``geprueft_in`` ist der Simulator, in dem der Versuch lief -- er kann von ``simulator``
+    abweichen, und genau das ist der Punkt: `BlackBear` steht in der MSFS-2020-Installation
+    und laesst sich in MSFS 2024 setzen. Ohne den Unterschied waere nicht festzuhalten,
+    welche Titel des alten Bestands im neuen Simulator ueberlebt haben.
+    """
     conn.execute(
-        "UPDATE bruegge_katalog SET geprueft_am = ?, ergebnis = ?, fehler = ?, hoehe_ft = ? "
+        "UPDATE bruegge_katalog SET geprueft_am = ?, geprueft_in = ?, ergebnis = ?, "
+        "                           fehler = ?, hoehe_ft = ? "
         "WHERE simulator = ? AND titel = ?",
-        (_now_utc(), ergebnis, fehler, hoehe_ft, simulator, titel),
+        (_now_utc(), geprueft_in or simulator, ergebnis, fehler, hoehe_ft, simulator, titel),
     )
 
 
 def katalog_lesen(conn: sqlite3.Connection, simulator: str | None = None,
                   quelle: str | None = None, nur_geprueft: bool = False,
-                  nur_offen: bool = False, grenze: int = 500) -> list[dict]:
-    """Den Katalog abfragen -- fuer den Admin und fuer das Pruefwerkzeug."""
+                  nur_offen: bool = False, grenze: int = 500,
+                  offen_fuer: str | None = None) -> list[dict]:
+    """Den Katalog abfragen -- fuer den Admin und fuer das Pruefwerkzeug.
+
+    ``offen_fuer`` ist der Griff, den das Pruefwerkzeug braucht: *alles, was in DIESEM
+    Simulator noch nicht versucht wurde* -- unabhaengig davon, wo der Titel gefunden wurde.
+    Damit kommen die 200 Titel des 2020er Bestands auch in einem MSFS-2024-Lauf dran, und
+    genau daran laesst sich ablesen, welche davon ueberlebt haben.
+
+    ⚠ Geratene Titel bleiben dabei aussen vor: Bei gestreamten Paketen ohne entpackten Ordner
+    steht im Katalog nur der PAKETNAME als Notbehelf (`bemerkung` sagt es). Die zu setzen
+    versuchen hiesse, einen Fehlschlag zu messen, den man selbst verursacht hat.
+    """
     wo, werte = [], []
+    if offen_fuer:
+        wo.append("(geprueft_in IS NULL OR geprueft_in <> ?)"); werte.append(offen_fuer)
+        wo.append("(bemerkung IS NULL OR bemerkung NOT LIKE 'Titel unbekannt%')")
     if simulator:
         wo.append("simulator = ?"); werte.append(simulator)
     if quelle:

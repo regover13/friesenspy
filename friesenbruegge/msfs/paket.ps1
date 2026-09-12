@@ -59,6 +59,20 @@ Copy-Item $wasm "$paket\modules\bruegge.wasm" -Force
 
 $groesse = (Get-Item "$paket\modules\bruegge.wasm").Length
 
+# Die Paketversion kommt aus BRUEGGE_VERSION in bruegge.cpp -- EINE Wahrheit, nicht zwei.
+#
+# Hier stand sie fest auf "1.0.0", waehrend das Modul bei 1.5.0 war. Das fiel niemandem auf,
+# weil die Zahl nirgends sichtbar war -- bis das Paket auf die Download-Seite kam, die die
+# Version AUS DEM ARCHIV liest (`_efb_package_version` in main.py). Dort haette dauerhaft
+# 1.0.0 gestanden, und ein Pilot mit alter Fassung haette keinen Grund gesehen, neu zu laden.
+$cpp = Get-Content "$hier\bruegge.cpp" -Raw
+if ($cpp -match '#define\s+BRUEGGE_VERSION\s+"([0-9.]+)"') {
+    $fassung = $Matches[1]
+} else {
+    throw "BRUEGGE_VERSION nicht in bruegge.cpp gefunden -- das Manifest braucht sie."
+}
+Write-Output "Fassung aus bruegge.cpp: $fassung"
+
 # Windows-FILETIME: 100-Nanosekunden-Schritte seit 1601. layout.json will genau das.
 $filetime = (Get-Item "$paket\modules\bruegge.wasm").LastWriteTimeUtc.ToFileTimeUtc()
 
@@ -69,7 +83,7 @@ $filetime = (Get-Item "$paket\modules\bruegge.wasm").LastWriteTimeUtc.ToFileTime
   "title": "FriesenBruegge",
   "manufacturer": "",
   "creator": "devprops",
-  "package_version": "1.0.0",
+  "package_version": "$fassung",
   "minimum_game_version": "$(if ($Fuer2020) { '1.38.2' } else { '1.7.35' })",
   "minimum_compatibility_version": "7.26.0.214",
   "export_type": "Community",

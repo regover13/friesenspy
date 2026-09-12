@@ -107,12 +107,20 @@ def sammle_gestreamt(wurzel: Path) -> list[dict]:
             if d.is_dir():
                 kategorie = d.name
                 break
-        if not namen:
+        # Kein entpackter Ordner? Dann ist der Titel schlicht UNBEKANNT. Der Paketname ist
+        # ein Notbehelf, damit die Luecke im Katalog sichtbar bleibt -- aber er wird als
+        # solcher gekennzeichnet, sonst misst ein Pruefwerkzeug einen Fehlschlag, den es
+        # selbst verursacht hat (12.09.2026: 49 "gescheiterte" Titel, die nie welche waren).
+        geraten = not namen
+        if geraten:
             namen = [paket.name.replace("fs24-microsoft-simobjects-", "")
                                 .replace("fs24-asobo-simobjects-", "")]
         for n in namen:
-            raus.append({"simulator": "msfs2024", "titel": n, "paket": paket.name,
-                         "quelle": "streamed", "kategorie": kategorie})
+            e = {"simulator": "msfs2024", "titel": n, "paket": paket.name,
+                 "quelle": "streamed", "kategorie": kategorie}
+            if geraten:
+                e["bemerkung"] = "Titel unbekannt (Paket gestreamt, kein entpackter Ordner)"
+            raus.append(e)
     return raus
 
 
