@@ -7,7 +7,8 @@
     "items": [
       "🌉 Auf der Kniebrett-Seite gibt es jetzt ein zweites Paket: die FriesenBrügge. Sie hat kein Fenster und keine Knöpfe — sie läuft im Hintergrund mit, meldet die eigene Position sekundengenau und kann umgekehrt in den Simulator stellen, was der Server ihr nennt.",
       "🦭 Zu sehen ist davon noch nichts: Die Karte zeigt weiterhin die VATSIM-Positionen. Sie ist die Vorarbeit für Events, bei denen im Simulator etwas dastehen soll — Tiere zum Zählen, Boote, Marken, Rauchsäulen als Wegweiser.",
-      "🎛️ Im Admin lassen sich Objekte jetzt bequemer setzen: Gattung und Pilot sind Suchfelder statt Eingabefelder, und beim Piloten steht das Friesen-Rufzeichen vor der CID — eine siebenstellige Zahl sagt niemandem, wen sie meint."
+      "🎛️ Im Admin lassen sich Objekte jetzt bequemer setzen: Gattung und Pilot sind Suchfelder statt Eingabefelder, und beim Piloten steht das Friesen-Rufzeichen vor der CID — eine siebenstellige Zahl sagt niemandem, wen sie meint.",
+      "🪶 Und Objekte werden jetzt vom Simulator selbst auf den Boden gesetzt statt auf eine gerechnete Höhe. Das klingt nach einer Kleinigkeit, ist aber der Unterschied zwischen „steht sauber“ und „steckt im Boden“ — die gerechnete Höhe stimmt nur direkt unter dem Flugzeug."
     ]
   },
   {
