@@ -55,7 +55,7 @@
 // Feste Größen
 // ---------------------------------------------------------------------------------------
 
-#define BRUEGGE_VERSION   "1.2.1"
+#define BRUEGGE_VERSION   "1.3.0"
 #define BRUEGGE_URL       "https://friesenspy.devprops.de/api/bruegge/melden"
 #define KENNUNG_DATEI     "\\work\\friesenbruegge.kennung"
 
@@ -115,6 +115,7 @@ struct SollObjekt {
     bool   erzeugt_gerufen;   // AICreateSimulatedObject ist raus
     DWORD  objekt_id;         // vom Simulator vergeben, 0 = noch keine
     DWORD  sende_id;          // Paketnummer des Erzeugungsaufrufs -- ordnet Exceptions zu
+    int    titel_nr;          // welcher Titel der Gattung gerade versucht wird (s. titel_fuer)
     double hoehe_ft;          // zuletzt gemeldete Hoehe
     DWORD  letzte_meldung_s;  // Sekunde der letzten Lagemeldung
     DWORD  seit_s;            // seit wann im aktuellen Zustand
@@ -264,13 +265,60 @@ static void kennung_pruefen() {
 //
 // Alle Titel hier sind im Probeflug gesetzt und im Bild gesehen worden
 // (../probe-msfs/ERGEBNIS.md).
-static const char* titel_fuer(const char* art) {
-    if (std::strcmp(art, "tier_gross") == 0)  return "BlackBear";
-    if (std::strcmp(art, "bauwerk") == 0)     return "Windmill";
-    if (std::strcmp(art, "fahrzeug") == 0)    return "ASO_Ambulance_Japan";
-    if (std::strcmp(art, "boot_klein") == 0)  return "Boat01";
-    if (std::strcmp(art, "boot_gross") == 0)  return "CruiseShip01";
+// Je Gattung MEHRERE Titel, in der Reihenfolge, in der sie versucht werden.
+//
+// Warum eine Liste und nicht ein Name: Am 12.09.2026 scheiterte `fahrzeug` bei jedem Versuch
+// mit EXCEPTION_22, waehrend die vier anderen Gattungen liefen. Die Ursache stand nicht in
+// einer Doku, sondern auf der Platte -- `ASO_Ambulance_Japan` liegt unter
+// `Microsoft.FlightSimulator...` (MSFS 2020), aber NICHT unter `Microsoft.Limitless`
+// (MSFS 2024). Ein Titel aus dem 2020er Bestand, den 2024 nicht kennt.
+//
+// Mit einem einzigen Namen je Gattung faellt damit die ganze Gattung aus, sobald ein
+// Simulator ein Modell nicht mitbringt -- und das trifft absehbar oefter zu, denn die Bruegge
+// soll auf MSFS 2020 UND 2024 laufen. Mit einer Liste rueckt einfach der naechste nach.
+//
+// DIE TITEL SIND AUSGELESEN, NICHT GERATEN: aus den `sim.cfg` des 2020er Bestands
+// (`SimObjects/{Animals,Boats,GroundVehicles}/*/sim.cfg`, Feld `title=`) und aus den
+// Ordnernamen der 2024er Streamed Packages (`SimObjects/Animals/`, `SimObjects/Landmarks/`).
+// Eine Websuche brachte dafuer nichts Brauchbares -- die Doku nennt keine Titel.
+//
+// Die Reihenfolge ist Absicht: erst das im Flug BELEGTE Modell, dann Geschwister aus
+// demselben Bestand, dann die 2024-eigenen Namen (anderes Schema: `Bear_U_Maritimus` statt
+// `BlackBear`).
+struct Gattung { const char* art; const char* titel[6]; };
+
+static const Gattung g_gattungen[] = {
+    // BlackBear ist im Flug belegt (12.09.2026). Die 2024er Tiere tragen wissenschaftliche
+    // Namen und liegen in eigenen Streamed Packages.
+    { "tier_gross",  { "BlackBear", "GrizzlyBear", "PolarBear", "Bear_U_Maritimus",
+                       "deer_o_hemionus", nullptr } },
+    // Windmill ist belegt. `windmill` (klein) ist der 2024er Landmark -- Titel sind
+    // GROSS-/KLEINSCHREIBUNGSEMPFINDLICH, deshalb steht beides drin.
+    { "bauwerk",     { "Windmill", "windmill", "Windsock_05", nullptr } },
+    // ASO_Ambulance_Japan steht bewusst NICHT mehr vorn: in MSFS 2024 nicht vorhanden.
+    // Die uebrigen sind Flughafenfahrzeuge aus demselben Bestand.
+    { "fahrzeug",    { "ASO_Firetruck01", "ASO_FuelTruck01_White", "ASO_CarUtility01",
+                       "ASO_Pushback_White", "ASO_Ambulance_Japan", nullptr } },
+    { "boot_klein",  { "Boat01", "Boat02", "FishingBoat", "Yacht01", nullptr } },
+    { "boot_gross",  { "CruiseShip01", "CruiseShip02", "CargoShip01", nullptr } },
+};
+
+// Den n-ten Titel einer Gattung. Gibt nullptr, wenn die Gattung unbekannt ist ODER die Liste
+// erschoepft -- der Aufrufer unterscheidet beides ueber `titel_anzahl`.
+static const char* titel_fuer(const char* art, int n) {
+    for (unsigned g = 0; g < sizeof(g_gattungen)/sizeof(g_gattungen[0]); ++g) {
+        if (std::strcmp(art, g_gattungen[g].art) != 0) continue;
+        if (n < 0 || n >= 6) return nullptr;
+        return g_gattungen[g].titel[n];
+    }
     return nullptr;   // unbekannte Gattung: nicht raten, sondern melden
+}
+
+static bool gattung_bekannt(const char* art) {
+    for (unsigned g = 0; g < sizeof(g_gattungen)/sizeof(g_gattungen[0]); ++g) {
+        if (std::strcmp(art, g_gattungen[g].art) == 0) return true;
+    }
+    return false;
 }
 
 // ---------------------------------------------------------------------------------------
@@ -420,11 +468,19 @@ static double gelaendehoehe() {
 
 static void objekt_erzeugen(int i) {
     SollObjekt& o = g_soll[i];
-    const char* titel = titel_fuer(o.art);
-    if (!titel) {
+    if (!gattung_bekannt(o.art)) {
         // Unbekannte Gattung: nicht raten. Der Server erfaehrt es ueber `steht` und kann
         // etwas anderes anfordern -- oder die Stelle auslassen.
         std::snprintf(o.fehler, sizeof(o.fehler), "GATTUNG_UNBEKANNT");
+        o.erzeugt_gerufen = true;
+        return;
+    }
+    const char* titel = titel_fuer(o.art, o.titel_nr);
+    if (!titel) {
+        // Die Gattung gibt es, aber KEIN Titel daraus liess sich setzen. Das ist ein anderer
+        // Befund als eine unbekannte Gattung, und der Server soll ihn unterscheiden koennen:
+        // hier fehlen die Modelle im Simulator, dort war die Anforderung falsch.
+        std::snprintf(o.fehler, sizeof(o.fehler), "KEIN_TITEL_GING");
         o.erzeugt_gerufen = true;
         return;
     }
@@ -535,7 +591,7 @@ static void soll_abgleichen(const char* json) {
                                                           // fehlt
         SollObjekt& o = g_soll[i];
         if (!o.belegt) {
-            std::memset(&o, 0, sizeof(o));
+            std::memset(&o, 0, sizeof(o));   // setzt auch titel_nr auf 0
             std::snprintf(o.id, sizeof(o.id), "%s", id);
             o.belegt = true;
             o.seit_s = g_sekunden;
@@ -896,13 +952,27 @@ void CALLBACK dispatch(SIMCONNECT_RECV* pData, DWORD, void*) {
         // unsichtbar fuer alle Beteiligten.
         bool zugeordnet = false;
         for (int i = 0; i < SOLL_MAX; ++i) {
-            if (g_soll[i].belegt && g_soll[i].sende_id != 0
-                && g_soll[i].sende_id == ex->dwSendID) {
+            if (!g_soll[i].belegt || g_soll[i].sende_id == 0
+                || g_soll[i].sende_id != ex->dwSendID) continue;
+
+            // Den NAECHSTEN Titel der Gattung versuchen, statt sofort aufzugeben. Ein Titel,
+            // den dieser Simulator nicht kennt, ist kein Grund, die ganze Gattung fallen zu
+            // lassen -- und genau das geschah mit `fahrzeug`, dessen einziger Name aus dem
+            // 2020er Bestand stammte (s. titel_fuer).
+            if (titel_fuer(g_soll[i].art, g_soll[i].titel_nr + 1) != nullptr) {
+                g_soll[i].titel_nr += 1;
+                g_soll[i].erzeugt_gerufen = false;   // beim naechsten Abgleich neu versuchen
+                g_soll[i].sende_id = 0;
+                g_soll[i].fehler[0] = '\0';
+            } else {
+                // Liste erschoepft. Jetzt ist es ein echter Fehlschlag, und der Server soll
+                // die ZULETZT gescheiterte Ausnahme sehen -- sie sagt am meisten darueber,
+                // was der Simulator eigentlich bemaengelt.
                 std::snprintf(g_soll[i].fehler, sizeof(g_soll[i].fehler),
                               "EXCEPTION_%lu", (unsigned long)ex->dwException);
-                zugeordnet = true;
-                break;
             }
+            zugeordnet = true;
+            break;
         }
 
         // Passt die Exception zu keinem Erzeugungsversuch, gehoert sie woandershin (eine
