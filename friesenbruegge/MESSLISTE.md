@@ -421,6 +421,44 @@ gehören aber zur alten Position des Piloten.)
 
 ---
 
+## 5d. Dreißig Objekte — ✅ gemessen am 12.09.2026, mit einem Fund
+
+> **Die Mechanik hält:** 30 Objekte angefordert → 30 gesetzt, 30 gezählt, 0 Fehler. Dann alle
+> 30 **gleichzeitig** um 25 m versetzt → 30 vorher, 30 nachher. Kein Verlust, kein
+> Doppelgänger, obwohl dabei 30 × `AIRemoveObject` + 30 × `AICreateSimulatedObject` in einen
+> Frame fallen.
+>
+> ### ⚠ Der Fund steckte aber woanders: die Antwort passte fast nicht mehr in den Puffer
+>
+> | | |
+> |---|---|
+> | Antwortgröße bei 30 Objekten | **3776 Bytes** |
+> | Puffer in `anfrage_fertig` (bis 1.1.3) | 4096 Bytes → **92 % belegt** |
+> | je Eintrag | 126 Bytes |
+> | bei `SOLL_MAX` = 32 | rund 4030 + Rahmen → **Überlauf** |
+>
+> Die Brügge konnte also **mehr anfordern, als sie lesen kann** — und das Abschneiden war
+> vollkommen lautlos: Das JSON bricht mitten im Satz ab, `json_array` findet die vorderen
+> Einträge, der Rest fehlt. Von außen sieht das aus wie Objekte, die der Simulator nicht
+> setzen wollte. Mit `erwartete_hoehe_ft` je Eintrag (was der Höhenfrage nach nötig wäre, s.
+> 5c) wäre die Grenze schon bei rund 25 Objekten erreicht.
+>
+> **Behoben in Fassung 1.1.4**, in zwei Schritten:
+>
+> 1. `ANTWORT_PUFFER` = 16384 — trägt einen vollen Sollzustand rund viermal.
+> 2. **Passt eine Antwort trotzdem nicht, wird sie gar nicht ausgewertet** und die Brügge
+>    behält ihren letzten Stand. Ein halb gelesener Sollzustand wäre schlimmer als ein
+>    unveränderter: Er räumte alles ab, was hinter der Schnittstelle stand, und setzte es
+>    beim nächsten Takt neu — ein Flackern, dessen Ursache niemand fände.
+> 3. Sie meldet es als `antwort_zu_gross` mit der tatsächlichen Größe, der Server schreibt
+>    eine Warnung ins Log. Aus einem stillen Fehler wird ein lauter.
+>
+> **Offen:** ob das gleichzeitige Versetzen von 30 Objekten im Cockpit ruckelt. Die Zählung
+> sieht das nicht — nur das Auge. Falls ja, muss das Versetzen über mehrere Takte verteilt
+> werden; bei einem Piloten, der sich einem Revier nähert, wäre das ohnehin natürlicher.
+
+---
+
 ## 6. Was tut sie bei Netzausfall?
 
 WLAN aus, oder den Container kurz anhalten.

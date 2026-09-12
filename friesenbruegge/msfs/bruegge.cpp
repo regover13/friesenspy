@@ -48,7 +48,7 @@
 // Feste Größen
 // ---------------------------------------------------------------------------------------
 
-#define BRUEGGE_VERSION   "1.1.3"
+#define BRUEGGE_VERSION   "1.1.4"
 #define BRUEGGE_URL       "https://friesenspy.devprops.de/api/bruegge/melden"
 #define KENNUNG_DATEI     "\\work\\friesenbruegge.kennung"
 
@@ -70,6 +70,11 @@
 
 // Soviel Puffer braucht die Meldung mit voller Spur, großzügig gerechnet.
 #define MELDUNG_PUFFER 8192
+
+// Und soviel die ANTWORT des Servers. Gemessen am 12.09.2026: 126 Bytes je `soll`-Eintrag,
+// also rund 4 KB bei SOLL_MAX = 32 -- der frühere Wert von 4096 lief damit über, lautlos
+// (s. anfrage_fertig). 16384 trägt einen vollen Sollzustand rund viermal.
+#define ANTWORT_PUFFER 16384
 
 // Soviele Objekte haelt die Bruegge gleichzeitig. Der Simulator vertraegt deutlich mehr
 // (im Probeflug gemessen), aber eine feste Obergrenze im Modul ist billiger als eine
@@ -153,6 +158,11 @@ static FsNetworkRequestId g_laufend = 0;  // 0 = keine Anfrage offen
 static DWORD   g_gilt_bis_s = 300;        // wie lange `soll` ohne neue Auskunft gilt
 static DWORD   g_letzte_antwort_s = 0;    // Sekunde der letzten angekommenen Antwort
 static DWORD   g_laufend_seit = 0;        // Sekunden -- gegen haengende Anfragen
+// Groesse einer Antwort, die nicht in ANTWORT_PUFFER passte. 0 = alles in Ordnung. Geht als
+// `antwort_zu_gross` mit der naechsten Meldung hinaus, damit der Server ERFAEHRT, warum
+// Objekte fehlen, statt es zu raten -- und die Zahl sagt ihm zugleich, wie weit er kuerzen
+// muss.
+static unsigned long g_antwort_zu_gross = 0;
 
 // ---------------------------------------------------------------------------------------
 // Kennung -- dauerhaft, wo es geht
@@ -264,6 +274,15 @@ static void meldung_bauen(char* puffer, size_t groesse) {
     j.feld("protokoll");       j.ganzzahl(1);                 j.komma();
     j.feld("simulator");       j.text(SIMULATOR_NAME);        j.komma();
     j.feld("bruegge_version"); j.text(BRUEGGE_VERSION);       j.komma();
+
+    // Nur wenn die letzte Antwort nicht in den Puffer passte -- sonst faellt das Feld weg.
+    // Es steht hier und nicht in `steht`, weil es NICHT von einem einzelnen Objekt handelt,
+    // sondern von der Antwort als ganzer: Die Bruegge hat den Sollzustand gar nicht erfahren.
+    // Der Wert ist die tatsaechliche Groesse, damit der Server weiss, wie weit er kuerzen
+    // muss, statt blind zu halbieren.
+    if (g_antwort_zu_gross > 0) {
+        j.feld("antwort_zu_gross"); j.ganzzahl((long)g_antwort_zu_gross); j.komma();
+    }
     j.feld("kennung");         j.text(g_kennung);             j.komma();
 
     // `kann` geht bei JEDER Anfrage mit, nicht nur beim ersten Mal: Der Server hält keine
@@ -633,10 +652,32 @@ static void anfrage_fertig(FsNetworkRequestId id, int status, void*) {
     unsigned long n = fsNetworkHttpRequestGetDataSize(id);
     unsigned char* daten = fsNetworkHttpRequestGetData(id);
     if (!daten || n == 0) return;
-    static char kopie[4096];
-    unsigned long m = (n < sizeof(kopie) - 1) ? n : sizeof(kopie) - 1;
+    // ANTWORT_PUFFER muss zu SOLL_MAX passen, sonst schneidet er stillschweigend ab.
+    //
+    // Gemessen am 12.09.2026: 30 Objekte ergeben eine Antwort von 3776 Bytes, also 126 Bytes
+    // je Eintrag. Der Puffer stand auf 4096 -- bei 30 Objekten zu 92 % voll, bei SOLL_MAX = 32
+    // uebergelaufen, und mit `erwartete_hoehe_ft` je Eintrag schon deutlich frueher. Die
+    // Bruegge konnte also mehr anfordern, als sie lesen kann.
+    //
+    // Das Abschneiden war dabei voellig lautlos: Das JSON bricht mitten im Satz ab,
+    // `json_array` findet die vorderen Eintraege, der Rest fehlt. Von aussen sieht es aus wie
+    // Objekte, die der Simulator nicht setzen wollte.
+    static char kopie[ANTWORT_PUFFER];
+    bool abgeschnitten = (n > sizeof(kopie) - 1);
+    unsigned long m = abgeschnitten ? sizeof(kopie) - 1 : n;
     std::memcpy(kopie, daten, m);
     kopie[m] = '\0';
+
+    // Passt die Antwort NICHT, wird sie gar nicht erst ausgewertet. Ein halb gelesener
+    // Sollzustand ist schlimmer als ein unveraenderter: Er raeumte alles ab, was hinter der
+    // Schnittstelle stand, und setzte es beim naechsten Takt neu -- ein Flackern, dessen
+    // Ursache niemand faende. Stattdessen bleibt der letzte gueltige Stand stehen, und der
+    // Server erfaehrt mit der naechsten Meldung davon.
+    if (abgeschnitten) {
+        g_antwort_zu_gross = n;
+        return;
+    }
+    g_antwort_zu_gross = 0;
     antwort_lesen(kopie);
 }
 

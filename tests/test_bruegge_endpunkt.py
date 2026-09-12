@@ -569,3 +569,27 @@ def test_alte_rueckmeldungen_werden_aufgeraeumt(tmp_path):
     uebrig = [r[0] for r in conn.execute("SELECT kennung FROM bruegge_steht")]
     conn.close()
     assert uebrig == ["frische-bruegge"]
+
+
+def test_antwort_zu_gross_wird_geloggt_und_stoert_nicht(klient, tmp_path, caplog):
+    """Die Bruegge meldet, wenn unsere Antwort nicht in ihren Puffer passte.
+
+    Gemessen am 12.09.2026: 30 Objekte ergeben 3776 Bytes, der Puffer stand auf 4096. Bei
+    SOLL_MAX = 32 lief er ueber -- lautlos, denn ein abgeschnittenes JSON sieht von aussen
+    aus wie Objekte, die der Simulator nicht setzen wollte.
+
+    Der Endpunkt darf daran nicht scheitern: Die Meldung ist im Uebrigen gueltig, und die
+    Position gehoert trotzdem verarbeitet.
+    """
+    import logging
+    db = str(tmp_path / "t.db")
+    _friese_anlegen(db)
+    with caplog.at_level(logging.WARNING):
+        r = klient.post("/api/bruegge/melden", json=_meldung(antwort_zu_gross=17004))
+    assert r.status_code == 200
+    assert "17004" in caplog.text
+    # Und die Meldung wurde ganz normal verarbeitet -- die Position steht.
+    import sqlite3
+    c = sqlite3.connect(db)
+    assert c.execute("SELECT COUNT(*) FROM bruegge_positions").fetchone()[0] == 1
+    c.close()

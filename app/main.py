@@ -870,6 +870,22 @@ async def bruegge_melden(request: Request):
 
     kennung = str(body.get("kennung") or "")[:64]
     simulator = str(body.get("simulator") or "")[:20] or None
+
+    # Die Bruegge meldet, wenn unsere letzte Antwort nicht in ihren Puffer passte. Dann hat
+    # sie den Sollzustand GAR NICHT erfahren -- sie wertet eine abgeschnittene Antwort
+    # bewusst nicht aus, weil ein halb gelesener Sollzustand alles abraeumen wuerde, was
+    # hinter der Schnittstelle stand.
+    #
+    # Das gehoert ins Log und nicht in eine Tabelle: Es ist ein Fehler UNSERER Seite (wir
+    # haben zu viel geschickt), kein Zustand der Welt. Wer es sieht, muss `soll` kuerzen oder
+    # ANTWORT_PUFFER in bruegge.cpp heben -- die gemeldete Zahl sagt, wie weit.
+    zu_gross = body.get("antwort_zu_gross")
+    if zu_gross:
+        _logger.warning(
+            "Bruegge %s konnte unsere Antwort nicht lesen: %s Bytes zu gross fuer ihren "
+            "Puffer. Sie behaelt ihren letzten Stand. soll kuerzen oder ANTWORT_PUFFER heben.",
+            kennung or "?", zu_gross,
+        )
     gs_kt = float(lage.get("gs_kt") or 0.0)
     alt_ft = float(lage.get("alt_msl_ft") or 0.0)
     # Die Steig-/Sinkrate ist KEINE Zugabe: Ohne sie rechnet die Hoehenschranke mit 0 und
