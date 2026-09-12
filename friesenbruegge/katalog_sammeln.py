@@ -21,9 +21,11 @@ Tabelle `bruegge_katalog`.
 | MSFS 2024 | dasselbe für Community-Pakete; der eigene Bestand ist **gestreamt** |
 | X-Plane 12 | es gibt keine Titel — der **Dateipfad** der `.obj` ist der Bezeichner |
 
-⚠ **`find`/`rglob` muss Symlinks folgen.** Viele Community-Pakete sind Junctions; ohne das
-findet die Suche 9 statt 309 `sim.cfg` — daher stand in einer früheren Fassung von OBJEKTE.md
-fälschlich „keine Robben". Pythons `Path.rglob` folgt ihnen von selbst.
+⚠ **Junctions muss man ansteuern, nicht durchlaufen.** Viele Community-Pakete sind Junctions.
+`find` ohne `-L` übersieht sie (9 statt 309 `sim.cfg`) — daher stand in einer früheren Fassung
+von OBJEKTE.md fälschlich „keine Robben". **Und `Path.rglob` übersieht sie ebenso**, entgegen
+einer früheren Annahme hier: Von der Wurzel aus fand es 243 Dateien, aus einer Junction heraus
+allein 64 weitere. Deshalb durchsucht `_alle_sim_cfg` jeden Paketordner EINZELN.
 """
 
 from __future__ import annotations
@@ -54,11 +56,51 @@ def _titel_aus_cfg(datei: Path) -> list[str]:
     return [t.strip() for t in TITEL.findall(text) if t.strip()]
 
 
+def _alle_sim_cfg(wurzel: Path):
+    """Jede `sim.cfg` unter `wurzel` -- auch die hinter Windows-Junctions.
+
+    ⚠ **`Path.rglob` steigt NICHT in Junctions ab.** Hier stand, es tue das „von selbst", und
+    das ist falsch: Am 13.09.2026 fand `rglob` von der Community-Wurzel aus **243** `sim.cfg`
+    in 21 Paketen -- steigt man dagegen direkt in eine der vier Junctions hinein, liefert
+    dasselbe `rglob` allein dort **64** weitere. Im Katalog fehlten dadurch sämtliche
+    SayIntentions-Objekte, obwohl sie nachweislich gesetzt werden können (der rote Rauch, den
+    der Pilot im Cockpit gesehen hat, stammt genau daraus).
+
+    Der Ausweg ist simpel: eine Ebene tiefer beginnen. Jeder Paketordner wird einzeln
+    durchsucht, und ein Junction-Ziel ist aus SEINER Sicht ein ganz normaler Baum.
+    """
+    gesehen: set[str] = set()
+
+    def darunter(basis: Path):
+        try:
+            for cfg in basis.rglob("sim.cfg"):
+                schluessel = str(cfg).lower()
+                if schluessel in gesehen:      # dasselbe Paket kann ueber zwei Wege kommen
+                    continue
+                gesehen.add(schluessel)
+                yield cfg
+        except OSError:
+            return                              # unlesbarer Ordner darf den Lauf nicht killen
+
+    yield from darunter(wurzel)
+    for anker in ("Community", "Official", "OneStore", "StreamedPackages"):
+        ordner = wurzel / anker
+        if not ordner.is_dir():
+            continue
+        try:
+            kinder = list(ordner.iterdir())
+        except OSError:
+            continue
+        for paket in kinder:
+            if paket.is_dir():
+                yield from darunter(paket)
+
+
 def sammle_msfs(wurzel: Path, simulator: str) -> list[dict]:
     """Alle `title=` aus allen `sim.cfg` unterhalb von `wurzel`."""
     raus: list[dict] = []
     gesehen: set[str] = set()
-    for cfg in wurzel.rglob("sim.cfg"):
+    for cfg in _alle_sim_cfg(wurzel):
         teile = cfg.parts
         if "SimObjects" not in teile:
             continue
