@@ -2207,7 +2207,7 @@
       // während jemand sie verschiebt). Diese drei Knöpfe holen ihn auf Zuruf nach.
       const zuMir = document.getElementById('bg-karte-zu-mir');
       if (zuMir) zuMir.addEventListener('click', function () {
-        const m = (_bgStand.melder || []).find(x => x.lat != null);
+        const m = bgZielPilot();
         if (!m) { alert('Keine Brügge meldet gerade eine Position.'); return; }
         if (_bgKarte) _bgKarte.setView([m.lat, m.lon], 16);
       });
@@ -2224,6 +2224,35 @@
     let _bgKarte = null;
     let _bgMarken = [];
     let _bgStand = { melder: [], soll: [], steht: [] };
+
+    /** Auf WEN sich „zum Piloten“ und „mitlaufen“ beziehen.
+     *
+     *  Bei mehreren Meldern war das vorher der erstbeste aus der Liste -- also willkürlich,
+     *  und der Knopf sprang mal hierhin, mal dorthin. Jetzt gilt der ZULETZT gemeldete: Wer
+     *  gerade fliegt, ist der, um den es geht. Der Knopf schreibt seinen Namen dazu, damit
+     *  niemand raten muss, wohin er springt.
+     */
+    function bgZielPilot() {
+      const mit = (_bgStand.melder || []).filter(m => m.lat != null);
+      if (!mit.length) return null;
+      return mit.slice().sort(function (a, b) {
+        return String(b.gemeldet_am || '').localeCompare(String(a.gemeldet_am || ''));
+      })[0];
+    }
+
+    /** Den Knopf beschriften -- „zum Piloten“ allein sagt bei mehreren nichts. */
+    function bgKnopfBeschriften() {
+      const k = document.getElementById('bg-karte-zu-mir');
+      if (!k) return;
+      const m = bgZielPilot();
+      const wie_viele = (_bgStand.melder || []).filter(x => x.lat != null).length;
+      k.textContent = m
+        ? '⌖ zu ' + (m.callsign || m.cid) + (wie_viele > 1 ? ' (' + wie_viele + ' melden)' : '')
+        : '⌖ zum Piloten';
+      k.title = wie_viele > 1
+        ? 'Springt zu dem, der zuletzt gemeldet hat. Die anderen sind blau auf der Karte.'
+        : '';
+    }
 
     function bgKarteAufbauen() {
       if (_bgKarte) return;
@@ -2244,6 +2273,7 @@
 
     /** Marken neu zeichnen: Melder blau, stehende Objekte grün, fehlende rot, Ziel gelb. */
     function bgKarteFuellen() {
+      bgKnopfBeschriften();
       if (!_bgKarte) return;
       _bgMarken.forEach(m => _bgKarte.removeLayer(m));
       _bgMarken = [];
@@ -2257,8 +2287,25 @@
         punkte.push([lat, lon]);
       }
 
+      // Melder blau -- und ANKLICKBAR: Bei mehreren ist das der direkteste Weg zu genau
+      // einem, ohne Auswahlfeld und ohne Raten.
+      const ziel = bgZielPilot();
       (_bgStand.melder || []).forEach(function (m) {
-        marke(m.lat, m.lon, '#2d9cdb', (m.callsign || m.cid) + ' (Brügge)');
+        if (m.lat == null) return;
+        const ist_ziel = ziel && ziel.cid === m.cid;
+        const punkt_m = L.circleMarker([m.lat, m.lon], {
+          radius: ist_ziel ? 8 : 6, color: '#2d9cdb', weight: ist_ziel ? 3 : 2,
+          fillColor: '#2d9cdb', fillOpacity: 0.4,
+        }).bindTooltip((m.callsign || m.cid) + ' (Brügge)' + (ist_ziel ? ' — zuletzt gemeldet' : ''),
+                       { direction: 'right' }).addTo(_bgKarte);
+        punkt_m.on('click', function (e) {
+          // Nicht die Koordinate übernehmen -- wer auf einen Piloten klickt, will zu ihm,
+          // nicht ihm ein Objekt auf den Kopf stellen.
+          L.DomEvent.stopPropagation(e);
+          _bgKarte.setView([m.lat, m.lon], 16);
+        });
+        _bgMarken.push(punkt_m);
+        punkte.push([m.lat, m.lon]);
       });
 
       // Ein Objekt gilt als stehend, wenn IRGENDEINE Brügge es meldet -- `steht` ist nach
@@ -2286,7 +2333,7 @@
       // sie nicht alle zehn Sekunden zurückgerissen bekommen.
       const folgen = document.getElementById('bg-karte-folgen');
       if (folgen && folgen.checked) {
-        const m = (_bgStand.melder || []).find(x => x.lat != null);
+        const m = bgZielPilot();
         if (m) _bgKarte.setView([m.lat, m.lon], _bgKarte.getZoom());
       }
 

@@ -331,6 +331,15 @@ def _bindungen(sc: ctypes.WinDLL) -> None:
     sc.SimConnect_GetNextDispatch.argtypes = [
         w.HANDLE, ctypes.POINTER(ctypes.POINTER(Recv)), ctypes.POINTER(w.DWORD),
     ]
+    # Die Paketnummer des zuletzt gesendeten Aufrufs. Ohne sie laesst sich eine EXCEPTION
+    # keinem Titel zuordnen -- sie nennt in `dwSendID` genau diesen Wert.
+    #
+    # Das ist kein Feinschliff: Bei mehreren gleichzeitig gesetzten Objekten landet die
+    # Ausnahme sonst beim falschen. Genau dieser Fehler steckte bis zum 12.09.2026 in
+    # `msfs/bruegge.cpp` und liess einen sichtbar dastehenden Baeren als "fehlgeschlagen"
+    # gelten -- und ein so markiertes Objekt war nie mehr abraeumbar.
+    sc.SimConnect_GetLastSentPacketID.restype = ctypes.HRESULT
+    sc.SimConnect_GetLastSentPacketID.argtypes = [w.HANDLE, ctypes.POINTER(w.DWORD)]
     sc.SimConnect_AddToDataDefinition.restype = ctypes.HRESULT
     sc.SimConnect_AddToDataDefinition.argtypes = [
         w.HANDLE, w.DWORD, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int,
