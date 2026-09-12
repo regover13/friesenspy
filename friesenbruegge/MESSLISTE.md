@@ -295,11 +295,42 @@ im Sekundentakt. Ohne diese Bremse versuchte die Brügge es für immer.
 
 ## 5. Überlebt ein Objekt einen Flugwechsel?
 
+> ### ✅ Gemessen am 12.09.2026 — **ja, alle vier waren noch da**
+>
+> Neuer Flug geladen, dieselbe Gegend: Die gesetzten Objekte standen unverändert. **Die
+> Brügge muss nach einem Flugwechsel nichts nachholen** — der Simulator behält, was gesetzt
+> wurde.
+>
+> ⚠ **Nicht verwechseln mit dem, was danach geschah:** Die Objekte verschwanden kurz darauf,
+> und das sah nach Flackern aus. Ursache war aber das Leeren von `soll` für den Mengentest
+> (5b) — die Brügge räumte pflichtgemäß ab. Wer im Simulator misst, während jemand am
+> Sollzustand arbeitet, misst den anderen mit.
+
 Objekt setzen, dann im Sim einen anderen Flug laden.
 
 **Erwartet:** Die Brügge räumt beim `FlightLoaded` alles ab und setzt neu, was der Server für
 die neue Lage schickt. (Dass die Objekte den Wechsel technisch überleben, ist gemessen — sie
 gehören aber zur alten Position des Piloten.)
+
+---
+
+## 5b. Wie viele Objekte auf einmal? — ✅ gemessen am 12.09.2026
+
+> **Zwölf `boot_klein` in EINEM `soll`-Durchlauf angefordert: 12 gesetzt, 12 gezählt, 0 Fehler.**
+>
+> Damit ist eine Vermutung widerlegt, die beinahe zu einer Codeänderung geführt hätte: Als
+> vier Gattungen gleichzeitig angefordert wurden, scheiterten zwei (`EXCEPTION_22` und
+> `KEINE_ANTWORT`), und die Gleichzeitigkeit lag als Erklärung nahe — `soll_abgleichen` ruft
+> `AICreateSimulatedObject` für alle Objekte in einem Durchlauf. **Die Menge ist es nicht.**
+> Zwölf auf einen Schlag gehen glatt durch.
+>
+> **Und das Abräumen skaliert ebenso:** `soll` komplett geleert → alle sieben stehenden
+> Objekte weg, keines blieb zurück.
+>
+> ⚠ **Offen bleibt damit, woran der Krankenwagen scheitert** (`fahrzeug` →
+> `ASO_Ambulance_Japan`, `EXCEPTION_22` auch einzeln). Vier der fünf Gattungen laufen; die
+> Titelsuche der Probe taugt als Beleg nicht, weil `BlackBear` und `Windmill` dort ebenfalls
+> fehlen und beide nachweislich funktionieren.
 
 ---
 
