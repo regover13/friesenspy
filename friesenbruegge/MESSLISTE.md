@@ -484,7 +484,26 @@ gehören aber zur alten Position des Piloten.)
 
 ## 6. Was tut sie bei Netzausfall?
 
-WLAN aus, oder den Container kurz anhalten.
+> ### ✅ Nebenbei beantwortet am 12.09.2026 — **und schneller als erwartet**
+>
+> Der Pilot trennte vPilot und flog weiter. Ergebnis nach rund 2 km: **kein einziges der 30
+> Boote mehr da** (mit `--boote-zaehlen` über 20 km Umkreis geprüft, also kein Ausblenden
+> durch Entfernung).
+>
+> **Abgeräumt wurde sofort, nicht nach 300 s.** Denn ohne Zuordnung schickt der Server
+> `soll: []` — die Brügge räumt also nicht wegen Zeitablaufs ab, sondern weil der Sollzustand
+> leer ist. Das ist der Gedanke in Reinform: *Niemand ist zuständig, also steht nichts.*
+>
+> **Die 300-Sekunden-Frist bleibt trotzdem nötig** — sie greift in einem anderen Fall: wenn
+> gar keine Antwort mehr kommt (Netz weg, Server tot). Der ist damit weiterhin ungemessen.
+>
+> ⚠ **Fallstrick bei der Messung, für den nächsten:** `bruegge_steht` wird nur bei
+> bestehender Zuordnung geschrieben. Ohne VATSIM bleibt die letzte Rückmeldung als
+> Karteileiche stehen, und eine Abfrage der Tabelle meldet fröhlich „30 stehen", während im
+> Simulator nichts mehr steht. Die Admin-Ansicht filtert das (60 s Höchstalter), rohes SQL
+> nicht. **Der Zähler ist die Wahrheit, nicht die Datenbank.**
+
+Für den ungemessenen Fall: WLAN aus, oder den Container kurz anhalten.
 
 **Erwartet:** Nach `gilt_bis_s` (300 s) räumt die Brügge alles ab. Ohne das bliebe stehen, was
 der Server längst zurückgenommen hat — für eine Baake hieße das eine Station, die nie

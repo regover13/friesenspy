@@ -702,7 +702,13 @@ CREATE TABLE IF NOT EXISTS bruegge_soll (
     erwartete_hoehe_ft REAL,        -- NULL = "nimm die Oberflaeche"
     angelegt_am   TEXT NOT NULL,
     gilt_bis      TEXT,             -- NULL = ohne Ende
-    bemerkung     TEXT
+    bemerkung     TEXT,
+    -- OnGround=1 beim Setzen verlangen (0/1). Aus WASM heraus wirkt das Flag mit `Boat01`
+    -- NICHT (11.09.2026 ausgemessen) -- ob ein Tier, Bauwerk oder Fahrzeug sich anders
+    -- verhaelt, ist offen. Setzt EINE Gattung auf, taugt sie als Sonde: hinstellen, die
+    -- gemeldete Hoehe ablesen, das eigentliche Objekt mit `erwartete_hoehe_ft` setzen.
+    -- Damit waere die Gelaendehoehe am ZIELORT bekannt, ohne Hoehenmodell.
+    auf_boden     INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_bruegge_soll_cid ON bruegge_soll(cid);
@@ -858,6 +864,8 @@ _BRUEGGE_MIGRATIONS = [
     # groessten ist (im ersten Flug als einzelner Aussetzer gemessen).
     "ALTER TABLE bruegge_zuordnung ADD COLUMN vs_spitze_ft_min REAL",
     "ALTER TABLE bruegge_zuordnung ADD COLUMN vs_spitze_am TEXT",
+    # Die Sonden-Idee (12.09.2026): OnGround=1 je Objekt verlangen koennen.
+    "ALTER TABLE bruegge_soll ADD COLUMN auf_boden INTEGER NOT NULL DEFAULT 0",
 ]
 
 _VISIBILITY_MIGRATIONS = [
@@ -2693,7 +2701,7 @@ def bruegge_soll_fuer(conn: sqlite3.Connection, cid: int) -> list[dict]:
     """
     now = _now_utc()
     rows = conn.execute(
-        "SELECT id, art, lat, lon, kurs, erwartete_hoehe_ft FROM bruegge_soll "
+        "SELECT id, art, lat, lon, kurs, erwartete_hoehe_ft, auf_boden FROM bruegge_soll "
         "WHERE (cid IS NULL OR cid = ?) AND (gilt_bis IS NULL OR gilt_bis > ?) "
         "ORDER BY id",
         (int(cid), now),
@@ -2706,18 +2714,20 @@ def bruegge_soll_setzen(conn: sqlite3.Connection, kennung_id: str, art: str,
                         kurs: float | None = None,
                         erwartete_hoehe_ft: float | None = None,
                         gilt_bis: str | None = None,
-                        bemerkung: str | None = None) -> None:
+                        bemerkung: str | None = None,
+                        auf_boden: bool = False) -> None:
     """Ein Objekt anfordern (kein commit). Gleiche ``id`` ueberschreibt."""
     conn.execute(
         "INSERT INTO bruegge_soll (id, cid, art, lat, lon, kurs, erwartete_hoehe_ft, "
-        "                          angelegt_am, gilt_bis, bemerkung) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+        "                          angelegt_am, gilt_bis, bemerkung, auf_boden) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(id) DO UPDATE SET cid = excluded.cid, art = excluded.art, "
         "    lat = excluded.lat, lon = excluded.lon, kurs = excluded.kurs, "
         "    erwartete_hoehe_ft = excluded.erwartete_hoehe_ft, "
-        "    gilt_bis = excluded.gilt_bis, bemerkung = excluded.bemerkung",
+        "    gilt_bis = excluded.gilt_bis, bemerkung = excluded.bemerkung, "
+        "    auf_boden = excluded.auf_boden",
         (kennung_id, cid, art, float(lat), float(lon), kurs, erwartete_hoehe_ft,
-         _now_utc(), gilt_bis, bemerkung),
+         _now_utc(), gilt_bis, bemerkung, 1 if auf_boden else 0),
     )
 
 

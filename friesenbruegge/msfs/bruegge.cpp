@@ -48,7 +48,7 @@
 // Feste Größen
 // ---------------------------------------------------------------------------------------
 
-#define BRUEGGE_VERSION   "1.1.4"
+#define BRUEGGE_VERSION   "1.2.0"
 #define BRUEGGE_URL       "https://friesenspy.devprops.de/api/bruegge/melden"
 #define KENNUNG_DATEI     "\\work\\friesenbruegge.kennung"
 
@@ -101,6 +101,7 @@ struct SollObjekt {
     char   art[24];
     double lat, lon, kurs, erwartete_hoehe_ft;
     bool   hat_hoehe;
+    bool   auf_boden;         // OnGround=1 verlangt -- s. objekt_erzeugen
 
     bool   belegt;            // Platz in Benutzung
     bool   in_soll;           // steht in der aktuellen Antwort des Servers
@@ -427,8 +428,28 @@ static void objekt_erzeugen(int i) {
     pos.Pitch     = 0.0;
     pos.Bank      = 0.0;
     pos.Heading   = o.kurs;
-    pos.OnGround  = 0;        // s. gelaendehoehe() -- OnGround=1 ist aus WASM unbrauchbar
     pos.Airspeed  = 0;
+
+    // OnGround: normalerweise 0, weil das Flag aus WASM heraus nicht aufsetzt (11.09.2026
+    // ausgemessen: Altitude kommt unveraendert an, nur das Flag wird ignoriert -- extern
+    // wirkt dasselbe Flag zuverlaessig).
+    //
+    // GEMESSEN WURDE DAS ABER NUR MIT `Boat01`, und ein Boot will womoeglich auf WASSER
+    // aufsetzen. Ob ein Tier, ein Bauwerk oder ein Fahrzeug sich anders verhaelt, ist offen.
+    // Deshalb kann der Server es je Objekt verlangen (`auf_boden` im Protokoll) -- fuer genau
+    // eine Frage, die den Kieker traegt:
+    //
+    //   Setzt IRGENDEINE Gattung in WASM auf, so meldet sie danach ihre TATSAECHLICHE Hoehe
+    //   zurueck -- und das ist die Gelaendehoehe am ZIELORT, ohne Hoehenmodell und ohne dass
+    //   jemand hinfliegen muesste. Damit stuende eine Sonde zur Verfuegung: hinstellen,
+    //   Hoehe ablesen, das eigentliche Objekt mit `erwartete_hoehe_ft` setzen.
+    //
+    // Dass die Rueckmeldung die tatsaechliche Lage traegt und nicht die angeforderte, ist
+    // belegt: Mit OnGround=1 kam 49,0 ft zurueck, obwohl 0 bzw. 500 gesetzt waren.
+    //
+    // Die Idee stammt vom Nutzer (12.09.2026). Sie kostet hier drei Zeilen und beantwortet
+    // eine Frage, an der sonst die ganze Hoehenrechnerei haengt.
+    pos.OnGround  = o.auf_boden ? 1 : 0;
 
     HRESULT hr = SimConnect_AICreateSimulatedObject(g_sim, titel, pos, REQ_ERZEUGEN + i);
     o.erzeugt_gerufen = true;
@@ -512,6 +533,9 @@ static void soll_abgleichen(const char* json) {
         double n_kurs = json_zahl_in(e, "kurs", 0.0);
         bool   hat = false;
         double n_hoehe = json_zahl_in(e, "erwartete_hoehe_ft", 0.0, &hat);
+        // `auf_boden` traegt der Server als Zahl (0/1) -- json.h kennt keine Wahrheitswerte,
+        // und eine zweite Lesefunktion nur hierfuer waere Aufwand ohne Ertrag.
+        bool n_auf_boden = (json_zahl_in(e, "auf_boden", 0.0) > 0.5);
 
         // UMSETZEN: Aendert der Server Ort, Ausrichtung oder Gattung eines Objekts, das schon
         // dasteht, muss es weg und neu hin. Ein bereits erzeugtes Objekt laesst sich nicht
@@ -537,7 +561,8 @@ static void soll_abgleichen(const char* json) {
             (o.lat - n_lat >  GRAD_1M) || (n_lat - o.lat >  GRAD_1M) ||
             (o.lon - n_lon >  GRAD_1M) || (n_lon - o.lon >  GRAD_1M) ||
             (o.kurs - n_kurs > 1.0)    || (n_kurs - o.kurs > 1.0)    ||
-            (n_art[0] && std::strcmp(o.art, n_art) != 0));
+            (n_art[0] && std::strcmp(o.art, n_art) != 0) ||
+            (o.auf_boden != n_auf_boden));
 
         std::snprintf(o.art, sizeof(o.art), "%s", n_art);
         o.lat = n_lat;
@@ -545,6 +570,7 @@ static void soll_abgleichen(const char* json) {
         o.kurs = n_kurs;
         o.hat_hoehe = hat;
         o.erwartete_hoehe_ft = n_hoehe;
+        o.auf_boden = n_auf_boden;
         o.in_soll = true;
 
         if (versetzt) {
@@ -560,6 +586,7 @@ static void soll_abgleichen(const char* json) {
             o.kurs = n_kurs;
             o.hat_hoehe = hat;
             o.erwartete_hoehe_ft = n_hoehe;
+            o.auf_boden = n_auf_boden;
             o.seit_s = g_sekunden;
         }
 

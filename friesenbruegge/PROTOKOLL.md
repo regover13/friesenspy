@@ -369,7 +369,7 @@ Feld nicht liefern, schickt sie `null`, und der Server rechnet ohne.
   "gilt_bis_s": 300,               // so lange gilt "soll" ohne neue Auskunft
   "soll": [
     { "id": "k7-3-a", "art": "tier_gross", "lat": 53.6612, "lon": 6.9835,
-      "kurs": 210, "erwartete_hoehe_ft": null }
+      "kurs": 210, "erwartete_hoehe_ft": null, "auf_boden": 0 }
   ]
 }
 ```
@@ -379,6 +379,34 @@ Befehlen. Der Unterschied entscheidet über die Robustheit (Abschnitt 2).
 
 `erwartete_hoehe_ft` darf `null` sein und ist dann „nimm die Oberfläche". Setzt der Server
 einen Wert, ist er MSL und die Brügge versucht ihn zu treffen.
+
+### `auf_boden` — die Sonde (seit Brügge 1.2.0)
+
+`auf_boden: 1` weist die Brügge an, das Objekt mit **`OnGround=1`** zu setzen, statt mit einer
+gerechneten Höhe. Vorgabe ist `0`.
+
+**Wozu, wenn das Flag aus WASM heraus doch nicht wirkt?** Weil das nur für **ein** Modell
+gemessen ist. Am 11.09.2026 landete `Boat01` mit `OnGround=1` bei 49,0 ft, unabhängig vom
+gesetzten Höhenwert — ein Boot will aber womöglich auf *Wasser* aufsetzen und scheitert über
+Land. Für `tier_gross`, `bauwerk` und `fahrzeug` ist es **ungemessen**.
+
+**Und daran hängt mehr als eine Randfrage.** Setzt auch nur eine Gattung auf, dann meldet sie
+danach ihre **tatsächliche** Höhe zurück — das ist die Geländehöhe am **Zielort**, ohne
+Höhenmodell und ohne dass jemand hinfliegen müsste:
+
+```
+1. Sonde setzen           → { "art": "tier_gross", "auf_boden": 1 }
+2. Höhe ablesen           → "steht": [{ "hoehe_ft": 1297.4 }]
+3. Sonde weg, Objekt hin  → { "art": "boot_klein", "erwartete_hoehe_ft": 1297.4 }
+```
+
+Dass die Rückmeldung die **tatsächliche** Lage trägt und nicht die angeforderte, ist belegt:
+Mit `OnGround=1` kam 49,0 ft zurück, obwohl 0 bzw. 500 gesetzt waren.
+
+Ohne diesen Weg bleibt nur, alles auf die Geländehöhe **unter dem Flugzeug** zu setzen — und
+die stimmt schon 100 m weiter nicht mehr. Am 12.09.2026 standen zwölf Objekte in einem Raster
+von 180 m nebeneinander: eines versunken, eines sauber, eines schwebend, alle auf derselben
+angeforderten Höhe.
 
 ---
 

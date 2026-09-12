@@ -593,3 +593,30 @@ def test_antwort_zu_gross_wird_geloggt_und_stoert_nicht(klient, tmp_path, caplog
     c = sqlite3.connect(db)
     assert c.execute("SELECT COUNT(*) FROM bruegge_positions").fetchone()[0] == 1
     c.close()
+
+
+def test_auf_boden_geht_bis_zur_bruegge_durch(klient, tmp_path):
+    """Die Sonden-Idee: Der Server kann `OnGround=1` je Objekt verlangen.
+
+    Gebaut fuer EINE Frage (Nutzeridee 12.09.2026): Setzt in WASM irgendeine Gattung mit
+    OnGround=1 auf, meldet sie danach ihre TATSAECHLICHE Hoehe -- und das ist die
+    Gelaendehoehe am ZIELORT, ohne Hoehenmodell und ohne dass jemand hinfliegen muss.
+    Mit `Boat01` wirkt das Flag nicht; Tier, Bauwerk und Fahrzeug sind ungemessen.
+
+    Der Test bindet nur den Weg: Was im Admin gesetzt wird, muss bei der Bruegge ankommen.
+    """
+    import sqlite3
+    from app.database import init_db, get_connection, bruegge_soll_setzen
+
+    db = str(tmp_path / "t.db")
+    _friese_anlegen(db)
+    conn = get_connection(db)
+    bruegge_soll_setzen(conn, "sonde", "tier_gross", 53.78227, 7.92593, auf_boden=True)
+    bruegge_soll_setzen(conn, "normal", "tier_gross", 53.78227, 7.92593)
+    conn.commit()
+    conn.close()
+
+    soll = klient.post("/api/bruegge/melden", json=_meldung()).json()["soll"]
+    nach_id = {o["id"]: o for o in soll}
+    assert nach_id["sonde"]["auf_boden"] == 1
+    assert nach_id["normal"]["auf_boden"] == 0
