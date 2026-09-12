@@ -344,7 +344,7 @@ gehören aber zur alten Position des Piloten.)
 >
 > | Weg | Haken |
 > |---|---|
-> | Höhenmodell auf dem Server (DEM/SRTM) | weicht vom MSFS-Gelände ab; wie stark, ist unbekannt |
+> | Höhenmodell auf dem Server (DEM/SRTM) | weicht vom MSFS-Gelände ab — **gemessen: bis 11,6 ft, s. unten** |
 > | Die Brügge fragt am Zielort nach und meldet zurück | braucht einen neuen Rückkanal; der Pilot muss hinfliegen |
 > | Nur dort setzen, wo der Pilot schon ist | widerspricht „der Server darf einmal verteilen" |
 >
@@ -354,25 +354,50 @@ gehören aber zur alten Position des Piloten.)
 > 12.09.2026), also auch in Bergen, an Steilküsten und auf Hochebenen. Damit ist die
 > Höhenfrage nicht kleiner als gedacht, sondern größer.
 >
-> **Der vierte Weg, und er kostet nichts Neues:** Die Brügge misst die Geländehöhe bereits bei
-> jeder Meldung — `alt_msl_ft − alt_agl_ft` ist genau die Rechnung aus `gelaendehoehe()`, nur
-> je Meldung statt je Objekt. Der Server bekommt sie im Sekundentakt für jeden Punkt der
-> Flugbahn und könnte daraus eine Geländekarte aufbauen: gemessen in genau dem Simulator, in
-> dem später die Station stehen soll. Kein DEM käme da mit, weil bei jedem die Frage bliebe,
-> wie stark es von Asobos Gelände abweicht.
+> ### Ein vierter Weg lag nahe — und trägt NICHT
 >
-> **Heute wird das weggeworfen:** `bruegge_positions` hat `cid INTEGER PRIMARY KEY` — eine
-> Zeile je Pilot, bei jeder Meldung überschrieben. Die Höhe jedes überflogenen Punktes lebt
-> eine Sekunde.
+> Die Brügge misst die Geländehöhe bei jeder Meldung mit (`alt_msl_ft − alt_agl_ft`, dieselbe
+> Rechnung wie `gelaendehoehe()`), und es lag nahe, daraus eine Geländekarte aufzubauen.
 >
-> **Zwei Dinge sind daran ungemessen und gehören geprüft, bevor jemand es baut:**
+> **Das beantwortet die Frage aber nicht** (vom Nutzer eingewandt, 12.09.2026 — der Vorschlag
+> stand hier zuvor als Lösung): Es ist die Höhe **unter dem Flugzeug**, also nur dort, wo der
+> Pilot schon war. Eine Station wird **voraus** gesetzt, bevor jemand dort war. Genau das ist
+> der Kern der ganzen Frage, und der Weg geht daran vorbei.
 >
-> 1. **Wie genau ist `alt_agl_ft` aus großer Höhe?** Unter dem Flugzeug ist das Terrain
->    geladen, aber in Reiseflughöhe ist sein Detailgrad gröber. Wenn die Messung aus
->    10.000 ft um zwanzig Fuß danebenliegt, taugt sie nicht zum Stationensetzen.
-> 2. **Reicht die Abdeckung?** Kartiert wird nur, wo schon einmal jemand geflogen ist —
->    entlang der Flugbahn, nicht in der Fläche. Für ein Revier, das ein Pilot erst betritt,
->    liegt zunächst nichts vor.
+> Als Nebenertrag bleibt er brauchbar: Für ein Revier, das schon einmal beflogen wurde, wäre
+> die Höhe bekannt. Heute wird das ohnehin weggeworfen — `bruegge_positions` hat
+> `cid INTEGER PRIMARY KEY`, also eine Zeile je Pilot, bei jeder Meldung überschrieben.
+>
+> ### Und ein Höhenmodell? — ✅ gemessen, taugt so nicht
+>
+> Vier Punkte, an denen MSFS heute die Geländehöhe gemeldet hat, gegen `open-elevation` (SRTM):
+>
+> | Koordinate | MSFS | SRTM | Abweichung |
+> |---|---|---|---|
+> | 47.80173 / 8.97819 | 1383,0 ft | 1374,7 ft | **−8,3 ft** |
+> | 47.80157 / 8.97796 | 1378,2 ft | 1374,7 ft | −3,5 ft |
+> | 47.80138 / 8.97822 | 1386,3 ft | 1374,7 ft | **−11,6 ft** |
+> | 47.80373 / 8.98159 | 1353,2 ft | 1358,3 ft | **+5,1 ft** |
+>
+> **Eine Spanne von 17 Fuß, mal zu hoch, mal zu tief.** Ein `Boat01` hat rund 5 ft Rumpf — es
+> stünde damit mal in der Luft und mal bis zum Verdeck im Boden.
+>
+> ⚠ **Aufschlussreicher noch ist die dritte Spalte:** SRTM liefert für drei Punkte **denselben**
+> Wert (1374,7 ft), weil seine Auflösung rund 30 m beträgt und die Punkte enger beisammen
+> liegen. MSFS hat dort 8 ft Unterschied. Ein Höhenmodell dieser Körnung kann die Geländeform,
+> auf die es ankommt, gar nicht abbilden.
+>
+> ### Was bleibt
+>
+> **Keiner der vier Wege ist belegt.** Was heute schon funktioniert: das Objekt grob setzen und
+> **bei Annäherung versetzen** (seit Fassung 1.1.3 möglich, s. 3c) — dann misst die Brügge
+> unter sich, wo der Pilot ohnehin ist. Das widerspricht dem Flugtest-Befund („der Server darf
+> einmal verteilen") nicht, es ergänzt ihn: **verteilen ja, aber die endgültige Höhe fällt erst
+> vor Ort.**
+>
+> Ungemessen bleibt dabei, **wie genau `alt_agl_ft` aus großer Höhe ist** — unter dem Flugzeug
+> ist das Terrain geladen, in Reiseflughöhe aber gröber aufgelöst. Liegt die Messung aus
+> 10.000 ft um zwanzig Fuß daneben, muss die Korrektur tief genug geschehen.
 
 ---
 
