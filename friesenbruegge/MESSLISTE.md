@@ -348,33 +348,41 @@ daneben taugt sie, für eines 5 km weiter nicht.
 
 ## 2d. Tiere und Fahrzeuge BEWEGEN SICH von selbst — ✅ gemessen am 12.09.2026
 
-> Dem Nutzer fiel im Cockpit auf, dass sich das Fahrzeug bewegt. Die Lagemeldungen der Brügge
-> bestätigen es — und zeigen, dass es nicht nur das Fahrzeug betrifft:
+> **Das Fahrzeug rollt davon** (vom Nutzer im Cockpit gesehen). Die `ASO_*`-Modelle sind
+> Flughafenfahrzeuge und bringen eigenes Fahrverhalten mit — ein `AICreateSimulatedObject`
+> erzeugt eben ein **AI**-Objekt.
 >
-> | Objekt | über 180 s | |
+> | Objekt | bewegt sich? | |
 > |---|---|---|
-> | `bauwerk` | 1369,5 → 1369,5 → 1369,5 | **starr** |
-> | `boot_klein` | 1368,6 → 1368,6 → 1368,6 | **starr** |
-> | `fahrzeug` | 1362,8 → 1362,7 → 1362,7 | **wandert** |
-> | `tier_gross` | 1368,3 → 1368,3 → **1367,5** | **wandert** |
+> | `fahrzeug` | **ja, rollt weg** | gesehen |
+> | `tier_gross` | **nein, steht starr** | gesehen |
+> | `bauwerk`, `boot_klein` | nein | gesehen und gemessen |
 >
-> Ein `AICreateSimulatedObject` erzeugt eben ein **AI**-Objekt: Tiere und Flughafenfahrzeuge
-> bringen eigenes Verhalten mit, Bauwerke und Boote nicht.
+> ### ⚠ Zwei Fehlschlüsse aus DIESER Messung, beide vom Nutzer korrigiert
 >
-> ### ⚠ Für den FriesenKieker ist das zweischneidig
+> **1. „Der Bär bewegt sich auch."** Hier stand, seine gemeldete Höhe wandere (1368,3 →
+> 1367,5 ft), also bewege er sich. **Falsch** — er steht nachweislich völlig starr.
 >
-> **Dafür:** Eine Robbenbank aus starren Klötzen wäre tot. Tiere, die sich rühren, sind genau
-> das, was ein Zähl-Event lebendig macht.
+> **2. „Dann ist es eine Atem- oder Kopfanimation."** Ebenfalls falsch: *„Es gibt keine Atem-
+> oder Kopfanimation. Das wäre ja gut! Aber die gibt es nicht."*
 >
-> **Dagegen:** Eine Zählstation, die wandert, ist keine feste Größe mehr. Zwei Piloten sehen
-> dasselbe Tier an verschiedenen Stellen; wer nachträglich prüfen will, ob jemand wirklich
-> hingeflogen ist, hat kein festes Ziel mehr. **Wie weit sie wandern, ist ungemessen** — die
-> 0,8 ft Höhenänderung in drei Minuten sagen nur, DASS es geschieht, nicht wie weit.
+> **Woher die 0,8 ft kommen, ist damit offen.** Denkbar wäre, dass ein mit `OnGround=1`
+> gesetztes Objekt dem Gelände folgt, wenn der Simulator es in besserer Auflösung nachlädt —
+> das ist aber eine Vermutung und **kein Befund**.
 >
-> **Zu messen wäre:** die Position (nicht nur die Höhe) eines Tieres über eine halbe Stunde.
-> Bleibt es im Umkreis von Metern, ist alles gut; läuft es über hunderte Meter davon, braucht
-> der Kieker entweder starre Gattungen als Marken — oder die Brügge muss das Tier
-> regelmäßig zurückholen (Versetzen kann sie seit 1.1.3).
+> **Die belastbare Lehre:** *Kleine Höhenänderungen in der Rückmeldung beweisen nichts.* Wer
+> daraus auf Bewegung schließt, liegt falsch. Für eine Aussage über Bewegung braucht es die
+> **Position**, und die meldet die Brügge heute nicht zurück (nur `hoehe_ft`).
+>
+> ### Für den FriesenKieker
+>
+> **Fahrzeuge taugen nicht als Zählstation** — sie fahren weg. Tiere, Bauwerke und Boote
+> bleiben, wo sie hingesetzt werden.
+>
+> ⚠ Schade ist das trotzdem: Eine Robbenbank aus völlig reglosen Modellen wirkt tot. **Ob
+> sich ein Tier gezielt in Bewegung setzen lässt**, ist ungemessen — Kandidaten wären
+> `SetDataOnSimObject` auf die Objekt-ID (ein neuer Import; die Brügge kennt die IDs bereits)
+> oder ein Animationszustand des Modells. Beides wäre ein eigener Bauschritt.
 
 ---
 
