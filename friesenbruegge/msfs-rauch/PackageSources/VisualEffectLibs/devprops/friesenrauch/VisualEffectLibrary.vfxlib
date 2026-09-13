@@ -1,0 +1,8 @@
+<VisualEffectLibrary Version="1.0.0">
+	<VisualEffect File="FrsRauch_Navy"/>
+	<VisualEffect File="FrsRauch_Hellblau"/>
+	<VisualEffect File="FrsRauch_Rot"/>
+	<VisualEffect File="FrsRauch_Orange"/>
+	<VisualEffect File="FrsRauch_Signalrot"/>
+	<VisualEffect File="FrsRauch_Signalorange"/>
+</VisualEffectLibrary>

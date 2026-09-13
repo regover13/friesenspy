@@ -1,0 +1,8 @@
+<ModelInfo>
+	<LODS>
+		<LOD ModelFile="FrsRauch_Rot.gltf"/>
+	</LODS>
+	<Behaviors>
+		<IncludeBase RelativeFile="FrsRauch_Rot.behavior.xml"/>
+	</Behaviors>
+</ModelInfo>

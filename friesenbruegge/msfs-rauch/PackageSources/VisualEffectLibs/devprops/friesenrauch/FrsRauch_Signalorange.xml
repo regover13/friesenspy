@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<SimBase.Document Type="AceXML" version="1,0">
+    <Descr>AceXML Document</Descr>
+    <WorldBase.Flight>
+        <VisualEffect.VisualEffect InstanceId="{C85B96FA-FA58-5189-AD4E-FD19995DC56E}">
+            <Name>FrsRauchSignalorange</Name>
+            <EmitterList>
+                <ObjectReference InstanceId="{C5719673-59E4-59AB-857B-E7E7F38B77E7}" id="Emitter"/>
+            </EmitterList>
+        </VisualEffect.VisualEffect>
+        <VisualEffect.Emitter InstanceId="{C5719673-59E4-59AB-857B-E7E7F38B77E7}">
+            <ParticleRate>{00000000-0000-0000-0000-000000000000}, 60.000000</ParticleRate>
+            <Capacity>2000.000</Capacity>
+            <ParticleInit>
+                <ObjectReference InstanceId="{BF1840C4-510A-59BB-99F9-B73A95A71FFF}" id="BlockParticleInit"/>
+            </ParticleInit>
+        </VisualEffect.Emitter>
+        <VisualEffect.BlockParticleInit InstanceId="{BF1840C4-510A-59BB-99F9-B73A95A71FFF}">
+            <ParticleUpdate>
+                <ObjectReference InstanceId="{D123A230-70A2-5F51-B75D-C15AB6991B05}" id="BlockParticleUpdate"/>
+            </ParticleUpdate>
+            <ParticleLifetime>
+                <FloatIn>{00000000-0000-0000-0000-000000000000}, 22.000000</FloatIn>
+            </ParticleLifetime>
+            <ParticleSize>
+                <FloatIn>{00000000-0000-0000-0000-000000000000}, 6.000000</FloatIn>
+            </ParticleSize>
+            <ParticleVelocity>
+                <Float3In>{FA737824-8CAE-5819-83D5-56C497BCB3FA}, 0.000000, 0.000000, 0.000000</Float3In>
+            </ParticleVelocity>
+        </VisualEffect.BlockParticleInit>
+        <VisualEffect.BlockParticleUpdate InstanceId="{D123A230-70A2-5F51-B75D-C15AB6991B05}">
+            <ParticleOutput>
+                <ObjectReference InstanceId="{9C391242-0AA2-58B3-BEC2-FDBD739B4C58}" id="Output"/>
+            </ParticleOutput>
+        </VisualEffect.BlockParticleUpdate>
+        <VisualEffect.Output InstanceId="{9C391242-0AA2-58B3-BEC2-FDBD739B4C58}">
+            <ParticleColor>
+                <ColorIn>{32B17913-15E6-50B9-AD1A-6DABDA7F6B03}, 0, 0, 0, 0</ColorIn>
+            </ParticleColor>
+        </VisualEffect.Output>
+
+        <!-- Die Farbe. x/y/z sind Rot/Gruen/Blau, w ist die Deckkraft, und die haengt an
+             einer Kurve ueber die Lebenszeit, genau wie ALPHA_CURVE in der .pss. -->
+        <VisualEffect.Vector4 InstanceId="{61F7A32F-D71D-5798-8888-1D7C1DE64791}">
+            <OutputValue>{32B17913-15E6-50B9-AD1A-6DABDA7F6B03}</OutputValue>
+            <x>{00000000-0000-0000-0000-000000000000}, 1.000000</x>
+            <y>{00000000-0000-0000-0000-000000000000}, 0.415686</y>
+            <z>{00000000-0000-0000-0000-000000000000}, 0.074510</z>
+            <w>{C8539FAC-D947-50D3-AD22-B27F5ED0EF49}, 0.000000</w>
+        </VisualEffect.Vector4>
+
+        <!-- Das Alter des Partikels, normiert auf 0..1: die x-Achse aller Kurven. -->
+        <VisualEffect.GetParticleAttribute InstanceId="{67A6A782-7E21-5F13-A6EE-6E1FEF0E3023}">
+            <OutputValue>{7C7051F6-E6EF-5CF1-9EA7-1A0FCC2C3005}</OutputValue>
+            <ParticleAttributeType>AgeOverLifetime</ParticleAttributeType>
+        </VisualEffect.GetParticleAttribute>
+
+        <!-- Die Deckkraft ueber die Hoehe. Uebertragen aus der X-Plane-Fassung, wo zehn
+             Anlaeufe noetig waren. Unten dicht (die Quelle soll ortbar sein), oben duenn
+             (die Krone soll sich aufloesen). Format: x,y,NAN,NAN je Stuetzstelle. -->
+        <VisualEffect.GetBezierCurve InstanceId="{48C5ED27-F591-599F-83FD-F8AEE03DEAC8}">
+            <OutputValue>{C8539FAC-D947-50D3-AD22-B27F5ED0EF49}</OutputValue>
+            <FXTime>{7C7051F6-E6EF-5CF1-9EA7-1A0FCC2C3005}, 0.000000</FXTime>
+            <Curve>0.000,0.000,NAN,NAN,0.030,0.700,NAN,NAN,0.200,0.550,NAN,NAN,0.420,0.160,NAN,NAN,0.680,0.050,NAN,NAN,1.000,0.000,NAN,NAN</Curve>
+        </VisualEffect.GetBezierCurve>
+
+        <!-- Auftrieb: ein NEGATIVER Schwerkraftfaktor zieht nach oben. -->
+        <VisualEffect.GravityVector InstanceId="{0D7C1598-8CE9-571B-A759-C189EB7273F1}">
+            <OutputValue>{0F9EB5DD-2B3F-51CA-A769-D8863B7509AF}</OutputValue>
+            <GravityScale>{00000000-0000-0000-0000-000000000000}, -0.350000</GravityScale>
+        </VisualEffect.GravityVector>
+
+        <!-- Seitliche Streuung. Ohne sie steigen alle Partikel im Gleichschritt, und die
+             Saeule bleibt eine Roehre statt zu zerfasern (13.09.2026 in X-Plane gemessen). -->
+        <VisualEffect.GetParticleAttribute InstanceId="{3E175CD1-946C-5F2B-863A-C6B9F2433F25}">
+            <OutputValue>{5C2D37C8-706F-5C25-9CF7-105C65905999}</OutputValue>
+            <ParticleAttributeType>id</ParticleAttributeType>
+        </VisualEffect.GetParticleAttribute>
+        <VisualEffect.RandomValue InstanceId="{9D765A04-38EF-58E3-8EC8-1523001F5934}">
+            <OutputValue>{868E6312-DDBA-55C9-96B9-DF96AD7B424A}</OutputValue>
+            <MinRandValue>{00000000-0000-0000-0000-000000000000}, -0.700000</MinRandValue>
+            <MaxRandValue>{00000000-0000-0000-0000-000000000000}, 0.700000</MaxRandValue>
+            <RandSeed>{00000000-0000-0000-0000-000000000000}, 1024.000000</RandSeed>
+            <RandIndex>{5C2D37C8-706F-5C25-9CF7-105C65905999}, 0.000000</RandIndex>
+        </VisualEffect.RandomValue>
+        <VisualEffect.RandomValue InstanceId="{59EB6D16-9CAD-58E0-BF47-F3D8045B1D24}">
+            <OutputValue>{DF4777C1-3AC7-558F-AA1C-2AEEA5FB643E}</OutputValue>
+            <MinRandValue>{00000000-0000-0000-0000-000000000000}, -0.700000</MinRandValue>
+            <MaxRandValue>{00000000-0000-0000-0000-000000000000}, 0.700000</MaxRandValue>
+            <RandSeed>{00000000-0000-0000-0000-000000000000}, 512.000000</RandSeed>
+            <RandIndex>{5C2D37C8-706F-5C25-9CF7-105C65905999}, 0.000000</RandIndex>
+        </VisualEffect.RandomValue>
+        <VisualEffect.LocalDirection InstanceId="{8F9C4321-AC17-5BDE-A020-5D186E79FB5A}">
+            <OutputValue>{C1060DAC-1916-54A0-87C5-103B470D00AC}</OutputValue>
+            <x>{868E6312-DDBA-55C9-96B9-DF96AD7B424A}, 0.000000</x>
+            <z>{DF4777C1-3AC7-558F-AA1C-2AEEA5FB643E}, 0.000000</z>
+        </VisualEffect.LocalDirection>
+        <VisualEffect.AddOperation InstanceId="{C89504B6-9A39-5657-B62C-A9D04021D392}">
+            <OutputValue>{FA737824-8CAE-5819-83D5-56C497BCB3FA}</OutputValue>
+            <xVariant>{C1060DAC-1916-54A0-87C5-103B470D00AC}, 0.000000</xVariant>
+            <yVariant>{0F9EB5DD-2B3F-51CA-A769-D8863B7509AF}, 0.000000</yVariant>
+        </VisualEffect.AddOperation>
+    </WorldBase.Flight>
+</SimBase.Document>

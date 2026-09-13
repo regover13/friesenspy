@@ -2309,7 +2309,19 @@
       { wert: 'tier_klein',  text: 'Papageitaucher, Möwe, Gans',      hinweis: 'Addon', addon: true },
       { wert: 'tier_vieh',   text: 'Kuh, Schaf, Ziege, Esel',         hinweis: 'Addon', addon: true },
       { wert: 'tier_wild',   text: 'Hirsch, Elch, Fuchs, Wildschwein',hinweis: 'Addon', addon: true },
-      { wert: 'rauch',       text: 'Rauchsäule',        hinweis: 'Addon · weit sichtbar', addon: true },
+      { wert: 'rauch',       text: 'Rauchsäule, irgendeine Farbe',    hinweis: 'weit sichtbar' },
+      // Jede Rauchfarbe ist eine eigene Gattung: Der Server fordert eine Farbe an, und JEDER
+      // Pilot soll sie in seiner Farbe sehen — gleich in welchem Simulator. In X-Plane
+      // liegen alle sechs im Paket (eigenes Werk), in MSFS kommen sie aus Campout.
+      { wert: 'rauch_signalrot',    text: 'Rauch — Signalrot',        hinweis: 'weit sichtbar' },
+      { wert: 'rauch_signalorange', text: 'Rauch — Signalorange',     hinweis: 'weit sichtbar' },
+      { wert: 'rauch_rot',          text: 'Rauch — Rot',              hinweis: '' },
+      { wert: 'rauch_orange',       text: 'Rauch — Orange',           hinweis: 'nur X-Plane' },
+      { wert: 'rauch_hellblau',     text: 'Rauch — Hellblau',         hinweis: '' },
+      { wert: 'rauch_navy',         text: 'Rauch — Dunkelblau',       hinweis: 'nur X-Plane' },
+      { wert: 'rauch_gruen',        text: 'Rauch — Grün',             hinweis: 'nur MSFS · Addon', addon: true },
+      { wert: 'rauch_gelb',         text: 'Rauch — Gelb',             hinweis: 'nur MSFS · Addon', addon: true },
+      { wert: 'leuchtrakete', text: 'Leuchtrakete',                    hinweis: 'nur MSFS · Addon', addon: true },
       { wert: 'feuer',       text: 'Signalfeuer',                     hinweis: 'Addon', addon: true },
       { wert: 'punkt',       text: 'Landepunkt, farbig',              hinweis: 'Addon', addon: true },
       { wert: 'kegel',       text: 'Pylon',                           hinweis: 'Addon', addon: true },

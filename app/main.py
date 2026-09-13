@@ -906,6 +906,26 @@ _BRUEGGE_GATTUNGEN = (
     # Mal mit einem sichtbaren Boot daneben), also gibt es dafuer kein Bordmittel mehr.
     "robbe", "tier_klein", "tier_vieh", "tier_wild", "tier_wasser",
     "punkt", "kegel", "rauch", "feuer", "himmel",
+    # --- Rauch nach Farben (13.09.2026) ------------------------------------------------
+    #
+    # Jede Farbe ist eine eigene Gattung, und das ist keine Verlegenheitsloesung: Eine
+    # Gattung fasst zusammen, was sich ueber die SIMULATOREN verteilt -- nicht, was sich
+    # innerhalb eines Simulators unterscheidet (PROTOKOLL.md, Abschnitt 3). Der Server
+    # fordert `rauch_signalrot` an und muss sich darauf verlassen koennen, dass JEDER Pilot
+    # rote Saeulen sieht, gleich in welchem Simulator. Wuerfelte die Bruegge die Farbe,
+    # markierte dieselbe Anforderung bei zwei Piloten zwei verschiedene Dinge.
+    #
+    # Nicht jede Farbe kann jeder Simulator. In X-Plane liegen alle sechs IM PAKET (eigenes
+    # Werk, FriesenFlieger-Palette plus zwei Signalfarben); MSFS hat dafuer Gruen und Gelb
+    # aus dem Campout-Paket, aber kein Orange und kein Navy. Was eine Bruegge nicht kann,
+    # meldet sie nicht in `kann` -- der Server darf hier also mehr auffuehren, als jeder
+    # einzelne Simulator bedient.
+    "rauch_signalrot", "rauch_signalorange", "rauch_rot", "rauch_orange",
+    "rauch_hellblau", "rauch_navy", "rauch_gruen", "rauch_gelb",
+    # Kein Rauch, sondern ein heller Punkt hoch am Himmel (`si_flare_l_red`, im Bild
+    # gesehen): Rauch sagt "hier ist die Station", eine Leuchtrakete sagt "schaut hierher".
+    # Bisher nur MSFS.
+    "leuchtrakete",
 )
 _BRUEGGE_TAKT_VORGABE_S = 1          # Regeltakt, gemessen (s. Protokoll, Abschnitt 6)
 

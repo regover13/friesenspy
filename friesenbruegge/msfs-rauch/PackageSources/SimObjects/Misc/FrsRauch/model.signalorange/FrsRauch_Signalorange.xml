@@ -1,0 +1,8 @@
+<ModelInfo>
+	<LODS>
+		<LOD ModelFile="FrsRauch_Signalorange.gltf"/>
+	</LODS>
+	<Behaviors>
+		<IncludeBase RelativeFile="FrsRauch_Signalorange.behavior.xml"/>
+	</Behaviors>
+</ModelInfo>

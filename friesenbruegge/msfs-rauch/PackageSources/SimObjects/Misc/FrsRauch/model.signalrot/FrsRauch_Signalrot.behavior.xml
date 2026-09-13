@@ -1,0 +1,8 @@
+<ModelBehaviors>
+	<Component ID="FrsRauch_Signalrot">
+		<UseTemplate Name="ASOBO_VFX_Base_Template">
+			<FX_GUID>{7947DC98-9733-513A-B7AA-138F0BF62F76}</FX_GUID>
+			<NODE_ID>frs_rauch_signalrot</NODE_ID>
+		</UseTemplate>
+	</Component>
+</ModelBehaviors>

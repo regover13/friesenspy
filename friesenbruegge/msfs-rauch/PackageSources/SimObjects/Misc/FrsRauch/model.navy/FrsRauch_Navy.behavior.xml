@@ -1,0 +1,8 @@
+<ModelBehaviors>
+	<Component ID="FrsRauch_Navy">
+		<UseTemplate Name="ASOBO_VFX_Base_Template">
+			<FX_GUID>{487E4435-3173-5F67-BF58-36DBA02DCDAB}</FX_GUID>
+			<NODE_ID>frs_rauch_navy</NODE_ID>
+		</UseTemplate>
+	</Component>
+</ModelBehaviors>
