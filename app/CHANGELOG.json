@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.37.1",
+    "date": "2026-09-13",
+    "highlight": false,
+    "title": "Karten-Legende: Symbole statt Farbklecks, und die 30 Sekunden richtiggestellt",
+    "items": [
+      "✈️ Die Legende zeigt jetzt dieselben Symbole wie die Karte selbst — das Flugzeug, den Ebenen-Knopf, die Kompassnadel, den Moving-Map-Pfeil, die ICAO-Lupe — statt nur Farbe und Fließtext.",
+      "🗂️ In zwei Abschnitte gegliedert: Flugzeug-Marker und Bedienelemente.",
+      "⏱️ Richtiggestellt: VATSIM-Positionen sind nicht nur 15, sondern bis zu 30 Sekunden alt — VATSIM aktualisiert alle 15 Sekunden, und wir fragen im selben Takt ab. Dieselbe Korrektur auch auf der Download-Seite und in der README."
+    ]
+  },
+  {
     "version": "14.37.0",
     "date": "2026-09-13",
     "highlight": false,
