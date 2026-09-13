@@ -1558,13 +1558,21 @@ def test_bruegge_seite_behauptet_nicht_mehr_reine_vatsim_karte():
 
 
 def _karten_legende_block() -> str:
-    """Der gesamte Legenden-Block -- BEIDE <ul>-Listen (Flugzeug-Marker, Bedienelemente),
-    nicht nur die erste. Eine freie Suche nach dem ersten `</ul>` haette die zweite Liste
-    (Track-up, Follow, ICAO-Suche) stillschweigend ausgelassen."""
+    """Der gesamte Legenden-Block.
+
+    Gezaehlt wird NICHT mehr ueber `</ul>`: Seit die Ebenen je eine eigene Zeile haben,
+    liegen verschachtelte <ul class="karten-legende-unter"> darin, und deren schliessende
+    Tags kaemen zuerst -- der Block waere stillschweigend abgeschnitten. Stattdessen bis zum
+    naechsten Tab-Kommentar, der garantiert hinter der Legende steht."""
     start = INDEX.index('<div class="panel-title">Karten-Legende</div>')
-    erstes_ende = INDEX.index("</ul>", start)
-    zweites_ende = INDEX.index("</ul>", erstes_ende + 1)
-    return INDEX[start:zweites_ende]
+    return INDEX[start:INDEX.index("TAB: STATISTIKEN", start)]
+
+
+def _legende_hauptzeilen() -> list[str]:
+    """Nur die AEUSSEREN Zeilen der Legende, ohne die Ebenen-Unterlisten."""
+    ohne_unterlisten = re.sub(
+        r'<ul class="karten-legende-unter">.*?</ul>', "", _karten_legende_block(), flags=re.S)
+    return re.findall(r"<li[^>]*>(.*?)</li>", ohne_unterlisten, re.S)
 
 
 def test_karten_legende_zeile_hat_genau_einen_text_wrapper():
@@ -1577,8 +1585,7 @@ def test_karten_legende_zeile_hat_genau_einen_text_wrapper():
     Deshalb MUSS jede Zeile ihren gesamten Fliesstext in GENAU EINEM <span> buendeln, das
     das letzte Kind ist -- nichts (kein <strong>, kein blanker Text) darf lose danach oder
     parallel dazu im <li> stehen."""
-    block = _karten_legende_block()
-    zeilen = re.findall(r"<li[^>]*>(.*?)</li>", block, re.S)
+    zeilen = _legende_hauptzeilen()
     assert len(zeilen) >= 12, "die Legende sollte beide Abschnitte mit all ihren Zeilen enthalten"
     for inhalt in zeilen:
         # Der Text-Wrapper ist am UNKLASSIFIZIERTEN "<span>" erkennbar -- die Icon-Spans
@@ -1607,18 +1614,26 @@ def test_karten_legende_erklaert_farben_und_bedienelemente():
     assert "ICAO-Kennung suchen" in block
 
 
-def test_karten_legende_stellt_die_30_sekunden_richtig():
-    """Weder VATSIM noch unser eigener Abruf sind wirklich 15 Sekunden frisch -- beides
-    zusammen kann sich addieren. Nutzer, 13.09.2026: "erklaere, dass das gemeldete
-    15-Sekunden-Raster auch noch 30 Sekunden alte Positionen zeigt". Dieselbe Richtigstellung
-    muss auch auf der Download-Seite stehen, wo der Vergleich zuerst (und zu optimistisch)
-    formuliert war."""
+def test_karten_legende_nennt_die_drei_gemessenen_wartezeiten():
+    """Der 15-Sekunden-Takt ist nur EINE von drei Wartezeiten. Gemessen am 13.09.2026 ueber
+    drei Laeufe mit je rund 1280 Piloten (`last_updated` je Pilot gegen den Feed-Zeitstempel):
+    bis die Position ueberhaupt im VATSIM-Datenstand steht, vergehen im Mittel 2,6 s, 99 %
+    liegen unter 5 s. Dazu zweimal bis zu 15 s -- bis wir den Stand abrufen und bis die Karte
+    ihn von uns holt. Macht im ungnstigsten Fall rund 35 s.
+
+    Die Zahl steht hier fest, weil sie GEMESSEN ist und nicht geschaetzt: Der erste Anlauf
+    schrieb 30 s (nur die beiden 15-s-Takte, ohne den VATSIM-internen Anteil), ein Vorschlag
+    lautete 45 s (der VATSIM-Anteil mit 15 s angenommen). Beide waren nicht belegt."""
     block = _karten_legende_block()
-    assert "30 Sekunden" in block
+    assert "35 Sekunden" in block
+    assert "2,6" in block and "1280 Piloten" in block, "die Herkunft der Zahl gehoert dazu"
     assert "15-Sekunden-Raster" not in block, "die alte, zu optimistische Formulierung darf nicht stehen bleiben"
-    efb = (STATIC / "efb.html").read_text(encoding="utf-8")
-    assert "30 Sekunden" in efb
-    assert "15-Sekunden-Raster" not in efb
+    # Fortrechnung zwischen den Meldungen -- sonst klingen 35 s nach 35 s Fehler auf dem Schirm.
+    assert "fortgerechnet" in block
+    for datei, text in [("efb.html", (STATIC / "efb.html").read_text(encoding="utf-8")),
+                        ("README.md", (STATIC.parent.parent / "README.md").read_text(encoding="utf-8"))]:
+        assert "35 Sekunden" in text, f"{datei} nennt die Zahl nicht"
+        assert "15-Sekunden-Raster" not in text, f"{datei} traegt noch die alte Formulierung"
 
 
 def test_karten_legende_zeigt_die_echten_flugzeug_symbole():
@@ -1656,28 +1671,59 @@ def test_karten_legende_hat_ueberschriften_ohne_klickbar_farbe():
     assert "var(--text-bright)" in regel
 
 
-def test_karten_legende_beschreibt_ebenen_im_detail():
-    """"Satellit, Topo, hell, dunkel" und die Kurznamen der Zusatzebenen waren blosse
-    Aufzaehlung ohne Erklaerung, was sie zeigen. Nutzer, 13.09.2026: "das solltest du im
-    Detail beschreiben". Jeder Basis-Layer und jede Zusatzebene braucht jetzt einen eigenen
-    kurzen Satz, was er zeigt -- nicht nur seinen Namen."""
+def test_legende_nennt_die_ebenen_so_wie_die_auswahl_sie_nennt():
+    """Die Legende hiess eine Ebene "FSE-Flaechen" -- diesen Haken gibt es nicht. In der
+    Auswahl stehen ZWEI: "FSE-Plaetze" und "FSE-Landeflaechen". Ausserdem fehlten "OpenAIP"
+    und "Verkehr" ganz, und "Radar Label" stand mit einem Bindestrich da, den der Haken
+    nicht hat. Wer danach sucht, findet nichts (Opus-Gegenpruefung 13.09.2026).
+
+    Gebunden an die Zuweisungen im Code, nicht an eine gepflegte Liste -- dasselbe Muster
+    wie `tests/readme_wachen.py` fuer die README. Eine neue Ebene faellt damit auf."""
     block = _karten_legende_block()
-    for basis, erklaerung in [
-        ("OpenFlightMap", "Lufträumen"),
-        ("Satellit", "Luftbild"),
-        ("OpenTopo", "Höhenlinien"),
-        ("Light", "Straßenatlas"),
-        ("Dark", "Straßenatlas"),
-    ]:
-        assert f"<strong>{basis}</strong>" in block, f"Basis-Layer {basis} fehlt"
-    assert "Lufträumen" in block and "Funkfeuern" in block
-    for ebene in ["Sichtflugkarte", "Flugplatzkarte", "Platzrunden", "Meldepunkte", "FSE-Flächen", "Radar-Label"]:
-        assert f"<strong>{ebene}</strong>" in block, f"Zusatzebene {ebene} fehlt"
-    assert "DFS-Kartenblätter" in block
+    ebenen = re.findall(r"liveOverlays\['([^']+)'\]", INDEX)
+    assert len(ebenen) >= 8, "die Ebenen-Zuweisungen wurden nicht gefunden"
+    fehlend = [e for e in dict.fromkeys(ebenen) if f"<strong>{e}</strong>" not in block]
+    assert not fehlend, f"in der Legende fehlen diese Ebenen: {fehlend}"
+    # Der Zusatzhaken ist keine Leaflet-Ebene, sondern selbst gebaut -- Name aus dem Code.
+    m = re.search(r"text\.textContent = '\s*([^']+)';", INDEX)
+    assert m, "der Name des Zusatzhakens wurde nicht gefunden"
+    assert f"<strong>{m.group(1).strip()}</strong>" in block, \
+        f"der Zusatzhaken heisst {m.group(1).strip()!r} -- genau so muss er in der Legende stehen"
+    # Und die Basiskarten, ebenfalls aus dem Code gelesen.
+    basis = re.search(r"L\.control\.layers\(\s*\{([^}]*)\}", INDEX)
+    assert basis, "die Basiskarten-Auswahl wurde nicht gefunden"
+    for name in re.findall(r"'([^']+)':", basis.group(1)):
+        assert f"<strong>{name}</strong>" in block, f"Basiskarte {name} fehlt in der Legende"
+
+
+def test_karten_legende_beschreibt_jede_ebene_mit_eigenem_satz():
+    """"Satellit, Topo, hell, dunkel" war blosse Aufzaehlung. Nutzer, 13.09.2026: "das
+    solltest du im Detail beschreiben" -- und nach dem ersten Anlauf: "wo sind die
+    Detailbeschreibungen?", weil sie zwar dastanden, aber als Klammern hinter Kommas in
+    einer dichten Zeile und damit aussahen wie die Aufzaehlung davor. Jede Ebene bekommt
+    deshalb eine EIGENE Zeile mit eigenem Satz."""
+    block = _karten_legende_block()
+    unterlisten = re.findall(r'<ul class="karten-legende-unter">(.*?)</ul>', block, re.S)
+    assert len(unterlisten) >= 3, "erwartet: Basiskarten, Zusatzebenen und die drei Wartezeiten"
+    ebenen_zeilen = [z for u in unterlisten for z in re.findall(r"<li>(.*?)</li>", u, re.S)]
+    assert len(ebenen_zeilen) >= 15, f"zu wenige Einzelzeilen: {len(ebenen_zeilen)}"
+    # Geprueft werden die Zeilen der EBENEN (Namen aus dem Code), nicht die der Wartezeiten --
+    # die tragen ebenfalls fette Zahlen, aber keinen Namen und keinen Gedankenstrich.
+    namen = set(re.findall(r"liveOverlays\['([^']+)'\]", INDEX))
+    basis = re.search(r"L\.control\.layers\(\s*\{([^}]*)\}", INDEX)
+    namen |= set(re.findall(r"'([^']+)':", basis.group(1)))
+    geprueft = 0
+    for zeile in ebenen_zeilen:
+        if not any(f"<strong>{n}</strong>" in zeile for n in namen):
+            continue
+        geprueft += 1
+        nach_dem_namen = re.sub(r"<[^>]+>", "", zeile).split("—", 1)
+        assert len(nach_dem_namen) == 2 and len(nach_dem_namen[1].strip()) > 15, \
+            f"diese Ebene hat keinen erklaerenden Satz: {zeile!r}"
+    assert geprueft >= 11, f"nur {geprueft} Ebenen-Zeilen gefunden -- erwartet werden alle"
     assert "412 deutsche Platzrunden" in block
-    assert "VFR-Meldepunkte" in block
     assert "FSEconomy" in block
-    assert 'eingeschaltetem „Verkehr"' in block, "Radar-Label haengt am Verkehr-Haken -- das muss dastehen"
+    assert 'eingeschaltetem „Verkehr"' in block, "Radar Label haengt am Verkehr-Haken -- das muss dastehen"
 
 
 def test_karten_legende_erklaert_wann_kompass_und_moving_map_erscheinen():
