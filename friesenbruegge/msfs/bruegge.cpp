@@ -429,7 +429,62 @@ static const Gattung g_gattungen[] = {
     // muss. Fuer jedes Event, bei dem jemand etwas FINDEN soll, ist das wertvoller als jedes
     // Tiermodell.
     { "rauch",       { "SIAI_VFX_Smoke_Red", "SIAI_VFX_Smoke_Orange", "SIAI_SmokeCanister",
-                       nullptr } },
+                       "item_flare_red", nullptr } },
+
+    // ⭐ DIE FARBGATTUNGEN -- dieselben Namen wie in der X-Plane-Bruegge, andere Modelle.
+    //
+    // Stehende Regel seit dem 13.09.2026 (PROTOKOLL.md, Abschnitt 3): Eine Gattung fasst
+    // zusammen, was sich ueber die SIMULATOREN verteilt -- nicht, was sich innerhalb eines
+    // Simulators unterscheidet. Der Server fordert `rauch_signalrot` an und muss sich darauf
+    // verlassen koennen, dass JEDER Pilot rote Saeulen sieht, gleich in welchem Simulator.
+    //
+    // ⚠ UND HIER ZEIGT SICH, WAS DAS KOSTET: Jeder dieser Titel kommt aus einem FREMDPAKET.
+    // SayIntentions installiert seine SimObjects nur mit dem Premium-Abo, Campout muss der
+    // Pilot herunterladen. Wer keines von beiden hat, bekommt EXCEPTION_22 -- und der Server
+    // erfaehrt es ueber `steht`, statt still etwas anderes hinzustellen.
+    //
+    // In X-Plane ist das anders geloest: Dort liegen die Saeulen IM PAKET (`xplane/objekte/`,
+    // sechs Farben, eigenes Werk). Fuer MSFS steht dasselbe noch aus -- es braucht ein
+    // SimObject mit Visual Effect, und die Partikel werden dort im DevMode-Editor geklickt,
+    // nicht geschrieben.
+    //
+    // NAVY UND ORANGE FEHLEN mit Absicht: MSFS bringt in keinem verfuegbaren Paket ein
+    // Dunkelblau oder ein reines Orange mit. Was die Bruegge nicht kann, meldet sie nicht in
+    // `kann` -- und der Server fordert es bei einem MSFS-Piloten gar nicht erst an.
+    // ⚠ NACH DEM AUGENSCHEIN GEORDNET (13.09.2026, alle sechs Titel im Bild gesehen):
+    //
+    //   SIAI_VFX_Smoke_Red      eine WAND ueber mehrere hundert Meter. Als Rauch richtig,
+    //                           als Marke unbrauchbar -- und braucht das SayIntentions-Abo.
+    //   Smoke_Volcano           weisse Halbkugel, rund 100 m. Kuppel statt Saeule.
+    //   VfxSpawner              wird angenommen (Objekt-ID kommt), zeichnet aber NICHTS.
+    //                           Vermutlich braucht er einen Parameter, welchen Effekt er
+    //                           anwerfen soll -- und den kann AICreateSimulatedObject nicht
+    //                           mitgeben.
+    //   item_flare_*            ✅ kompakte Farbwolken am Boden, vier Farben, aus Campout.
+    //                           Keine Saeulen, aber das Brauchbarste, was MSFS hergibt.
+    //
+    // Deshalb stehen die Campout-Fackeln jetzt VORN und die SayIntentions-Titel dahinter:
+    // klein und farbig schlaegt gross und unbezahlbar.
+    { "rauch_signalrot",    { "item_flare_red", "SIAI_VFX_Smoke_Red", nullptr } },
+    { "rauch_signalorange", { "SIAI_VFX_Smoke_Orange", nullptr } },
+    { "rauch_rot",          { "item_flare_red", "SIAI_VFX_Smoke_Red", nullptr } },
+    { "rauch_hellblau",     { "item_flare_blue", nullptr } },
+    // Gruen und Gelb gibt es NUR in MSFS (Campout) und nicht in X-Plane -- die
+    // FriesenFlieger-Palette kennt beides nicht. Sie stehen hier trotzdem: Was ein Simulator
+    // mehr kann, darf er melden; der Server fordert es dann nur bei ihm an.
+    { "rauch_gruen",        { "item_flare_green", nullptr } },
+    { "rauch_gelb",         { "item_flare_yellow", nullptr } },
+
+    // ⭐ LEUCHTRAKETE -- eigene Gattung, weil es etwas anderes IST als Rauch.
+    //
+    // `si_flare_l_red` steht als heller Punkt hoch am Himmel (13.09.2026 im Bild gesehen),
+    // nicht als Saeule am Boden. Fuer ein Suchspiel ist das ein eigener Zweck: Rauch sagt
+    // „hier ist die Station", eine Leuchtrakete sagt „schaut hierher" -- sie ist weiter zu
+    // sehen und verschwindet wieder.
+    //
+    // X-Plane hat dafuer kein Gegenstueck; die dortige Bruegge meldet die Gattung nicht in
+    // `kann`, und der Server fordert sie bei X-Plane-Piloten gar nicht erst an.
+    { "leuchtrakete",       { "si_flare_l_red", nullptr } },
     { "feuer",       { "SIAI_SignalFire", "SIAI_VFX_Fire", "SIAI_VFX_WildFire", nullptr } },
 
     // Und was sonst noch auffaellt: ein Fallschirm und ein Polarlicht. Beides eher Spielerei,
