@@ -1,10 +1,14 @@
 # Bauergebnisse -- gehoeren nicht ins Repo, sie entstehen aus bauen.ps1
 *.o
-# ⚠ NUR der Bauabfall im MSFS-Ordner, nicht jede .obj: Unter xplane/objekte/ liegen die
-# Rauchsaeulen als .obj, und die sind Quelltext -- sieben Zeilen, von Hand erzeugt. Mit dem
-# nackten Muster fielen sie zweimal aus einem Commit heraus (13.09.2026), beide Male
-# unbemerkt, bis 'git ls-files' es zeigte.
-msfs/*.obj
+# ⚠ .obj ist hier ZWEIERLEI, und die Ausnahme ist wichtiger als die Regel:
+#   - Bauabfall des C++-Compilers (msfs/bruegge.obj, probe-xplane/plugin.obj)
+#   - QUELLTEXT der Rauchsaeulen (xplane/objekte/rauch_*.obj) -- sieben Zeilen, von Hand
+#     erzeugt, ohne sie kann niemand das Paket bauen
+# Mit dem nackten Muster fielen die Saeulen zweimal aus einem Commit, beide Male unbemerkt,
+# bis 'git ls-files' es zeigte. Wer so etwas sucht: 'git check-ignore -v <datei>' nennt
+# die Regel MIT Fundort.
+*.obj
+!xplane/objekte/*.obj
 *.wasm
 *.xpl
 *.lib
