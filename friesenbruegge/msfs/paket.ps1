@@ -59,10 +59,92 @@ $community = "$env:LOCALAPPDATA\Packages\$paketordner\LocalCache\Packages\Commun
 if (-not (Test-Path $community)) { throw "Community-Ordner nicht gefunden: $community" }
 
 $paket = Join-Path $community "friesenbruegge"
+
+# ---------------------------------------------------------------------------------------
+# EIN PAKET, NICHT VIER.
+#
+# Bis 1.7.0 lagen der Rauch und das Modul in getrennten Community-Ordnern -- das ZIP
+# entpackte vier Stueck (friesenbruegge, devprops-friesenrauch, -mat, -vfx), obwohl die
+# Anleitung von EINEM Ordner spricht. Das ist keine Kosmetik: Wer nur drei davon
+# hineinkopiert, hat eine Bruegge, die auf Titel zeigt, die es bei ihm nicht gibt, und
+# merkt es nur daran, dass nichts raucht.
+#
+# Ein MSFS-Paket ist aber nichts weiter als ein Ordner mit manifest.json, layout.json und
+# Inhalten -- WELCHE Inhalte, steht ihm frei. Die drei Rauchpakete belegen `SimObjects\`,
+# `MaterialLibs\` und `VisualEffectLibs\`, das Modul `modules\`: vier disjunkte Aeste, die
+# sich in einem Baum nicht in die Quere kommen. Sie werden hier zusammengelegt und
+# bekommen EINE layout.json ueber alles.
+#
+# Die drei Paketdefinitionen im Project Editor bleiben, wie sie sind. Sie sind der
+# Bauweg, nicht die Auslieferung -- und der Project Editor braucht je AssetGroup-Typ
+# seinen eigenen PackageOrderHint (`CUSTOM_VFX` fuer die Effekte, `MISC` fuer den Rest).
+# ---------------------------------------------------------------------------------------
+
+# Erst raeumen, dann bauen: Eine Farbe, die aus `rauch_bauen.py` verschwindet, bliebe sonst
+# als Leiche im Ordner liegen und in der layout.json stehen. Die Sicherung davor ist das
+# Manifest -- geloescht wird nur, was dieses Skript selbst geschrieben hat.
+if (Test-Path $paket) {
+    $altesManifest = Join-Path $paket "manifest.json"
+    if (Test-Path $altesManifest) {
+        $alt = [System.IO.File]::ReadAllText($altesManifest) | ConvertFrom-Json
+        if ($alt.title -ne 'FriesenBruegge') {
+            throw "$paket enthaelt ein fremdes Paket ('$($alt.title)') -- nicht angeruehrt."
+        }
+    }
+    Remove-Item $paket -Recurse -Force
+}
+
 New-Item -ItemType Directory -Force "$paket\modules" | Out-Null
 Copy-Item $wasm "$paket\modules\bruegge.wasm" -Force
 
-$groesse = (Get-Item "$paket\modules\bruegge.wasm").Length
+# ---------------------------------------------------------------------------------------
+# DER RAUCH KOMMT MIT HINEIN -- sonst zeigt die Bruegge ins Leere.
+#
+# Seit 1.7.0 bilden die Rauchgattungen auf unsere EIGENEN Titel ab (`FrsRauch_Signalrot`
+# und die fuenf anderen). Wer nur das WASM-Modul bekommt, hat diese SimObjects nicht: Die
+# Bruegge faellt dann auf Fremdtitel zurueck (Campout, SayIntentions -- die kaum jemand
+# installiert hat) oder meldet GATTUNG_UNBEKANNT.
+#
+# Gebaut werden die drei Teile im Project Editor (`msfs-rauch\FriesenRauch.xml`), nicht
+# hier -- `fspackagetool.exe` ist ohne laufenden Simulator nur ein Wrapper, der nichts tut.
+# Fehlen sie, bricht das Skript NICHT ab: Ein Bruegge-Update soll auch dann moeglich sein,
+# wenn gerade kein Rauch neu gebaut wurde. Es sagt aber deutlich, was fehlt.
+#
+# Kopiert werden nur die VERZEICHNISSE der Teilpakete. Deren eigene manifest.json und
+# layout.json liegen auf oberster Ebene und bleiben liegen -- sie gelten ja nur fuer ihren
+# Teil, und im verschmolzenen Paket zaehlt allein die gemeinsame layout.json weiter unten.
+# ---------------------------------------------------------------------------------------
+$rauchQuelle = Join-Path (Split-Path $PSScriptRoot -Parent) "msfs-rauch\Packages"
+$rauchPakete = @("devprops-friesenrauch", "devprops-friesenrauch-mat",
+                 "devprops-friesenrauch-vfx")
+# Die Mindestversionen des Rauchs koennen ueber denen des Moduls liegen -- er wurde mit
+# einem neueren SDK kompiliert. Der hoehere Wert gewinnt: Ein Paket, das eine Fassung
+# verspricht, mit der seine Inhalte nie gebaut wurden, verspricht zu viel.
+$minSpiel  = [version]$(if ($Fuer2020) { '1.38.2' } else { '1.7.35' })
+$minKompat = [version]'7.26.0.214'
+$rauchDa = 0
+foreach ($rp in $rauchPakete) {
+    $pfad = Join-Path $rauchQuelle $rp
+    if (-not (Test-Path (Join-Path $pfad "manifest.json"))) {
+        Write-Warning "Rauchpaket fehlt: $rp -- im Project Editor bauen (msfs-rauch\FriesenRauch.xml)"
+        continue
+    }
+    Get-ChildItem $pfad -Directory | Copy-Item -Destination $paket -Recurse -Force
+    $rm = [System.IO.File]::ReadAllText((Join-Path $pfad "manifest.json")) | ConvertFrom-Json
+    if ([version]$rm.minimum_game_version -gt $minSpiel) { $minSpiel = [version]$rm.minimum_game_version }
+    if ([version]$rm.minimum_compatibility_version -gt $minKompat) {
+        $minKompat = [version]$rm.minimum_compatibility_version
+    }
+    $rauchDa++
+}
+if ($rauchDa -eq $rauchPakete.Count) {
+    Write-Output "Rauch aufgenommen: alle $rauchDa Teile"
+} else {
+    Write-Warning "Nur $rauchDa von $($rauchPakete.Count) Rauchteilen -- das Paket bleibt unvollstaendig."
+}
+if ($Fuer2020 -and $rauchDa -gt 0) {
+    Write-Warning "Der Rauch ist fuer MSFS 2024 kompiliert und in MSFS 2020 UNGEPRUEFT."
+}
 
 # Die Paketversion kommt aus BRUEGGE_VERSION in bruegge.cpp -- EINE Wahrheit, nicht zwei.
 #
@@ -78,8 +160,36 @@ if ($cpp -match '#define\s+BRUEGGE_VERSION\s+"([0-9.]+)"') {
 }
 Write-Output "Fassung aus bruegge.cpp: $fassung"
 
-# Windows-FILETIME: 100-Nanosekunden-Schritte seit 1601. layout.json will genau das.
-$filetime = (Get-Item "$paket\modules\bruegge.wasm").LastWriteTimeUtc.ToFileTimeUtc()
+# ---------------------------------------------------------------------------------------
+# DIE LAYOUT.JSON GEHT UEBER ALLES, WAS IM ORDNER LIEGT.
+#
+# Sie ist das Inhaltsverzeichnis, nach dem MSFS das Paket liest -- was nicht drinsteht,
+# existiert fuer den Simulator nicht, auch wenn die Datei danebenliegt. Solange nur die
+# .wasm im Paket lag, war sie von Hand zu schreiben; jetzt sind es ueber sechzig Dateien.
+#
+# Die Pfade stehen KLEINGESCHRIEBEN und mit Schraegstrichen -- so schreibt sie auch das
+# SDK-Paketwerkzeug (nachgesehen in den drei Rauch-layouts, dort steht
+# `visualeffectlibs/devprops/friesenrauch/frsrauch_navy.spb`, obwohl die Datei auf der
+# Platte `FrsRauch_Navy.spb` heisst). `date` ist Windows-FILETIME: 100-Nanosekunden-
+# Schritte seit 1601, je Datei ihre eigene.
+# ---------------------------------------------------------------------------------------
+$dateien = Get-ChildItem $paket -Recurse -File | Sort-Object FullName
+$eintraege = foreach ($d in $dateien) {
+    $rel = $d.FullName.Substring($paket.Length + 1).Replace('\', '/').ToLowerInvariant()
+    '    {{
+      "path": "{0}",
+      "size": {1},
+      "date": {2}
+    }}' -f $rel, $d.Length, $d.LastWriteTimeUtc.ToFileTimeUtc()
+}
+$groesse = ($dateien | Measure-Object -Property Length -Sum).Sum
+
+# ⚠ FALLS ES NACH DEM VERSCHMELZEN NICHT MEHR RAUCHT, steht der erste Verdacht unten im
+# Manifest: `package_order_hint`. Als Einzelpakete standen die Effekte auf `CUSTOM_VFX`,
+# SimObjects und Material auf `MISC`. Der Hint sortiert die Ladereihenfolge ZWISCHEN
+# Paketen; innerhalb eines Pakets sollte er gegenstandslos sein -- geprueft ist das aber
+# nicht. Der Versuch waere, hier `CUSTOM_VFX` einzusetzen. Nichts anderes gleichzeitig
+# aendern, sonst ist hinterher nicht klar, woran es lag.
 
 @"
 {
@@ -89,8 +199,8 @@ $filetime = (Get-Item "$paket\modules\bruegge.wasm").LastWriteTimeUtc.ToFileTime
   "manufacturer": "",
   "creator": "devprops",
   "package_version": "$fassung",
-  "minimum_game_version": "$(if ($Fuer2020) { '1.38.2' } else { '1.7.35' })",
-  "minimum_compatibility_version": "7.26.0.214",
+  "minimum_game_version": "$minSpiel",
+  "minimum_compatibility_version": "$minKompat",
   "export_type": "Community",
   "builder": "$(if ($Fuer2020) { 'Microsoft Flight Simulator' } else { 'Microsoft Flight Simulator 2024' })",
   "package_order_hint": "MISC",
@@ -104,17 +214,13 @@ $filetime = (Get-Item "$paket\modules\bruegge.wasm").LastWriteTimeUtc.ToFileTime
 }
 "@ | ForEach-Object { Schreib-OhneBom "$paket\manifest.json" $_ }
 
-@"
+Schreib-OhneBom "$paket\layout.json" (@"
 {
   "content": [
-    {
-      "path": "modules/bruegge.wasm",
-      "size": $groesse,
-      "date": $filetime
-    }
+$($eintraege -join ",`n")
   ]
 }
-"@ | ForEach-Object { Schreib-OhneBom "$paket\layout.json" $_ }
+"@)
 
 # Die Selbstpruefung. Sie ist kein Zierat: Der Fehler, den sie faengt, aeussert sich im
 # Simulator ueberhaupt nicht -- weder als Meldung noch als Ausnahme. Wer ihn nicht HIER
@@ -131,8 +237,37 @@ foreach ($datei in @("$paket\manifest.json", "$paket\layout.json")) {
 Write-Output "JSON geprueft: kein BOM, parsebar."
 
 Write-Output "Paket liegt: $paket"
-Get-ChildItem $paket -Recurse -File | ForEach-Object { "  {0,8}  {1}" -f $_.Length, $_.FullName.Replace($paket, '') }
+Write-Output ("  {0} Dateien, {1:N0} Bytes -- Mindestfassung {2}" -f $dateien.Count, $groesse, $minSpiel)
+Get-ChildItem $paket -Directory | ForEach-Object {
+    $n = (Get-ChildItem $_.FullName -Recurse -File | Measure-Object).Count
+    "  {0,-20} {1,3} Dateien" -f ($_.Name + '\'), $n
+}
 Write-Output ""
+
+# ---------------------------------------------------------------------------------------
+# ALTE EINZELPAKETE WEGRAEUMEN -- zwei Quellen fuer denselben Titel sind eine zu viel.
+#
+# Bis 1.7.0 lagen `devprops-friesenrauch`, `-mat` und `-vfx` als eigene Ordner im
+# Community-Verzeichnis. Ihre Inhalte stecken jetzt in `friesenbruegge`; bleiben sie
+# liegen, kennt der Simulator jeden Titel (`FrsRauch_Navy` ...) zweimal und jede
+# Effektbibliothek doppelt.
+#
+# Geloescht wird nur, was sich im eigenen Manifest als unseres ausweist -- Creator
+# `devprops` und ein Titel, der mit `friesenrauch` beginnt. Alles andere im
+# Community-Ordner gehoert jemand anderem und wird nicht angefasst.
+# ---------------------------------------------------------------------------------------
+foreach ($rp in $rauchPakete) {
+    $altPfad = Join-Path $community $rp
+    $altManifest = Join-Path $altPfad "manifest.json"
+    if (-not (Test-Path $altManifest)) { continue }
+    $am = [System.IO.File]::ReadAllText($altManifest) | ConvertFrom-Json
+    if ($am.creator -eq 'devprops' -and $am.title -like 'friesenrauch*') {
+        Remove-Item $altPfad -Recurse -Force
+        Write-Output "Alten Einzelordner entfernt: $rp (steckt jetzt in friesenbruegge)"
+    } else {
+        Write-Warning "$rp im Community-Ordner ist nicht unseres -- stehen gelassen."
+    }
+}
 
 # ---------------------------------------------------------------------------------------
 # Das ZIP fuer die Download-Seite -- IMMER mitgebaut, nicht auf Zuruf.
@@ -148,34 +283,10 @@ Write-Output ""
 $zip = Join-Path (Split-Path $hier -Parent) "friesenbruegge.zip"
 if (Test-Path $zip) { Remove-Item $zip -Force }
 
-# ---------------------------------------------------------------------------------------
-# DIE RAUCHPAKETE GEHOEREN MIT INS ZIP -- sonst zeigt die Bruegge ins Leere.
-#
-# Seit 1.7.0 bilden die Rauchgattungen auf unsere EIGENEN Titel ab (`FrsRauch_Signalrot`
-# und die fuenf anderen). Wer nur das WASM-Modul bekommt, hat diese SimObjects nicht: Die
-# Bruegge faellt dann auf Fremdtitel zurueck (Campout, SayIntentions -- die kaum jemand
-# installiert hat) oder meldet GATTUNG_UNBEKANNT. Der eigene Rauch kaeme bei niemandem an.
-#
-# Gebaut werden die drei Pakete im Project Editor (`msfs-rauch/FriesenRauch.xml`), nicht
-# hier -- `fspackagetool.exe` ist ohne laufenden Simulator nur ein Wrapper, der nichts tut.
-# Fehlen sie, bricht das Skript NICHT ab: Ein Bruegge-Update soll auch dann moeglich sein,
-# wenn gerade kein Rauch neu gebaut wurde. Es sagt aber deutlich, was fehlt.
-# ---------------------------------------------------------------------------------------
-$rauchQuelle = Join-Path (Split-Path $hier -Parent) "msfs-rauch\Packages"
-$rauchPakete = @("devprops-friesenrauch", "devprops-friesenrauch-mat",
-                 "devprops-friesenrauch-vfx")
-$mitPacken = @($paket)
-foreach ($rp in $rauchPakete) {
-    $pfad = Join-Path $rauchQuelle $rp
-    if (Test-Path (Join-Path $pfad "manifest.json")) {
-        $mitPacken += $pfad
-    } else {
-        Write-Warning "Rauchpaket fehlt: $rp -- im Project Editor bauen (msfs-rauch\FriesenRauch.xml)"
-    }
-}
-Write-Output ("Ins ZIP: {0}" -f (($mitPacken | Split-Path -Leaf) -join ", "))
-
-Compress-Archive -Path $mitPacken -DestinationPath $zip -CompressionLevel Optimal
+# Ein Ordner, nicht vier -- der Rauch steckt seit 1.7.1 mit drin. Die Anleitung auf der
+# Download-Seite sagt "den Ordner friesenbruegge in den Community-Ordner", und ab hier
+# stimmt das auch wieder.
+Compress-Archive -Path $paket -DestinationPath $zip -CompressionLevel Optimal
 $zg = (Get-Item $zip).Length
 Write-Output ("ZIP gebaut:  {0}  ({1:N0} Bytes, Fassung {2})" -f $zip, $zg, $fassung)
 

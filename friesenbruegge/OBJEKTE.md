@@ -525,6 +525,20 @@ brennt also durchgehend. Erst wenn das Objekt abgeräumt ist, fällt der Neustar
 nach spätestens einer halben Minute Ruhe. Ohne `TimeEmission` raucht es bis zum Neustart des
 Fluges weiter — auch das ist gemessen.
 
+**Ausgeliefert wird EIN Paket** (ab 1.7.1). Der Project Editor baut den Rauch in drei Teilen —
+Effekte, Material, SimObjects, weil er je AssetGroup-Typ eine eigene Definition und einen
+eigenen `PackageOrderHint` will. Das ist der **Bauweg, nicht die Auslieferung**: `paket.ps1`
+kopiert die drei kompilierten Bäume (`VisualEffectLibs\`, `MaterialLibs\`, `SimObjects\`) neben
+das Modul (`modules\`) in den Ordner `friesenbruegge` und schreibt **eine** `layout.json` über
+alles. Vier disjunkte Äste in einem Baum — ein MSFS-Paket ist nichts weiter als ein Ordner mit
+Manifest, Layout und Inhalten, und welche das sind, steht ihm frei.
+
+Bis 1.7.0 entpackte das ZIP vier Ordner, während die Anleitung von einem sprach. Wer nur drei
+davon kopiert, hat eine Brügge, die auf Titel zeigt, die es bei ihm nicht gibt — und merkt es
+nur daran, dass nichts raucht. `paket.ps1` räumt die alten Einzelordner im Community-Verzeichnis
+deshalb selbst weg (nur die eigenen, erkannt am Manifest): zwei Quellen für denselben Titel sind
+eine zu viel.
+
 ## Offen
 
 - **Robben: das Modell ist gefunden, der Weg dorthin nicht gemessen.** Die drei Titel aus
