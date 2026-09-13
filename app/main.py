@@ -633,11 +633,17 @@ async def admin_page():
     return FileResponse("app/static/admin.html", headers=_HTML_NO_CACHE)
 
 
+@app.get("/download", include_in_schema=False)
 @app.get("/efb", include_in_schema=False)
 async def efb_page():
-    """Installationsseite für die MSFS-EFB-App (Release „Kniebrett"). Bewusst NICHT unter
-    ``/static/`` — dieser Pfad ist gate-frei, die Seite soll aber wie der Rest der App nur
-    für angemeldete Mitglieder sichtbar sein."""
+    """Installationsseite für Kniebrett und FriesenBrügge. Bewusst NICHT unter ``/static/``
+    — dieser Pfad ist gate-frei, die Seite soll aber wie der Rest der App nur für
+    angemeldete Mitglieder sichtbar sein.
+
+    Aktuelle URL ist ``/download`` (seit 13.09.2026 — die Seite bietet inzwischen zwei
+    Pakete an, „Kniebrett" allein passte nicht mehr). ``/efb`` bleibt als alte URL
+    erreichbar, weil sie schon verlinkt, verschickt und in Foren zitiert ist; neue
+    Verweise zeigen auf ``/download``."""
     return FileResponse("app/static/efb.html", headers=_HTML_NO_CACHE)
 
 

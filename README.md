@@ -485,7 +485,7 @@ Diese Blätter sind nach der Bahnrichtung gedruckt statt genordet; auf der Karte
 
 Das **Kniebrett** ist FriesenSpy als eigene App im EFB-Tablet des **Microsoft Flight Simulator 2024** — dieselben vier Tabs wie auf der Website, nur direkt beim Fliegen, ohne Alt-Tab und auch in VR.
 
-**Installieren:** Paket und Schritt-für-Schritt-Anleitung stehen unter **[/efb](https://friesenspy.devprops.de/efb)** („Kniebrett" ganz unten auf der Seite): ZIP herunterladen, den enthaltenen Ordner `friesenflieger-friesenspy-efb` in den Community-Ordner des Simulators kopieren, Simulator starten — FriesenSpy steht dann in der App-Liste des Tablets. Das Paket ist nur eine **dünne Hülle**; alles Weitere kommt vom Server. Änderungen an FriesenSpy sind also ohne Neuinstallation da.
+**Installieren:** Paket und Schritt-für-Schritt-Anleitung stehen unter **[/download](https://friesenspy.devprops.de/download)** („Download" ganz unten auf der Seite; die alte URL `/efb` bleibt ebenfalls erreichbar): ZIP herunterladen, den enthaltenen Ordner `friesenflieger-friesenspy-efb` in den Community-Ordner des Simulators kopieren, Simulator starten — FriesenSpy steht dann in der App-Liste des Tablets. Das Paket ist nur eine **dünne Hülle**; alles Weitere kommt vom Server. Änderungen an FriesenSpy sind also ohne Neuinstallation da.
 
 **Anmelden:** Beim ersten Start fragt das Tablet nach dem Forum-Login — dieselben Zugangsdaten wie auf der Website. Die anschließende Rückfrage „Kniebrett dauerhaft anmelden?" **bestätigen**: Sonst fragt FriesenSpy bei jedem Start des Simulators erneut. Gemerkt wird dafür eine zufällige Gerätekennung, kein Passwort. Gewarnt wird nur vor dem echten Risiko — die Frage zu bestätigen, während man gar nicht selbst im Simulator sitzt. Gehört ein Rechner nicht mehr dir, löst die Verwaltung die Verknüpfung (Meldung im Forum).
 
@@ -569,8 +569,8 @@ weiterhin die VATSIM-Positionen.
 
 **Es gibt sie zweimal:** `msfs/` als WASM-Modul in einem Community-Paket, `xplane/` als
 Plugin (`.xpl`). Beide sprechen Protokollfassung 1 und teilen sich `json.h`; verschieden sind
-nur Lageabfrage, Objektverwaltung und Netzschicht. Beide sind über die Kniebrett-Seite zu
-haben (`/efb`).
+nur Lageabfrage, Objektverwaltung und Netzschicht. Beide sind über die Download-Seite zu
+haben (`/download`).
 
 Das X-Plane-Plugin enthält seit dem 13.09.2026 **Windows, macOS und Linux in einem Paket** —
 X-Plane wählt beim Start den passenden Ordner. Geflogen ist bislang nur die Windows-Fassung;
@@ -719,7 +719,7 @@ FriesenSpy/
 │   └── static/
 │       ├── index.html # Vanilla-JS-SPA (4 Tabs) — läuft auch als MSFS-Kniebrett
 │       ├── admin.html # Admin-Verwaltung (passwortgeschützt)
-│       ├── efb.html   # Installationsseite fürs Kniebrett (/efb, hinter dem Gate)
+│       ├── efb.html   # Downloadseite für Kniebrett + FriesenBrügge (/download, hinter dem Gate; alte URL /efb bleibt)
 │       ├── sw.js      # Service Worker (Web-Push + PWA)
 │       ├── manifest.webmanifest # PWA-Manifest (installierbar)
 │       ├── icon-192.png / icon-512.png / icon-maskable-512.png / apple-touch-icon.png
@@ -787,7 +787,7 @@ FriesenSpy/
 | `/api/airports/search` · `/api/airport/{icao}` | GET | Platzsuche (ICAO-Sprung auf der Karte) und Einzelplatz |
 | `/api/aip-charts-dfs` | GET | Gepasste DFS-Blätter im Kartenausschnitt (Sicht-, Flugplatz-, Rollkarte) |
 | `/aip-chart-dfs/{icao}/{sorte}.png` | GET | Das genordete Kartenblatt als PNG |
-| `/efb` · `/api/efb-package` · `/download/efb` | GET | Kniebrett: Installationsseite, Paketinfo, Paket-Download |
+| `/download` (alt: `/efb`) · `/api/efb-package` · `/download/efb` | GET | Downloads: Installationsseite für Kniebrett + FriesenBrügge, Paketinfo, Paket-Download |
 | `/auth/forum/login` · `/auth/forum/callback` · `/auth/forum/logout` | GET | Board-Login (Forum-SSO) |
 | `/auth/device/bind` | POST | Kniebrett dauerhaft anmelden (Gerätekennung) |
 | `/api/me` · `/api/me/visibility` | GET/POST | Eigene Identität; „Wer darf über mich benachrichtigt werden?" |

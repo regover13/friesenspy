@@ -129,10 +129,10 @@ def test_download_liefert_das_zip_unter_sprechendem_namen(env):
 
 def test_seite_und_download_liegen_hinter_dem_gate(env):
     """Beides gehört den Mitgliedern. /static/ ist gate-frei — deshalb liegt die Seite
-    bewusst unter /efb und nicht unter /static/efb.html."""
+    bewusst unter /download (und ihrer alten URL /efb) und nicht unter /static/efb.html."""
     env.client.post("/api/admin/forum-login", json={"enabled": True}, cookies=_admin_cookie())
     main._reset_gate_cache()
-    for pfad in ("/efb", "/download/efb", "/api/efb-package"):
+    for pfad in ("/download", "/efb", "/download/efb", "/api/efb-package"):
         r = env.client.get(pfad, headers={"accept": "text/html"}, follow_redirects=False)
         assert r.status_code in (302, 401), f"{pfad} ist nicht geschützt: {r.status_code}"
 
@@ -142,6 +142,17 @@ def test_installationsseite_wird_ausgeliefert(env):
     assert r.status_code == 200
     assert "Kniebrett" in r.text
     assert "/download/efb" in r.text
+
+
+def test_alte_url_efb_liefert_dieselbe_seite_wie_download(env):
+    """/efb war die erste URL der Seite und ist inzwischen verlinkt, verschickt und in
+    Foren zitiert -- sie bleibt deshalb erreichbar. /download ist die aktuelle URL, unter
+    der neue Verweise stehen. Beide muessen exakt dasselbe ausliefern, nicht zwei Fassungen,
+    die auseinanderlaufen koennen."""
+    r_alt = env.client.get("/efb", headers={"accept": "text/html"})
+    r_neu = env.client.get("/download", headers={"accept": "text/html"})
+    assert r_alt.status_code == r_neu.status_code == 200
+    assert r_alt.text == r_neu.text
 
 
 def test_installationsseite_nennt_beide_community_pfade():

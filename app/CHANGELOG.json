@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.37.0",
+    "date": "2026-09-13",
+    "highlight": false,
+    "title": "Download-Seite umbenannt, und die Karte erklärt sich jetzt selbst",
+    "items": [
+      "📥 Der Link unten auf der Seite hieß „Kniebrett“, führte aber zu einer Seite mit inzwischen zwei Paketen (Kniebrett und FriesenBrügge). Er heißt jetzt „Download“ und liegt unter /download; die alte Adresse /efb funktioniert unverändert weiter.",
+      "🗺️ Unter der Live-Karte steht jetzt eine ausführliche Legende: was Blau, Grau und Türkis bedeuten, wie sich der Fremdverkehr ein- und ausschalten lässt, und wozu Ebenen-Knopf, Kompass, Moving Map, ICAO-Suche und Deckkraft-Regler da sind.",
+      "✏️ Der Text zur FriesenBrügge auf der Download-Seite behauptete noch, die Karte zeige „weiterhin die VATSIM-Positionen“ — das stimmte nicht mehr, seit ihre Positionen dort türkis erscheinen. Richtiggestellt."
+    ]
+  },
+  {
     "version": "14.36.0",
     "date": "2026-09-13",
     "highlight": false,
