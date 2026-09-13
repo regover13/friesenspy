@@ -882,7 +882,13 @@ def test_ein_xplane_pfad_gehoert_nicht_in_einen_msfs_lauf(klient):
     fuer_xp = {z["titel"] for z in klient.get(
         "/api/admin/bruegge/katalog?offen_fuer=xplane12", cookies=_admin_kekse()
     ).json()["eintraege"]}
-    assert fuer_xp == {"Resources/.../SailBoat.obj"}
+    # Keine Gleichheit mehr: Seit dem 14.09.2026 legt die Erstbefuellung der Gattungen beim
+    # Start weitere X-Plane-Pfade an (Ballons, Moewen, unseren eigenen Rauch), und die sind
+    # naturgemaess ungeprueft. Gesichert wird, worum es hier geht -- dass die BAENDER
+    # getrennt bleiben, nicht wie viele Zeilen zufaellig im Katalog stehen.
+    assert "Resources/.../SailBoat.obj" in fuer_xp
+    assert not any(t in fuer_xp for t in ("BlackBear", "Boat01"))
+    assert all(t.startswith("Resources/") for t in fuer_xp)
 
 
 def test_der_admin_setzt_objekte_standardmaessig_auf_den_boden(klient, tmp_path):

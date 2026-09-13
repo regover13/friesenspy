@@ -915,6 +915,28 @@ _BRUEGGE_MIGRATIONS = [
     # wurde). Nachgezogen am 12.09.2026, nachdem der erste Lauf die 200 Titel des 2020er
     # Bestands uebersprungen hatte.
     "ALTER TABLE bruegge_katalog ADD COLUMN geprueft_in TEXT",
+    # ------------------------------------------------------------------------------------
+    # 14.09.2026: DIE GATTUNG ZIEHT VOM CLIENT IN DEN KATALOG.
+    #
+    # Bis hierher trug jede Bruegge ihre eigene Tabelle `g_gattungen[]`. Das widersprach dem
+    # Leitbild ("Die Bruegge ist dumm") und kostete real: Eine neue Gattung brauchte einen
+    # Windows-Build und eine Verteilung an 61 Piloten.
+    #
+    # EINE LISTE, EINE WAHRHEIT -- Nutzervorgabe vom 14.09.2026. Alle 2935 Titel bleiben
+    # stehen; wer keine `gattung` hat, ist schlicht nicht zugeordnet und im Admin nicht
+    # anwaehlbar. Das ist die Abwesenheit einer Zuordnung, kein Status -- dieselbe
+    # Unterscheidung wie bei `geprueft_am IS NULL` darueber.
+    #
+    # `rang` ist die Reihenfolge, in der die Bruegge probiert (scheitert Titel 1, rueckt 2
+    # nach). `status` blendet einzelne Titel aus, ohne sie zu verlieren: 'aktiv' geht
+    # hinaus, 'aus' bleibt sichtbar und wird nicht ausgeliefert.
+    "ALTER TABLE bruegge_katalog ADD COLUMN gattung TEXT",
+    "ALTER TABLE bruegge_katalog ADD COLUMN rang INTEGER",
+    "ALTER TABLE bruegge_katalog ADD COLUMN status TEXT",
+    # Der Auslieferungspfad fragt immer nach (gattung, status) -- ohne Index scannt er bei
+    # jeder Bruegge-Meldung 2935 Zeilen, und das im 1-Sekunden-Takt je Pilot.
+    "CREATE INDEX IF NOT EXISTS idx_bruegge_katalog_gattung "
+    "ON bruegge_katalog(gattung, status, rang)",
 ]
 
 _VISIBILITY_MIGRATIONS = [
@@ -1213,6 +1235,12 @@ def init_db(db_path: str) -> None:
         try:
             seed_airport_links(conn)  # AIP-VFR-Links erstbefüllen (idempotent)
         except sqlite3.OperationalError:
+            pass
+        try:
+            # 14.09.2026: Die Gattungen ziehen aus den Brüggen in den Katalog (idempotent —
+            # steht schon eine Zuordnung drin, passiert nichts).
+            bruegge_gattungen_erstbefuellen(conn)
+        except (sqlite3.OperationalError, ImportError):
             pass
         try:
             migrate_custom_airport_reasons(conn)  # #78: Bestandseinträge nachbeschriften
@@ -2933,6 +2961,188 @@ def katalog_lesen(conn: sqlite3.Connection, simulator: str | None = None,
     sql += " ORDER BY simulator, kategorie, titel LIMIT ?"
     werte.append(int(grenze))
     return [_row_to_dict(r) for r in conn.execute(sql, werte).fetchall()]
+
+
+# ---------------------------------------------------------------------------
+# Gattungen: welcher Titel bedeutet was
+#
+# Die Zuordnung lebt seit dem 14.09.2026 IM KATALOG (Spalten `gattung`, `rang`, `status`)
+# und nicht mehr in den Brueggen. Der Grund steht im Leitbild des Protokolls: Die Bruegge
+# ist dumm, und eine neue Gattung darf keinen Windows-Build kosten.
+# ---------------------------------------------------------------------------
+
+def bruegge_gattungen_erstbefuellen(conn: sqlite3.Connection) -> dict:
+    """Die Zuordnung aus ``app.bruegge_gattungen`` EINMAL in den Katalog schreiben.
+
+    Idempotent und bewusst zurueckhaltend: Wo schon eine `gattung` steht, wird nichts
+    angefasst -- gepflegt wird im Admin, und ein Neustart darf Handarbeit nicht ueberschreiben.
+    Titel, die der Katalog noch nicht kennt (unser eigener Rauch etwa), werden angelegt.
+
+    **Nachweislich Gescheitertes kommt auf `aus`.** Ein Titel mit ``ergebnis =
+    'fehlgeschlagen'`` wird zugeordnet, aber nicht ausgeliefert. Das ist der eigentliche
+    Gewinn des Umzugs: Die Bruegge probierte `PolarBear`, `Bear_U_Maritimus` und
+    `deer_o_hemionus` bei jedem Fehlversuch durch, obwohl alle drei am 12.09.2026 mit
+    EXCEPTION_22 gescheitert waren. Eine Tabelle im Client kann das nicht wissen.
+    """
+    from app.bruegge_gattungen import erstbefuellung
+
+    schon = conn.execute(
+        "SELECT COUNT(*) FROM bruegge_katalog WHERE gattung IS NOT NULL").fetchone()[0]
+    if schon:
+        return {"uebersprungen": True, "zugeordnet": schon}
+
+    neu = gesetzt = abgeschaltet = 0
+    for e in erstbefuellung():
+        vorhanden = conn.execute(
+            "SELECT ergebnis FROM bruegge_katalog WHERE simulator = ? AND titel = ?",
+            (e["simulator"], e["titel"])).fetchone()
+        if vorhanden is None:
+            conn.execute(
+                "INSERT INTO bruegge_katalog (simulator, titel, quelle, kategorie, bemerkung) "
+                "VALUES (?, ?, 'unbekannt', NULL, 'beim Gattungs-Umzug angelegt')",
+                (e["simulator"], e["titel"]))
+            neu += 1
+            status = e["status"]
+        else:
+            status = "aus" if vorhanden[0] == "fehlgeschlagen" else e["status"]
+            if status == "aus" and e["status"] != "aus":
+                abgeschaltet += 1
+        conn.execute(
+            "UPDATE bruegge_katalog SET gattung = ?, rang = ?, status = ? "
+            "WHERE simulator = ? AND titel = ?",
+            (e["gattung"], e["rang"], status, e["simulator"], e["titel"]))
+        gesetzt += 1
+    return {"uebersprungen": False, "zugeordnet": gesetzt, "angelegt": neu,
+            "wegen_fehlschlag_aus": abgeschaltet}
+
+
+def bruegge_titel_fuer(conn: sqlite3.Connection, simulator: str) -> dict[str, list[str]]:
+    """Gattung -> Titel in der Reihenfolge, in der diese Bruegge sie probieren soll.
+
+    **MSFS 2020 und 2024 bilden EINEN Topf.** Das ist keine Bequemlichkeit, sondern der
+    gemessene Stand: `BlackBear` liegt im 2020er Bestand und funktioniert in MSFS 2024,
+    waehrend 38 seiner Nachbarn es nicht tun (12.09.2026). Welcher Titel in welchem Bestand
+    gefunden wurde, sagt wenig darueber, wo er laeuft -- deshalb bekommt eine MSFS-Bruegge
+    beide Baender, und der `rang` regelt, was zuerst versucht wird. Was nachweislich
+    scheitert, steht auf `status = 'aus'` und geht gar nicht erst hinaus.
+
+    X-Plane bleibt getrennt: Dort ist der Bezeichner ein Dateipfad, ein MSFS-Titel waere
+    dort sinnlos.
+    """
+    if simulator == "xplane12":
+        wo = "simulator = 'xplane12'"
+    else:
+        wo = "simulator IN ('msfs2020', 'msfs2024')"
+    rows = conn.execute(
+        f"SELECT gattung, titel FROM bruegge_katalog "
+        f"WHERE gattung IS NOT NULL AND status = 'aktiv' AND {wo} "
+        f"ORDER BY gattung, rang, titel").fetchall()
+    raus: dict[str, list[str]] = {}
+    for gattung, titel in rows:
+        raus.setdefault(gattung, []).append(titel)
+    return raus
+
+
+def bruegge_gattungen_uebersicht(conn: sqlite3.Connection) -> list[dict]:
+    """Je Gattung: wie viele Titel, wie viele aktiv, in welchen Simulatoren.
+
+    Eine Gattung OHNE aktiven Titel ist nirgends anzufordern -- das leitet sich hier ab und
+    steht nirgends extra, damit es keine zweite Wahrheit gibt.
+    """
+    rows = conn.execute(
+        "SELECT gattung, COUNT(*) AS titel_gesamt, "
+        "       SUM(CASE WHEN status = 'aktiv' THEN 1 ELSE 0 END) AS aktiv, "
+        "       SUM(CASE WHEN simulator LIKE 'msfs%' AND status = 'aktiv' "
+        "                THEN 1 ELSE 0 END) AS msfs, "
+        "       SUM(CASE WHEN simulator = 'xplane12' AND status = 'aktiv' "
+        "                THEN 1 ELSE 0 END) AS xplane, "
+        "       SUM(CASE WHEN ergebnis = 'steht' THEN 1 ELSE 0 END) AS belegt "
+        "FROM bruegge_katalog WHERE gattung IS NOT NULL "
+        "GROUP BY gattung ORDER BY gattung"
+    ).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+#: Spalten, nach denen der Admin sortieren darf. Eine Positivliste, weil der Name direkt in
+#: die ORDER-BY-Klausel geht -- alles andere waere eine Einladung.
+_KATALOG_SPALTEN = ("simulator", "titel", "paket", "quelle", "kategorie", "gattung",
+                    "rang", "status", "ergebnis", "geprueft_am", "geprueft_in")
+
+
+def bruegge_katalog_seite(conn: sqlite3.Connection, *, gattung: str | None = None,
+                          simulator: str | None = None, quelle: str | None = None,
+                          ergebnis: str | None = None, status: str | None = None,
+                          suche: str | None = None, ohne_gattung: bool = False,
+                          sortieren: str = "titel", absteigend: bool = False,
+                          seite: int = 1, je_seite: int = 20) -> dict:
+    """Eine Seite des Katalogs, gefiltert und sortiert -- fuer die Admin-Oberflaeche.
+
+    Seitenweise und nicht am Stueck, weil es 2935 Zeilen sind: *"Vielleicht auch mit einem
+    Umschalter der Seiten je 20. Wir brauchen keine 2000 Objekte."*
+    """
+    wo, werte = [], []
+    if ohne_gattung:
+        wo.append("gattung IS NULL")
+    elif gattung:
+        wo.append("gattung = ?"); werte.append(gattung)
+    if simulator:
+        wo.append("simulator = ?"); werte.append(simulator)
+    if quelle:
+        wo.append("quelle = ?"); werte.append(quelle)
+    if status:
+        wo.append("status = ?"); werte.append(status)
+    if ergebnis == "offen":
+        wo.append("ergebnis IS NULL")
+    elif ergebnis:
+        wo.append("ergebnis = ?"); werte.append(ergebnis)
+    if suche:
+        wo.append("(titel LIKE ? OR paket LIKE ?)")
+        werte += [f"%{suche}%", f"%{suche}%"]
+    rumpf = " WHERE " + " AND ".join(wo) if wo else ""
+
+    gesamt = conn.execute(
+        f"SELECT COUNT(*) FROM bruegge_katalog{rumpf}", werte).fetchone()[0]
+
+    spalte = sortieren if sortieren in _KATALOG_SPALTEN else "titel"
+    richtung = "DESC" if absteigend else "ASC"
+    je_seite = max(1, min(200, int(je_seite)))
+    seite = max(1, int(seite))
+    rows = conn.execute(
+        f"SELECT * FROM bruegge_katalog{rumpf} "
+        # Zweiter Schluessel: Ohne ihn wandern Zeilen mit gleichem Sortierwert zwischen den
+        # Seiten -- bei 2875 Titeln ohne Gattung waere die Sortierung sonst reine Zierde.
+        f"ORDER BY {spalte} {richtung}, simulator, titel LIMIT ? OFFSET ?",
+        werte + [je_seite, (seite - 1) * je_seite]).fetchall()
+    return {"gesamt": gesamt, "seite": seite, "je_seite": je_seite,
+            "seiten": max(1, (gesamt + je_seite - 1) // je_seite),
+            "zeilen": [_row_to_dict(r) for r in rows]}
+
+
+def bruegge_katalog_setzen(conn: sqlite3.Connection, simulator: str, titel: str, *,
+                           gattung: str | None = ..., rang: int | None = ...,
+                           status: str | None = ...) -> bool:
+    """Zuordnung, Rang oder Status einer Katalogzeile aendern (kein commit).
+
+    Nicht uebergebene Felder bleiben, wie sie sind -- deshalb `...` als Vorgabe und nicht
+    `None`: `None` ist hier ein gueltiger Wert ("Gattung wegnehmen").
+    """
+    setz, werte = [], []
+    if gattung is not ...:
+        setz.append("gattung = ?"); werte.append(gattung)
+        if gattung is None:
+            # Ohne Gattung sind Rang und Status gegenstandslos. Sie stehen zu lassen hiesse,
+            # eine Ordnung zu behaupten, zu der es nichts zu ordnen gibt.
+            setz += ["rang = NULL", "status = NULL"]
+    if rang is not ...:
+        setz.append("rang = ?"); werte.append(rang)
+    if status is not ...:
+        setz.append("status = ?"); werte.append(status)
+    if not setz:
+        return False
+    cur = conn.execute(
+        f"UPDATE bruegge_katalog SET {', '.join(setz)} WHERE simulator = ? AND titel = ?",
+        werte + [simulator, titel])
+    return bool(cur.rowcount)
 
 
 def katalog_zusammenfassung(conn: sqlite3.Connection) -> list[dict]:
