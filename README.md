@@ -154,6 +154,7 @@ Interaktive Karte mit allen aktuell fliegenden Friesen. Sie geht über Wangeroog
 - Beim Klick auf ein Symbol: Popup mit Callsign, Strecke, Flugzeugtyp, Höhe und Geschwindigkeit
 - Den bisherigen **GPS-Track** des aktuellen Fluges als Linie — der Track wächst alle 15 Sekunden mit und zeigt den genauen Weg seit dem Start
 - Die Symbole **wandern gleichmäßig**, statt alle 15 Sekunden zu springen: Zwischen zwei VATSIM-Meldungen wird ihre Position aus Kurs und Geschwindigkeit weitergerechnet. Der eingezeichnete Track bleibt davon unberührt — dort stehen nur echte Messpunkte
+- **Türkise Flugzeuge fliegen mit der FriesenBrügge.** Ihre Position kommt dann nicht von VATSIM, sondern jede Sekunde direkt aus ihrem Simulator — auf den Meter statt auf fünfzehn Sekunden. Höhe und Geschwindigkeit am Symbol stammen aus derselben Quelle, und im Popup steht es als Zeile „Quelle: FriesenBrügge". Hört die Brügge auf zu melden (Simulator geschlossen, Netz weg), wird das Flugzeug nach zehn Sekunden wieder blau und läuft normal auf VATSIM weiter
 
 **Was du tun kannst:**
 - Karte frei verschieben und zoomen

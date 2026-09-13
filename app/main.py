@@ -99,7 +99,6 @@ from app.database import (
     bruegge_zuordnung_loesen,
     bruegge_position_schreiben,
     bruegge_position_loeschen,
-    bruegge_positionen_holen,
     bruegge_uebersicht,
     bruegge_aufraeumen,
     bruegge_soll_fuer,
@@ -1024,6 +1023,18 @@ async def bruegge_melden(request: Request):
                 gilt_bis=0)
 
         bruegge_position_schreiben(conn, cid, lage, simulator, kennung or None)
+
+        # ... und denselben Wert gleich in den Sekundenstrom legen, der die offenen Karten
+        # versorgt (s. `VatsimPoller.bruegge_strom_senden`). Erst HIER, nach der Zuordnung:
+        # Ohne cid gibt es auf der Karte kein Rufzeichen, an dem der Punkt haengen koennte.
+        #
+        # Der Poller fehlt nur im Test (die App-Fixture baut keinen) -- ein `getattr` statt
+        # eines Attributzugriffs, damit eine Meldung ohne Poller nicht am Anzeigeweg
+        # scheitert. Sie ist dann gespeichert, aber nicht live; das ist die richtige
+        # Rangfolge.
+        _poller = getattr(request.app.state, "poller", None)
+        if _poller is not None:
+            _poller.bruegge_position_merken(cid, lage)
 
         # Die Gegenrichtung: Was steht WIRKLICH? Ohne diese Zeile erfaehrt der Server nie, ob
         # ein Objekt tatsaechlich dasteht -- er schriebe eine Station in `soll`, die Bruegge

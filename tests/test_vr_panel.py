@@ -1411,7 +1411,10 @@ def test_flugzeug_symbol_ist_mittig_verankert():
     # Fremdverkehr. Der Anker muss dann erst recht mitwachsen -- er darf sich nicht mehr auf
     # eine feste Groesse verlassen.
     assert "const _FLUGZEUG_PX_FREMD = 18;" in INDEX
-    m = re.search(r"function makeAircraftIcon\(heading, fremd\) \{(.*?)\n\}", INDEX, re.S)
+    # Die Parameterliste waechst weiter (seit 13.09.2026 traegt sie die Bruegge-Farbe), der
+    # Anker aber nicht -- deshalb offen bis zur Klammer statt woertlich. Die ersten beiden
+    # Namen bleiben verankert: Sie entscheiden ueber Groesse und Form.
+    m = re.search(r"function makeAircraftIcon\(heading, fremd[^)]*\) \{(.*?)\n\}", INDEX, re.S)
     assert m, "makeAircraftIcon nicht gefunden"
     rumpf = m.group(1)
     assert "const mitte = px / 2;" in rumpf

@@ -468,6 +468,17 @@ class VatsimPoller:
         # verteilt jedes Update an alle. (Eine geteilte Queue lieferte jede Nachricht nur an
         # EINEN Consumer → nicht alle Clients bekamen Updates.)
         self._sse_subscribers: set[asyncio.Queue] = set()
+        # Die zuletzt gemeldete Bruegge-Position je cid -- fuer den Sekundenstrom an die
+        # Karte. NUR im Speicher, und das ist die Pointe: Die Zeile steht ohnehin schon in
+        # `bruegge_positions` (der Endpunkt schreibt sie), aber sie jede Sekunde von dort zu
+        # LESEN waere eine Abfrage je Sekunde fuer Daten, die eine Funktion weiter oben
+        # bereits in der Hand hatte.
+        #
+        # Ein Prozess, ein Poller: Der Container startet EINEN uvicorn-Worker (Dockerfile,
+        # CMD ohne --workers). Bei mehreren waere dieser Speicher je Worker eigen, und ein
+        # SSE-Client am falschen Worker sähe nichts -- wer das aendert, verlegt den Strom auf
+        # die Datenbank.
+        self._bruegge_live: dict[int, dict] = {}
         # Vollständige Prefile-Daten für die API (Liste von Dicts)
         self.last_prefiles: list = []
         # cid → (deptime, departure, arrival) für Änderungserkennung — None = erster Poll
@@ -557,6 +568,23 @@ class VatsimPoller:
             "interval",
             seconds=self.poll_interval,
             id="vatsim_poll",
+        )
+        # Der Bruegge-Sekundenstrom (s. bruegge_strom_senden) -- direkt hinter dem
+        # VATSIM-Poll, weil beide dieselbe Karte versorgen: der eine im 15-Sekunden-Takt mit
+        # allen, der andere im Sekundentakt mit denen, die eine bessere Quelle haben.
+        #
+        # `max_instances=1` und `coalesce=True`, weil bei Sekundentakt sonst ein einzelner
+        # langsamer Durchgang eine Warteschlange hinterlaesst, die danach am Stueck
+        # abgearbeitet wird -- die Karte bekaeme einen Schwall statt eines Taktes. Verpasste
+        # Laeufe sind hier folgenlos: Gesendet wird der ZUSTAND, nicht eine Folge von
+        # Ereignissen.
+        self._scheduler.add_job(
+            self.bruegge_strom_senden,
+            "interval",
+            seconds=1,
+            id="bruegge_strom",
+            max_instances=1,
+            coalesce=True,
         )
         # Cleanup deaktiviert — position_history wird dauerhaft behalten
         # self._scheduler.add_job(
@@ -770,6 +798,76 @@ class VatsimPoller:
                     q.put_nowait(message)
                 except Exception:
                     pass
+
+    # ------------------------------------------------------------------
+    # Bruegge-Sekundenstrom
+    # ------------------------------------------------------------------
+    #
+    # Wer eine Bruegge fliegt, meldet dem Server JEDE SEKUNDE seine echte Position
+    # (`_BRUEGGE_TAKT_VORGABE_S = 1` in app/main.py). Auf der Karte bewegte er sich trotzdem
+    # im VATSIM-Takt: alle 15 Sekunden ein gemessener Punkt, dazwischen aus Kurs und Fahrt
+    # fortgerechnet. Die bessere Quelle lag also vor und kam nie an.
+    #
+    # Der Strom ist absichtlich duenn: eine Meldung je Sekunde fuer ALLE Bruegge-Flieger
+    # zusammen, rund 60 Byte je Flieger. Nicht eine Meldung je eingehendem Bericht -- das
+    # waere bei n Fliegern n Meldungen je Sekunde und Client, ohne dass die Karte davon
+    # ruhiger wuerde (sie zeichnet ohnehin nur im Sekundentakt, s. `_naviTakt`).
+    #
+    # Fliegt niemand mit Bruegge, geht GAR NICHTS hinaus -- kein leeres Paket im Leerlauf.
+
+    #: So lange gilt eine gemeldete Position. Drei verpasste Meldungen bei Sekundentakt sind
+    #: eine Netzschwankung, zehn sind ein Abriss. Die Karte faellt danach von allein auf
+    #: VATSIM zurueck, weil sie dieselbe Frist noch einmal selbst prueft -- der Strom muss
+    #: also nicht eigens melden, dass etwas zu Ende ist.
+    BRUEGGE_FRIST_S = 10.0
+
+    def bruegge_position_merken(self, cid: int, lage: dict) -> None:
+        """Eine frisch gemeldete Bruegge-Position fuer den Sekundenstrom vormerken.
+
+        Aufgerufen aus `/api/bruegge/melden`, NACHDEM die Zuordnung zu einer cid steht. Ohne
+        Zuordnung gibt es keinen Empfaenger auf der Karte -- ein Punkt ohne Rufzeichen waere
+        dort nicht unterzubringen.
+        """
+        try:
+            lat = float(lage["lat"])
+            lon = float(lage["lon"])
+        except (KeyError, TypeError, ValueError):
+            return
+        self._bruegge_live[int(cid)] = {
+            "cid": int(cid),
+            "lat": lat,
+            "lon": lon,
+            # Runden spart im Strom rund ein Drittel und kostet nichts: Sechs Nachkommastellen
+            # sind gut 10 cm, der Kurs auf ein Zehntel Grad ist feiner, als ein 18-Pixel-Symbol
+            # zeigen kann.
+            "hdg": round(float(lage.get("kurs") or 0.0), 1),
+            "gs": round(float(lage.get("gs_kt") or 0.0), 1),
+            "alt": None if lage.get("alt_msl_ft") is None else round(float(lage["alt_msl_ft"])),
+            "agl": None if lage.get("alt_agl_ft") is None else round(float(lage["alt_agl_ft"])),
+            "gnd": bool(lage.get("am_boden")),
+            "ts": time.monotonic(),
+        }
+
+    def bruegge_strom_senden(self) -> None:
+        """Einmal je Sekunde: alle frischen Bruegge-Positionen an die offenen Karten.
+
+        Kein `async`, obwohl der Scheduler beides nimmt: Die Funktion wartet auf nichts.
+        `broadcast_sse` legt nur in Queues ab.
+        """
+        jetzt = time.monotonic()
+        # Beim Durchgehen gleich aufraeumen: Ohne das waechst der Speicher mit jeder cid, die
+        # je gemeldet hat, und der Strom traegt Positionen von Fluegen, die laengst vorbei
+        # sind.
+        for cid in [c for c, e in self._bruegge_live.items()
+                    if (jetzt - e["ts"]) >= self.BRUEGGE_FRIST_S]:
+            del self._bruegge_live[cid]
+        if not self._bruegge_live:
+            return
+        self.broadcast_sse({
+            "type": "bruegge",
+            "data": [{k: v for k, v in e.items() if k != "ts"}
+                     for e in self._bruegge_live.values()],
+        })
 
     def broadcast_notify(self, service: str, subject_cid: int | None, payload: dict,
                          nur_cid: int | None = None) -> None:

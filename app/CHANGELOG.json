@@ -1,5 +1,17 @@
 [
   {
+    "version": "14.36.0",
+    "date": "2026-09-13",
+    "highlight": false,
+    "title": "Friesen mit FriesenBrügge fliegen auf der Karte im Sekundentakt",
+    "items": [
+      "🛰️ Bisher kam jede Position von VATSIM — alle 15 Sekunden eine Meldung, dazwischen aus Kurs und Fahrt geschätzt. Wer Die FriesenBrügge fliegt, meldet dem Server aber jede Sekunde, wo er wirklich ist. Diese Meldungen lagen bisher nur in der Datenbank; jetzt gehen sie auf die Karte.",
+      "💠 Zu erkennen ist es an der Farbe: Ein türkises Flugzeug wird sekundengenau geführt, ein blaues kommt wie bisher von VATSIM. Höhe und Geschwindigkeit am Symbol stammen dann aus derselben Quelle, und im Popup steht die Zeile „Quelle: FriesenBrügge“.",
+      "🔁 Hört Die FriesenBrügge auf zu melden — Simulator geschlossen, Netz weg —, wird das Flugzeug nach zehn Sekunden wieder blau und läuft normal auf VATSIM weiter. Es verschwindet nicht und bleibt auch nicht stehen.",
+      "📦 Am Simulator ändert sich nichts. Die FriesenBrügge sendet das alles schon seit ihrer ersten Fassung; es wurde nur nicht weitergereicht. Wer sie installiert hat, muss nichts nachinstallieren."
+    ]
+  },
+  {
     "version": "14.35.0",
     "date": "2026-09-13",
     "highlight": false,

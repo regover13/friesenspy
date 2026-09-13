@@ -443,6 +443,38 @@ Single-File-SPA ohne Build-Step. Vier Tabs:
 - **Zustand** im Merker-Cookie (`friesenspy_trackup`, `friesenspy_movingmap`, s. oben — bis v13.5.0 in `localStorage`, was im Kniebrett keinen Sim-Neustart überstand). `dragstart` schaltet Moving Map ab, Zoomen nicht.
 - **Messung** `panel_diag` `kind="navi"`: einmalig 20 s nach dem Kartenaufbau — beantwortet, ob die Sim-Position wirklich ankam oder der VATSIM-Fallback lief (`quelle`), ob das Plugin greift und wie das Bearing steht.
 
+**Die FriesenBrügge als Positionsquelle (v14.36.0).** Wer eine Brügge fliegt, meldet dem Server
+im Sekundentakt (`_BRUEGGE_TAKT_VORGABE_S = 1`) seine echte Position. Bis v14.36.0 landete das
+ausschließlich in `bruegge_positions` und ging von dort nicht weiter — `bruegge_positionen_holen`
+war importiert und wurde nie aufgerufen, ihr Docstring versprach „für /api/live". Die Funktion ist
+mit dieser Fassung entfallen; der Weg läuft jetzt am Speicher entlang statt an der Datenbank.
+
+- **Server**: `/api/bruegge/melden` legt die Lage nach erfolgter Zuordnung zusätzlich in
+  `poller._bruegge_live[cid]` ab (`bruegge_position_merken`). Ein Scheduler-Job im Sekundentakt
+  (`bruegge_strom_senden`, `max_instances=1`, `coalesce=True`) sendet den ganzen Satz als
+  SSE-Meldung `{type:'bruegge', data:[…]}`. **Nur im Speicher**, aus demselben Grund wie beim
+  `traffic_snapshot`: Die Zeile steht ohnehin schon in der Datenbank, sie jede Sekunde von dort zu
+  *lesen* wäre eine Abfrage je Sekunde für Daten, die der Endpunkt eine Funktion weiter oben in der
+  Hand hatte. Das setzt **einen** uvicorn-Worker voraus (Dockerfile, `CMD` ohne `--workers`).
+- **Eine Meldung je Sekunde für alle zusammen**, nicht eine je eingehendem Bericht: Bei n Fliegern
+  wären das sonst n Meldungen je Sekunde und Client, ohne dass die Karte ruhiger würde — sie
+  zeichnet ohnehin nur im Sekundentakt. Meldet niemand, geht **gar nichts** hinaus.
+- **Karte**: `_brueggeStromEinarbeiten` übersetzt cid → Rufzeichen über `liveData` und schreibt in
+  dieselbe Tabelle `_positionsRoh`, aus der `_naviTakt` ohnehin liest. Es entsteht **kein zweiter
+  Zeichenweg** — die Fortrechnung läuft danach über eine Sekunde statt über fünfzehn und ist
+  praktisch null. Höhe und Fahrt fürs Schild stehen in `_brueggeWerte` (dasselbe Muster wie
+  `_friesenSimWerte`), `_mitSimWerten` gibt ihnen Vorrang vor dem lokalen Sim-Verkehr: Der hängt an
+  einer **geratenen** Zuordnung über Position und Kurs, die Brügge trägt die cid.
+- **`_markerGehoertDemSim`** hält den 15-Sekunden-Abruf vom frischen Punkt fern — ohne das schriebe
+  `updateMap` ihn reihum auf den alten zurück (derselbe Rückwärtssprung wie beim eigenen Flugzeug).
+- **Rückfall ohne Abmeldung**: Der Strom meldet sein Ende nicht — wer den Simulator schließt, hört
+  schlicht auf zu senden. Beide Seiten prüfen deshalb dieselbe Frist (`BRUEGGE_FRIST_S` = 10 s,
+  `_BRUEGGE_FRIST_MS`): Der Server vergisst den Eintrag, die Karte fällt auf VATSIM zurück.
+- **Farbe** `.aircraft-marker-bruegge` (türkis) statt des Vereinsblaus, dazu die Popup-Zeile
+  „Quelle: FriesenBrügge". Der Farbwechsel sitzt im **Sekundentakt**, nicht in `updateMap`: Er muss
+  auch beim Zurück-Wechsel greifen, und dort rührt `updateMap` das Symbol unter Umständen nie
+  wieder an.
+
 **Fremdverkehr auf der Karte (v12.7.0).** Anderer VATSIM-Verkehr als abschaltbare Ebene „Verkehr" in der bestehenden `L.control.layers` — dieselbe Bedienung wie OpenAIP, kein eigener Knopf. Geschaltet wird **ausschließlich** der Fremdverkehr; die Friesen sind der Kern der Anwendung und bleiben immer sichtbar.
 
 - **Datenweg**: `_poll_once` legt den kompletten Feed als `poller.traffic_snapshot` **im Speicher** ab (nicht in der Datenbank — Fremdverkehr ist reine Anzeige, und eine Historie über ~1000 Flugzeuge im 15-Sekunden-Takt wäre in Tagen größer als alles andere in dieser Datenbank zusammen). `/api/traffic` schneidet daraus den Umkreis der Kartenmitte heraus.

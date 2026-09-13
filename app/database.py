@@ -2700,12 +2700,6 @@ def bruegge_position_holen(conn: sqlite3.Connection, cid: int) -> dict | None:
     return _row_to_dict(row) if row else None
 
 
-def bruegge_positionen_holen(conn: sqlite3.Connection) -> list[dict]:
-    """Alle Bruegge-Positionen -- fuer /api/live, das sie ueber die VATSIM-Punkte legt."""
-    rows = conn.execute("SELECT * FROM bruegge_positions").fetchall()
-    return [_row_to_dict(r) for r in rows]
-
-
 def bruegge_position_loeschen(conn: sqlite3.Connection, cid: int) -> None:
     """Die Bruegge-Position vergessen (kein commit) -- etwa beim Ausloggen von VATSIM."""
     conn.execute("DELETE FROM bruegge_positions WHERE cid = ?", (int(cid),))

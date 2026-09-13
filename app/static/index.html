@@ -2598,6 +2598,24 @@
       filter: drop-shadow(0 0 2px rgba(255,255,255,0.95));
     }
 
+    /* Ein Friese, dessen FriesenBrügge gerade meldet: dieselbe Silhouette und dieselbe
+       Größe wie jeder andere Friese, nur in Türkis statt im Vereinsblau. Er ist derselbe
+       Mensch im selben Verein -- die Farbe sagt nicht, WER er ist, sondern wie genau die
+       Karte ihn kennt: auf die Sekunde statt auf fünfzehn.
+
+       Türkis und nicht Bernstein oder Rot: Beide sind in dieser App vergeben (Warnung und
+       Alarm), und eine bessere Datenlage ist das Gegenteil davon. Türkis liegt zudem weit
+       genug vom Blau der übrigen Friesen, um es auf dem Satellitenbild noch zu trennen --
+       ein helleres Blau wäre auf der hellen Standardkarte nicht mehr zu unterscheiden
+       gewesen. Der dunkle Saum kommt unverändert von .aircraft-marker. */
+    .aircraft-marker-bruegge {
+      color: #19d3c5;
+    }
+
+    /* Dieselbe Farbe im Popup, damit die Zeile „FriesenBrügge" und das Symbol auf der Karte
+       als dieselbe Aussage zu erkennen sind. */
+    .popup-bruegge { color: #19d3c5; }
+
     /* Das Label am Flugzeug sitzt als Leaflet-Tooltip unter dem Symbol -- bewusst NICHT im
        Marker-Icon: Der Marker wird bei Track-up mitgedreht (rotateWithView), ein Label darin
        stuende dann auf dem Kopf. Tooltips liegen bei leaflet-rotate im nicht drehenden Pane
@@ -6162,9 +6180,16 @@ function _verkehrZusammenfuehren() {
     // Friese im Kniebrett so genau wie das eigene Flugzeug -- gemessen jede Sekunde statt
     // vierzehn von fuenfzehn Sekunden geschaetzt.
     if (v && v._friese) {
-      _positionsRoh[v.cs] = { lat: s.lat, lon: s.lon, hdg: Number(s.hdg) || 0,
-                              gs: Number(s.gs) || 0, ts: _simVerkehr.ts };
-      _friesenSimWerte[v.cs] = { alt: s.alt, gs: s.gs };
+      // ... es sei denn, er fliegt eine FriesenBruegge. Dann steht sein Punkt schon da, und
+      // zwar ohne die Unsicherheit dieser Zuordnung: Hier wird ueber Position und Kurs
+      // GERATEN, welches Sim-Flugzeug welcher Friese ist. Die Bruegge meldet die cid mit.
+      // Trifft die Zuordnung daneben, schoebe diese Zeile einen Friesen an den Ort eines
+      // ganz anderen Flugzeugs -- die Bruegge kann das nicht.
+      if (!_brueggeFrisch(v.cs)) {
+        _positionsRoh[v.cs] = { lat: s.lat, lon: s.lon, hdg: Number(s.hdg) || 0,
+                                gs: Number(s.gs) || 0, ts: _simVerkehr.ts };
+        _friesenSimWerte[v.cs] = { alt: s.alt, gs: s.gs };
+      }
       continue;
     }
     const e = { lat: s.lat, lon: s.lon, alt: s.alt, hdg: s.hdg, gs: s.gs,
@@ -7719,6 +7744,12 @@ function connectSSE() {
         // Prefiles/TeamSpeak NICHT hier mitfeuern — sie laufen auf eigenem, langsamerem
         // Takt (siehe setInterval unten). Sonst feuerte das Paar bei jedem 15s-Push und
         // sprengte zusammen mit mehreren Geräten pro IP das geteilte /api/-Rate-Limit (429).
+      } else if (msg.type === 'bruegge') {
+        // Der Sekundentakt der FriesenBruegge. KEIN renderLiveTable und KEIN updateMap:
+        // Die Meldung aendert nur, wo ein Flugzeug steht -- bewegt wird ausschliesslich im
+        // Takt (s. _naviTakt), und die Liste darunter ist eine Tabelle, keine Laufschrift.
+        // Sie hier mitzuziehen hiesse, jede Sekunde die halbe Seite neu zu bauen.
+        _brueggeStromEinarbeiten(msg.data);
       } else if (msg.type === 'aip_charts') {
         // Im Admin wurde eine Karte gepasst oder ihre Seite getauscht. Auffrischen statt
         // neu laden: Das Kniebrett laedt innerhalb einer Sim-Sitzung nie neu (die EFB-App
@@ -10317,6 +10348,75 @@ function _eigenePosition() {
 // Fortrechnung -- absichtlich getrennt von dem, was auf der Karte steht.
 const _positionsRoh = {};
 
+// ==========================================================================
+//  DIE FRIESENBRUEGGE ALS QUELLE: fremde Friesen im Sekundentakt
+// ==========================================================================
+// Dasselbe Prinzip wie beim eigenen Flugzeug, nur fuer die anderen -- und es ist der Grund,
+// warum es die Bruegge gibt: Sie sitzt IM Simulator des anderen Piloten und meldet dem
+// Server jede Sekunde, wo er wirklich ist. VATSIM meldet dieselbe Sache alle 15 Sekunden.
+//
+// Der Weg dorthin ist bewusst kurz: Der Server legt die frischen Meldungen in einen
+// Sekundenstrom (SSE, `type: 'bruegge'`), und der Empfaenger schreibt sie in dieselbe
+// Tabelle `_positionsRoh`, aus der sich der vorhandene Sekundentakt (`_naviTakt`) ohnehin
+// bedient. Es entsteht KEIN zweiter Zeichenweg -- nur eine bessere Zahl an derselben Stelle.
+// Die Fortrechnung laeuft danach ueber eine Sekunde statt ueber fuenfzehn und ist damit
+// praktisch null.
+//
+// Genau dieses Verfahren laeuft im Kniebrett schon (s. _verkehrZusammenfuehren), dort mit
+// dem lokalen Sim-Verkehr als Quelle. Die Bruegge ist die bessere: Sie reicht ueber den
+// ganzen Kartenausschnitt statt nur ueber den geladenen Umkreis, sie braucht kein
+// Positions-Matching, und sie gilt auf der Website genauso wie im Cockpit.
+
+// callsign -> { alt, gs, agl, gnd, ts } aus der Bruegge. Position und Kurs stehen in
+// _positionsRoh (wie beim Sim-Verkehr); hier bleibt, was VATSIM nur aelter weiss.
+const _brueggeWerte = {};
+
+// Dieselbe Frist, die auch der Server anlegt (VatsimPoller.BRUEGGE_FRIST_S). Sie steht hier
+// ein zweites Mal, und das ist Absicht: Der Strom meldet nicht, dass er endet -- wer den
+// Simulator schliesst, hoert schlicht auf zu senden. Die Karte muss deshalb selbst
+// entscheiden, wann sie wieder auf VATSIM zurueckfaellt.
+const _BRUEGGE_FRIST_MS = 10000;
+
+/** Liefert die Bruegge fuer dieses Rufzeichen gerade? */
+function _brueggeFrisch(callsign) {
+  const b = _brueggeWerte[callsign];
+  return !!(b && (Date.now() - b.ts) < _BRUEGGE_FRIST_MS);
+}
+
+/**
+ * Eine Sekundenmeldung aus dem Bruegge-Strom einarbeiten.
+ *
+ * Der Server schickt cid, nicht Rufzeichen: Er kennt beides, aber die Karte fuehrt ihre
+ * Marker unter dem Rufzeichen, und das steht in `liveData` ohnehin neben der cid. Die
+ * Uebersetzung hier zu machen spart dem Strom ein Feld je Flieger und je Sekunde -- und sie
+ * ist die richtige Stelle: Wer NICHT in liveData steht, hat auch keinen Marker, den man
+ * bewegen koennte.
+ */
+function _brueggeStromEinarbeiten(liste) {
+  if (!Array.isArray(liste) || !liste.length) return;
+  const jetzt = Date.now();
+  for (let i = 0; i < liste.length; i++) {
+    const e = liste[i];
+    if (!e || e.lat == null || e.lon == null) continue;
+    let cs = null;
+    for (let k = 0; k < liveData.length; k++) {
+      if (String(liveData[k].cid) === String(e.cid)) { cs = liveData[k].callsign; break; }
+    }
+    if (!cs) continue;
+    // Das eigene Flugzeug NICHT aus der Bruegge setzen. Im Kniebrett kommt es aus dem
+    // Simulator direkt (_simPos, ohne Netzweg), und _eigenesFlugzeugZeichnen ist die einzige
+    // Stelle, die seinen Marker setzt -- ein zweiter Schreiber daneben waere genau der
+    // Wettlauf, der schon einmal als Zurueckspringen sichtbar war.
+    if (_istEigenesFlugzeug(cs)) continue;
+    _positionsRoh[cs] = { lat: Number(e.lat), lon: Number(e.lon),
+                          hdg: Number(e.hdg) || 0, gs: Number(e.gs) || 0, ts: jetzt };
+    _brueggeWerte[cs] = { alt: (e.alt == null) ? null : Number(e.alt),
+                          gs:  (e.gs  == null) ? null : Number(e.gs),
+                          agl: (e.agl == null) ? null : Number(e.agl),
+                          gnd: !!e.gnd, ts: jetzt };
+  }
+}
+
 /**
  * Position aus Kurs und Grundgeschwindigkeit fortschreiben.
  *
@@ -11802,9 +11902,17 @@ function _naviTakt(sofort) {
     // die es fliegt"). Nur bei echter Aenderung: setIcon ersetzt das DOM-Element des
     // Markers komplett und liess das Panel frueher sichtbar aufblitzen.
     const kurs = Math.round(Number(roh.hdg) || 0);
-    if (mapMarkers[cs]._fsHeading !== kurs) {
-      mapMarkers[cs].setIcon(makeAircraftIcon(kurs));
+    // Die Farbe gehoert MIT hierher, nicht zu updateMap: Sie muss auch dann wechseln, wenn
+    // sich am Kurs nichts aendert -- und vor allem beim ZURUECK-Wechsel. Endet der
+    // Bruegge-Strom (Simulator geschlossen, Netz weg), ruehrt updateMap das Symbol unter
+    // Umstaenden nie wieder an, und es bliebe in der Farbe stehen, die eine Genauigkeit
+    // behauptet, die es nicht mehr gibt. Dieser Takt laeuft ueber jeden Marker, jede
+    // Sekunde; er ist die einzige Stelle, die das zuverlaessig sieht.
+    const brueggeJetzt = _brueggeFrisch(cs);
+    if (mapMarkers[cs]._fsHeading !== kurs || mapMarkers[cs]._fsBruegge !== brueggeJetzt) {
+      mapMarkers[cs].setIcon(makeAircraftIcon(kurs, false, brueggeJetzt));
       mapMarkers[cs]._fsHeading = kurs;
+      mapMarkers[cs]._fsBruegge = brueggeJetzt;
     }
   }
 
@@ -12117,7 +12225,13 @@ function _simPosFrisch() {
  * Das Original bleibt unangetastet: `p` steckt in liveData und wird anderswo weiterverwendet.
  */
 function _mitSimWerten(p) {
-  const sim = p && p.callsign ? _friesenSimWerte[p.callsign] : null;
+  const cs = p ? p.callsign : null;
+  // Die Bruegge vor dem lokalen Sim-Verkehr, und das ist kein Geschmack: Beide sind
+  // sekundenfrisch, aber der lokale Weg haengt an einer GERATENEN Zuordnung (Position und
+  // Kurs passen zusammen, also wird es wohl derselbe sein). Die Bruegge traegt die cid des
+  // Piloten -- da ist nichts zu raten.
+  const sim = (cs && _brueggeFrisch(cs)) ? _brueggeWerte[cs]
+            : (cs ? _friesenSimWerte[cs] : null);
   if (!sim) return p;
   const kopie = Object.assign({}, p);
   if (sim.alt != null) kopie.altitude = sim.alt;
@@ -12152,6 +12266,12 @@ function _markerGehoertDemSim(callsign) {
   // (s. _verkehrZusammenfuehren). Fuer ihn gilt dasselbe wie fuer das eigene Flugzeug: Der
   // Simulator kennt seine Position auf den Meter, VATSIM auf 29 Sekunden.
   if (_friesenSimWerte[callsign] && _simVerkehrFrisch()) return true;
+  // Ein Friese mit FriesenBruegge -- dieselbe Ueberlegung, nur mit der besseren Quelle:
+  // Seine Bruegge sitzt in SEINEM Simulator und meldet jede Sekunde. Ohne diese Zeile
+  // schriebe der 15-Sekunden-Abruf den frischen Punkt reihum wieder auf den alten zurueck,
+  // und das Symbol spraenge im Takt der VATSIM-Meldungen zurueck -- derselbe Fehler, der
+  // beim eigenen Flugzeug schon einmal sichtbar war.
+  if (_brueggeFrisch(callsign)) return true;
   if (!_simPosFrisch()) return false;
   const meins = _meinCallsign();
   return !!meins && meins === callsign;
@@ -12434,12 +12554,17 @@ const _FLUGZEUG_PFAD_FREMD =
   'M12 1.6c-.85 0-1.4 1.3-1.4 3.1v3.4L2.2 12.6v2.1l8.4-2.5v4.3l-2.5 1.7v1.6l3.9-1.1 3.9 1.1' +
   'v-1.6l-2.5-1.7v-4.3l8.4 2.5v-2.1l-8.4-4.5V4.7c0-1.8-.55-3.1-1.4-3.1z';
 
-function makeAircraftIcon(heading, fremd) {
+function makeAircraftIcon(heading, fremd, bruegge) {
   const hdg = Number(heading) || 0;
   const px = fremd ? _FLUGZEUG_PX_FREMD : _FLUGZEUG_PX;
   const pfad = fremd ? _FLUGZEUG_PFAD_FREMD : _FLUGZEUG_PFAD;
   const mitte = px / 2;
-  const klasse = fremd ? 'aircraft-marker aircraft-marker-fremd' : 'aircraft-marker';
+  // Form und Groesse bleiben, nur die Farbe wechselt: Ein Friese mit Bruegge ist derselbe
+  // Friese, er ist nur genauer zu sehen. Die Silhouette unterscheidet weiter Friesen von
+  // Fremdverkehr -- daran darf die Quelle nichts aendern, sonst traegt ein Zeichen zwei
+  // Bedeutungen.
+  const klasse = fremd ? 'aircraft-marker aircraft-marker-fremd'
+               : (bruegge ? 'aircraft-marker aircraft-marker-bruegge' : 'aircraft-marker');
   return L.divIcon({
     className: '',
     html: `<div class="${klasse}" style="transform: rotate(${hdg}deg);">
@@ -12455,7 +12580,16 @@ function makeAircraftIcon(heading, fremd) {
   });
 }
 
-function buildPopupHtml(p) {
+function buildPopupHtml(roh) {
+  // Mit den besseren Werten rechnen, nicht mit den rohen: Steht am Symbol eine Höhe aus der
+  // Brügge und im Fenster daneben eine 29 Sekunden alte von VATSIM, widerspricht die Karte
+  // sich selbst — und der Leser hat keine Möglichkeit zu erkennen, welche gilt.
+  const p = _mitSimWerten(roh);
+  // Die Quelle steht nur dann da, wenn sie eine Aussage ist. „VATSIM" bei allen anderen zu
+  // schreiben wäre eine Zeile, die in 95 % der Fälle nichts hinzufügt.
+  const quelle = _brueggeFrisch(p.callsign)
+    ? `<div class="popup-row">Quelle: <span class="popup-bruegge">FriesenBrügge</span></div>`
+    : '';
   return `
     <div class="popup-callsign">${escHtml((p.callsign || '').toUpperCase())}${listenLinkIcon(p.callsign)}</div>
     <div class="popup-row">Pilot: <span>${escHtml(p.name || '—')}</span></div>
@@ -12463,7 +12597,8 @@ function buildPopupHtml(p) {
     <div class="popup-row">Flugplan: <span>${fmtRouteHtml(p.departure, p.arrival)}</span></div>
     <div class="popup-row">Höhe: <span>${fmtAlt(p.altitude)}</span></div>
     <div class="popup-row">GS: <span>${fmtGS(p.groundspeed)}</span></div>
-    <div class="popup-row">Online: <span>${fmtOnlineTime(p.logon_time)}</span></div>`;
+    <div class="popup-row">Online: <span>${fmtOnlineTime(p.logon_time)}</span></div>
+    ${quelle}`;
 }
 
 function _drawLiveTrackLine(callsign) {
@@ -12521,6 +12656,12 @@ function updateMap(pilots) {
   for (const cs in _positionsRoh) {
     if (!currentCallsigns.has(cs)) delete _positionsRoh[cs];
   }
+  // Dasselbe fuer die Bruegge-Werte. Wer von VATSIM verschwunden ist, hat keinen Marker mehr
+  // -- seine Hoehe weiter vorzuhalten hiesse, sie beim naechsten Erscheinen unter demselben
+  // Rufzeichen als frisch auszugeben.
+  for (const cs in _brueggeWerte) {
+    if (!currentCallsigns.has(cs)) delete _brueggeWerte[cs];
+  }
 
   // Add / update markers
   for (const p of (pilots || [])) {
@@ -12577,6 +12718,11 @@ function updateMap(pilots) {
       if (!demSim && vorhanden._fsHeading !== hdg) {
         vorhanden.setIcon(makeAircraftIcon(hdg));
         vorhanden._fsHeading = hdg;
+        // `!demSim` heisst hier zwangslaeufig: keine frische Bruegge (s.
+        // _markerGehoertDemSim). Den Merker trotzdem nachziehen -- sonst sieht der
+        // Sekundentakt einen Unterschied, den es nicht gibt, und baut das Symbol noch
+        // einmal auf.
+        vorhanden._fsBruegge = false;
       }
       // Guenstig, solange das Popup zu ist: Leaflet merkt sich den Inhalt dann nur.
       vorhanden.setPopupContent(buildPopupHtml(p));
@@ -12598,8 +12744,10 @@ function updateMap(pilots) {
       // Marker-Drehung addieren -- ohne dass wir jedes Symbol bei jeder Kursaenderung neu
       // zeichnen muessten (das war die Alternative und haette die halbe Karte in Bewegung
       // gehalten). Ohne geladenes Plugin ist die Option schlicht unbekannt und wirkungslos.
+      const brueggeJetzt = _brueggeFrisch(p.callsign);
       const marker = L.marker([p.latitude, p.longitude],
-                              { icon: makeAircraftIcon(hdg), rotateWithView: true })
+                              { icon: makeAircraftIcon(hdg, false, brueggeJetzt),
+                                rotateWithView: true })
         .bindPopup(buildPopupHtml(p), { maxWidth: 240 })
         // Das Label als Tooltip, NICHT im Icon: Der Marker dreht bei Track-up mit
         // (rotateWithView), ein Label darin stuende auf dem Kopf. Tooltips liegen bei
@@ -12609,6 +12757,7 @@ function updateMap(pilots) {
                        className: 'traffic-label', opacity: 1 })
         .addTo(liveMap);
       marker._fsHeading = hdg;
+      marker._fsBruegge = brueggeJetzt;
       marker._fsLabel = _verkehrLabel(_mitSimWerten(p));
       mapMarkers[p.callsign] = marker;
       // Ersten Track-Fetch triggern wenn Pilot neu erscheint
