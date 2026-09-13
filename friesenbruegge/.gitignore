@@ -1,6 +1,10 @@
 # Bauergebnisse -- gehoeren nicht ins Repo, sie entstehen aus bauen.ps1
 *.o
-*.obj
+# ⚠ NUR der Bauabfall im MSFS-Ordner, nicht jede .obj: Unter xplane/objekte/ liegen die
+# Rauchsaeulen als .obj, und die sind Quelltext -- sieben Zeilen, von Hand erzeugt. Mit dem
+# nackten Muster fielen sie zweimal aus einem Commit heraus (13.09.2026), beide Male
+# unbemerkt, bis 'git ls-files' es zeigte.
+msfs/*.obj
 *.wasm
 *.xpl
 *.lib

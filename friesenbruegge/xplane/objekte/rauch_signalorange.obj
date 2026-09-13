@@ -1,0 +1,8 @@
+I
+800
+OBJ
+# Die FriesenBruegge -- Rauchsaeule. Kein Modell, nur ein Partikel-Emitter.
+
+PARTICLE_SYSTEM rauch_signalorange.pss
+POINT_COUNTS 0 0 0 0
+EMITTER frs_rauch 0 0 0 0 0 0
