@@ -2646,6 +2646,12 @@
     }
     .karten-legende-unter > li { display: block; }
     .karten-legende-unter strong { color: var(--text-bright); font-weight: 600; }
+    /* Kompass und Moving-Map-Pfeil teilen sich eine Zeile: Sie haben dieselbe Bedingung
+       (ein bekanntes eigenes Flugzeug), und die stand vorher abgekoppelt zwei Zeilen
+       tiefer -- gelesen wurde sie so nicht (Nutzer, 14.09.2026: "war ich damit nicht
+       deutlich?"). Jetzt tragen beide Symbole EINE gemeinsame Bedingung vor sich her. */
+    .karten-legende-doppelicon { flex: none; display: flex; gap: 3px; margin-top: 3px; }
+    .karten-legende-doppelicon .icon { margin-top: 0; }
     /* Dasselbe Flugzeug-Symbol wie auf der Karte, per denselben Klassen
        (.aircraft-marker/-fremd/-bruegge) eingefaerbt -- keine eigene Farbdefinition noetig,
        und eine Aenderung der Kartenfarbe zieht die Legende automatisch mit. */
@@ -4384,15 +4390,13 @@
           </span>
         </li>
         <li>
-          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 L16 13 L12 11 Z" fill="#e05555"/><path d="M12 21 L8 11 L12 13 Z" fill="#cfe3f0"/></svg>
-          <span>Kompassnadel oben rechts: Karte drehen — genordet oder in Flugrichtung (Track-up).</span>
-        </li>
-        <li>
-          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 L20 20 L12 16 L4 20 Z" fill="currentColor"/></svg>
-          <span>Pfeil unten rechts: Karte folgt dem eigenen Flugzeug.</span>
-        </li>
-        <li>
-          <span>Kompass und Moving-Map-Pfeil erscheinen nur, wenn die Karte ein eigenes Flugzeug kennt — im Kniebrett genügt Fliegen, auf der Website musst du selbst auf VATSIM eingeloggt sein.</span>
+          <span class="karten-legende-doppelicon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 L16 13 L12 11 Z" fill="#e05555"/><path d="M12 21 L8 11 L12 13 Z" fill="#cfe3f0"/></svg><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 L20 20 L12 16 L4 20 Z" fill="currentColor"/></svg></span>
+          <span>Diese beiden Knöpfe gibt es <strong>nur, solange du selbst fliegst</strong> — im Kniebrett genügt es zu fliegen, auf der Website musst du dafür mit deinem eigenen Rufzeichen auf VATSIM online sein. Sonst sind sie gar nicht da, statt wirkungslos herumzustehen:
+            <ul class="karten-legende-unter">
+              <li><strong>Kompassnadel</strong> oben rechts — dreht die Karte in Flugrichtung („Track-up") und wieder zurück nach Norden. Die Nadel zeigt dabei immer dorthin, wo Norden liegt: bei genordeter Karte senkrecht, bei Track-up schräg</li>
+              <li><strong>Pfeil</strong> unten rechts — die Karte folgt dem eigenen Flugzeug. Verschiebst du sie von Hand, schaltet er sich von selbst ab; Zoomen tut das nicht</li>
+            </ul>
+          </span>
         </li>
         <li>
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.5 3a7.5 7.5 0 1 0 4.55 13.46l4.24 4.25 1.42-1.42-4.25-4.24A7.5 7.5 0 0 0 10.5 3zm0 2a5.5 5.5 0 1 1 0 11 5.5 5.5 0 0 1 0-11z" fill="currentColor"/></svg>
