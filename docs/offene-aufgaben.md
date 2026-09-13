@@ -8,6 +8,75 @@ und prüfen, ob eine andere die Aufgabe schon erledigt hat.
 
 ---
 
+## ⭐ NÄCHSTES STÜCK: Die Brügge soll ihre Objektliste vom Server bekommen
+
+**Vom Nutzer entschieden am 14.09.2026.** Gemeinsam erarbeitet, nachdem der eigene Rauch
+fertig war — die Entscheidung selbst ist seine.
+
+### Worum es geht
+
+Die Brügge trägt heute eine eigene Gattungstabelle (`g_gattungen[]` in `msfs/bruegge.cpp`,
+Gegenstück in `xplane/bruegge.cpp`): Gattung → Liste von Titeln, die sie der Reihe nach
+probiert. Kommt eine neue Gattung dazu, braucht es ein **Client-Release** — Windows-Build
+und Verteilung an 61 Piloten.
+
+Künftig soll der Server die Titel **mitschicken**:
+
+```jsonc
+// heute
+"soll": [{ "art": "rauch_signalrot", "lat": 54.3, "lon": 7.9 }]
+
+// künftig
+"soll": [{ "art": "rauch_signalrot",
+           "titel": ["FrsRauch_Signalrot", "item_flare_red"],
+           "lat": 54.3, "lon": 7.9 }]
+```
+
+Die Brügge probiert die Liste von vorn nach hinten — genau das tut sie heute schon, nur
+mit ihrer eigenen Tabelle. Sie wird dadurch **dümmer**, nicht klüger.
+
+### Warum das richtig ist
+
+Es ist das Leitbild aus `friesenbruegge/PROTOKOLL.md`, Zeile eins:
+
+> **Die Brügge ist dumm. Alle Klugheit bleibt auf dem Server.**
+> Ein Fehler darin kostet dreimal, und jede Korrektur kostet ein Client-Release — einen
+> Windows-Build und eine Verteilung an 61 Piloten. Ein Server-Release kostet einen Push.
+
+Die Gattungstabelle im Client widerspricht dem. Am 13.09.2026 zweimal bezahlt: FRS61s
+ältere Brügge kannte `robbe` und `tier_wild` nicht und meldete `GATTUNG_UNBEKANNT`.
+
+**Der Server ist dafür auch besser ausgerüstet:** Die Tabelle `bruegge_katalog` führt
+**2935 Zeilen** mit `simulator`, `titel`, `paket`, `kategorie`, `ergebnis` (steht/gescheitert)
+und `geprueft_am`. Er weiß also, was **tatsächlich funktioniert** — das kann eine statische
+Tabelle im Client grundsätzlich nicht. Nebengewinn: Die **1146 ungeprüften
+X-Plane-Katalogzeilen** wären ohne ein einziges Client-Release nutzbar.
+
+Welchen Simulator er bedient, weiß der Server bereits — die Brügge meldet `simulator` in
+jeder Meldung.
+
+### Was anzufassen ist
+
+| Stelle | was |
+|---|---|
+| `friesenbruegge/PROTOKOLL.md` | Vertrag: `titel`-Feld in `soll`. **Protokollfassung erhöhen.** |
+| `app/main.py` / `app/database.py` | Titel aus `bruegge_katalog` je Simulator beilegen |
+| `friesenbruegge/msfs/bruegge.cpp` | `g_gattungen[]` weicht der gelieferten Liste |
+| `friesenbruegge/xplane/bruegge.cpp` | dasselbe |
+
+### Offene Fragen dabei
+
+- **`kann` bekommt eine neue Bedeutung:** nicht mehr „was in meiner Tabelle steht“, sondern
+  „was ich tatsächlich setzen konnte“. Das ist ehrlicher, ändert aber die Semantik im
+  Protokoll.
+- **Abwärtskompatibilität:** Ältere Brüggen ignorieren ein unbekanntes `titel`-Feld und
+  fallen auf ihre Tabelle zurück — das sollte von selbst gutgehen, ist aber zu prüfen.
+- **Ein Scheitern merkt sich die Brügge pro `id`** (13.09.2026 zweimal reproduziert): Wird
+  dieselbe `id` mit anderer Gattung neu gesetzt, meldet sie weiter `GATTUNG_UNBEKANNT`.
+  Erst eine neue `id` wird neu bewertet. Beim Umbau mitklären.
+
+---
+
 ## AIP-Kartenblätter: was noch von Hand durchzusehen ist
 
 Stand 31.08.2026, aus der Datenbank. **Die beiden früher hier offenen Sichtflugkarten (EDDN,
