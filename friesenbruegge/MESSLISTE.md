@@ -899,6 +899,89 @@ zwei Dinge:
 
 ---
 
+## ✅ X-Plane 12 — am 13.09.2026 am Stück abgearbeitet
+
+**Die zweite Brügge (`xplane/bruegge.cpp`, Fassung 1.0.0) ist geflogen.** Alles in einer
+Sitzung, ohne einen einzigen Simulator-Neustart zwischendurch — genau so, wie diese Liste es
+seit dem 11.09. vorschreibt.
+
+| Punkt | Ergebnis |
+|---|---|
+| Plugin lädt | ✅ `Loaded: …/FriesenBruegge.xpl (de.friesenflieger.bruegge)` |
+| Datarefs | ✅ gefunden (sonst stünde die FEHLT-Zeile im Log) |
+| Kennung | ✅ geschrieben **und nach einem Neustart wiedergelesen** (`fb0225a72bb734be`) |
+| Netz (eigener Thread, WinHTTP, TLS) | ✅ Meldungen kommen an, HTTP 200 statt 422 — das JSON ist also gültig |
+| Objekt setzen | ✅ sechs Gattungen gleichzeitig, **alle im Bild gesehen** |
+| Terrain-Probe am Zielort | ✅ jedes Objekt auf seiner eigenen Höhe, alle `hoehe_gemessen: true` |
+| Abräumen | ✅ fünf aus `soll` genommen → beim nächsten Takt fort |
+| Umsetzen | ✅ Hirsch von 5 m auf 60 m, meldete danach 1402,3 ft statt 1403,7 |
+| Positionsmeldung im Flug | ✅ Sekundentakt mit Höhe, Kurs, AGL, Steigrate |
+
+### Der Befund, der X-Plane von MSFS trennt
+
+Eine Reihe nach Osten, aus dem Stand auf einem Rollweg gesetzt (47,80461 / 12,99683):
+
+| Objekt | Abstand | Höhe |
+|---|---|---|
+| Hirsch | 5 m | 1403,7 ft |
+| Möwe | 8 m | 1403,7 ft |
+| Segelboot | 16 m | 1403,4 ft |
+| Boje | 24 m | 1403,3 ft |
+| Ballon | 45 m | 1402,7 ft |
+| Ölplattform | 120 m | **1400,5 ft** |
+
+Das Gelände fällt nach Osten um gut drei Fuß, und **jedes Objekt sitzt auf seiner eigenen
+Höhe**. Der ganze Sondenumweg aus Punkt 2c entfällt hier: `XPLMProbeTerrainXYZ` fragt das
+Gelände an einer beliebigen Koordinate, ohne dass etwas gesetzt werden müsste.
+
+### Drei Funde, die man leicht falsch liest
+
+1. **`seit_s` läuft beim Umsetzen WEITER** (74 s), statt bei null neu zu beginnen. In X-Plane
+   wird dieselbe Instanz verschoben, in MSFS muss sie weg und neu hin (Punkt 3c). Wer `seit_s`
+   als „seit wann steht es dort" auswertet, liegt in X-Plane falsch.
+2. **`alt_agl_ft` meldet 0,0, während das Flugzeug 4 ft über dem Boden steht.** X-Planes
+   `elevation` misst den Referenzpunkt des Musters (Cirrus SR22: rund 1,2 m über Grund),
+   `y_agl` dagegen das Fahrwerk. Wer daraus die Geländehöhe rechnet — der MSFS-Weg —, liegt um
+   die Fahrwerkshöhe daneben.
+3. **`hoehe_ft` ist nicht immer eine Messung.** Außerhalb des geladenen Geländes trifft die
+   Probe nicht, das Objekt bekommt Meereshöhe, und das sieht aus wie ein Wattobjekt auf 0,0 ft.
+   Dafür gibt es `hoehe_gemessen` (PROTOKOLL.md, Abschnitt 1).
+
+### ⚠ Ohne VATSIM war nichts davon zu messen — bis auf den Prüfserver
+
+Der Server liefert `soll` nur an einen zugeordneten Piloten. Das kostete an diesem Abend eine
+Stunde: Die Brügge lief nachweislich, meldete sauber, bekam immer ein leeres `soll` — weil
+xPilot seinen eigenen Simulator nicht fand (`UseTcpSocket: false` im Plugin gegen einen
+Client, der TCP erwartete).
+
+**[`pruefserver.py`](pruefserver.py) löst das dauerhaft**, für jede Brügge: Er spielt den
+Server, zeigt die Meldung im Klartext und antwortet mit einem Sollzustand, den man im
+laufenden Betrieb ändert.
+
+```powershell
+py pruefserver.py                                   # lauscht auf 127.0.0.1:8099
+py pruefserver.py --setzen tier_gross --neben 5     # 5 m oestlich von dir
+py pruefserver.py --leeren
+```
+
+Umgebogen wird die Brügge über eine Datei mit einer Zeile —
+`<X-Plane 12>\Output\preferences\friesenbruegge.url`, Inhalt
+`http://127.0.0.1:8099/api/bruegge/melden`. Liegt sie nicht da, ist das Ziel fest
+einkompiliert. **Sie muss nach dem Messen wieder weg**, sonst meldet die Brügge an niemanden;
+das Log sagt bei jedem Start, welches Ziel gilt.
+
+### Was in X-Plane noch offen ist
+
+- **Ab welcher Entfernung ist ein Objekt sichtbar?** Für MSFS gemessen (Boot 1 km,
+  Kreuzfahrtschiff 22 km), für X-Plane unbekannt. Davon hängt ab, wie fein Stationen im
+  FriesenKieker gesetzt werden dürfen.
+- **Das Nachrücken bei ungeladenem Gelände** (`hoehe_gemessen` von `false` auf `true`) — im
+  Code vorgesehen, noch nie im Flug gesehen. Beides zusammen in einem Zug messbar: etwas
+  Großes weit voraus setzen und hinsehen.
+- **1146 Katalogzeilen** sind ungeprüft, und dabei gilt „gelistet ≠ ladbar" (s. OBJEKTE.md).
+
+---
+
 ## Was NICHT mehr zu messen ist
 
 Am 11.09.2026 bereits im Flug bestätigt:
