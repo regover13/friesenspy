@@ -1,5 +1,11 @@
-# Bauabfall -- das Plugin entsteht aus bauen.ps1, das ZIP aus paket.ps1
-*.xpl
-*.obj
-*.lib
-*.exp
+# Bauabfall -- das Plugin entsteht aus bauen.ps1, das ZIP aus paket.ps1.
+#
+# ⚠ Die Muster stehen mit `/` am Anfang, gelten also NUR in diesem Verzeichnis. Ohne den
+# Schrägstrich fängt `*.obj` auch `objekte/rauch_*.obj` ein -- und die gehören ins Repo, sie
+# sind Quelltext und kein Erzeugnis des Compilers. Genau das ist am 13.09.2026 passiert:
+# Der Commit ging ohne die vier Rauchobjekte hinaus, und niemandem wäre es aufgefallen, bis
+# das nächste Paket ohne sie gebaut worden wäre.
+/*.xpl
+/*.obj
+/*.lib
+/*.exp
