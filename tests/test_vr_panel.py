@@ -1632,6 +1632,43 @@ def test_karten_legende_hat_ueberschriften_ohne_klickbar_farbe():
     assert "var(--text-bright)" in regel
 
 
+def test_karten_legende_beschreibt_ebenen_im_detail():
+    """"Satellit, Topo, hell, dunkel" und die Kurznamen der Zusatzebenen waren blosse
+    Aufzaehlung ohne Erklaerung, was sie zeigen. Nutzer, 13.09.2026: "das solltest du im
+    Detail beschreiben". Jeder Basis-Layer und jede Zusatzebene braucht jetzt einen eigenen
+    kurzen Satz, was er zeigt -- nicht nur seinen Namen."""
+    block = _karten_legende_block()
+    for basis, erklaerung in [
+        ("OpenFlightMap", "Lufträumen"),
+        ("Satellit", "Luftbild"),
+        ("OpenTopo", "Höhenlinien"),
+        ("Light", "Straßenatlas"),
+        ("Dark", "Straßenatlas"),
+    ]:
+        assert f"<strong>{basis}</strong>" in block, f"Basis-Layer {basis} fehlt"
+    assert "Lufträumen" in block and "Funkfeuern" in block
+    for ebene in ["Sichtflugkarte", "Flugplatzkarte", "Platzrunden", "Meldepunkte", "FSE-Flächen", "Radar-Label"]:
+        assert f"<strong>{ebene}</strong>" in block, f"Zusatzebene {ebene} fehlt"
+    assert "DFS-Kartenblätter" in block
+    assert "412 deutsche Platzrunden" in block
+    assert "VFR-Meldepunkte" in block
+    assert "FSEconomy" in block
+    assert 'eingeschaltetem „Verkehr"' in block, "Radar-Label haengt am Verkehr-Haken -- das muss dastehen"
+
+
+def test_karten_legende_erklaert_wann_kompass_und_moving_map_erscheinen():
+    """Beide Knoepfe brauchen ein bekanntes eigenes Flugzeug -- ohne das waeren sie
+    Attrappen (README: "Ohne beides erscheinen Kompass und Moving Map gar nicht erst").
+    Die Legende behauptete das bisher nicht konsistent (nur der Pfeil trug den Hinweis, die
+    Kompassnadel nicht). Nutzer, 13.09.2026: wollte entweder die genaue Bedingung oder
+    "nur im Tablet" -- die genaue Bedingung stimmt auch auf der Website (eingeloggt auf
+    VATSIM), "nur im Tablet" waere deshalb falsch gewesen."""
+    block = _karten_legende_block()
+    assert "erscheinen nur, wenn die Karte ein eigenes Flugzeug kennt" in block
+    assert "im Kniebrett genügt Fliegen" in block
+    assert "auf der Website musst du selbst auf VATSIM eingeloggt sein" in block
+
+
 def test_tuerkis_zeile_der_legende_ist_im_kniebrett_ausgeblendet():
     """Der Tuerkis-Punkt erklaert die FriesenBruegge samt Link -- im Kniebrett fuehrt ein
     Link ins Leere (kein Browser, der ihn oeffnen koennte, dasselbe Argument wie beim

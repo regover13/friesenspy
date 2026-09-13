@@ -4331,14 +4331,23 @@
 
       <div class="karten-legende-abschnitt">Bedienelemente</div>
       <ul class="karten-legende">
-        <li><svg class="icon"><use href="#icon-map" xlink:href="#icon-map"/></svg> Ebenen-Knopf oben rechts: Kartenhintergrund wechseln (Satellit, Topo, hell, dunkel …) und Zusatzebenen ein-/ausschalten (Sichtflug-/Flugplatz-/Rollkarten, Platzrunden, Meldepunkte, FSE-Flächen, Radar-Label).</li>
+        <li>
+          <svg class="icon"><use href="#icon-map" xlink:href="#icon-map"/></svg>
+          Ebenen-Knopf oben rechts, Kartenhintergrund: <strong>OpenFlightMap</strong> (Luftfahrtkarte mit Lufträumen und Funkfeuern), <strong>Satellit</strong> (Luftbild), <strong>OpenTopo</strong> (Gelände, Höhenlinien), <strong>Light</strong>/<strong>Dark</strong> (heller/dunkler Straßenatlas).
+        </li>
+        <li>
+          Zusatzebenen im selben Knopf: <strong>Sichtflugkarte</strong>/<strong>Flugplatzkarte</strong> (amtliche DFS-Kartenblätter, erscheinen von selbst am Platz), <strong>Platzrunden</strong> (412 deutsche Platzrunden mit Höhe), <strong>Meldepunkte</strong> (VFR-Meldepunkte weltweit), <strong>FSE-Flächen</strong> (Plätze/Landeflächen aus FSEconomy), <strong>Radar-Label</strong> (blendet Beschriftungen am Fremdverkehr aus, erscheint erst bei eingeschaltetem „Verkehr").
+        </li>
         <li>
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 L16 13 L12 11 Z" fill="#e05555"/><path d="M12 21 L8 11 L12 13 Z" fill="#cfe3f0"/></svg>
           Kompassnadel oben rechts: Karte drehen — genordet oder in Flugrichtung (Track-up).
         </li>
         <li>
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 L20 20 L12 16 L4 20 Z" fill="currentColor"/></svg>
-          Pfeil unten rechts: Karte folgt dem eigenen Flugzeug (nur mit eigenem Flug sichtbar).
+          Pfeil unten rechts: Karte folgt dem eigenen Flugzeug.
+        </li>
+        <li>
+          Kompass und Moving-Map-Pfeil erscheinen nur, wenn die Karte ein eigenes Flugzeug kennt — im Kniebrett genügt Fliegen, auf der Website musst du selbst auf VATSIM eingeloggt sein.
         </li>
         <li>
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.5 3a7.5 7.5 0 1 0 4.55 13.46l4.24 4.25 1.42-1.42-4.25-4.24A7.5 7.5 0 0 0 10.5 3zm0 2a5.5 5.5 0 1 1 0 11 5.5 5.5 0 0 1 0-11z" fill="currentColor"/></svg>

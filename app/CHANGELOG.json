@@ -7,7 +7,8 @@
     "items": [
       "✈️ Die Legende zeigt jetzt dieselben Symbole wie die Karte selbst — das Flugzeug, den Ebenen-Knopf, die Kompassnadel, den Moving-Map-Pfeil, die ICAO-Lupe — statt nur Farbe und Fließtext.",
       "🗂️ In zwei Abschnitte gegliedert: Flugzeug-Marker und Bedienelemente.",
-      "⏱️ Richtiggestellt: VATSIM-Positionen sind nicht nur 15, sondern bis zu 30 Sekunden alt — VATSIM aktualisiert alle 15 Sekunden, und wir fragen im selben Takt ab. Dieselbe Korrektur auch auf der Download-Seite und in der README."
+      "⏱️ Richtiggestellt: VATSIM-Positionen sind nicht nur 15, sondern bis zu 30 Sekunden alt — VATSIM aktualisiert alle 15 Sekunden, und wir fragen im selben Takt ab. Dieselbe Korrektur auch auf der Download-Seite und in der README.",
+      "📖 Jeder Kartenhintergrund und jede Zusatzebene bekommt jetzt einen eigenen Satz, was er zeigt, statt nur seinen Namen. Und klargestellt: Kompass und Moving Map erscheinen nur mit bekanntem eigenen Flugzeug — im Kniebrett genügt Fliegen, auf der Website musst du selbst auf VATSIM eingeloggt sein."
     ]
   },
   {
