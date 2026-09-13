@@ -9,7 +9,7 @@
       "🗂️ Gegliedert in Flugzeug-Marker und Bedienelemente, und jede Karte und jede Zusatzebene steht mit eigener Zeile und eigener Erklärung da — von OpenFlightMap bis „Radar Label“.",
       "🏷️ Korrigiert: Die Legende nannte einen Haken „FSE-Flächen“, den es gar nicht gibt (es sind zwei: „FSE-Plätze“ und „FSE-Landeflächen“), schrieb „Radar Label“ mit Bindestrich und ließ „OpenAIP“ und „Verkehr“ ganz aus. Wer danach gesucht hat, hat nichts gefunden.",
       "⏱️ Nachgemessen statt geschätzt: Eine VATSIM-Position ist auf der Karte bis zu 35 Sekunden alt. Der 15-Sekunden-Takt ist nur eine von drei Wartezeiten — 2 bis 5 Sekunden, bis die Position überhaupt im VATSIM-Datenstand steht (gemessen an 1280 Piloten), dann zweimal bis zu 15 Sekunden, bis der Stand bei uns und dann auf der Karte ankommt.",
-      "🧭 Klargestellt: Kompass und Moving Map erscheinen nur mit bekanntem eigenen Flugzeug — im Kniebrett genügt Fliegen, auf der Website musst du selbst auf VATSIM eingeloggt sein."
+      "🧭 Kompassnadel und Moving-Map-Pfeil tragen ihre Bedingung jetzt direkt bei sich: Es gibt sie nur, solange du selbst fliegst — im Kniebrett genügt Fliegen, auf der Website musst du mit deinem eigenen Rufzeichen auf VATSIM online sein. Vorher stand das zwei Zeilen tiefer und wurde überlesen."
     ]
   },
   {

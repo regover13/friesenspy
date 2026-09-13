@@ -1585,8 +1585,11 @@ def test_karten_legende_zeile_hat_genau_einen_text_wrapper():
     Deshalb MUSS jede Zeile ihren gesamten Fliesstext in GENAU EINEM <span> buendeln, das
     das letzte Kind ist -- nichts (kein <strong>, kein blanker Text) darf lose danach oder
     parallel dazu im <li> stehen."""
+    block = _karten_legende_block()
+    assert ">Flugzeug-Marker</div>" in block and ">Bedienelemente</div>" in block, \
+        "der Block wurde nicht vollstaendig gefunden -- beide Abschnitte muessen drin sein"
     zeilen = _legende_hauptzeilen()
-    assert len(zeilen) >= 12, "die Legende sollte beide Abschnitte mit all ihren Zeilen enthalten"
+    assert len(zeilen) >= 9, f"zu wenige Legenden-Zeilen gefunden: {len(zeilen)}"
     for inhalt in zeilen:
         # Der Text-Wrapper ist am UNKLASSIFIZIERTEN "<span>" erkennbar -- die Icon-Spans
         # (Flugzeug-Symbole) tragen immer eine class, dieser hier nie.
@@ -1726,17 +1729,42 @@ def test_karten_legende_beschreibt_jede_ebene_mit_eigenem_satz():
     assert 'eingeschaltetem „Verkehr"' in block, "Radar Label haengt am Verkehr-Haken -- das muss dastehen"
 
 
-def test_karten_legende_erklaert_wann_kompass_und_moving_map_erscheinen():
-    """Beide Knoepfe brauchen ein bekanntes eigenes Flugzeug -- ohne das waeren sie
-    Attrappen (README: "Ohne beides erscheinen Kompass und Moving Map gar nicht erst").
-    Die Legende behauptete das bisher nicht konsistent (nur der Pfeil trug den Hinweis, die
-    Kompassnadel nicht). Nutzer, 13.09.2026: wollte entweder die genaue Bedingung oder
-    "nur im Tablet" -- die genaue Bedingung stimmt auch auf der Website (eingeloggt auf
-    VATSIM), "nur im Tablet" waere deshalb falsch gewesen."""
+def test_kompass_und_moving_map_tragen_ihre_bedingung_in_derselben_zeile():
+    """Beide Knoepfe brauchen ein bekanntes eigenes Flugzeug, sonst sind sie gar nicht da.
+
+    Zweimal nachgefragt (Nutzer, 13. und 14.09.2026: "das gibt es doch nur im Tablet, oder?
+    war ich damit nicht deutlich?"), und beide Male lag es nicht am Inhalt, sondern an der
+    Anordnung: Die Bedingung stand als EIGENE Zeile zwei Reihen unter den Knoepfen und wurde
+    deshalb nicht mitgelesen. Jetzt steht sie VOR beiden, in derselben Zeile.
+
+    "Nur im Kniebrett" waere dagegen falsch -- der Code sagt an drei Stellen etwas anderes:
+    `_addWindControl` ist das einzige Bedienelement mit `if (_PANEL_MODUS)` davor, das
+    Dreh-Plugin haengt als normales <script> im Dokument, und der stumme Knopf traegt
+    woertlich "im Simulator fliegen ODER auf VATSIM online sein". Genau diese drei Punkte
+    haelt der Test fest -- wer sie aendert, muss auch die Legende aendern."""
     block = _karten_legende_block()
-    assert "erscheinen nur, wenn die Karte ein eigenes Flugzeug kennt" in block
-    assert "im Kniebrett genügt Fliegen" in block
-    assert "auf der Website musst du selbst auf VATSIM eingeloggt sein" in block
+    assert "nur, solange du selbst fliegst" in block
+    assert "im Kniebrett genügt es zu fliegen" in block
+    assert "auf VATSIM online sein" in block
+    # Die Bedingung und beide Knoepfe muessen in EINER Zeile stehen, nicht verteilt --
+    # hier MIT Unterliste gelesen, denn genau dort stehen die beiden Knoepfe.
+    zeile = next(z for z in re.findall(r"<li[^>]*>(.*?)\n        </li>", block, re.S)
+                 if "solange du selbst fliegst" in z)
+    assert "<strong>Kompassnadel</strong>" in zeile and "<strong>Pfeil</strong>" in zeile, \
+        "Bedingung und beide Knoepfe gehoeren in dieselbe Zeile"
+
+    # --- und jetzt die Code-Belege, dass "nur im Kniebrett" nicht stimmt ------------------
+    anmeldung = INDEX[INDEX.index("_addKompassControl(liveMap);"):]
+    anmeldung = anmeldung[:anmeldung.index("_naviStarten();")]
+    gated = [z.strip() for z in anmeldung.splitlines() if "_PANEL_MODUS" in z]
+    assert len(gated) == 1 and "_addWindControl" in gated[0], \
+        f"nur die Windanzeige darf Kniebrett-exklusiv sein, gefunden: {gated}"
+    assert "_PANEL_MODUS" not in anmeldung.split("_addKompassControl(liveMap);")[0]
+    assert 'onerror="window._leafletRotateFehlt = true;"' in INDEX, \
+        "das Dreh-Plugin wird fuer beide Orte geladen -- ohne Panel-Bedingung"
+    assert "im Simulator fliegen — dafuer" not in INDEX
+    assert "im Simulator fliegen oder auf VATSIM online sein" in INDEX, \
+        "der stumme Knopf nennt beide Wege -- die Legende muss dasselbe sagen"
 
 
 def test_tuerkis_zeile_der_legende_ist_im_kniebrett_ausgeblendet():
