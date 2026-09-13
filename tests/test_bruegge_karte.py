@@ -320,3 +320,63 @@ def test_die_bruegge_farbe_ist_im_stylesheet_erklaert():
     farben = re.findall(r"\.aircraft-marker-bruegge\s*\{[^}]*color:\s*(#[0-9a-fA-F]{6})", INDEX)
     popup = re.findall(r"\.popup-bruegge\s*\{[^}]*color:\s*(#[0-9a-fA-F]{6})", INDEX)
     assert farben and popup and farben[0].lower() == popup[0].lower()
+
+
+# ---------------------------------------------------------------------------
+# Protokollflut: dieselbe Meldung stand an drei Orten
+# ---------------------------------------------------------------------------
+
+def _zugriffszeile(pfad: str, code: int):
+    """Ein Satz Felder, wie uvicorn ihn in `record.args` ablegt."""
+    import logging
+    return logging.LogRecord(
+        "uvicorn.access", logging.INFO, __file__, 1, '%s - "%s %s HTTP/%s" %d',
+        ("1.2.3.4:0", "POST", pfad, "1.1", code), None)
+
+
+def test_erfolgreiche_meldungen_stehen_nicht_im_zugriffsprotokoll():
+    """86 400 Zeilen am Tag je fliegendem Piloten — allein aus diesem einen Protokoll."""
+    from app.main import _BrueggeZugriffFilter
+    f = _BrueggeZugriffFilter()
+    assert f.filter(_zugriffszeile("/api/bruegge/melden", 200)) is False
+
+
+def test_fehlgeschlagene_meldungen_bleiben_stehen():
+    """Eine 401, 429 oder 5xx von einer Brügge ist genau das, was man sehen will — sie ging
+    im Rauschen der 200er nur unter."""
+    from app.main import _BrueggeZugriffFilter
+    f = _BrueggeZugriffFilter()
+    for code in (400, 401, 422, 429, 500):
+        assert f.filter(_zugriffszeile("/api/bruegge/melden", code)) is True, code
+
+
+def test_andere_pfade_bleiben_unberuehrt():
+    """Der Schalter `--no-access-log` hätte alles getroffen. Dann fände niemand mehr, welche
+    Fassung das Gerät eines Nutzers wirklich geholt hat — die Frage, die nach einem Deploy
+    zählt."""
+    from app.main import _BrueggeZugriffFilter
+    f = _BrueggeZugriffFilter()
+    assert f.filter(_zugriffszeile("/api/live", 200)) is True
+    assert f.filter(_zugriffszeile("/", 200)) is True
+
+
+def test_unbekanntes_format_wird_protokolliert():
+    """Ändert uvicorn seine Felder, fällt der Filter auf „protokollieren" zurück. Ein zu
+    volles Log ist immer besser als ein stillschweigend leeres."""
+    import logging
+    from app.main import _BrueggeZugriffFilter
+    f = _BrueggeZugriffFilter()
+    leer = logging.LogRecord("uvicorn.access", logging.INFO, __file__, 1, "x", None, None)
+    assert f.filter(leer) is True
+    kurz = logging.LogRecord("uvicorn.access", logging.INFO, __file__, 1, "%s", ("a",), None)
+    assert f.filter(kurz) is True
+
+
+def test_der_filter_stapelt_sich_nicht():
+    import logging
+    from app.main import configure_logging, _BrueggeZugriffFilter
+    for _ in range(3):
+        configure_logging("INFO")
+    eigene = [f for f in logging.getLogger("uvicorn.access").filters
+              if isinstance(f, _BrueggeZugriffFilter)]
+    assert len(eigene) == 1

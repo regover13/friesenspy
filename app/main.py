@@ -207,6 +207,50 @@ def configure_logging(level: str = "INFO", diagnose_pfad: str | None = None) -> 
     )
     if diagnose_pfad:
         _diagnose_handler_anhaengen(diagnose_pfad)
+    # `configure_logging` laeuft auch mehrfach (Tests, Neukonfiguration). Ohne das Abraeumen
+    # staffelten sich dabei gleiche Filter auf demselben Logger -- wirkungsgleich, aber jeder
+    # Aufruf kostet und der Zustand waere nicht mehr erklaerbar.
+    _zugriff = logging.getLogger("uvicorn.access")
+    for _alt in [f for f in _zugriff.filters if isinstance(f, _BrueggeZugriffFilter)]:
+        _zugriff.removeFilter(_alt)
+    _zugriff.addFilter(_BrueggeZugriffFilter())
+
+
+class _BrueggeZugriffFilter(logging.Filter):
+    """Erfolgreiche Bruegge-Meldungen aus dem Zugriffsprotokoll nehmen.
+
+    Die Bruegge meldet im Sekundentakt -- 86.400 Zeilen am Tag JE FLIEGENDEM PILOTEN, allein
+    hier. Dazu kommen dieselben Meldungen zweimal aus nginx; dort loest es eine `map` in
+    `conf.d/bruegge-log.conf` (Repo `devprops.de`). Platz ist dabei nicht das Problem, die
+    Lesbarkeit schon: Wer im Containerprotokoll einen Fehler sucht, sucht ihn sonst zwischen
+    Zehntausenden Zeilen, die nichts sagen.
+
+    Weggelassen wird NUR der Erfolgsfall. Eine 401, 429 oder 5xx von einer Bruegge ist genau
+    das, was man sehen will -- und sie ging im Rauschen der 200er ohnehin unter.
+
+    Ein Filter und nicht `--no-access-log`: Der Schalter gilt fuer ALLE Pfade. Dann faende
+    niemand mehr, welches Geraet welche Seite geholt hat -- genau die Frage, die nach einem
+    Deploy zaehlt (s. "Ausgerollt heisst nicht angekommen").
+
+    uvicorn legt die Felder als `record.args` ab, in dieser Reihenfolge:
+    (Adresse, Methode, Pfad, HTTP-Fassung, Code). Wir lesen sie defensiv: Aendert uvicorn das
+    Format, faellt der Filter auf "protokollieren" zurueck -- ein zu volles Log ist immer
+    besser als ein stillschweigend leeres.
+    """
+
+    PFAD = "/api/bruegge/melden"
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if not isinstance(args, tuple) or len(args) < 5:
+            return True
+        pfad, code = args[2], args[4]
+        if pfad != self.PFAD:
+            return True
+        try:
+            return not (200 <= int(code) < 300)
+        except (TypeError, ValueError):
+            return True
 
 
 # Groesse und Anzahl der Diagnosedateien. 5 MB fassen rund 30.000 Warnzeilen — genug fuer
