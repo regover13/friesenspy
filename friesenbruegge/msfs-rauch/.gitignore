@@ -2,3 +2,4 @@ _PackageInt/
 Packages/
 PackagesMetadata/
 __pycache__/
+*.xml.user
