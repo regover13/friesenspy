@@ -128,6 +128,19 @@ jobs:
             mkdir -p "FriesenBruegge/$p"
             cp "teile/$p/FriesenBruegge.xpl" "FriesenBruegge/$p/"
           done
+          # ⚠ Die eigenen Objekte MÜSSEN mit: Rauchsäulen in FriesenFlieger-Farben, die
+          # X-Plane nicht mitbringt. Fehlen sie, meldet die Brügge die Gattung `rauch` in
+          # `kann` und antwortet dann mit OBJ_NICHT_GEFUNDEN -- ein Fehler, den erst ein
+          # Pilot im Simulator bemerkt. Deshalb bricht der Lauf hier ab statt still ein
+          # unvollständiges Paket zu schnüren.
+          if [ ! -d friesenbruegge/xplane/objekte ]; then
+            echo "objekte/ fehlt -- die ausgelieferte Bruegge koennte keinen Rauch setzen."
+            exit 1
+          fi
+          mkdir -p FriesenBruegge/objekte
+          cp friesenbruegge/xplane/objekte/* FriesenBruegge/objekte/
+          echo "eigene Objekte: $(ls -1 FriesenBruegge/objekte | wc -l) Dateien"
+
           # ⚠ fassung.json bleibt auf DIESER Ebene: _efb_package_version (app/main.py)
           # findet die Datei nur bei Pfadtiefe <= 1.
           printf '{\n  "package_version": "%s",\n  "simulator": "xplane12",\n  "creator": "devprops"\n}\n' \
