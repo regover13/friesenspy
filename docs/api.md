@@ -2116,10 +2116,16 @@ in der `config.env`.
 Das ZIP muss **einen** Ordner auf oberster Ebene enthalten
 (`friesenflieger-friesenspy-efb/`) — genau der wird vom Nutzer nach `Community` kopiert.
 
-### GET /efb
+### GET /download (alt: /efb)
 
-Installationsseite (HTML). Bewusst **nicht** unter `/static/` abgelegt: dieser Präfix ist
-gate-frei, die Seite gehört aber wie der Rest der App hinter den Forum-Login.
+Installationsseite (HTML) für Kniebrett und FriesenBrügge. Bewusst **nicht** unter
+`/static/` abgelegt: dieser Präfix ist gate-frei, die Seite gehört aber wie der Rest der
+App hinter den Forum-Login.
+
+`/download` ist die aktuelle URL (seit 13.09.2026, als die Seite neben dem Kniebrett auch
+die FriesenBrügge anbot). `/efb` ist die alte URL — sie ist schon verlinkt, verschickt und
+in Foren zitiert und liefert deshalb weiterhin dieselbe Seite aus. Neue Verweise zeigen auf
+`/download`.
 
 ### GET /api/efb-package
 

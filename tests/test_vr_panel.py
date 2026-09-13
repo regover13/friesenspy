@@ -1530,13 +1530,59 @@ def test_das_ding_heisst_ueberall_kniebrett():
     die Seite dahinter trug beide Namen -- wer nach dem einen sucht, findet das andere nicht.
     Nutzer, 15.08.2026: "Nenn es ueberall Kniebrett" / "Nix mit im Cockpit bleibt!"
 
+    Das Kniebrett selbst heisst weiterhin ueberall Kniebrett (Nutzer, 13.09.2026: "Das
+    Kniebrett bleibt Kniebrett und auch das Release bleibt so!") -- nur der Fusszeilen-Link
+    ist seit demselben Tag umbenannt: Er fuehrt zu einer Seite mit inzwischen ZWEI Paketen
+    (Kniebrett und FriesenBruegge) und heisst deshalb "Download", nicht mehr "Kniebrett".
+
     Geprueft wird nur SICHTBARER Text. In Code-Kommentaren ist "im Cockpit" eine Ortsangabe
     ("im Cockpit wird mit dem Finger bedient") und kein Produktname -- die bleiben."""
-    assert '<a href="/efb" style="color:var(--green);">Kniebrett</a>' in INDEX
+    assert '<a href="/download" style="color:var(--green);">Download</a>' in INDEX
     efb = (STATIC / "efb.html").read_text(encoding="utf-8")
-    assert "<title>Kniebrett</title>" in efb
-    assert "<h1>Kniebrett</h1>" in efb
+    assert "<title>Downloads</title>" in efb
+    assert "<h1>Downloads</h1>" in efb
+    assert "<h2>Kniebrett</h2>" in efb
     assert "FriesenSpy im Cockpit" not in efb
+
+
+def test_bruegge_seite_behauptet_nicht_mehr_reine_vatsim_karte():
+    """Die Karte zeigte den Bruegge-Verkehr schon laengst an (Tuerkis statt Vereinsblau,
+    sekundengenau), als hier noch stand, sie zeige "weiterhin die VATSIM-Positionen" -- ein
+    veralteter Satz, der das eigentliche Ergebnis des Pakets verschwieg (Nutzer, 13.09.2026:
+    "stimmt so nicht mehr!"). Der neue Text behauptet nur noch, was das Paket nachweislich
+    tut: die eigene Position erscheint tuerkis auf der Karte."""
+    efb = (STATIC / "efb.html").read_text(encoding="utf-8")
+    assert "zeigt weiterhin die" not in efb
+    assert "heute noch wenig" not in efb
+    assert "erscheinst du damit in Türkis" in efb
+
+
+def test_karten_legende_erklaert_farben_und_bedienelemente():
+    """Die Legende unter der Live-Karte kannte bislang nur die Drehung des Markers -- Farben
+    und Bedienelemente waren stillschweigend vorausgesetztes Wissen. Nutzer, 13.09.2026:
+    "Erklaere hier ueberhaupt alle Kartenfunktionen"."""
+    assert "Flugzeug-Marker rotieren mit dem aktuellen Heading" in INDEX
+    stelle = INDEX.index('<div class="panel-title">Karten-Legende</div>')
+    block = INDEX[stelle:INDEX.index("</ul>", stelle)]
+    assert "<strong>Blau</strong>" in block and "FriesenFlieger auf VATSIM" in block
+    assert "<strong>Grau</strong>" in block and "Fremdverkehr" in block
+    assert 'Haken „Verkehr"' in block, "wie sich der Fremdverkehr ausschalten laesst, muss dastehen"
+    assert "<strong>Türkis</strong>" in block
+    assert '<a href="/download" style="color:var(--green);">FriesenBrügge</a>' in block
+    assert "Track-up" in block
+    assert "folgt dem eigenen Flugzeug" in block
+    assert "ICAO-Kennung suchen" in block
+
+
+def test_tuerkis_zeile_der_legende_ist_im_kniebrett_ausgeblendet():
+    """Der Tuerkis-Punkt erklaert die FriesenBruegge samt Link -- im Kniebrett fuehrt ein
+    Link ins Leere (kein Browser, der ihn oeffnen koennte, dasselbe Argument wie beim
+    Lautsprecher-Symbol in der Tabelle). Die anderen Zeilen (Blau, Fremdverkehr, Track-up,
+    Follow, ICAO-Suche) gelten dort unveraendert -- dieselbe Karte, derselbe Code."""
+    assert 'html.vr-panel .karten-legende-bruegge { display: none; }' in INDEX
+    stelle = INDEX.index('class="karten-legende-bruegge"')
+    zeile = INDEX[stelle:INDEX.index("</li>", stelle)]
+    assert "Türkis" in zeile
 
 
 def test_knoepfe_verschwinden_ohne_eigenes_flugzeug():

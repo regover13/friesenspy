@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Kniebrett</title>
+  <title>Downloads</title>
   <meta name="robots" content="noindex, nofollow" />
   <link rel="icon" href="/static/favicon.ico" type="image/x-icon" />
   <link href="/static/fonts/fonts.css" rel="stylesheet" />
@@ -46,9 +46,17 @@
       font-family: var(--mono); font-size: 0.85rem; color: var(--text-label);
       letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 2rem;
     }
+    /* Ueberschriften bleiben neutral (text-bright), nicht accent-blau: Blau ist auf dieser
+       Seite wie im Rest von FriesenSpy Klickbarem vorbehalten (Links, Lade-Knoepfe) --
+       eine Ueberschrift in derselben Farbe wie der Link direkt darunter saehe klickbar aus,
+       waere es aber nicht (13.09.2026, beim Umbau in eine gemeinsame Downloads-Seite). */
     h2 {
-      font-weight: 600; font-size: 1.1rem; letter-spacing: 0.04em;
-      margin: 2.2rem 0 0.8rem; color: var(--accent);
+      font-weight: 700; font-size: 1.3rem; letter-spacing: 0.03em;
+      margin: 2.2rem 0 0.8rem; color: var(--text-bright);
+    }
+    h3 {
+      font-weight: 600; font-size: 1.05rem; letter-spacing: 0.04em;
+      margin: 1.7rem 0 0.7rem; color: var(--text-bright);
     }
     p { margin-bottom: 0.9rem; }
     ol, ul { margin: 0 0 1rem 1.4rem; }
@@ -88,7 +96,9 @@
   <div class="wrap">
     <a class="back" href="/">&larr; Zurück zu FriesenSpy</a>
 
-    <h1>Kniebrett</h1>
+    <h1>Downloads</h1>
+
+    <h2>Kniebrett</h2>
     <div class="untertitel">MSFS 2024</div>
 
     <p>
@@ -104,7 +114,7 @@
       <div class="paket-info" id="paket-info">wird geprüft&nbsp;…</div>
     </div>
 
-    <h2>Einbauen</h2>
+    <h3>Einbauen</h3>
     <ol>
       <li>ZIP-Datei entpacken. Darin liegt ein Ordner namens
         <code>friesenflieger-friesenspy-efb</code>.</li>
@@ -122,7 +132,7 @@
         steht dort in der App-Liste.</li>
     </ol>
 
-    <h2>Anmelden</h2>
+    <h3>Anmelden</h3>
     <p>
       Beim ersten Start fragt das Tablet nach der Anmeldung übers Forum — dieselben
       Zugangsdaten wie hier auf der Website. Danach bleibt die Anmeldung erhalten,
@@ -134,7 +144,7 @@
       das macht aber die Verwaltung. Melde dich im Forum, dann wird das Gerät abgemeldet.
     </p>
 
-    <h2>Was im Tablet anders aussieht</h2>
+    <h3>Was im Tablet anders aussieht</h3>
     <p>
       Die Anzeige-Engine des Simulators ist kein vollwertiger Browser. Zwei Dinge fallen auf,
       und beide sind Absicht:
@@ -157,7 +167,7 @@
       </p>
     </div>
 
-    <h2>Wenn etwas klemmt</h2>
+    <h3>Wenn etwas klemmt</h3>
     <p>
       Schreib es ins Forum, am besten mit Angabe, was du zuletzt gemacht hast. Das Panel
       meldet von sich aus technische Messwerte zurück (keine persönlichen Daten, keine
@@ -175,9 +185,11 @@
       was der Server ihr nennt.
     </p>
     <p>
-      <strong>Was das bringt:</strong> heute noch wenig — die Karte zeigt weiterhin die
-      VATSIM-Positionen. Sie ist die Vorarbeit für Events, bei denen im Simulator etwas zu
-      sehen sein soll: Tiere zum Zählen, Boote, Marken, Rauchsäulen als Wegweiser.
+      <strong>Was das bringt:</strong> Auf der Karte erscheinst du damit in Türkis statt im
+      gewohnten Vereinsblau — dasselbe Symbol, nur mit einer Position, die auf die Sekunde
+      stimmt statt auf fünfzehn (Erklärung der Farben unten auf der Website unter „Karte").
+      Das Stellen von Objekten im Simulator ist die Vorarbeit für kommende Events: Tiere zum
+      Zählen, Boote, Marken, Rauchsäulen als Wegweiser.
     </p>
 
     <div class="kasten">

@@ -2616,6 +2616,22 @@
        als dieselbe Aussage zu erkennen sind. */
     .popup-bruegge { color: #19d3c5; }
 
+    /* Karten-Legende unter der Live-Karte: dieselben drei Farben wie oben, als kurze Zeile
+       statt als stillschweigend vorausgesetztes Wissen (Nutzer, 13.09.2026). */
+    .karten-legende {
+      list-style: none; margin: 8px 0 0; padding: 0;
+      display: flex; flex-direction: column; gap: 7px;
+      font-size: 0.8rem; color: var(--text-label);
+    }
+    .karten-legende li { display: flex; align-items: flex-start; gap: 7px; }
+    .karten-legende .kl-punkt {
+      flex: none; width: 9px; height: 9px; border-radius: 2px; margin-top: 4px;
+    }
+    /* Der Tuerkis-Punkt erklaert die FriesenBruegge samt Link dorthin -- im Kniebrett
+       fuehrt ein Link ins Leere (kein Browser, der ihn oeffnen koennte, s. Fusszeile),
+       deshalb bleibt die Zeile dort weg statt auf ein totes Versprechen zu zeigen. */
+    html.vr-panel .karten-legende-bruegge { display: none; }
+
     /* Das Label am Flugzeug sitzt als Leaflet-Tooltip unter dem Symbol -- bewusst NICHT im
        Marker-Icon: Der Marker wird bei Track-up mitgedreht (rotateWithView), ein Label darin
        stuende dann auf dem Kopf. Tooltips liegen bei leaflet-rotate im nicht drehenden Pane
@@ -4273,9 +4289,19 @@
     </div>
     <div class="panel" style="margin-top:16px;">
       <div class="panel-title">Karten-Legende</div>
-      <span class="mono text-green" style="font-size:0.8rem;">
-        <svg class="icon"><use href="#icon-diamond" xlink:href="#icon-diamond"/></svg> Flugzeug-Marker rotieren mit dem aktuellen Heading · Klick für Details
-      </span>
+      <ul class="karten-legende">
+        <li class="mono text-green">
+          <svg class="icon"><use href="#icon-diamond" xlink:href="#icon-diamond"/></svg> Flugzeug-Marker rotieren mit dem aktuellen Heading · Klick für Details
+        </li>
+        <li><span class="kl-punkt" style="background:var(--green);"></span> <strong>Blau</strong> — FriesenFlieger auf VATSIM, immer sichtbar.</li>
+        <li><span class="kl-punkt" style="background:#5c6b7a;"></span> <strong>Grau</strong> — übriger VATSIM-Verkehr (Fremdverkehr). Ein-/ausblenden über den Ebenen-Knopf oben rechts an der Karte, Haken „Verkehr".</li>
+        <li class="karten-legende-bruegge"><span class="kl-punkt" style="background:#19d3c5;"></span> <strong>Türkis</strong> — ein Friese, dessen <a href="/download" style="color:var(--green);">FriesenBrügge</a> gerade meldet: Position sekundengenau statt im 15-Sekunden-Raster von VATSIM.</li>
+        <li>Ebenen-Knopf oben rechts an der Karte: Kartenhintergrund wechseln (Satellit, Topo, hell, dunkel …) und Zusatzebenen ein-/ausschalten (Sichtflug-/Flugplatz-/Rollkarten, Platzrunden, Meldepunkte, FSE-Flächen, Radar-Label).</li>
+        <li>Kompassnadel oben rechts: Karte drehen — genordet oder in Flugrichtung (Track-up).</li>
+        <li>Pfeil unten rechts: Karte folgt dem eigenen Flugzeug (nur mit eigenem Flug sichtbar).</li>
+        <li>Lupe oben rechts: Flugplatz nach ICAO-Kennung suchen.</li>
+        <li>Regler oben links (erscheint mit aktiver Sichtflug-/Flugplatzkarte): Deckkraft des Kartenblatts.</li>
+      </ul>
     </div>
   </div>
 
@@ -4391,10 +4417,12 @@
     </div>
   </div>
   <footer style="text-align:center;padding:24px 12px 8px;margin-top:8px;border-top:1px solid var(--green-dim);font-family:var(--text-mono);font-size:0.72rem;letter-spacing:0.05em;color:var(--text-label);">
-    <!-- Ein Name fuer die Sache, ueberall derselbe: "Kniebrett". Der Link hiess bis v12.6.2
-         "FriesenSpy im Cockpit", die Seite dahinter trug beides -- zwei Namen fuer dasselbe
-         Ding, und wer nach dem einen sucht, findet das andere nicht (Nutzer, 15.08.2026). -->
-    <a href="/efb" style="color:var(--green);">Kniebrett</a>
+    <!-- Der Name der Sache bleibt "Kniebrett" (Nutzer, 15.08.2026) -- nur dieser Link hier
+         ist keine Sache, sondern eine Handlung: Er fuehrt zu allem, was sich herunterladen
+         laesst (seit 13.09.2026 auch die FriesenBruegge), und heisst deshalb "Download".
+         Alte URL /efb bleibt erreichbar (verlinkt, verschickt); neue Verweise zeigen auf
+         /download (Nutzer, 13.09.2026). -->
+    <a href="/download" style="color:var(--green);">Download</a>
     &nbsp;·&nbsp;
     <a href="/impressum" style="color:var(--green);">Impressum</a>
     &nbsp;·&nbsp;
@@ -8522,7 +8550,7 @@ function _paketHinweisPruefen() {
     if (text) {
       text.textContent = 'Neues Kniebrett-Paket ' + _paketAktuell
                        + (_paketVersion ? ' (installiert: ' + _paketVersion + ')' : '')
-                       + ' — friesenspy.devprops.de/efb';
+                       + ' — friesenspy.devprops.de/download';
     }
     kasten.hidden = false;
   });
@@ -14803,7 +14831,7 @@ function _ziehAktualisierenBinden() {
   <p>Diese Fassung kann sich den Simulator nicht merken. Deshalb beginnt jeder Start mit
      einer Anmeldung, und die Karte bleibt so lange leer.</p>
   <p>Die neue Fassung erledigt das einmal und dann nie wieder. Bitte am PC laden:</p>
-  <span class="adresse">friesenspy.devprops.de/efb</span>
+  <span class="adresse">friesenspy.devprops.de/download</span>
   <p class="klein">Danach die Datei in den Community-Ordner entpacken und den Simulator neu
      starten. Bis dahin bleibt diese Anzeige stehen.</p>
 </div>

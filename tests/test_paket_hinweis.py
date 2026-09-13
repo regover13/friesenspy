@@ -208,7 +208,7 @@ def test_adresse_steht_als_text_nicht_als_link():
     Ein Klick-Ziel wäre ein leeres Versprechen."""
     stelle = INDEX.index("function _paketHinweisPruefen(")
     rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
-    assert "friesenspy.devprops.de/efb" in rumpf
+    assert "friesenspy.devprops.de/download" in rumpf
     assert "<a " not in rumpf and "window.open" not in rumpf
 
 
@@ -292,7 +292,7 @@ def test_die_sperre_nennt_die_adresse_als_text():
     man sie am PC eintippen kann."""
     stelle = INDEX.index('id="panel-paket-sperre"')
     block = INDEX[stelle:INDEX.index("</div>", stelle)]
-    assert "friesenspy.devprops.de/efb" in block
+    assert "friesenspy.devprops.de/download" in block
     assert "<a " not in block, "kein Verweis -- im Kniebrett fuehrt er ins Leere"
 
 
