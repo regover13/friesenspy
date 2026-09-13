@@ -453,6 +453,7 @@ class VatsimPoller:
         self.ts_rejoin_debounce_sec = ts_rejoin_debounce_sec
         self.openaip_api_key = openaip_api_key
         self._scheduler: AsyncIOScheduler | None = None
+        self._bruegge_task: asyncio.Task | None = None
         self._http_client: httpx.AsyncClient | None = None
         # State: cid → {"id": flight_id, "dep": departure, "arr": arrival}
         self._active_flights: dict[int, dict] = {}
@@ -560,6 +561,9 @@ class VatsimPoller:
         self._scheduler = AsyncIOScheduler()
         self._register_jobs()
         self._scheduler.start()
+        # Der Bruegge-Sekundenstrom laeuft BEWUSST nicht als Scheduler-Job (s.
+        # _bruegge_strom_schleife).
+        self._bruegge_task = asyncio.create_task(self._bruegge_strom_schleife())
 
     def _register_jobs(self) -> None:
         """Alle Scheduler-Jobs registrieren (getrennt von start(), damit testbar)."""
@@ -568,23 +572,6 @@ class VatsimPoller:
             "interval",
             seconds=self.poll_interval,
             id="vatsim_poll",
-        )
-        # Der Bruegge-Sekundenstrom (s. bruegge_strom_senden) -- direkt hinter dem
-        # VATSIM-Poll, weil beide dieselbe Karte versorgen: der eine im 15-Sekunden-Takt mit
-        # allen, der andere im Sekundentakt mit denen, die eine bessere Quelle haben.
-        #
-        # `max_instances=1` und `coalesce=True`, weil bei Sekundentakt sonst ein einzelner
-        # langsamer Durchgang eine Warteschlange hinterlaesst, die danach am Stueck
-        # abgearbeitet wird -- die Karte bekaeme einen Schwall statt eines Taktes. Verpasste
-        # Laeufe sind hier folgenlos: Gesendet wird der ZUSTAND, nicht eine Folge von
-        # Ereignissen.
-        self._scheduler.add_job(
-            self.bruegge_strom_senden,
-            "interval",
-            seconds=1,
-            id="bruegge_strom",
-            max_instances=1,
-            coalesce=True,
         )
         # Cleanup deaktiviert — position_history wird dauerhaft behalten
         # self._scheduler.add_job(
@@ -763,6 +750,9 @@ class VatsimPoller:
 
     async def stop(self) -> None:
         """Scheduler + HTTP-Client sauber beenden."""
+        if self._bruegge_task is not None:
+            self._bruegge_task.cancel()
+            self._bruegge_task = None
         if self._scheduler and self._scheduler.running:
             self._scheduler.shutdown(wait=False)
         if self._http_client:
@@ -847,6 +837,37 @@ class VatsimPoller:
             "gnd": bool(lage.get("am_boden")),
             "ts": time.monotonic(),
         }
+
+    async def _bruegge_strom_schleife(self) -> None:
+        """Den Sekundenstrom takten -- als eigene Schleife, NICHT als Scheduler-Job.
+
+        Der Job war der erste Anlauf und ist am 13.09.2026 im Betrieb aufgefallen:
+        APScheduler protokolliert JEDE Ausfuehrung mit zwei INFO-Zeilen ("Running job" und
+        "executed successfully"). Bei Sekundentakt sind das **172.800 Zeilen am Tag**, im
+        Leerlauf wie unter Last -- gemessen im laufenden Container. Platz ist dabei nicht das
+        Problem, die Lesbarkeit schon: Wer danach im Containerprotokoll nach einem Fehler
+        sucht, sucht ihn zwischen Zehntausenden Zeilen, die nichts sagen.
+
+        Dieselbe Lehre wie beim Journal von `claude-remote.service` (s. CLAUDE.md) -- nur
+        gehoerte die Bremse hier nicht in die Protokollierung, sondern an die Ursache: Ein
+        Strom ist kein Termin. Er hat nichts zu melden, solange er laeuft.
+
+        Verpasste Takte sind folgenlos, denn gesendet wird der ZUSTAND und keine Folge von
+        Ereignissen. Deshalb reicht `sleep(1)` nach getaner Arbeit; ein Aufholen verpasster
+        Laeufe waere hier genau falsch -- die Karte bekaeme einen Schwall statt eines Taktes.
+        """
+        while True:
+            try:
+                await asyncio.sleep(1.0)
+                self.bruegge_strom_senden()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # Eine Ausnahme darf den Strom nicht beenden: Er ist der einzige Weg, auf dem
+                # eine Bruegge-Position die Karte erreicht, und ein stiller Abbruch saehe von
+                # aussen genauso aus wie "niemand fliegt".
+                logger.exception("Bruegge-Sekundenstrom")
+                await asyncio.sleep(5.0)
 
     def bruegge_strom_senden(self) -> None:
         """Einmal je Sekunde: alle frischen Bruegge-Positionen an die offenen Karten.

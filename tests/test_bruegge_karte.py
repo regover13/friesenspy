@@ -87,6 +87,60 @@ def test_alte_meldung_faellt_aus_dem_strom(monkeypatch):
     assert not p._bruegge_live
 
 
+def test_der_strom_ist_kein_scheduler_job():
+    """Er war es am 13.09.2026 für eine Stunde, und das Containerprotokoll hat es sofort
+    gezeigt: APScheduler schreibt je Ausführung zwei INFO-Zeilen — bei Sekundentakt
+    **172 800 am Tag**, im Leerlauf wie unter Last. Wer den Strom wieder als Job registriert,
+    verschüttet damit jede Fehlersuche im selben Protokoll."""
+    p = _poller()
+    aufgezeichnet = []
+
+    class _Stub:
+        def add_job(self, fn, *a, **kw):
+            aufgezeichnet.append((getattr(fn, "__name__", str(fn)), kw.get("id"),
+                                  kw.get("seconds")))
+
+    p._scheduler = _Stub()
+    p._register_jobs()
+    assert aufgezeichnet, "keine Jobs registriert -- der Test prüft dann nichts"
+    assert not [j for j in aufgezeichnet if j[0] == "bruegge_strom_senden"]
+    # Und allgemeiner: gar kein Sekundenjob. Ein anderer Name hätte dieselbe Wirkung.
+    assert not [j for j in aufgezeichnet if j[2] == 1]
+
+
+def test_die_schleife_ueberlebt_eine_ausnahme():
+    """Der Strom ist der einzige Weg, auf dem eine Brügge-Position die Karte erreicht. Bricht
+    er still ab, sieht das von außen genauso aus wie „niemand fliegt"."""
+    import asyncio
+
+    p = _poller()
+    laeufe = []
+
+    def _senden():
+        laeufe.append(1)
+        if len(laeufe) == 1:
+            raise RuntimeError("ein schlechter Durchgang")
+        if len(laeufe) >= 3:
+            raise asyncio.CancelledError
+
+    p.bruegge_strom_senden = _senden
+
+    async def _lauf():
+        # Ohne echtes Warten: Der Test prüft die Beharrlichkeit, nicht die Uhr.
+        urspruenglich = asyncio.sleep
+        async def _kurz(_s):
+            await urspruenglich(0)
+        asyncio.sleep = _kurz
+        try:
+            with pytest.raises(asyncio.CancelledError):
+                await p._bruegge_strom_schleife()
+        finally:
+            asyncio.sleep = urspruenglich
+
+    asyncio.run(_lauf())
+    assert len(laeufe) == 3, "nach der Ausnahme wurde nicht weitergesendet"
+
+
 def test_meldung_ohne_koordinaten_wird_nicht_gemerkt():
     p = _poller()
     p.bruegge_position_merken(1234567, {"gs_kt": 0.0})
