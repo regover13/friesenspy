@@ -1567,6 +1567,30 @@ def _karten_legende_block() -> str:
     return INDEX[start:zweites_ende]
 
 
+def test_karten_legende_zeile_hat_genau_einen_text_wrapper():
+    """Flexbox macht aus jedem zusammenhaengenden Textstueck UND jedem Inline-Element
+    (<strong>, <a>), das DIREKT im <li> steht, ein eigenes anonymes Flex-Item. Bei mehreren
+    <strong> in einer Zeile zerfaellt der Satz dadurch sichtbar in einzeln umbrechende
+    Spalten mit riesigen Luecken (Fund 13.09.2026 anhand eines Screenshots: "das sieht
+    scheisse aus" -- genau die "Zusatzebenen"-Zeile mit fuenf <strong> war betroffen).
+
+    Deshalb MUSS jede Zeile ihren gesamten Fliesstext in GENAU EINEM <span> buendeln, das
+    das letzte Kind ist -- nichts (kein <strong>, kein blanker Text) darf lose danach oder
+    parallel dazu im <li> stehen."""
+    block = _karten_legende_block()
+    zeilen = re.findall(r"<li[^>]*>(.*?)</li>", block, re.S)
+    assert len(zeilen) >= 12, "die Legende sollte beide Abschnitte mit all ihren Zeilen enthalten"
+    for inhalt in zeilen:
+        # Der Text-Wrapper ist am UNKLASSIFIZIERTEN "<span>" erkennbar -- die Icon-Spans
+        # (Flugzeug-Symbole) tragen immer eine class, dieser hier nie.
+        assert inhalt.count("<span>") == 1, \
+            f"erwartet genau einen Text-Wrapper <span> (ohne class) in dieser Zeile: {inhalt!r}"
+        vor_dem_wrapper = inhalt[:inhalt.index("<span>")]
+        assert "<strong>" not in vor_dem_wrapper, "kein <strong> lose vor dem Text-Wrapper"
+        assert inhalt.rstrip().endswith("</span>"), \
+            f"nach dem Text-Wrapper darf nichts mehr folgen: {inhalt!r}"
+
+
 def test_karten_legende_erklaert_farben_und_bedienelemente():
     """Die Legende unter der Live-Karte kannte bislang nur die Drehung des Markers -- Farben
     und Bedienelemente waren stillschweigend vorausgesetztes Wissen. Nutzer, 13.09.2026:
