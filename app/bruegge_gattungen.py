@@ -178,6 +178,21 @@ GATTUNGEN: dict[str, tuple[str, dict[str, list]]] = {
                      XP_AUTOGEN + "US/industrial/power/objects/WindTbn2m5_100b.obj",
                      XP_AUTOGEN + "US/industrial/power/objects/WindTbn2m5_100c.obj"],
     }),
+    # ⚠ NUR X-PLANE, und das ist ein harter Befund: MSFS hat keinen Leuchtturm als
+    # SimObject. `asobo-simobjects-landmarks` enthaelt GENAU SECHS Titel -- Windmill,
+    # Windsock, Smoke_Volcano, VfxSpawner und die 2024er Kleinschreibungen davon. Das ist
+    # Asobos gesamter Landmark-Bestand, den SimConnect ansprechen kann; alles andere, was in
+    # MSFS "Landmark" heisst, ist Szenerie (BGL) und hat keinen Titel.
+    #
+    # X-Plane bringt dagegen 64 mit, im Autogen unter `US/industrial/lighthouses`. Die Zahl
+    # im Dateinamen ist die HOEHE IN METERN (13 bis 64) -- fuer die Nordsee sind die hohen
+    # die richtigen. Dieselbe Autogen-Frage wie beim Windrad: ob `XPLMLoadObject` sie laedt,
+    # ist ungemessen.
+    "leuchtturm": ("Ein Leuchtturm", {
+        "xplane12": [XP_AUTOGEN + "US/industrial/lighthouses/lighthouse_50_1a.obj",
+                     XP_AUTOGEN + "US/industrial/lighthouses/lighthouse_64_1a.obj",
+                     XP_AUTOGEN + "US/industrial/lighthouses/lighthouse_33_1a.obj"],
+    }),
     # Der einzige Neuzugang, den BEIDE Simulatoren aus dem Bordbestand bedienen.
     # Windsock_05/_08 stammen aus dem Ostfriesland-Paket -- passender geht es kaum.
     "windsack": ("Ein Windsack", {
@@ -204,6 +219,49 @@ GATTUNGEN: dict[str, tuple[str, dict[str, list]]] = {
         "xplane12": [XP + "dynamic/balloon1.obj", XP + "dynamic/balloon2.obj",
                      XP + "dynamic/balloon3.obj", XP + "dynamic/balloon4.obj"],
     }),
+
+    # --- Abgestellte Flugzeuge (Nutzerwunsch 14.09.2026) -------------------------------
+    #
+    # ⚠ ZWEI DINGE SIND HIER UNGEPRUEFT, und beide entscheiden, ob die Gattungen in MSFS
+    # ueberhaupt tragen:
+    #
+    #   1. In MSFS ist ein Flugzeug ein SimObject vom Typ *Airplane*, und dafuer gibt es
+    #      einen EIGENEN Aufruf (`AICreateNonATCAircraft`). Ob `AICreateSimulatedObject` --
+    #      der, den die Bruegge benutzt -- einen Flugzeugtitel ueberhaupt annimmt, hat noch
+    #      niemand gemessen. In X-Plane stellt sich die Frage nicht: Die `*_static.obj` sind
+    #      ganz gewoehnliche Objekte.
+    #   2. `katalog_sammeln.py` durchsucht in MSFS nur `SimObjects/{Animals,Boats,
+    #      GroundVehicles,Landmarks,Misc}`. Flugzeuge liegen woanders und stehen deshalb
+    #      NICHT im Katalog -- die 14 Treffer der Kategorie `Airplanes` sind Sitze
+    #      (`SEAT_*`) und Polarlichter, keine Flugzeuge.
+    #
+    # Deshalb stehen hier vorerst nur X-Plane-Titel. Sobald beides geklaert ist, kommen die
+    # MSFS-Baender dazu -- ohne Client-Release, genau dafuer liegt die Liste jetzt hier.
+    #
+    # Die Einteilung folgt der deutschen Lesart: ECHO-Klasse sind einmotorige Landflugzeuge
+    # bis 2 t (C172, PA28, BE58 -- das, was auf einem Friesen-Platz steht), GA meint hier das
+    # groessere Geschaeftsreisegeraet darueber, AIRLINER den Linienverkehr.
+    "flugzeug_echo": ("Ein abgestelltes Echo-Klasse-Flugzeug", {
+        "xplane12": [XP + "apt_aircraft/prop/C172/C172_static.obj",
+                     XP + "apt_aircraft/prop/PA28/PA28_N157WA.obj",
+                     XP + "apt_aircraft/prop/BE58/BE58_static.obj"],
+    }),
+    "flugzeug_ga": ("Ein abgestelltes Geschaeftsreiseflugzeug", {
+        "xplane12": [XP + "apt_aircraft/turboprop/BE9L/BE9L_static.obj",
+                     XP + "apt_aircraft/turboprop/P180/P180_static.obj",
+                     XP + "apt_aircraft/turboprop/AT72_DLH/AT72_DLH_static.obj"],
+    }),
+    "flugzeug_airliner": ("Ein abgestellter Verkehrsflieger", {
+        "xplane12": [XP + "apt_aircraft/jet/A320_DLH/A320_DLH_static.obj",
+                     XP + "apt_aircraft/jet/A320_EZY/A320_EZY_static.obj",
+                     XP + "apt_aircraft/heavy/B744_UAL/B744_UAL_static.obj"],
+    }),
+    # ⚠ LEER, UND DAS IST DER PUNKT. Weder X-Plane noch MSFS bringen ein statisches
+    # Oldtimer-Flugzeug mit -- keine Ju 52, keine DC-3, keine Piper Cub (gesucht in allen
+    # 298 statischen X-Plane-Flugzeugen und im MSFS-Katalog). Die Gattung steht trotzdem
+    # hier: Eine Gattung ohne aktiven Titel ist nirgends anzufordern, aber sie ist da, und
+    # der Tag, an dem ein Titel auftaucht, kostet dann keinen Client-Release mehr.
+    "flugzeug_klassik": ("Ein abgestelltes Oldtimer-Flugzeug", {}),
 
     # --- Rauch: sechs Farben, beide Simulatoren, alles aus eigener Fertigung ------------
     #
