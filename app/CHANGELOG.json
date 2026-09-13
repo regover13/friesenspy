@@ -3,12 +3,13 @@
     "version": "14.37.1",
     "date": "2026-09-13",
     "highlight": false,
-    "title": "Karten-Legende: Symbole statt Farbklecks, und die 30 Sekunden richtiggestellt",
+    "title": "Karten-Legende: jede Ebene einzeln erklärt, Symbole, und das Positionsalter gemessen",
     "items": [
-      "✈️ Die Legende zeigt jetzt dieselben Symbole wie die Karte selbst — das Flugzeug, den Ebenen-Knopf, die Kompassnadel, den Moving-Map-Pfeil, die ICAO-Lupe — statt nur Farbe und Fließtext.",
-      "🗂️ In zwei Abschnitte gegliedert: Flugzeug-Marker und Bedienelemente.",
-      "⏱️ Richtiggestellt: VATSIM-Positionen sind nicht nur 15, sondern bis zu 30 Sekunden alt — VATSIM aktualisiert alle 15 Sekunden, und wir fragen im selben Takt ab. Dieselbe Korrektur auch auf der Download-Seite und in der README.",
-      "📖 Jeder Kartenhintergrund und jede Zusatzebene bekommt jetzt einen eigenen Satz, was er zeigt, statt nur seinen Namen. Und klargestellt: Kompass und Moving Map erscheinen nur mit bekanntem eigenen Flugzeug — im Kniebrett genügt Fliegen, auf der Website musst du selbst auf VATSIM eingeloggt sein."
+      "✈️ Die Legende zeigt dieselben Symbole wie die Karte selbst — das Flugzeug in seinen drei Farben, den Ebenen-Knopf, die Kompassnadel, den Moving-Map-Pfeil und die ICAO-Lupe.",
+      "🗂️ Gegliedert in Flugzeug-Marker und Bedienelemente, und jede Karte und jede Zusatzebene steht mit eigener Zeile und eigener Erklärung da — von OpenFlightMap bis „Radar Label“.",
+      "🏷️ Korrigiert: Die Legende nannte einen Haken „FSE-Flächen“, den es gar nicht gibt (es sind zwei: „FSE-Plätze“ und „FSE-Landeflächen“), schrieb „Radar Label“ mit Bindestrich und ließ „OpenAIP“ und „Verkehr“ ganz aus. Wer danach gesucht hat, hat nichts gefunden.",
+      "⏱️ Nachgemessen statt geschätzt: Eine VATSIM-Position ist auf der Karte bis zu 35 Sekunden alt. Der 15-Sekunden-Takt ist nur eine von drei Wartezeiten — 2 bis 5 Sekunden, bis die Position überhaupt im VATSIM-Datenstand steht (gemessen an 1280 Piloten), dann zweimal bis zu 15 Sekunden, bis der Stand bei uns und dann auf der Karte ankommt.",
+      "🧭 Klargestellt: Kompass und Moving Map erscheinen nur mit bekanntem eigenen Flugzeug — im Kniebrett genügt Fliegen, auf der Website musst du selbst auf VATSIM eingeloggt sein."
     ]
   },
   {

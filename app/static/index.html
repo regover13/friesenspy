@@ -2630,9 +2630,22 @@
        Flex-Item -- bei mehreren <strong> in einer Zeile zerfaellt der Satz dadurch in
        einzeln umbrechende Spalten mit riesigen Luecken dazwischen, statt als ein Fliesstext
        zu lesen (Fund 13.09.2026 anhand eines Screenshots: "das sieht scheisse aus"). */
-    .karten-legende li { display: flex; align-items: flex-start; gap: 7px; }
-    .karten-legende li > span:last-child { flex: 1 1 auto; min-width: 0; }
+    /* NUR die aeusseren Zeilen sind Flex-Container (">" ist Pflicht) -- die Unterlisten
+       darunter bleiben normale Bloecke mit normalem Textfluss. Ohne den ">" wuerde
+       `.karten-legende li` auch jedes <li> der Unterliste treffen und dort dieselbe
+       Zerreiss-Falle aufmachen. */
+    .karten-legende > li { display: flex; align-items: flex-start; gap: 7px; }
+    .karten-legende > li > span:last-child { flex: 1 1 auto; min-width: 0; }
     .karten-legende .icon { flex: none; margin-top: 3px; }
+    /* Eine Zeile je Ebene statt einer Komma-Kette: Die Details standen zwar schon da, aber
+       in Klammern hinter Kommas -- und sahen deshalb aus wie die Aufzaehlung davor
+       (Nutzer, 13.09.2026: "wo sind die Detailbeschreibungen?"). */
+    .karten-legende-unter {
+      list-style: none; margin: 5px 0 2px; padding: 0 0 0 2px;
+      display: flex; flex-direction: column; gap: 3px;
+    }
+    .karten-legende-unter > li { display: block; }
+    .karten-legende-unter strong { color: var(--text-bright); font-weight: 600; }
     /* Dasselbe Flugzeug-Symbol wie auf der Karte, per denselben Klassen
        (.aircraft-marker/-fremd/-bruegge) eingefaerbt -- keine eigene Farbdefinition noetig,
        und eine Aenderung der Kartenfarbe zieht die Legende automatisch mit. */
@@ -4329,11 +4342,17 @@
           <span><strong>Grau</strong> — übriger VATSIM-Verkehr (Fremdverkehr), auch an den gepfeilten statt geraden Flügeln zu erkennen. Ein-/ausblenden über den Ebenen-Knopf, Haken „Verkehr".</span>
         </li>
         <li>
-          <span>VATSIM-Positionen (Blau, Grau) sind bis zu <strong>30 Sekunden</strong> alt, nicht nur 15: VATSIM aktualisiert seinen eigenen Datenstand alle 15 Sekunden, und wir fragen ihn im selben Takt ab — im ungünstigen Fall addieren sich beide Wartezeiten.</span>
+          <span>Eine VATSIM-Position ist auf der Karte <strong>bis zu 35 Sekunden alt</strong> — der 15-Sekunden-Takt ist nur eine von drei Wartezeiten, und sie addieren sich:
+            <ul class="karten-legende-unter">
+              <li><strong>2–5 s</strong>, bis die Position überhaupt im VATSIM-Datenstand steht (gemessen an 1280 Piloten: Mittelwert 2,6 s, 99 % unter 5 s)</li>
+              <li><strong>bis zu 15 s</strong>, bis wir diesen Datenstand abrufen — VATSIM baut ihn alle 15 Sekunden neu, wir fragen im selben Takt, aber nicht im Gleichschritt</li>
+              <li><strong>bis zu 15 s</strong>, bis die Karte den Stand von uns holt</li>
+            </ul>
+            Zwischen zwei Meldungen wird die Position aus Kurs und Fahrt fortgerechnet — die Symbole gleiten deshalb, statt alle 15 Sekunden zu springen. Der eingezeichnete Track bleibt davon unberührt, dort stehen nur echte Messpunkte.</span>
         </li>
         <li class="karten-legende-bruegge">
           <span class="aircraft-marker aircraft-marker-bruegge karten-legende-flz"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.25 2.2c0-.5.34-.9.75-.9s.75.4.75.9v6.05h8.4c.45 0 .8.36.8.8v1.1c0 .44-.35.8-.8.8h-8.4v5.3l3.1 1.5c.3.15.5.45.5.8v.95l-4.35-1.1-4.35 1.1v-.95c0-.35.2-.65.5-.8l3.1-1.5v-5.3H2.85c-.45 0-.8-.36-.8-.8v-1.1c0-.44.35-.8.8-.8h8.4z"/></svg></span>
-          <span><strong>Türkis</strong> — ein Friese, dessen <a href="/download" style="color:var(--green);">FriesenBrügge</a> gerade meldet: Position sekundengenau statt bis zu 30 Sekunden alt wie bei VATSIM.</span>
+          <span><strong>Türkis</strong> — ein Friese, dessen <a href="/download" style="color:var(--green);">FriesenBrügge</a> gerade meldet: Position sekundengenau statt bis zu 35 Sekunden alt wie bei VATSIM.</span>
         </li>
       </ul>
 
@@ -4341,10 +4360,28 @@
       <ul class="karten-legende">
         <li>
           <svg class="icon"><use href="#icon-map" xlink:href="#icon-map"/></svg>
-          <span>Ebenen-Knopf oben rechts, Kartenhintergrund: <strong>OpenFlightMap</strong> (Luftfahrtkarte mit Lufträumen und Funkfeuern), <strong>Satellit</strong> (Luftbild), <strong>OpenTopo</strong> (Gelände, Höhenlinien), <strong>Light</strong>/<strong>Dark</strong> (heller/dunkler Straßenatlas).</span>
+          <span>Ebenen-Knopf oben rechts. Oben steht der Kartenhintergrund — einer davon ist immer an:
+            <ul class="karten-legende-unter">
+              <li><strong>OpenFlightMap</strong> — die Luftfahrtkarte mit Lufträumen, Funkfeuern und Platzrunden; sie trägt Luftfahrtinhalt nur zwischen Zoomstufe 7 und 12</li>
+              <li><strong>Satellit</strong> — Luftbild; springt von allein ein, sobald du über Stufe 12 hinein- oder unter Stufe 7 herauszoomst, weil die OpenFlightMap dort leer bliebe. Wählst du selbst eine Karte, bleibt sie stehen — zurück auf OpenFlightMap schaltet die Automatik wieder ein</li>
+              <li><strong>OpenTopo</strong> — Gelände und Höhenlinien, gut zum Abschätzen, was unter einem liegt</li>
+              <li><strong>Light</strong> / <strong>Dark</strong> — heller bzw. dunkler Straßenatlas ohne Luftfahrtinhalt, als ruhiger Untergrund für die Zusatzebenen</li>
+            </ul>
+          </span>
         </li>
         <li>
-          <span>Zusatzebenen im selben Knopf: <strong>Sichtflugkarte</strong>/<strong>Flugplatzkarte</strong> (amtliche DFS-Kartenblätter, erscheinen von selbst am Platz), <strong>Platzrunden</strong> (412 deutsche Platzrunden mit Höhe), <strong>Meldepunkte</strong> (VFR-Meldepunkte weltweit), <strong>FSE-Flächen</strong> (Plätze/Landeflächen aus FSEconomy), <strong>Radar-Label</strong> (blendet Beschriftungen am Fremdverkehr aus, erscheint erst bei eingeschaltetem „Verkehr").</span>
+          <span>Darunter im selben Knopf die Zusatzebenen — beliebig viele gleichzeitig:
+            <ul class="karten-legende-unter">
+              <li><strong>OpenAIP</strong> — Lufträume, Plätze und Navaids über jeden Hintergrund gelegt</li>
+              <li><strong>Sichtflugkarte</strong> — das amtliche DFS-Blatt, halbtransparent; erscheint von selbst, sobald du im Kartenfeld fliegst</li>
+              <li><strong>Flugplatzkarte</strong> — DFS-Flugplatz- und Rollkarte mit Rollwegnamen, Haltepunkten und Standplätzen; tritt über dem Platz an die Stelle der Sichtflugkarte</li>
+              <li><strong>Platzrunden</strong> — 412 deutsche Platzrunden mit Höhe, über jeder Kartensorte</li>
+              <li><strong>Meldepunkte</strong> — VFR-Meldepunkte weltweit; gefüllt heißt meldepflichtig, hohl heißt auf Anforderung</li>
+              <li><strong>FSE-Plätze</strong> und <strong>FSE-Landeflächen</strong> — zwei eigene Haken: Plätze aus FSEconomy mit Bahnlänge, Belag und dem Namen, unter dem der Platz im Simulator zu finden ist</li>
+              <li><strong>Verkehr</strong> — der fremde VATSIM-Verkehr (grau, siehe oben); aus Platzgründen erst ab Zoomstufe 7</li>
+              <li><strong>Radar Label</strong> — blendet die Beschriftungen am Fremdverkehr aus, wenn das Bild ruhiger sein soll; der Haken erscheint erst mit eingeschaltetem „Verkehr"</li>
+            </ul>
+          </span>
         </li>
         <li>
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 L16 13 L12 11 Z" fill="#e05555"/><path d="M12 21 L8 11 L12 13 Z" fill="#cfe3f0"/></svg>
