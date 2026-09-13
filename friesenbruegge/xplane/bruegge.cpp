@@ -36,21 +36,20 @@
 // Feld `hoehe_gemessen` in `steht` sagt dem Server, welcher der beiden Fälle vorliegt.
 //
 // ---------------------------------------------------------------------------------------
-// WINDOWS ZUERST -- und warum das hier ehrlich dasteht
+// NETZ UND NEBENLÄUFIGKEIT LIEGEN IN `netz.h`
 // ---------------------------------------------------------------------------------------
 //
-// Die Netzschicht ist WinHTTP, also Windows. Ein X-Plane-Plugin läuft auch auf macOS und
-// Linux, und die Gruppe fliegt nicht nur Windows. Der Grund für die Einschränkung ist nicht
-// Bequemlichkeit, sondern TLS: Der Endpunkt ist HTTPS, und das heißt auf jeder Plattform eine
-// eigene Bibliothek (Secure Transport, OpenSSL) oder libcurl als Abhängigkeit. WinHTTP
-// braucht nichts dazu.
+// Dort steckt alles, was die Plattformen unterscheidet: WinHTTP unter Windows, libcurl auf
+// macOS und Linux -- und die Threadschicht, die beide teilen. `netz.h` kennt das X-Plane-SDK
+// nicht und lässt sich deshalb ohne Simulator übersetzen und messen
+// (`pruefen/netz_pruefen.cpp`); für Mac und Linux ist das der einzige Test vor dem ersten
+// Piloten.
 //
-// Die Trennlinie liegt deshalb an EINER Stelle (`netz_*` weiter unten). Wer macOS oder Linux
-// nachrüstet, tauscht diesen Block und sonst nichts.
-
-#define WIN32_LEAN_AND_MEAN 1
-#include <windows.h>
-#include <winhttp.h>
+// Hier stand bis zum 13.09.2026: "Die Trennlinie liegt an EINER Stelle (netz_*). Wer macOS
+// oder Linux nachrüstet, tauscht diesen Block und sonst nichts." **Das war zu wenig.**
+// Windows steckte außerdem in der Thread- und Zeitschicht (CreateThread, CRITICAL_SECTION,
+// GetTickCount64) und in einer fehlenden Zeile bei den Pfaden -- und `json.h` rechnete
+// locale-abhängig, was ausgerechnet deutsche Piloten getroffen hätte.
 
 #define XPLM200 1
 #define XPLM210 1
@@ -74,8 +73,17 @@
 #include <cctype>
 
 #include "../json.h"
+#include "netz.h"
 
-#pragma comment(lib, "winhttp.lib")
+#include <chrono>
+#if defined(_WIN32)
+  #include <process.h>
+  static inline unsigned long eigene_prozessnummer() { return (unsigned long)_getpid(); }
+#else
+  #include <unistd.h>
+  static inline unsigned long eigene_prozessnummer() { return (unsigned long)getpid(); }
+#endif
+
 
 // ---------------------------------------------------------------------------------------
 // Feste Größen
@@ -84,11 +92,9 @@
 // Die Fassung gehört der UMSETZUNG, nicht dem Protokoll. Das WASM-Modul steht bei 1.6.0,
 // weil es sechs Runden im Simulator hinter sich hat; diese Brügge fängt bei 1.0.0 an. Was
 // beide verbindet, ist `protokoll: 1` -- und das steht in der Meldung daneben.
-#define BRUEGGE_VERSION   "1.0.0"
+#define BRUEGGE_VERSION   "1.1.0"
 #define SIMULATOR_NAME    "xplane12"
 
-#define BRUEGGE_HOST      L"friesenspy.devprops.de"
-#define BRUEGGE_PFAD      L"/api/bruegge/melden"
 
 // Wo die Kennung liegt. `Output/preferences` ist der von Laminar vorgesehene Ort für
 // Plugin-Einstellungen und überlebt ein Neuinstallieren des Plugins -- neben der .xpl läge
@@ -119,8 +125,6 @@
 
 #define SPUR_MAX 16
 #define SPRUNG_GRAD 0.005         // rund 555 m in der Breite; 600 kt sind 309 m/s
-#define MELDUNG_PUFFER 8192
-#define ANTWORT_PUFFER 16384
 #define SOLL_MAX 32
 #define OBJEKTE_MAX 24            // verschiedene .obj gleichzeitig geladen
 
@@ -212,8 +216,9 @@ static void kennung_pfad(char* aus, size_t n) {
 
 static void kennung_erzeugen() {
     // Eindeutig muss sie sein, nicht unvorhersagbar.
-    unsigned long long a = (unsigned long long)GetCurrentProcessId();
-    unsigned long long b = (unsigned long long)GetTickCount64();
+    unsigned long long a = (unsigned long long)eigene_prozessnummer();
+    unsigned long long b = (unsigned long long)
+        std::chrono::steady_clock::now().time_since_epoch().count();
     unsigned long long c = (unsigned long long)(uintptr_t)&g_soll[0];
     std::snprintf(g_kennung, sizeof(g_kennung), "%08llx%08llx",
                   (a ^ (c >> 8)) & 0xFFFFFFFFull, (b ^ (c << 4)) & 0xFFFFFFFFull);
@@ -443,28 +448,9 @@ static int objekt_holen(const char* voll) {
 // XPLMDebugString-Zeile an der falschen Stelle reicht für einen Absturz, den niemand
 // reproduziert. Der Netzthread sieht deshalb nur char-Puffer.
 
-static HANDLE g_netz_thread = nullptr;
-static HANDLE g_netz_wecker = nullptr;
-static CRITICAL_SECTION g_schloss;
-static volatile LONG g_netz_ende = 0;
-
-static char  g_ausgang[MELDUNG_PUFFER];
-static bool  g_ausgang_voll = false;
-static char  g_eingang[ANTWORT_PUFFER];
-static bool  g_eingang_voll = false;
-static int   g_eingang_status = 0;
-static unsigned long g_eingang_gross = 0;   // Antwort passte nicht in den Puffer
-static bool  g_anfrage_laeuft = false;
-
-static HINTERNET g_sitzung = nullptr;
-static HINTERNET g_verbindung = nullptr;
-
-// Das Ziel. Wird EINMAL beim Start gesetzt (ziel_laden) und danach nur noch gelesen --
-// deshalb braucht es hier kein Schloss, obwohl der Netzthread mitliest.
-static wchar_t   g_host[160] = BRUEGGE_HOST;
-static wchar_t   g_pfad[256] = BRUEGGE_PFAD;
-static INTERNET_PORT g_port = INTERNET_DEFAULT_HTTPS_PORT;
-static bool      g_sicher = true;
+// Läuft gerade eine Anfrage? Gehört zur Ablaufsteuerung hier, nicht ins Netz: Der Takt
+// stellt damit sicher, dass nicht zwei Meldungen gleichzeitig unterwegs sind.
+static bool g_anfrage_laeuft = false;
 
 // Steht ZIEL_DATEI da, gilt, was drinsteht. Sonst bleibt es beim einkompilierten Ziel.
 //
@@ -516,140 +502,12 @@ static void ziel_laden() {
     }
     const char* rumpf = (rest[i] == '/') ? rest + i : "/";
 
-    // Nach wchar_t umsetzen -- WinHTTP will Weitzeichen. Reines ASCII genuegt hier; ein
-    // Rechnername mit Umlauten waere ohnehin ein Fall fuer Punycode.
-    size_t h = 0;
-    for (; host[h] && h < 159; ++h) g_host[h] = (wchar_t)(unsigned char)host[h];
-    g_host[h] = L'\0';
-    size_t r = 0;
-    for (; rumpf[r] && r < 255; ++r) g_pfad[r] = (wchar_t)(unsigned char)rumpf[r];
-    g_pfad[r] = L'\0';
-    g_port = (INTERNET_PORT)port;
-    g_sicher = sicher;
+    netz_ziel(host, port, rumpf, sicher);
 
     char sage[500];
     std::snprintf(sage, sizeof(sage), "Ziel UMGEBOGEN auf %s://%s:%u%s (%s)",
                   sicher ? "https" : "http", host, port, rumpf, ZIEL_DATEI);
     logzeile(sage);
-}
-
-static void netz_schliessen() {
-    if (g_verbindung) { WinHttpCloseHandle(g_verbindung); g_verbindung = nullptr; }
-    if (g_sitzung)    { WinHttpCloseHandle(g_sitzung);    g_sitzung = nullptr; }
-}
-
-// Sitzung und Verbindung werden EINMAL geöffnet und behalten -- so läuft die zweite Meldung
-// über dieselbe TLS-Verbindung wie die erste. Bei Sekundentakt ist das der Unterschied
-// zwischen einem Handshake je Meldung und einem je Sitzung.
-static bool netz_oeffnen() {
-    if (g_verbindung) return true;
-    netz_schliessen();
-
-    g_sitzung = WinHttpOpen(L"FriesenBruegge/" L"" BRUEGGE_VERSION,
-                            WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
-                            WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-    if (!g_sitzung) return false;
-    // Auflösen, Verbinden, Senden, Empfangen. Die 15 s beim Empfangen sind die Obergrenze,
-    // an der die Brügge eine Meldung aufgibt -- der Wächter im Takt räumt sie danach weg.
-    WinHttpSetTimeouts(g_sitzung, 10000, 10000, 15000, 15000);
-
-    g_verbindung = WinHttpConnect(g_sitzung, g_host, g_port, 0);
-    if (!g_verbindung) { netz_schliessen(); return false; }
-    return true;
-}
-
-static DWORD WINAPI netz_lauf(LPVOID) {
-    static char sendepuffer[MELDUNG_PUFFER];
-    static char lesepuffer[ANTWORT_PUFFER];
-
-    while (true) {
-        WaitForSingleObject(g_netz_wecker, INFINITE);
-        if (InterlockedCompareExchange(&g_netz_ende, 0, 0)) break;
-
-        bool etwas_da = false;
-        EnterCriticalSection(&g_schloss);
-        if (g_ausgang_voll) {
-            std::memcpy(sendepuffer, g_ausgang, sizeof(sendepuffer));
-            g_ausgang_voll = false;
-            etwas_da = true;
-        }
-        LeaveCriticalSection(&g_schloss);
-        if (!etwas_da) continue;
-
-        int status = 0;
-        unsigned long gelesen = 0;
-        unsigned long zu_gross = 0;
-
-        if (netz_oeffnen()) {
-            HINTERNET anf = WinHttpOpenRequest(g_verbindung, L"POST", g_pfad, nullptr,
-                                               WINHTTP_NO_REFERER,
-                                               WINHTTP_DEFAULT_ACCEPT_TYPES,
-                                               g_sicher ? WINHTTP_FLAG_SECURE : 0);
-            if (anf) {
-                DWORD laenge = (DWORD)std::strlen(sendepuffer);
-                BOOL ok = WinHttpSendRequest(anf, L"Content-Type: application/json\r\n",
-                                             (DWORD)-1L, (LPVOID)sendepuffer, laenge,
-                                             laenge, 0);
-                if (ok) ok = WinHttpReceiveResponse(anf, nullptr);
-                if (ok) {
-                    DWORD code = 0, n = sizeof(code);
-                    if (WinHttpQueryHeaders(anf,
-                            WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-                            WINHTTP_HEADER_NAME_BY_INDEX, &code, &n,
-                            WINHTTP_NO_HEADER_INDEX)) {
-                        status = (int)code;
-                    }
-                    // Den Rumpf in Stücken lesen, bis nichts mehr kommt.
-                    DWORD da = 0;
-                    while (WinHttpQueryDataAvailable(anf, &da) && da > 0) {
-                        DWORD platz = (DWORD)(sizeof(lesepuffer) - 1 - gelesen);
-                        if (platz == 0) {
-                            // Die Antwort ist grösser als der Puffer. Sie wird GAR NICHT
-                            // ausgewertet -- ein halb gelesener Sollzustand räumte alles ab,
-                            // was hinter der Schnittstelle stand, und setzte es beim nächsten
-                            // Takt neu. Das wäre ein Flackern, dessen Ursache niemand fände.
-                            zu_gross = gelesen + da;
-                            break;
-                        }
-                        DWORD nimm = (da < platz) ? da : platz;
-                        DWORD tat = 0;
-                        if (!WinHttpReadData(anf, lesepuffer + gelesen, nimm, &tat) || tat == 0)
-                            break;
-                        gelesen += tat;
-                    }
-                    lesepuffer[gelesen] = '\0';
-                } else {
-                    // Verbindung hin -- beim nächsten Mal neu aufbauen.
-                    netz_schliessen();
-                }
-                WinHttpCloseHandle(anf);
-            } else {
-                netz_schliessen();
-            }
-        }
-
-        EnterCriticalSection(&g_schloss);
-        g_eingang_status = status;
-        g_eingang_gross = zu_gross;
-        if (zu_gross == 0 && gelesen > 0) {
-            std::memcpy(g_eingang, lesepuffer, gelesen + 1);
-        } else {
-            g_eingang[0] = '\0';
-        }
-        g_eingang_voll = true;
-        LeaveCriticalSection(&g_schloss);
-    }
-
-    netz_schliessen();
-    return 0;
-}
-
-static void netz_senden(const char* text) {
-    EnterCriticalSection(&g_schloss);
-    std::snprintf(g_ausgang, sizeof(g_ausgang), "%s", text);
-    g_ausgang_voll = true;
-    LeaveCriticalSection(&g_schloss);
-    SetEvent(g_netz_wecker);
 }
 
 // ---------------------------------------------------------------------------------------
@@ -1020,21 +878,12 @@ static void antwort_lesen(const char* json) {
 
 // Was der Netzthread abgelegt hat, im Hauptthread auswerten.
 static void antwort_abholen() {
-    static char kopie[ANTWORT_PUFFER];
-    int status = 0;
-    unsigned long zu_gross = 0;
-    bool etwas_da = false;
+    static NetzMeldung m;
+    if (!netz_antwort(&m)) return;
 
-    EnterCriticalSection(&g_schloss);
-    if (g_eingang_voll) {
-        std::snprintf(kopie, sizeof(kopie), "%s", g_eingang);
-        status = g_eingang_status;
-        zu_gross = g_eingang_gross;
-        g_eingang_voll = false;
-        etwas_da = true;
-    }
-    LeaveCriticalSection(&g_schloss);
-    if (!etwas_da) return;
+    const char* kopie = m.text;
+    int status = (int)m.code;
+    unsigned long zu_gross = m.zu_gross ? (unsigned long)m.laenge : 0ul;
 
     g_anfrage_laeuft = false;
 
@@ -1151,12 +1000,20 @@ PLUGIN_API int XPluginStart(char* name, char* sig, char* beschreibung) {
     // Unter Windows dreht sie die Schrägstriche von \ auf /; fopen trägt beides.
     XPLMEnableFeature("XPLM_USE_NATIVE_PATHS", 1);
 
-    InitializeCriticalSection(&g_schloss);
-    // Das Ziel MUSS vor dem Netzthread feststehen -- er liest g_host/g_pfad ohne Schloss,
-    // weil sie sich danach nie wieder ändern.
+    // Das Ziel MUSS vor dem Netzthread feststehen -- er liest es ohne Schloss, weil es
+    // sich danach nie wieder ändert.
     ziel_laden();
-    g_netz_wecker = CreateEventW(nullptr, FALSE, FALSE, nullptr);
-    g_netz_thread = CreateThread(nullptr, 0, netz_lauf, nullptr, 0, nullptr);
+
+    // ⚠ Hier, nicht im Netzthread: Auf macOS und Linux wird libcurl an dieser Stelle per
+    // dlopen geholt, und ein Fehlschlag muss ins Log -- was der Netzthread nicht darf.
+    char netztext[256] = {0};
+    if (netz_bereit(netztext, sizeof(netztext))) {
+        logzeile(netztext);
+        netz_start();
+    } else {
+        logzeile(netztext);
+        logzeile("Die Bruegge laeuft weiter, meldet aber nichts.");
+    }
 
     kennung_laden_oder_erzeugen();
 
@@ -1189,18 +1046,9 @@ PLUGIN_API void XPluginStop(void) {
     }
     if (g_probe) XPLMDestroyProbe(g_probe);
 
-    // Den Netzthread ordentlich beenden. Er hängt in WaitForSingleObject -- also erst das
-    // Ende-Kennzeichen setzen, dann wecken, dann warten. Ohne das Warten stürbe der Prozess
-    // mitten in einem WinHTTP-Aufruf.
-    InterlockedExchange(&g_netz_ende, 1);
-    if (g_netz_wecker) SetEvent(g_netz_wecker);
-    if (g_netz_thread) {
-        WaitForSingleObject(g_netz_thread, 20000);
-        CloseHandle(g_netz_thread);
-        g_netz_thread = nullptr;
-    }
-    if (g_netz_wecker) { CloseHandle(g_netz_wecker); g_netz_wecker = nullptr; }
-    DeleteCriticalSection(&g_schloss);
+    // Den Netzthread ordentlich beenden: Ende setzen, wecken, warten. Ohne das Warten
+    // stürbe der Prozess mitten in einem Netzaufruf.
+    netz_ende();
     logzeile("entladen.");
 }
 
