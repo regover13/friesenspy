@@ -2624,7 +2624,14 @@
       display: flex; flex-direction: column; gap: 7px;
       font-size: 0.8rem; color: var(--text-label);
     }
+    /* JEDE Zeile hat genau EIN Text-Element (das letzte Kind), nie rohen Text mit
+       eingestreuten <strong>/<a> direkt im <li>. Flexbox macht sonst aus jedem
+       zusammenhaengenden Textstueck UND jedem Inline-Element ein eigenes anonymes
+       Flex-Item -- bei mehreren <strong> in einer Zeile zerfaellt der Satz dadurch in
+       einzeln umbrechende Spalten mit riesigen Luecken dazwischen, statt als ein Fliesstext
+       zu lesen (Fund 13.09.2026 anhand eines Screenshots: "das sieht scheisse aus"). */
     .karten-legende li { display: flex; align-items: flex-start; gap: 7px; }
+    .karten-legende li > span:last-child { flex: 1 1 auto; min-width: 0; }
     .karten-legende .icon { flex: none; margin-top: 3px; }
     /* Dasselbe Flugzeug-Symbol wie auf der Karte, per denselben Klassen
        (.aircraft-marker/-fremd/-bruegge) eingefaerbt -- keine eigene Farbdefinition noetig,
@@ -4310,22 +4317,23 @@
       <div class="karten-legende-abschnitt karten-legende-abschnitt--erste">Flugzeug-Marker</div>
       <ul class="karten-legende">
         <li>
-          <svg class="icon"><use href="#icon-diamond" xlink:href="#icon-diamond"/></svg> Rotieren mit dem aktuellen Heading · Klick für Details
+          <svg class="icon"><use href="#icon-diamond" xlink:href="#icon-diamond"/></svg>
+          <span>Rotieren mit dem aktuellen Heading · Klick für Details</span>
         </li>
         <li>
           <span class="aircraft-marker karten-legende-flz"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.25 2.2c0-.5.34-.9.75-.9s.75.4.75.9v6.05h8.4c.45 0 .8.36.8.8v1.1c0 .44-.35.8-.8.8h-8.4v5.3l3.1 1.5c.3.15.5.45.5.8v.95l-4.35-1.1-4.35 1.1v-.95c0-.35.2-.65.5-.8l3.1-1.5v-5.3H2.85c-.45 0-.8-.36-.8-.8v-1.1c0-.44.35-.8.8-.8h8.4z"/></svg></span>
-          <strong>Blau</strong> — FriesenFlieger auf VATSIM.
+          <span><strong>Blau</strong> — FriesenFlieger auf VATSIM.</span>
         </li>
         <li>
           <span class="aircraft-marker aircraft-marker-fremd karten-legende-flz"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1.6c-.85 0-1.4 1.3-1.4 3.1v3.4L2.2 12.6v2.1l8.4-2.5v4.3l-2.5 1.7v1.6l3.9-1.1 3.9 1.1v-1.6l-2.5-1.7v-4.3l8.4 2.5v-2.1l-8.4-4.5V4.7c0-1.8-.55-3.1-1.4-3.1z"/></svg></span>
-          <strong>Grau</strong> — übriger VATSIM-Verkehr (Fremdverkehr), auch an den gepfeilten statt geraden Flügeln zu erkennen. Ein-/ausblenden über den Ebenen-Knopf, Haken „Verkehr".
+          <span><strong>Grau</strong> — übriger VATSIM-Verkehr (Fremdverkehr), auch an den gepfeilten statt geraden Flügeln zu erkennen. Ein-/ausblenden über den Ebenen-Knopf, Haken „Verkehr".</span>
         </li>
         <li>
-          VATSIM-Positionen (Blau, Grau) sind bis zu <strong>30 Sekunden</strong> alt, nicht nur 15: VATSIM aktualisiert seinen eigenen Datenstand alle 15 Sekunden, und wir fragen ihn im selben Takt ab — im ungünstigen Fall addieren sich beide Wartezeiten.
+          <span>VATSIM-Positionen (Blau, Grau) sind bis zu <strong>30 Sekunden</strong> alt, nicht nur 15: VATSIM aktualisiert seinen eigenen Datenstand alle 15 Sekunden, und wir fragen ihn im selben Takt ab — im ungünstigen Fall addieren sich beide Wartezeiten.</span>
         </li>
         <li class="karten-legende-bruegge">
           <span class="aircraft-marker aircraft-marker-bruegge karten-legende-flz"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.25 2.2c0-.5.34-.9.75-.9s.75.4.75.9v6.05h8.4c.45 0 .8.36.8.8v1.1c0 .44-.35.8-.8.8h-8.4v5.3l3.1 1.5c.3.15.5.45.5.8v.95l-4.35-1.1-4.35 1.1v-.95c0-.35.2-.65.5-.8l3.1-1.5v-5.3H2.85c-.45 0-.8-.36-.8-.8v-1.1c0-.44.35-.8.8-.8h8.4z"/></svg></span>
-          <strong>Türkis</strong> — ein Friese, dessen <a href="/download" style="color:var(--green);">FriesenBrügge</a> gerade meldet: Position sekundengenau statt bis zu 30 Sekunden alt wie bei VATSIM.
+          <span><strong>Türkis</strong> — ein Friese, dessen <a href="/download" style="color:var(--green);">FriesenBrügge</a> gerade meldet: Position sekundengenau statt bis zu 30 Sekunden alt wie bei VATSIM.</span>
         </li>
       </ul>
 
@@ -4333,27 +4341,27 @@
       <ul class="karten-legende">
         <li>
           <svg class="icon"><use href="#icon-map" xlink:href="#icon-map"/></svg>
-          Ebenen-Knopf oben rechts, Kartenhintergrund: <strong>OpenFlightMap</strong> (Luftfahrtkarte mit Lufträumen und Funkfeuern), <strong>Satellit</strong> (Luftbild), <strong>OpenTopo</strong> (Gelände, Höhenlinien), <strong>Light</strong>/<strong>Dark</strong> (heller/dunkler Straßenatlas).
+          <span>Ebenen-Knopf oben rechts, Kartenhintergrund: <strong>OpenFlightMap</strong> (Luftfahrtkarte mit Lufträumen und Funkfeuern), <strong>Satellit</strong> (Luftbild), <strong>OpenTopo</strong> (Gelände, Höhenlinien), <strong>Light</strong>/<strong>Dark</strong> (heller/dunkler Straßenatlas).</span>
         </li>
         <li>
-          Zusatzebenen im selben Knopf: <strong>Sichtflugkarte</strong>/<strong>Flugplatzkarte</strong> (amtliche DFS-Kartenblätter, erscheinen von selbst am Platz), <strong>Platzrunden</strong> (412 deutsche Platzrunden mit Höhe), <strong>Meldepunkte</strong> (VFR-Meldepunkte weltweit), <strong>FSE-Flächen</strong> (Plätze/Landeflächen aus FSEconomy), <strong>Radar-Label</strong> (blendet Beschriftungen am Fremdverkehr aus, erscheint erst bei eingeschaltetem „Verkehr").
+          <span>Zusatzebenen im selben Knopf: <strong>Sichtflugkarte</strong>/<strong>Flugplatzkarte</strong> (amtliche DFS-Kartenblätter, erscheinen von selbst am Platz), <strong>Platzrunden</strong> (412 deutsche Platzrunden mit Höhe), <strong>Meldepunkte</strong> (VFR-Meldepunkte weltweit), <strong>FSE-Flächen</strong> (Plätze/Landeflächen aus FSEconomy), <strong>Radar-Label</strong> (blendet Beschriftungen am Fremdverkehr aus, erscheint erst bei eingeschaltetem „Verkehr").</span>
         </li>
         <li>
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 L16 13 L12 11 Z" fill="#e05555"/><path d="M12 21 L8 11 L12 13 Z" fill="#cfe3f0"/></svg>
-          Kompassnadel oben rechts: Karte drehen — genordet oder in Flugrichtung (Track-up).
+          <span>Kompassnadel oben rechts: Karte drehen — genordet oder in Flugrichtung (Track-up).</span>
         </li>
         <li>
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 L20 20 L12 16 L4 20 Z" fill="currentColor"/></svg>
-          Pfeil unten rechts: Karte folgt dem eigenen Flugzeug.
+          <span>Pfeil unten rechts: Karte folgt dem eigenen Flugzeug.</span>
         </li>
         <li>
-          Kompass und Moving-Map-Pfeil erscheinen nur, wenn die Karte ein eigenes Flugzeug kennt — im Kniebrett genügt Fliegen, auf der Website musst du selbst auf VATSIM eingeloggt sein.
+          <span>Kompass und Moving-Map-Pfeil erscheinen nur, wenn die Karte ein eigenes Flugzeug kennt — im Kniebrett genügt Fliegen, auf der Website musst du selbst auf VATSIM eingeloggt sein.</span>
         </li>
         <li>
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.5 3a7.5 7.5 0 1 0 4.55 13.46l4.24 4.25 1.42-1.42-4.25-4.24A7.5 7.5 0 0 0 10.5 3zm0 2a5.5 5.5 0 1 1 0 11 5.5 5.5 0 0 1 0-11z" fill="currentColor"/></svg>
-          Lupe oben rechts: Flugplatz nach ICAO-Kennung suchen.
+          <span>Lupe oben rechts: Flugplatz nach ICAO-Kennung suchen.</span>
         </li>
-        <li>Regler oben links (erscheint mit aktiver Sichtflug-/Flugplatzkarte): Deckkraft des Kartenblatts.</li>
+        <li><span>Regler oben links (erscheint mit aktiver Sichtflug-/Flugplatzkarte): Deckkraft des Kartenblatts.</span></li>
       </ul>
     </div>
   </div>
