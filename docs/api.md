@@ -102,6 +102,41 @@ Werte außerhalb der Bereiche → `422`.
 - `age` — Alter der Momentaufnahme in Sekunden, gerechnet **ab dem Abruf durch den Poller**,
   nicht ab dem Messzeitpunkt bei VATSIM (den trüge `last_updated` je Pilot). Das Frontend
   datiert seine Fortrechnung damit zurück.
+
+> **Wie alt eine Position auf der Karte wirklich ist: bis zu 35 Sekunden.** Der
+> 15-Sekunden-Takt ist nur eine von drei Wartezeiten, und `age` deckt allein die mittlere ab:
+>
+> | Abschnitt | Dauer | Herkunft |
+> |---|---|---|
+> | Pilot meldet → Position steht im VATSIM-Datenstand | Mittel **2,6 s**, 99 % unter **5 s** | gemessen, s. u. |
+> | VATSIM-Datenstand liegt, bis der Poller ihn abruft | 0–15 s | `VATSIM_POLL_INTERVAL`, nicht im Gleichschritt mit VATSIMs eigenem Takt |
+> | Momentaufnahme liegt, bis das Frontend sie holt | 0–15 s | `_VERKEHR_TAKT_MS` |
+>
+> **Gemessen am 13.09.2026**, drei Läufe mit je rund 1280 Piloten: je Pilot `last_updated`
+> gegen `general.update_timestamp` desselben Feeds — das isoliert die VATSIM-interne
+> Verzögerung von unserer eigenen. Median 2,5–2,6 s, p90 4,5 s, p99 5,0 s; einzelne
+> Ausreißer bis 37 s. Wiederholbar, rein lesend:
+>
+> ```bash
+> docker exec -i friesenspy-friesenspy-1 python3 - <<'EOF'
+> import json, urllib.request
+> from datetime import datetime, timezone
+> parse = lambda s: datetime.fromisoformat(s.replace("Z", "+00:00"))
+> with urllib.request.urlopen("https://data.vatsim.net/v3/vatsim-data.json", timeout=30) as r:
+>     d = json.load(r)
+> feed = parse(d["general"]["update_timestamp"])
+> alter = sorted((feed - parse(p["last_updated"])).total_seconds()
+>                for p in d["pilots"] if p.get("last_updated"))
+> n = len(alter)
+> print(f"n={n} median={alter[n//2]:.1f}s p99={alter[int(n*.99)]:.1f}s max={alter[-1]:.1f}s")
+> EOF
+> ```
+>
+> **Die Zahl misst das Alter der letzten echten Messung, nicht den Fehler auf dem Bildschirm** —
+> zwischen zwei Meldungen rechnet das Frontend aus Kurs und Fahrt fort. Für ein stehendes
+> Flugzeug sind die 35 Sekunden folgenlos, für ein schnelles sind sie eine Schätzung über
+> mehrere Kilometer. Nur die FriesenBrügge umgeht die Kette ganz (`POST /api/bruegge/melden`,
+> Sekundentakt direkt aus dem Simulator).
 - Sortiert nach Entfernung zum Bezugspunkt, **gekappt bei 60 Flugzeugen**. Was näher ist,
   gewinnt.
 - Läuft der Poller nicht oder ist die Momentaufnahme älter als 45 Sekunden (drei verpasste
