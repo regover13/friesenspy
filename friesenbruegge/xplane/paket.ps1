@@ -39,6 +39,17 @@ $ordner = Join-Path $bau $name
 New-Item -ItemType Directory -Force "$ordner\win_x64" | Out-Null
 Copy-Item $xpl "$ordner\win_x64\$name.xpl" -Force
 
+# Die eigenen Objekte gehoeren ins Paket, nicht in den Bordbestand: Rauchsaeulen in
+# FriesenFlieger-Farben, aus rauch_bauen.py. X-Plane bringt keinen Rauch mit, und keine
+# Freeware-Bibliothek darf mitgeliefert werden -- deshalb liegen sie hier.
+$eigene = Join-Path $hier "objekte"
+if (-not (Test-Path $eigene)) {
+    throw "objekte/ fehlt -- erst 'py rauch_bauen.py' laufen lassen. Ohne die Dateien kann die ausgelieferte Bruegge keinen Rauch setzen."
+}
+New-Item -ItemType Directory -Force "$ordner\objekte" | Out-Null
+Copy-Item "$eigene\*" "$ordner\objekte" -Force
+Write-Output ("eigene Objekte: {0} Dateien" -f (Get-ChildItem $eigene -File).Count)
+
 # Eine Begleitdatei, die X-Plane nicht kennt und nicht braucht: Die Download-Seite liest die
 # Version AUS DEM ARCHIV (`_efb_package_version` in main.py), damit die angezeigte gar nicht
 # erst von der ausgelieferten abweichen kann. Ein MSFS-Paket hat dafuer seine manifest.json --

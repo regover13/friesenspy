@@ -78,6 +78,19 @@ if (-not (Test-Path "$XPlane\Resources\plugins")) {
 }
 $ziel = Join-Path $XPlane "Resources\plugins\$name\win_x64"
 New-Item -ItemType Directory -Force $ziel | Out-Null
+
+# Die eigenen Objekte muessen MIT -- ohne sie meldet die Bruegge fuer `rauch` schlicht
+# OBJ_NICHT_GEFUNDEN, und zwar lautlos aus Sicht des Piloten. Sie entstehen aus
+# rauch_bauen.py und liegen unter objekte/.
+$eigene = Join-Path $hier "objekte"
+if (Test-Path $eigene) {
+    $objZiel = Join-Path $XPlane "Resources\plugins\$name\objekte"
+    New-Item -ItemType Directory -Force $objZiel | Out-Null
+    Copy-Item "$eigene\*" $objZiel -Force
+    Write-Output ("eigene Objekte: {0} Dateien nach {1}" -f (Get-ChildItem $eigene -File).Count, $objZiel)
+} else {
+    Write-Warning "objekte/ fehlt -- erst 'py rauch_bauen.py' laufen lassen, sonst kann die Bruegge keinen Rauch setzen."
+}
 # Laeuft X-Plane, ist die .xpl gesperrt -- dann sagt das Skript das, statt einen
 # Zugriffsfehler durchzureichen.
 try {

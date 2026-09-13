@@ -290,40 +290,72 @@ static void kennung_laden_oder_erzeugen() {
 // ist `boot_gross` hier die Fregatte `Perry.obj` (rund 135 m) und nicht ein Containerschiff.
 struct Gattung { const char* art; const char* pfad[5]; };
 
-static const char* const P = "Resources/default scenery/sim objects/";
-
-// Die Pfade stehen relativ zum X-System-Ordner, so will es XPLMLoadObject. Der gemeinsame
-// Anfang wird beim Laden davorgesetzt (s. `objekt_holen`) -- das hält die Tabelle lesbar.
+// Zwei Herkünfte, und der Unterschied ist wichtiger, als er aussieht:
+//
+//   BORD   Was X-Plane mitbringt. Jeder Pilot hat es, niemand muss etwas installieren --
+//          aber wir haben keinen Einfluss darauf, und was fehlt, fehlt.
+//   EIGEN  Was IM BRÜGGE-PAKET liegt. Gehört uns, ist in FriesenFlieger-Farben und braucht
+//          keine fremde Erlaubnis.
+//
+// Die zweite Zeile gibt es seit dem 13.09.2026, und zwar aus einem gemessenen Grund: Für
+// Rauch bringt X-Plane nichts mit (kein einziges Bordobjekt enthält ein PARTICLE_SYSTEM),
+// und keine Freeware-Bibliothek darf mitgeliefert werden -- Emerald verbietet es wörtlich,
+// OpenSceneryX ebenso, SayIntentions hängt am Abo. Also bauen wir sie selbst
+// (`rauch_bauen.py`).
+//
+// Die Pfade stehen relativ zum X-System-Ordner, so will es XPLMLoadObject. Zusammengesetzt
+// werden sie vom Übersetzer, nicht zur Laufzeit -- benachbarte Zeichenkettenliterale in C++
+// verschmelzen, und damit steht in der Tabelle genau das, was auf der Platte liegt.
+#define BORD  "Resources/default scenery/sim objects/"
+#define EIGEN "Resources/plugins/FriesenBruegge/objekte/"
 static const Gattung g_gattungen[] = {
     // Hirsch und Ricke. Die einzigen Landtiere im Bordbestand -- und der Sache näher als
     // alles, was Asobo für MSFS 2024 mitbringt (dort gibt es 41 Tier-Pakete, aber keine
     // Robbe; hier immerhin Wild und Möwen).
-    { "tier_gross",  { "dynamic/deer_buck.obj", "dynamic/deer_doe.obj", nullptr } },
-    { "tier_wild",   { "dynamic/deer_buck.obj", "dynamic/deer_doe.obj", nullptr } },
+    { "tier_gross",  { BORD "dynamic/deer_buck.obj", BORD "dynamic/deer_doe.obj", nullptr } },
+    { "tier_wild",   { BORD "dynamic/deer_buck.obj", BORD "dynamic/deer_doe.obj", nullptr } },
     // Möwen in drei Flugzuständen. `glide` steht ruhig, `flap` schlägt mit den Flügeln --
     // für eine Zählaufgabe aus der Luft ist der Gleitflug die ruhigere Marke.
-    { "tier_klein",  { "dynamic/seagull_glide.obj", "dynamic/seagull_flap.obj",
-                       "dynamic/seagull_far.obj", nullptr } },
+    { "tier_klein",  { BORD "dynamic/seagull_glide.obj", BORD "dynamic/seagull_flap.obj",
+                       BORD "dynamic/seagull_far.obj", nullptr } },
     // Die Ölplattform ist 63 MB gross und entsprechend weit zu sehen -- für die Nordsee das
     // passendste Bauwerk, das der Simulator mitbringt. Dahinter Kleineres.
-    { "bauwerk",     { "dynamic/OilPlatform.obj", "dynamic/OilRig.obj",
-                       "legacy env files/radio_tower.obj", nullptr } },
+    { "bauwerk",     { BORD "dynamic/OilPlatform.obj", BORD "dynamic/OilRig.obj",
+                       BORD "legacy env files/radio_tower.obj", nullptr } },
     // Segelboote, Motorboote, Schlauchboote. `SailBoat.obj` ist das im Probeflug am
     // 11.09.2026 gesetzte und im Bild gesehene Modell -- es steht deshalb vorn.
-    { "boot_klein",  { "dynamic/SailBoat.obj", "ships/Sail_1000_01.obj",
-                       "ships/Runabout_750_01.obj", "ships/Dinghy_400_01.obj", nullptr } },
+    { "boot_klein",  { BORD "dynamic/SailBoat.obj", BORD "ships/Sail_1000_01.obj",
+                       BORD "ships/Runabout_750_01.obj", BORD "ships/Dinghy_400_01.obj", nullptr } },
     // Fregatte (~135 m) und die grösste ladbare Yacht (19 m).
-    { "boot_gross",  { "dynamic/Perry.obj", "ships/Cruiser_1900_01.obj",
-                       "ships/Cruiser_1200_01.obj", nullptr } },
+    { "boot_gross",  { BORD "dynamic/Perry.obj", BORD "ships/Cruiser_1900_01.obj",
+                       BORD "ships/Cruiser_1200_01.obj", nullptr } },
     // ⭐ Der Heissluftballon löst dasselbe Problem wie `rauch` in MSFS: Ein Boot ist erst ab
     // rund 1 km eingeblendet -- ein Ballon steht in der Luft und ist kilometerweit zu sehen.
     // Für jedes Event, bei dem jemand etwas FINDEN soll, ist das wertvoller als das genauere
     // Modell am Boden.
-    { "marke",       { "dynamic/balloon1.obj", "dynamic/balloon2.obj",
-                       "dynamic/balloon3.obj", "landscape/windsock_orange.obj", nullptr } },
+    { "marke",       { BORD "dynamic/balloon1.obj", BORD "dynamic/balloon2.obj",
+                       BORD "dynamic/balloon3.obj", BORD "landscape/windsock_orange.obj", nullptr } },
     // Eine Boje markiert einen Punkt auf dem Wasser -- das Gegenstück zu den flachen
     // Landepunkten aus der SayIntentions-Bibliothek in MSFS.
-    { "punkt",       { "landscape/buoy.obj", "landscape/radar.obj", nullptr } },
+    { "punkt",       { BORD "landscape/buoy.obj", BORD "landscape/radar.obj", nullptr } },
+
+    // ⭐ RAUCH -- die einzige Gattung aus EIGENER Fertigung, und die einzige, fuer die
+    // X-Plane gar nichts mitbringt: Kein Bordobjekt enthaelt ein PARTICLE_SYSTEM.
+    //
+    // Sie loest ein Problem, das am 13.09.2026 gemessen wurde: Auf EDMV standen sechs
+    // Objekte, und der Pilot fand drei Hirsche NICHT -- obwohl alle sechs nachweislich da
+    // waren und ihre Hoehe zurueckmeldeten. Ein Boot ist aus wenigen hundert Metern zu
+    // sehen, eine 100 m hohe Saeule kilometerweit. Fuer jedes Event, bei dem jemand etwas
+    // FINDEN soll, ist das mehr wert als das schoenere Modell am Boden.
+    //
+    // Vier Farben aus der FriesenFlieger-Palette (Repaint-Kit), damit sich Stationen
+    // unterscheiden lassen, ohne dass jemand Text lesen muss. Ein Gruen gibt es in der
+    // Marke nicht -- deshalb steht hier keins.
+    //
+    // Die Reihenfolge ist die Sichtbarkeit vor hellem Himmel: Orange und Rot zuerst,
+    // Navy zuletzt (es steht vor Wald gut, vor Wolken schlecht).
+    { "rauch",       { EIGEN "rauch_orange.obj", EIGEN "rauch_rot.obj",
+                       EIGEN "rauch_hellblau.obj", EIGEN "rauch_navy.obj", nullptr } },
 };
 
 static const char* pfad_fuer(const char* art, int n) {
@@ -376,10 +408,7 @@ static void objekt_da(XPLMObjectRef ref, void* merker) {
 }
 
 // Den Platz eines Modells -- vorhandenen oder neu angelegten. -1, wenn der Bestand voll ist.
-static int objekt_holen(const char* kurz) {
-    char voll[200];
-    std::snprintf(voll, sizeof(voll), "%s%s", P, kurz);
-
+static int objekt_holen(const char* voll) {
     int frei = -1;
     for (int i = 0; i < OBJEKTE_MAX; ++i) {
         if (g_objekte[i].pfad[0]) {
@@ -795,14 +824,14 @@ static void lage_rechnen(const SollObjekt& o, double* x, double* y, double* z,
 static void objekt_setzen(int i) {
     SollObjekt& o = g_soll[i];
 
-    const char* kurz = pfad_fuer(o.art, o.titel_nr);
-    if (!kurz) {
+    const char* pfad = pfad_fuer(o.art, o.titel_nr);
+    if (!pfad) {
         std::snprintf(o.fehler, sizeof(o.fehler), "%s",
                       gattung_bekannt(o.art) ? "KEIN_MODELL_MEHR" : "GATTUNG_UNBEKANNT");
         return;
     }
 
-    int oi = objekt_holen(kurz);
+    int oi = objekt_holen(pfad);
     if (oi < 0) { std::snprintf(o.fehler, sizeof(o.fehler), "MODELLBESTAND_VOLL"); return; }
     if (g_objekte[oi].laedt) return;          // noch am Laden -- der nächste Takt sieht nach
     if (g_objekte[oi].fehlt) {
