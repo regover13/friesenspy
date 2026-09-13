@@ -571,6 +571,10 @@ Plugin (`.xpl`). Beide sprechen Protokollfassung 1 und teilen sich `json.h`; ver
 nur Lageabfrage, Objektverwaltung und Netzschicht. Beide sind über die Kniebrett-Seite zu
 haben (`/efb`).
 
+Das X-Plane-Plugin enthält seit dem 13.09.2026 **Windows, macOS und Linux in einem Paket** —
+X-Plane wählt beim Start den passenden Ordner. Geflogen ist bislang nur die Windows-Fassung;
+die beiden anderen sind gebaut und ungetestet, und das steht so auch auf der Download-Seite.
+
 Gedacht ist das für den geplanten FriesenKieker, bei dem aus der Luft gezählt wird. Der Server
 fordert dabei **Gattungen** an (`tier_gross`, `robbe`, `boot_klein` …), nie Modellnamen —
 welches Modell daraus wird, entscheidet die Brügge, weil nur sie ihren Simulator kennt. In

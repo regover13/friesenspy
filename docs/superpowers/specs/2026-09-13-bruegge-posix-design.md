@@ -123,10 +123,16 @@ läuft auf x86-64. Siehe Abschnitt 12.
 
 ### Weitere Festlegungen
 
-- **`CURLOPT_NOSIGNAL 1L` ist Pflicht** (**Fable-Fund, der schwerste**). Ohne die Option lässt
-  libcurl bei einem Schreiben auf eine vom Server geschlossene Verbindung ein `SIGPIPE` zu —
-  und ein `SIGPIPE` ohne Handler beendet **den Prozess**, also X-Plane, nicht das Plugin.
-  WinHTTP kennt das nicht, deshalb fehlt es in der Windows-Referenz.
+- **`CURLOPT_NOSIGNAL 1L` wird gesetzt** — aber die Begründung ist schwächer, als sie hier
+  zunächst stand. **Fable-Fund, nachgemessen und teilweise widerlegt (13.09.2026):**
+  Behauptet war, ohne die Option lasse libcurl bei einer gekappten Verbindung ein `SIGPIPE`
+  zu, und das beende den X-Plane-Prozess. Auf Linux (libcurl 8.5.0/OpenSSL) ließ sich das in
+  **zwei** Aufbauten nicht nachstellen — weder mit einer Gegenstelle, die sofort schließt,
+  noch mit einer, die erst antwortet und die Keep-alive-Verbindung dann hart abbricht. Mit
+  und ohne Option lief der Prozess unverändert weiter; libcurl sendet dort offenbar mit
+  `MSG_NOSIGNAL`. Die Option bleibt gesetzt, weil sie nichts kostet und den Resolver-Pfad
+  sowie macOS abdeckt, wo nichts gemessen ist. **Wer sie entfernen will, misst erst auf
+  einem Mac.**
 - **`Expect:` als leerer Header.** libcurl schickt bei größeren POST-Rümpfen
   `Expect: 100-continue` und wartet auf die Zwischenantwort — ein zusätzlicher Umlauf je
   Meldung, im Sekundentakt spürbar.
@@ -411,7 +417,7 @@ nie angefasst.
 | Risiko | Gegenmaßnahme |
 |---|---|
 | Der Thread-Umbau beschädigt die geflogene Windows-Fassung | **Kontrollstart durch den Nutzer** nach dem ersten CI-Paket: `Fassung 1.1.0 geladen`, **`Kennung gelesen` mit der bekannten `fb0225a72bb734be`**, einmal der `.url`-Weg zum Prüfserver, eine ankommende Meldung. Die ersten beiden decken Abschnitt 6 ab |
-| `SIGPIPE` beendet X-Plane | `CURLOPT_NOSIGNAL`, geprüft mit dem Abbruchtest (11.5) |
+| `SIGPIPE` beendet X-Plane | `CURLOPT_NOSIGNAL` gesetzt. ⚠ Der Abbruchtest (11.5) belegt **nicht**, dass die Option nötig ist — ohne sie läuft es auf Linux genauso. Auf macOS ungemessen |
 | Dezimalkomma | `json.h` locale-frei, Abschnitt 7 |
 | libcurl fehlt auf einem Zielsystem | Klartextzeile im `Log.txt` statt eines Plugins, das nicht lädt |
 | Plugin lädt auf älterem macOS nicht | Deployment-Target gesetzt, `otool`-Ausgabe im Workflow |
@@ -432,6 +438,15 @@ Damit niemand die alte Begründung weiterträgt:
    finden kann.
 6. `SIGPIPE`, Locale, Deployment-Target, glibc-Versionen, `Expect:`, die `long`-Literale, der
    Umzug von `LIESMICH.txt` und die Pfadtiefe von `fassung.json` fehlten vollständig.
+
+**Und was bei der Umsetzung an DIESER Fassung noch fiel (13.09.2026):**
+
+7. Der `SIGPIPE`-Tod ist auf Linux **nicht nachstellbar** (s. Abschnitt 4). Der Fund war
+   plausibel und ist trotzdem kein Befund — die Option bleibt, die Behauptung geht.
+8. Der Locale-Fehler ist **größer als beschrieben**: Betroffen war nicht nur das Schreiben,
+   sondern auch jede gelesene Serverantwort (`53.5` wurde zu `53`, `1.5E2` zu `1`).
+9. `JsonSchreiber` hat keine Methode `name()`, sondern `feld()` — im Plan geraten statt
+   nachgesehen, fiel beim ersten Übersetzen auf.
 
 ## 16. Reihenfolge
 

@@ -1090,6 +1090,12 @@ Hinweisadresse — nie eine halb verstandene Antwort.
 **Die Regel für Änderungen:** Felder hinzufügen erhöht die Fassung nicht (unbekannte Felder
 werden auf beiden Seiten übergangen). Bedeutungen ändern oder Felder entfernen erhöht sie.
 
+**Die X-Plane-Brügge steht seit dem 13.09.2026 auf 1.1.0** — dieselbe *Protokoll*fassung 1,
+nur läuft sie jetzt auf Windows, macOS und Linux aus einem Quelltext. Am Vertrag ändert sich
+dadurch nichts; `hoehe_gemessen` bleibt wie beschrieben. Der Weg dorthin und was daran
+ungeprüft blieb, steht in
+[`docs/superpowers/specs/2026-09-13-bruegge-posix-design.md`](../docs/superpowers/specs/2026-09-13-bruegge-posix-design.md).
+
 ---
 
 ## 10. Offen — vor dem Bau zu klären

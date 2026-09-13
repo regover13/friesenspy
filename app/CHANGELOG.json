@@ -1,5 +1,17 @@
 [
   {
+    "version": "14.35.0",
+    "date": "2026-09-13",
+    "highlight": false,
+    "title": "Die FriesenBrügge gibt es jetzt auch für Mac und Linux",
+    "items": [
+      "🍏 Das X-Plane-Paket enthält ab sofort alle drei Plattformen in einer Datei — der Simulator sucht sich selbst heraus, was zu ihm passt. Einbauen ist derselbe Handgriff wie vorher.",
+      "🧪 Ehrlich gesagt: Windows ist erprobt, Mac und Linux sind gebaut, aber noch nie gestartet worden. Wer eine der beiden ausprobiert, sagt bitte Bescheid — dann wird aus „müsste gehen“ ein „geht“.",
+      "🔒 Auf dem Mac ist einmalig ein Befehl im Terminal nötig, weil das Plugin nicht signiert ist; er steht in der Anleitung im Paket.",
+      "🧮 Nebenbei ein Fehler beseitigt, den es nur außerhalb von Windows gegeben hätte: Die Brügge hätte ihre Koordinaten auf einem deutsch eingestellten Rechner mit Komma gemeldet — und der Server hätte jede einzelne abgelehnt."
+    ]
+  },
+  {
     "version": "14.34.0",
     "date": "2026-09-13",
     "highlight": false,
