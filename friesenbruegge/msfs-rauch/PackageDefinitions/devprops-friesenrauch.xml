@@ -13,7 +13,7 @@
 	<PackageOrderHint>MISC</PackageOrderHint>
 	<AssetGroups>
 		<AssetGroup Name="SimObjects">
-			<Type>ModularSimObject</Type>
+			<Type Version="1">SimObject</Type>
 			<Flags>
 				<FSXCompatibility>false</FSXCompatibility>
 			</Flags>

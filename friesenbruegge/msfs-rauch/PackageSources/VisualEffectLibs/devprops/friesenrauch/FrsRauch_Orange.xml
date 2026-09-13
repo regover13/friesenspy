@@ -10,8 +10,9 @@
             </EmitterList>
         </VisualEffect.VisualEffect>
         <VisualEffect.Emitter InstanceId="{53CC50E4-40AB-5943-8372-7B8DCA130981}">
-            <ParticleRate>{00000000-0000-0000-0000-000000000000}, 60.000000</ParticleRate>
-            <Capacity>2000.000</Capacity>
+            <ParticleRate>{00000000-0000-0000-0000-000000000000}, 33.000000</ParticleRate>
+            <Capacity>907.500</Capacity>
+            <TimeEmission>30.000000</TimeEmission>
             <ParticleInit>
                 <ObjectReference InstanceId="{962B9AE8-D66C-5170-906F-7E32C73BDD3A}" id="BlockParticleInit"/>
             </ParticleInit>
@@ -21,16 +22,31 @@
                 <ObjectReference InstanceId="{538E713F-AE0C-53C1-BE51-057BE9F1B4DE}" id="BlockParticleUpdate"/>
             </ParticleUpdate>
             <ParticleLifetime>
-                <FloatIn>{00000000-0000-0000-0000-000000000000}, 22.000000</FloatIn>
+                <FloatIn>{AAFE0C91-3786-5BB8-A323-70AADB95B8A5}, 22.000000</FloatIn>
             </ParticleLifetime>
             <ParticleSize>
-                <FloatIn>{00000000-0000-0000-0000-000000000000}, 6.000000</FloatIn>
+                <FloatIn>{3E58A41A-DA1B-5A1E-A0A7-BDB60AAD8218}, 0.800000</FloatIn>
             </ParticleSize>
             <ParticleVelocity>
-                <Float3In>{4BC82215-1617-56D7-8AF1-08A545D69ED8}, 0.000000, 0.000000, 0.000000</Float3In>
+                <Float3In>{99777E40-867C-5800-A74F-6FB505C64414}, 0.000000, 0.000000, 0.000000</Float3In>
             </ParticleVelocity>
         </VisualEffect.BlockParticleInit>
         <VisualEffect.BlockParticleUpdate InstanceId="{538E713F-AE0C-53C1-BE51-057BE9F1B4DE}">
+            <!-- ⚠ DIE GRÖSSE GEHÖRT HIERHER, NICHT IN DEN INIT-BLOCK. Der Init-Block läuft
+                 genau einmal, bei der Geburt des Partikels; eine Kurve über das Alter
+                 stünde dort ewig bei Alter 0 und lieferte immer denselben Startwert. Nur
+                 der Update-Block wird je Bild neu ausgewertet, so wie die Deckkraft im
+                 Output-Block (die deshalb von Anfang an funktioniert hat). -->
+            <ParticleSize>
+                <FloatIn>{3E58A41A-DA1B-5A1E-A0A7-BDB60AAD8218}, 0.800000</FloatIn>
+            </ParticleSize>
+            <!-- Auch die Geschwindigkeit gehoert hierher, seit der Wind am Alter haengt:
+                 Im Init-Block gerechnet, bekaeme jedes Partikel seinen Windanteil ein
+                 einziges Mal bei der Geburt, also immer den Wert fuer Alter 0, also
+                 nie Wind. Erst hier wird er ueber die Lebenszeit nachgefuehrt. -->
+            <ParticleVelocity>
+                <Float3In>{99777E40-867C-5800-A74F-6FB505C64414}, 0.000000, 0.000000, 0.000000</Float3In>
+            </ParticleVelocity>
             <ParticleOutput>
                 <ObjectReference InstanceId="{5A3ED2EF-DA57-5DB0-BC36-296A533E6F75}" id="Output"/>
             </ParticleOutput>
@@ -45,10 +61,10 @@
              einer Kurve ueber die Lebenszeit, genau wie ALPHA_CURVE in der .pss. -->
         <VisualEffect.Vector4 InstanceId="{67BEB57C-3EE9-59AC-B0AE-C9FCED08035C}">
             <OutputValue>{8201BB5F-AE19-5FAC-B628-A698DECDFF7C}</OutputValue>
-            <x>{00000000-0000-0000-0000-000000000000}, 0.843137</x>
-            <y>{00000000-0000-0000-0000-000000000000}, 0.372549</y>
-            <z>{00000000-0000-0000-0000-000000000000}, 0.156863</z>
-            <w>{A1EFCFA4-4EB4-5F67-AD41-DC7DE8218E78}, 0.000000</w>
+            <x>{00000000-0000-0000-0000-000000000000}, 0.679542</x>
+            <y>{00000000-0000-0000-0000-000000000000}, 0.114435</y>
+            <z>{00000000-0000-0000-0000-000000000000}, 0.021219</z>
+            <w>{7B98A313-5820-509B-97E7-C1AB82C0C46F}, 0.000000</w>
         </VisualEffect.Vector4>
 
         <!-- Das Alter des Partikels, normiert auf 0..1: die x-Achse aller Kurven. -->
@@ -63,13 +79,27 @@
         <VisualEffect.GetBezierCurve InstanceId="{36D6A8E0-D30F-532A-963B-9FB82B348D78}">
             <OutputValue>{A1EFCFA4-4EB4-5F67-AD41-DC7DE8218E78}</OutputValue>
             <FXTime>{E9145C66-7FB2-5B3E-952C-C47531ACF158}, 0.000000</FXTime>
-            <Curve>0.000,0.000,NAN,NAN,0.030,0.700,NAN,NAN,0.200,0.550,NAN,NAN,0.420,0.160,NAN,NAN,0.680,0.050,NAN,NAN,1.000,0.000,NAN,NAN</Curve>
+            <Curve>0.000,0.000,NAN,NAN,0.020,0.580,NAN,NAN,0.200,0.420,NAN,NAN,0.420,0.060,NAN,NAN,0.680,0.018,NAN,NAN,0.880,0.005,NAN,NAN,1.000,0.000,NAN,NAN</Curve>
+        </VisualEffect.GetBezierCurve>
+
+        <!-- Die Größe über die Lebenszeit: schmal an der Quelle, weit in der Krone. Sie
+             wächst absichtlich erst langsam, denn die unteren Meter sollen eine Säule
+             sein, an der man die Quelle orten kann, und keine Kugel. Das Verbreitern
+             kommt oben, wo sich der Rauch auflösen soll. Wie SIZE_CURVE in X-Plane.
+
+             ⚠ KEIN DOPPELTER BINDESTRICH IN XML-KOMMENTAREN. Das ist laut XML-Norm
+             verboten (nur im schließenden Zeichen erlaubt), und der SPB-Compiler bricht
+             hart ab: "Error (line:36): '>' wird erwartet". -->
+        <VisualEffect.GetBezierCurve InstanceId="{C454EAF0-EEC8-5957-8CA1-263BAD231682}">
+            <OutputValue>{A927C76C-A6C0-5A4F-955C-418869720A54}</OutputValue>
+            <FXTime>{E9145C66-7FB2-5B3E-952C-C47531ACF158}, 0.000000</FXTime>
+            <Curve>0.000,0.800,NAN,NAN,0.150,1.438,NAN,NAN,0.400,3.114,NAN,NAN,0.700,5.746,NAN,NAN,1.000,8.778,NAN,NAN</Curve>
         </VisualEffect.GetBezierCurve>
 
         <!-- Auftrieb: ein NEGATIVER Schwerkraftfaktor zieht nach oben. -->
         <VisualEffect.GravityVector InstanceId="{7B522227-5B0A-5667-B6CA-C0ABEE2D6F23}">
             <OutputValue>{46BAEFEF-A9AA-5273-8F2C-C1FCDC55022F}</OutputValue>
-            <GravityScale>{00000000-0000-0000-0000-000000000000}, -0.350000</GravityScale>
+            <GravityScale>{00000000-0000-0000-0000-000000000000}, -3.000000</GravityScale>
         </VisualEffect.GravityVector>
 
         <!-- Seitliche Streuung. Ohne sie steigen alle Partikel im Gleichschritt, und die
@@ -80,15 +110,15 @@
         </VisualEffect.GetParticleAttribute>
         <VisualEffect.RandomValue InstanceId="{71A58E75-B2CF-5915-AB86-30A61AB53067}">
             <OutputValue>{5CBCC71E-ECED-5CB9-BBF8-0D8779F1D1E5}</OutputValue>
-            <MinRandValue>{00000000-0000-0000-0000-000000000000}, -0.700000</MinRandValue>
-            <MaxRandValue>{00000000-0000-0000-0000-000000000000}, 0.700000</MaxRandValue>
+            <MinRandValue>{00000000-0000-0000-0000-000000000000}, -0.582000</MinRandValue>
+            <MaxRandValue>{00000000-0000-0000-0000-000000000000}, 0.582000</MaxRandValue>
             <RandSeed>{00000000-0000-0000-0000-000000000000}, 1024.000000</RandSeed>
             <RandIndex>{A0CC8201-34CD-5ACF-B710-AD38E281E743}, 0.000000</RandIndex>
         </VisualEffect.RandomValue>
         <VisualEffect.RandomValue InstanceId="{14BA1868-B138-5770-858B-DF20F7128582}">
             <OutputValue>{A94557B9-F1B1-5316-A80C-919B182D5A21}</OutputValue>
-            <MinRandValue>{00000000-0000-0000-0000-000000000000}, -0.700000</MinRandValue>
-            <MaxRandValue>{00000000-0000-0000-0000-000000000000}, 0.700000</MaxRandValue>
+            <MinRandValue>{00000000-0000-0000-0000-000000000000}, -0.582000</MinRandValue>
+            <MaxRandValue>{00000000-0000-0000-0000-000000000000}, 0.582000</MaxRandValue>
             <RandSeed>{00000000-0000-0000-0000-000000000000}, 512.000000</RandSeed>
             <RandIndex>{A0CC8201-34CD-5ACF-B710-AD38E281E743}, 0.000000</RandIndex>
         </VisualEffect.RandomValue>
@@ -100,7 +130,140 @@
         <VisualEffect.AddOperation InstanceId="{E5176406-9F86-5733-9CB3-B2247E2E6446}">
             <OutputValue>{4BC82215-1617-56D7-8AF1-08A545D69ED8}</OutputValue>
             <xVariant>{19690C4D-4294-559A-BEA1-19A9D576C50C}, 0.000000</xVariant>
-            <yVariant>{46BAEFEF-A9AA-5273-8F2C-C1FCDC55022F}, 0.000000</yVariant>
+            <yVariant>{BB5F549C-0D14-589F-9E10-E9C376D4299B}, 0.000000</yVariant>
+        </VisualEffect.AddOperation>
+
+        <!-- Der Wind. Ohne ihn steht die Säule senkrecht wie gemalt, gleich wie kräftig es
+             draußen weht (13.09.2026 im Sim gesehen). `Raw` liefert die Windrichtung
+             bereits mit der Windgeschwindigkeit skaliert, in Fuß je Sekunde.
+
+             Er kommt in die ANFANGSgeschwindigkeit, nicht in den Update-Block, und das
+             genügt: Bei gleichmäßigem Wind trägt jedes Partikel seinen Anteil von Geburt
+             an mit, und die Säule legt sich als Ganzes schräg. -->
+        <VisualEffect.WindDirection InstanceId="{5C3FC3FB-55D2-5695-A839-6DA9D7B065D9}">
+            <WindDirOptions>Raw</WindDirOptions>
+            <OutputValue>{22EBB62E-D3CC-5AAE-9862-8D1D3487FCF7}</OutputValue>
+        </VisualEffect.WindDirection>
+
+        <!-- Der Anteil, mit dem der Wind am jeweiligen Alter zieht: unten fast null,
+             oben ganz. Das ist der Unterschied zwischen einer Säule, die sich neigt,
+             und einem Strahl, der von der Quelle an schräg liegt. -->
+        <VisualEffect.GetBezierCurve InstanceId="{FCF91CE5-3BB8-514B-8046-B436DD715C0A}">
+            <OutputValue>{8ABD96BA-C8DF-5A92-9ED8-B391643E6E59}</OutputValue>
+            <FXTime>{E9145C66-7FB2-5B3E-952C-C47531ACF158}, 0.000000</FXTime>
+            <Curve>0.000,0.000,NAN,NAN,0.200,0.050,NAN,NAN,0.400,0.350,NAN,NAN,0.600,0.750,NAN,NAN,1.000,1.000,NAN,NAN</Curve>
+        </VisualEffect.GetBezierCurve>
+        <VisualEffect.MultiplyOperation InstanceId="{04916D40-5CBD-5582-AB8A-DFFA961A5EDD}">
+            <OutputValue>{BCEF0C49-02F5-5376-8EA2-622426299A5A}</OutputValue>
+            <xVariant>{22EBB62E-D3CC-5AAE-9862-8D1D3487FCF7}, 0.000000</xVariant>
+            <yVariant>{8ABD96BA-C8DF-5A92-9ED8-B391643E6E59}, 0.000000</yVariant>
+        </VisualEffect.MultiplyOperation>
+        <!-- ===== DIE STRECKE BEGRENZT DIE FAHNE ============================
+             Der Weg über `GetSimVar` mit AMBIENT WIND VELOCITY ist erprobt und tot: Ein
+             statisches Objekt bekommt die Variable nicht, der Knoten liefert 0, und die
+             Fahne blieb bei 27 kt so lang wie ohne alles (13.09.2026 gegengeprüft).
+
+             Hier wird deshalb nicht der Wind geschätzt, sondern die tatsächlich
+             zurückgelegte WAAGERECHTE STRECKE gemessen. Das ist genau die Größe, die bei
+             Wind zu groß wird, und sie gilt unabhängig davon, woher der Versatz kommt.
+
+             Gerechnet wird mit dem QUADRAT der Entfernung: Die Wurzel bräuchte einen
+             weiteren Knotentyp, und die Kurve kann das Quadrat ebenso gut abbilden
+             (x = (r/60 m)^2). -->
+        <VisualEffect.GetParticleAttribute InstanceId="{E24C8A45-7CCC-5EF0-80DE-6891B5D12B3C}">
+            <OutputValue>{C53A38B3-3612-5F30-B3A0-A92A85B8527F}</OutputValue>
+            <ParticleAttributeType>Position</ParticleAttributeType>
+        </VisualEffect.GetParticleAttribute>
+        <VisualEffect.Split InstanceId="{F5EC3AC0-FF07-5E51-A7F2-854079B43C2E}">
+            <x>{C53A38B3-3612-5F30-B3A0-A92A85B8527F}, 0.000000</x>
+            <outX>{29CBB9D0-6C08-5CAB-ADDC-F5360D5E32A4}</outX>
+            <outY>{FE910D5A-44DB-5497-AAA0-B314B6891E9D}</outY>
+            <outZ>{2CB8F827-9F4B-5EBB-AFD2-C9BBAEB29B7F}</outZ>
+        </VisualEffect.Split>
+        <VisualEffect.MultiplyOperation InstanceId="{9C739AA6-CC54-5A52-A06C-656A82054CA5}">
+            <OutputValue>{E48948D2-5C0B-59C1-8425-8C995036B451}</OutputValue>
+            <xVariant>{29CBB9D0-6C08-5CAB-ADDC-F5360D5E32A4}, 0.000000</xVariant>
+            <yVariant>{29CBB9D0-6C08-5CAB-ADDC-F5360D5E32A4}, 0.000000</yVariant>
+        </VisualEffect.MultiplyOperation>
+        <VisualEffect.MultiplyOperation InstanceId="{ACAF92DB-C35B-5D25-A70F-02F77CDD9B84}">
+            <OutputValue>{F07696C2-70A6-57A1-85A0-40968D1A296B}</OutputValue>
+            <xVariant>{2CB8F827-9F4B-5EBB-AFD2-C9BBAEB29B7F}, 0.000000</xVariant>
+            <yVariant>{2CB8F827-9F4B-5EBB-AFD2-C9BBAEB29B7F}, 0.000000</yVariant>
+        </VisualEffect.MultiplyOperation>
+        <VisualEffect.AddOperation InstanceId="{442690AC-E759-53B0-9C76-23A379150FA9}">
+            <OutputValue>{B49126E0-44F4-57CA-8150-60B8819C9776}</OutputValue>
+            <xVariant>{E48948D2-5C0B-59C1-8425-8C995036B451}, 0.000000</xVariant>
+            <yVariant>{F07696C2-70A6-57A1-85A0-40968D1A296B}, 0.000000</yVariant>
+        </VisualEffect.AddOperation>
+        <VisualEffect.MultiplyOperation InstanceId="{39C2ED1A-A781-59A3-B3A0-424FF4B657BC}">
+            <OutputValue>{0A930CA6-BFBB-55FA-BF53-1F997113D67C}</OutputValue>
+            <xVariant>{B49126E0-44F4-57CA-8150-60B8819C9776}, 0.000000</xVariant>
+            <yVariant>{00000000-0000-0000-0000-000000000000}, 0.00027778</yVariant>
+        </VisualEffect.MultiplyOperation>
+        <VisualEffect.GetBezierCurve InstanceId="{FF6FCCB0-BB62-5E19-BC90-DC332836B663}">
+            <OutputValue>{571081BD-1658-5B08-930B-6F86E7C99A4A}</OutputValue>
+            <FXTime>{0A930CA6-BFBB-55FA-BF53-1F997113D67C}, 0.000000</FXTime>
+            <Curve>0.000,1.000,NAN,NAN,0.111,0.850,NAN,NAN,0.250,0.550,NAN,NAN,0.444,0.250,NAN,NAN,0.694,0.080,NAN,NAN,1.000,0.000,NAN,NAN</Curve>
+        </VisualEffect.GetBezierCurve>
+        <VisualEffect.MultiplyOperation InstanceId="{3E1B183B-2394-532A-965D-133062A6B9E4}">
+            <OutputValue>{7B98A313-5820-509B-97E7-C1AB82C0C46F}</OutputValue>
+            <xVariant>{A1EFCFA4-4EB4-5F67-AD41-DC7DE8218E78}, 0.000000</xVariant>
+            <yVariant>{571081BD-1658-5B08-930B-6F86E7C99A4A}, 0.000000</yVariant>
+        </VisualEffect.MultiplyOperation>
+
+        <!-- ===== DIE VIER STREUUNGEN =========================================
+             Ohne sie leben alle Partikel gleich lang, steigen gleich schnell und sind
+             gleich gross: Daraus MUSS ein glattkantiger Trichter werden. Jede Streuung
+             zieht ihre Zufallszahl ueber die Partikelnummer, damit ein Partikel seinen
+             Wert behaelt, statt je Bild neu zu wuerfeln. Die Startwerte (`RandSeed`)
+             sind verschieden, sonst waeren alle vier Streuungen dieselbe Zahl und die
+             Partikel wieder im Gleichschritt.
+
+             Verhaeltnisse wie in X-Plane (Min/Max-Spalten der .pss). -->
+
+        <!-- Lebensdauer: manche Wolken loesen sich frueher auf als andere. -->
+        <VisualEffect.RandomValue InstanceId="{21EE8089-A820-5E59-8F54-D2D21AC43E06}">
+            <OutputValue>{AAFE0C91-3786-5BB8-A323-70AADB95B8A5}</OutputValue>
+            <MinRandValue>{00000000-0000-0000-0000-000000000000}, 12.100000</MinRandValue>
+            <MaxRandValue>{00000000-0000-0000-0000-000000000000}, 22.000000</MaxRandValue>
+            <RandSeed>{00000000-0000-0000-0000-000000000000}, 331.000000</RandSeed>
+            <RandIndex>{A0CC8201-34CD-5ACF-B710-AD38E281E743}, 0.000000</RandIndex>
+        </VisualEffect.RandomValue>
+
+        <!-- Steiggeschwindigkeit: die Front zerfasert, statt geschlossen zu steigen. -->
+        <VisualEffect.RandomValue InstanceId="{3B82671E-BC17-5197-9095-F5D3BD8BFD05}">
+            <OutputValue>{B46FE42D-297E-5C87-812C-AF23AB268972}</OutputValue>
+            <MinRandValue>{00000000-0000-0000-0000-000000000000}, 0.500000</MinRandValue>
+            <MaxRandValue>{00000000-0000-0000-0000-000000000000}, 1.800000</MaxRandValue>
+            <RandSeed>{00000000-0000-0000-0000-000000000000}, 617.000000</RandSeed>
+            <RandIndex>{A0CC8201-34CD-5ACF-B710-AD38E281E743}, 0.000000</RandIndex>
+        </VisualEffect.RandomValue>
+        <VisualEffect.MultiplyOperation InstanceId="{569B454F-D599-5142-A028-FDDA56C38890}">
+            <OutputValue>{BB5F549C-0D14-589F-9E10-E9C376D4299B}</OutputValue>
+            <xVariant>{46BAEFEF-A9AA-5273-8F2C-C1FCDC55022F}, 0.000000</xVariant>
+            <yVariant>{B46FE42D-297E-5C87-812C-AF23AB268972}, 0.000000</yVariant>
+        </VisualEffect.MultiplyOperation>
+
+        <!-- Groesse: ungleiche Ballen statt gleichfoermiger Perlen. Der Zufallsfaktor
+             wirkt auf die KURVE, nicht auf einen festen Wert; ein Partikel bleibt also
+             ueber seine ganze Lebenszeit anteilig gleich gross oder klein. -->
+        <VisualEffect.RandomValue InstanceId="{5D5E7766-D54C-50A4-A91A-9741FD189526}">
+            <OutputValue>{BFA52AD7-A234-5A0B-B824-D0D5F063C71C}</OutputValue>
+            <MinRandValue>{00000000-0000-0000-0000-000000000000}, 0.800000</MinRandValue>
+            <MaxRandValue>{00000000-0000-0000-0000-000000000000}, 1.200000</MaxRandValue>
+            <RandSeed>{00000000-0000-0000-0000-000000000000}, 929.000000</RandSeed>
+            <RandIndex>{A0CC8201-34CD-5ACF-B710-AD38E281E743}, 0.000000</RandIndex>
+        </VisualEffect.RandomValue>
+        <VisualEffect.MultiplyOperation InstanceId="{1C7B4F1B-589F-5597-AFB2-C261CB2B4E7F}">
+            <OutputValue>{3E58A41A-DA1B-5A1E-A0A7-BDB60AAD8218}</OutputValue>
+            <xVariant>{A927C76C-A6C0-5A4F-955C-418869720A54}, 0.000000</xVariant>
+            <yVariant>{BFA52AD7-A234-5A0B-B824-D0D5F063C71C}, 0.000000</yVariant>
+        </VisualEffect.MultiplyOperation>
+
+        <VisualEffect.AddOperation InstanceId="{40D5359B-ABAC-531D-B7A3-640B02AC5408}">
+            <OutputValue>{99777E40-867C-5800-A74F-6FB505C64414}</OutputValue>
+            <xVariant>{4BC82215-1617-56D7-8AF1-08A545D69ED8}, 0.000000</xVariant>
+            <yVariant>{BCEF0C49-02F5-5376-8EA2-622426299A5A}, 0.000000</yVariant>
         </VisualEffect.AddOperation>
     </WorldBase.Flight>
 </SimBase.Document>

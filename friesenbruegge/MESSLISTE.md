@@ -979,6 +979,17 @@ das Log sagt bei jedem Start, welches Ziel gilt.
   Code vorgesehen, noch nie im Flug gesehen. Beides zusammen in einem Zug messbar: etwas
   Großes weit voraus setzen und hinsehen.
 - **1146 Katalogzeilen** sind ungeprüft, und dabei gilt „gelistet ≠ ladbar" (s. OBJEKTE.md).
+- **Offene Entscheidung: Muss jede Gattung in der Brügge stehen?** Heute ja — und das kostet
+  bei jeder neuen Gattung ein Plugin-Update bei allen Piloten. Am 13.09.2026 zweimal
+  aufgelaufen: FRS61s ältere Brügge kannte `robbe` und `tier_wild` nicht und meldete
+  `GATTUNG_UNBEKANNT`. Denkbar wäre, dass der Server Titel als *Vorschlag* mitschickt, die
+  eine Brügge nur nutzt, wenn sie die Gattung selbst nicht kennt — das brächte aber
+  Simulatorwissen in den Server, das dort bewusst nicht liegt (PROTOKOLL.md, Abschnitt 3).
+  **Nicht entschieden.**
+- **Ein Scheitern merkt sich die Brügge pro `id`** (13.09.2026 zweimal reproduziert): Wird
+  dieselbe `id` mit einer anderen Gattung neu gesetzt, meldet sie weiter
+  `GATTUNG_UNBEKANNT`. Erst eine neue `id` wird neu bewertet. Ob das Absicht ist oder ein
+  Fund, ist ungeklärt.
 
 ---
 
@@ -993,6 +1004,19 @@ Am 11.09.2026 bereits im Flug bestätigt:
 - Absturz und Respawn (Selbstheilung) ✅
 - VATSIM-Trennung und Wiederverbindung ✅
 - Sprungerkennung beim Laden (0/90, Seattle) ✅
+
+Am 13./14.09.2026 am eigenen MSFS-Rauch bestätigt:
+
+- Eigener Partikeleffekt ohne DevMode-Klickeditor, aus lesbarem XML gebaut ✅
+- Sechs Farben in beiden Simulatoren, kein Fremdpaket mehr nötig ✅
+- **`TimeEmission` begrenzt nur den Nachlauf, nicht die Standzeit** ✅ — solange das
+  Trägerobjekt lebt, startet MSFS den Emitter selbst neu; erst nach dem Abräumen läuft er
+  aus. Die zwischenzeitlich in 1.7.0 eingebaute Erneuerung durch die Brügge war deshalb
+  überflüssig und wurde wieder entfernt.
+- **`GetSimVar` mit `AMBIENT WIND VELOCITY` liefert einem statischen Objekt nichts** ❌ —
+  gegengeprüft bei 27 kt: Die Fahne blieb so lang wie ohne jede Windkürzung. Der gangbare
+  Weg ist `GetParticleAttribute → Position`, also die tatsächlich zurückgelegte Strecke
+  messen statt den Wind zu schätzen.
 
 ---
 

@@ -1,4 +1,4 @@
-<Material Version="1.4.0" Name="FrsRauch" Guid="{471B6EE7-5A32-5ACB-A28B-79E822C9FCD0}" SurfaceType="UNDEFINED" Type="CODE_DIFFUSE" Metal="0.000000" Rough="0.000000" Opacity="1.000000" BlendMode="Transparent">
+<Material Version="1.4.0" Name="FrsRauch_Navy" Guid="{1867DE60-B23D-5BA1-BFDC-BFE3B5A40B2F}" SurfaceType="UNDEFINED" Type="CODE_DIFFUSE" Metal="0.000000" Rough="0.000000" Opacity="1.000000" BlendMode="Transparent">
 	<TagList/>
 	<FlagList/>
 	<TextureList>

@@ -49,9 +49,12 @@ Alles, was die X-Plane-Säule ausmacht, hat hier eine Entsprechung:
 
 from __future__ import annotations
 
+import re
 import shutil
 import uuid
 from pathlib import Path
+
+import defusedxml.minidom
 
 HIER = Path(__file__).resolve().parent
 QUELLEN = HIER / "PackageSources"
@@ -72,10 +75,85 @@ FARBEN = {
 # Die Werte stammen aus dem X-Plane-Durchgang vom 13.09.2026, bei dem zehn Anläufe nötig
 # waren. Übertragen, nicht neu erfunden:
 LEBENSDAUER_S = 22.0      # X-Plane: 45 s bei 3 m/s. MSFS-Partikel sind teurer, s. Kommentar
-RATE = 60.0               # Partikel je Sekunde
-KAPAZITAET = 2000.0       # Rate x Lebensdauer, mit Luft nach oben
-GROESSE_M = 6.0           # mittlere Partikelgröße
-AUFTRIEB = -0.35          # negativer GravityScale = nach oben
+# ⚠ DREI GRÖSSEN HÄNGEN AM AUFTRIEB -- SIE WERDEN DESHALB GERECHNET, NICHT EINGETRAGEN.
+#
+# Das war am 13.09.2026 dreimal hintereinander die Fehlerquelle: Der Auftrieb wurde auf
+# Zuruf geändert (zu schnell -> 1,8, dann wieder zurück auf 3,0), und jedes Mal blieben
+# Dichte, Kegelbreite und Endgröße auf ihren alten Zahlen stehen. Ergebnisse im Sim: ein
+# Fächer über den halben Himmel, dann ein massiver Ball. Beides war nicht "zu wenig
+# getunt", sondern schlicht nicht nachgezogen.
+#
+# Die Säulenhöhe ist `Auftrieb x Lebensdauer`. Daran hängen:
+#
+#   Dichte je Meter   = Rate x Lebensdauer / Höhe      -> also die RATE
+#   Kegelbreite       = tan(11 Grad) x Auftrieb        -> X-Planes INITIAL_PITCH
+#   Endgröße          = 0,133 x Höhe                   -> X-Planes 18 m auf 135 m Säule
+#
+# Wer den Auftrieb ändert, ändert damit automatisch alle drei. Was von Hand bleibt, ist
+# nur noch die gewünschte Dichte -- und die ist eine Geschmacksfrage, keine Ableitung.
+AUFTRIEB_MS = 3.0         # wie X-Plane (Nutzer, 13.09.2026: "lass es bei 3m")
+AUFTRIEB = -AUFTRIEB_MS   # negativer GravityScale = von der Erde weg
+
+_HOEHE_M = AUFTRIEB_MS * LEBENSDAUER_S          # rund 66 m
+DICHTE_JE_M = 11.0        # Partikel je Höhenmeter -- der einzige freie Regler
+RATE = DICHTE_JE_M * _HOEHE_M / LEBENSDAUER_S   # Partikel je Sekunde
+KAPAZITAET = RATE * LEBENSDAUER_S * 1.25        # mit Luft nach oben
+
+GROESSE_START_M = 0.8     # an der Quelle -- eine Rauchpatrone, kein Krater
+GROESSE_ENDE_M = 0.133 * _HOEHE_M               # oben, wo sich die Krone auflösen soll
+
+# Die Kegelbreite: X-Plane streut über `INITIAL_PITCH` um ±11 Grad. Als seitliche
+# Geschwindigkeit ist das tan(11 Grad) mal dem Auftrieb -- steigt die Säule schneller,
+# darf sie auch breiter streuen, ohne dass der Kegel flacher wird.
+SEIT_STREU_MS = 0.194 * AUFTRIEB_MS
+
+# ⚠ OHNE STREUUNG WIRD JEDE RAUCHSÄULE EIN TRICHTER. Genau das war am 13.09.2026 im Sim zu
+# sehen: glatte, schnurgerade Kanten und ein zusammenhängender Schlauch statt einzelner
+# Wolken ("sieht aus wie ein Trichter"). Der Grund ist rein rechnerisch: Wenn ALLE Partikel
+# gleich lange leben, gleich schnell steigen und gleich groß sind, muss daraus eine
+# geometrisch exakte Form entstehen.
+#
+# Die X-Plane-Fassung streut deshalb vier Größen (Min/Max-Spalten in der .pss); beim
+# Übertragen nach MSFS hatte ich nur die seitliche mitgenommen. Dieselben Verhältnisse:
+#
+#     TIME_TO_LIVE   0,55 bis 1,0   -- manche Wolken lösen sich früher auf
+#     INITIAL_SPEED  0,5  bis 1,8   -- die Front zerfasert, statt geschlossen zu steigen
+#     INITIAL_SIZE   0,8  bis 1,2   -- ungleiche Ballen statt gleichförmiger Perlen
+#
+# In MSFS macht das `RandomValue` je Partikel, angestoßen über die Partikelnummer (`id`).
+LEBEN_MIN_F = 0.55        # Anteil der Lebensdauer, kürzestes Partikel
+LEBEN_MAX_F = 1.00
+STEIG_MIN_F = 0.50        # Anteil des Auftriebs, langsamstes Partikel
+STEIG_MAX_F = 1.80
+GROESSE_MIN_F = 0.80      # Anteil der Größe, kleinstes Partikel
+GROESSE_MAX_F = 1.20
+
+
+# ⚠ OHNE DIESEN WERT HÖRT DER EMITTER NIE AUF. Die SDK-Doku ist da eindeutig: Fehlt
+# `TimeEmission`, gilt -1 -- "no time limit on emission, the emitter will spawn particles
+# indefinitely". Genau das ist passiert: Objekt über den Spawner gelöscht, Rauch blieb
+# stehen und wuchs weiter; erst ein kompletter Neustart des Flugs wurde ihn los.
+#
+# Der Grund, warum das Löschen nicht hilft, steht ebenfalls in der Doku: Ein Effekt wird
+# gestoppt, wenn seine FX_CODE-Bedingung FALSCH wird. Ist das Trägerobjekt weg, wird gar
+# nichts mehr ausgewertet -- der einmal gespawnte Emitter läuft herrenlos weiter.
+# `TimeEmission` ist die einzige Schranke, die auch ohne Objekt noch greift.
+#
+# ⚠ DIESE ZAHL IST EIN KOMPROMISS, KEINE LÖSUNG -- und sie schneidet in beide Richtungen:
+# Sie ist zugleich die Brenndauer einer stehenden Säule UND die Nachlaufzeit nach dem
+# Abräumen. Kurz heißt "schnell weg", aber auch "hört von selbst auf, obwohl das Objekt
+# noch steht". 300 s waren zu lang (Nutzer, 13.09.2026: "wenn weg, dann weg").
+#
+# Sauber wird das erst, wenn die Brügge ein Objekt, das stehen bleiben soll, regelmäßig
+# ERNEUERT -- dann darf die Brenndauer kurz sein, ohne dass die Markierung ausgeht. Das
+# ist ein Eingriff in bruegge.cpp und noch nicht gebaut.
+#
+# EINE MINUTE. Sobald die Brügge erneuert, ist diese Zahl nur noch die Obergrenze für den
+# NACHLAUF einer herrenlosen Säule -- und der soll kurz sein ("wenn weg, dann weg").
+# Wie lange eine gewollte Markierung steht, hängt nicht mehr hier dran: Die Brügge setzt
+# das Objekt rechtzeitig vor Ablauf neu (s. `RAUCH_ERNEUERN_S` in ../msfs/bruegge.cpp),
+# und zwar so lange, wie der Server es verlangt -- gebraucht werden sie meist zwei Stunden.
+BRENNDAUER_S = 30.0       # nur noch der Nachlauf, nicht die Standzeit
 
 # Ein fester Namensraum, damit aus demselben Namen immer dieselbe GUID wird. Ohne das
 # bekäme jeder Lauf neue GUIDs, und ein Paket-Update zerrisse die Verweise: Die
@@ -89,18 +167,159 @@ def guid(*teile: str) -> str:
 
 NULL = "{00000000-0000-0000-0000-000000000000}"
 
+# Stützstellen der Größenkurve als (Alter 0..1, Anteil an der Spanne 0..1). Bewusst flach
+# am Anfang: die ersten Meter bleiben schmal, damit eine Säule entsteht und keine Kugel.
+_GROESSE_STUETZEN = ((0.00, 0.00), (0.15, 0.08), (0.40, 0.29), (0.70, 0.62), (1.00, 1.00))
+
+# ⚠ DIESE ZAHLEN SIND ABGENOMMEN -- NICHT NEU ERFINDEN, NICHT "GLÄTTEN".
+#
+# Sie stammen 1:1 aus der X-Plane-Fassung, die nach zehn Anläufen freigegeben wurde
+# ("ja, das gefällt jetzt!!"). Beim Übertragen nach MSFS hatte ich sie eigenmächtig
+# abgeflacht, und genau das fiel im Sim auf: bei Alter 0,42 stand 0,16 statt 0,06, bei
+# 0,68 dann 0,05 statt 0,018 -- fast dreifache Dichte über die ganze obere Säule, und die
+# Stützstelle bei 0,88 fehlte ersatzlos. Die Krone löste sich dadurch nicht auf.
+#
+# Die Kurve ist absichtlich steil: dicht im ersten Fünftel, damit die Quelle ortbar ist,
+# und danach rasch fallend, damit sich der Rauch nach oben verliert.
+#
+# Gegenüber X-Plane sind die beiden unteren Werte leicht gesenkt (0,70 → 0,58 und
+# 0,50 → 0,42): Dieselbe Zahl trägt in MSFS sichtbar dichter als in X-Plane, und im Sim
+# war der Fuß der Säule zu deckend (Nutzer, 13.09.2026: "noch ein wenig zu dicht im
+# unteren Bereich"). Der steile Abfall darüber bleibt unangetastet.
+_ALPHA_STUETZEN = ((0.00, 0.000), (0.02, 0.580), (0.20, 0.420), (0.42, 0.060),
+                   (0.68, 0.018), (0.88, 0.005), (1.00, 0.000))
+
+# ⚠ DER WIND DARF NICHT SOFORT VOLL WIRKEN. Als reine Anfangsgeschwindigkeit addiert,
+# bekommt jedes Partikel von Geburt an den ganzen Wind -- die Säule liegt dann schon am
+# Boden schräg und bleibt ein dünner Strahl (13.09.2026 bei 30 kt gesehen).
+#
+# Echter Rauch verlässt die Quelle mit eigenem Impuls und wird erst mit der Zeit vom Wind
+# übernommen. Diese Kurve ist genau dieser Übergang: Anteil des Windes am Alter.
+#
+# Was daraus bei 30 kt (15,4 m/s) gegen 3 m/s Auftrieb wird -- gemessen als Knickwinkel,
+# 180° = senkrecht, 90° = waagerecht:
+#
+#     Alter 0,2 →  5 % Wind → 166°   (Vorgabe: 180-160°)
+#     Alter 0,4 → 35 % Wind → 119°
+#     Alter 0,6 → 75 % Wind → 105°   (Vorgabe: 100-90° nach drei Fünfteln)
+#
+# Bei schwächerem Wind knickt sie von selbst weniger und später -- der Windvektor ist
+# dann kleiner, die Kurve bleibt dieselbe. Genau das war die Anforderung.
+# ⚠ DAS AUFLÖSEN HÄNGT AM ALTER, NICHT AN DER STRECKE -- und daran lag die
+# kilometerlange Fahne (13.09.2026 bei 27 kt: "das ist etwa 4-5 Mal zu lang!!").
+#
+# Ein Partikel lebt 12 bis 22 s. Bei Windstille steigt es darin rund 66 m. Bei 27 kt
+# (13,9 m/s) legt es zusätzlich bis zu 305 m WAAGERECHT zurück -- die Alpha-Kurve weiß
+# davon nichts und löst stur nach derselben Zeit auf.
+#
+# Diese Kurve dämpft die Deckkraft nach der tatsächlich zurückgelegten waagerechten
+# STRECKE. Damit endet die Fahne bei jedem Wind an derselben Stelle, ohne dass der Effekt
+# die Windstärke überhaupt kennen muss (der Weg über GetSimVar ist erprobt und tot, s.
+# unten im Knotengraphen).
+#
+# x ist das QUADRAT der Entfernung, normiert: x = (r / Bezugsweite)^2.
+#
+#     r =  0 m → 1,00      r = 40 m → 0,25
+#     r = 20 m → 0,85      r = 50 m → 0,08
+#     r = 30 m → 0,55      r = 60 m → 0,00
+STRECKE_BEZUG_M = 60.0    # so weit trägt die Fahne, dann ist sie verschwunden
+_STRECKE_STUETZEN = ((0.000, 1.00), (0.111, 0.85), (0.250, 0.55),
+                     (0.444, 0.25), (0.694, 0.08), (1.000, 0.00))
+
+
+def strecke_kurve() -> str:
+    return _kurve(_STRECKE_STUETZEN)
+
+
+_WINDANTEIL_STUETZEN = ((0.00, 0.00), (0.20, 0.05), (0.40, 0.35), (0.60, 0.75),
+                        (1.00, 1.00))
+
+
+def _kurve(stuetzen) -> str:
+    """Stützstellen als Kurvenzeichenkette: je Punkt `x,y,NAN,NAN`."""
+    return ",".join(f"{t:.3f},{y:.3f},NAN,NAN" for t, y in stuetzen)
+
+
+def alpha_kurve() -> str:
+    return _kurve(_ALPHA_STUETZEN)
+
+
+def windanteil_kurve() -> str:
+    return _kurve(_WINDANTEIL_STUETZEN)
+
+
+def groessen_kurve() -> str:
+    """Die Stützstellen als Kurvenzeichenkette: je Punkt `x,y,NAN,NAN`."""
+    spanne = GROESSE_ENDE_M - GROESSE_START_M
+    return ",".join(f"{t:.3f},{GROESSE_START_M + anteil * spanne:.3f},NAN,NAN"
+                    for t, anteil in _GROESSE_STUETZEN)
+
+
+def nach_linear(wert_0_255: int) -> float:
+    """Einen sRGB-Farbkanal (0..255) in den linearen Farbraum umrechnen.
+
+    ⚠ OHNE DIESE UMRECHNUNG STIMMT KEINE EINZIGE FARBE. Am 13.09.2026 im Sim: `rauch_navy`
+    (#191D53, ein sehr dunkles Marineblau) stand als helles LAVENDEL am Himmel, und alle
+    sechs Farben wirkten zu hell und zu wenig gesättigt.
+
+    Der Grund ist der klassische Farbraum-Fehler: Ein Wert aus dem Farbwähler (`#191D53`)
+    liegt in sRGB vor, die Renderer rechnen aber intern LINEAR. Einfach durch 255 geteilt
+    weiterzureichen, verschiebt jede Farbe nach hell -- und dunkle, gesättigte Töne trifft
+    es am stärksten. Navys Blauanteil geht von 0,325 auf 0,087, wird also fast viermal
+    dunkler; Weiß dagegen bliebe unverändert.
+
+    Die SDK-Doku sagt zum Farbraum von `ParticleColor` nichts (nachgesehen). Das hier ist
+    also der begründete Normalfall, nicht eine dokumentierte Vorschrift -- falls die Farben
+    danach zu DUNKEL sind, ist die Umrechnung der erste Verdächtige.
+
+    Formel nach der sRGB-Norm (IEC 61966-2-1).
+    """
+    c = wert_0_255 / 255.0
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+
+def kommentar_pruefen(xml_text: str) -> None:
+    """Sucht doppelte Bindestriche in XML-Kommentaren und sagt, wo sie stehen.
+
+    ⚠ DREIMAL AM SELBEN TAG HINEINGELAUFEN (13.09.2026), zweimal davon, NACHDEM ich den
+    Fehler bereits dokumentiert hatte. Ein `--` ist innerhalb eines XML-Kommentars
+    verboten (die Norm erlaubt es nur im schließenden `-->`), und es passiert beim
+    Schreiben deutscher Sätze fast von selbst: Der Gedankenstrich sitzt in der Tastatur
+    näher als im Bewusstsein.
+
+    Der nackte Parser meldet dazu nur "not well-formed, line 195, column 64" -- richtig,
+    aber unbrauchbar, weil die Zeilennummer sich auf die ERZEUGTE Datei bezieht und nicht
+    auf die Vorlage im Python-Quelltext. Diese Prüfung nennt stattdessen den Satz.
+    """
+    for stueck in re.findall(r"<!--.*?-->", xml_text, re.S):
+        inneres = stueck[4:-3]
+        if "--" in inneres:
+            zeile = next(z for z in inneres.splitlines() if "--" in z)
+            raise ValueError(
+                "Doppelter Bindestrich in einem XML-Kommentar (in XML verboten):\n"
+                f"    {zeile.strip()}\n"
+                "Ersetze ihn durch Komma, Semikolon oder Doppelpunkt.")
+
 
 def effekt_xml(name: str, farbe: tuple[int, int, int]) -> str:
     """Ein vollständiger Partikeleffekt als Knotengraph."""
-    r, g, b = (k / 255.0 for k in farbe)
+    r, g, b = (nach_linear(k) for k in farbe)
     # Jeder Knoten bekommt seine eigene, aus dem Namen abgeleitete GUID.
     G = {k: guid(name, k) for k in (
         "fx", "emitter", "init", "update", "output", "farbe", "alter", "alpha_kurve",
-        "groesse_kurve", "auftrieb", "streu_x", "streu_z", "richtung", "summe", "id")}
+        "groesse_kurve", "auftrieb", "streu_x", "streu_z", "richtung", "summe",
+        "wind", "windanteil_kurve", "wind_dosiert", "summe_wind", "id",
+        "leben_rnd", "steig_rnd", "steig_dosiert", "gr_rnd", "groesse_gestreut",
+        "pos", "pos_split", "x2", "z2", "r2", "r2_norm", "strecke_kurve",
+        "alpha_final")}
     # Und die Ausgangswerte (das, was ein Knoten LIEFERT) brauchen eigene GUIDs.
     W = {k: guid(name, "wert", k) for k in (
         "farbe", "alter", "alpha", "auftrieb", "streu_x", "streu_z", "richtung", "summe",
-        "id", "groesse")}
+        "wind", "windanteil", "wind_dosiert", "summe_wind",
+        "id", "groesse",
+        "leben", "steig_f", "steig_dosiert", "gr_f", "groesse_gestreut",
+        "pos", "pos_x", "pos_y", "pos_z", "x2", "z2", "r2", "r2_norm",
+        "strecke_f", "alpha_final")}
 
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 
@@ -116,6 +335,7 @@ def effekt_xml(name: str, farbe: tuple[int, int, int]) -> str:
         <VisualEffect.Emitter InstanceId="{G['emitter']}">
             <ParticleRate>{NULL}, {RATE:.6f}</ParticleRate>
             <Capacity>{KAPAZITAET:.3f}</Capacity>
+            <TimeEmission>{BRENNDAUER_S:.6f}</TimeEmission>
             <ParticleInit>
                 <ObjectReference InstanceId="{G['init']}" id="BlockParticleInit"/>
             </ParticleInit>
@@ -125,16 +345,31 @@ def effekt_xml(name: str, farbe: tuple[int, int, int]) -> str:
                 <ObjectReference InstanceId="{G['update']}" id="BlockParticleUpdate"/>
             </ParticleUpdate>
             <ParticleLifetime>
-                <FloatIn>{NULL}, {LEBENSDAUER_S:.6f}</FloatIn>
+                <FloatIn>{W['leben']}, {LEBENSDAUER_S:.6f}</FloatIn>
             </ParticleLifetime>
             <ParticleSize>
-                <FloatIn>{NULL}, {GROESSE_M:.6f}</FloatIn>
+                <FloatIn>{W['groesse_gestreut']}, {GROESSE_START_M:.6f}</FloatIn>
             </ParticleSize>
             <ParticleVelocity>
-                <Float3In>{W['summe']}, 0.000000, 0.000000, 0.000000</Float3In>
+                <Float3In>{W['summe_wind']}, 0.000000, 0.000000, 0.000000</Float3In>
             </ParticleVelocity>
         </VisualEffect.BlockParticleInit>
         <VisualEffect.BlockParticleUpdate InstanceId="{G['update']}">
+            <!-- ⚠ DIE GRÖSSE GEHÖRT HIERHER, NICHT IN DEN INIT-BLOCK. Der Init-Block läuft
+                 genau einmal, bei der Geburt des Partikels; eine Kurve über das Alter
+                 stünde dort ewig bei Alter 0 und lieferte immer denselben Startwert. Nur
+                 der Update-Block wird je Bild neu ausgewertet, so wie die Deckkraft im
+                 Output-Block (die deshalb von Anfang an funktioniert hat). -->
+            <ParticleSize>
+                <FloatIn>{W['groesse_gestreut']}, {GROESSE_START_M:.6f}</FloatIn>
+            </ParticleSize>
+            <!-- Auch die Geschwindigkeit gehoert hierher, seit der Wind am Alter haengt:
+                 Im Init-Block gerechnet, bekaeme jedes Partikel seinen Windanteil ein
+                 einziges Mal bei der Geburt, also immer den Wert fuer Alter 0, also
+                 nie Wind. Erst hier wird er ueber die Lebenszeit nachgefuehrt. -->
+            <ParticleVelocity>
+                <Float3In>{W['summe_wind']}, 0.000000, 0.000000, 0.000000</Float3In>
+            </ParticleVelocity>
             <ParticleOutput>
                 <ObjectReference InstanceId="{G['output']}" id="Output"/>
             </ParticleOutput>
@@ -152,7 +387,7 @@ def effekt_xml(name: str, farbe: tuple[int, int, int]) -> str:
             <x>{NULL}, {r:.6f}</x>
             <y>{NULL}, {g:.6f}</y>
             <z>{NULL}, {b:.6f}</z>
-            <w>{W['alpha']}, 0.000000</w>
+            <w>{W['alpha_final']}, 0.000000</w>
         </VisualEffect.Vector4>
 
         <!-- Das Alter des Partikels, normiert auf 0..1: die x-Achse aller Kurven. -->
@@ -167,7 +402,21 @@ def effekt_xml(name: str, farbe: tuple[int, int, int]) -> str:
         <VisualEffect.GetBezierCurve InstanceId="{G['alpha_kurve']}">
             <OutputValue>{W['alpha']}</OutputValue>
             <FXTime>{W['alter']}, 0.000000</FXTime>
-            <Curve>0.000,0.000,NAN,NAN,0.030,0.700,NAN,NAN,0.200,0.550,NAN,NAN,0.420,0.160,NAN,NAN,0.680,0.050,NAN,NAN,1.000,0.000,NAN,NAN</Curve>
+            <Curve>{alpha_kurve()}</Curve>
+        </VisualEffect.GetBezierCurve>
+
+        <!-- Die Größe über die Lebenszeit: schmal an der Quelle, weit in der Krone. Sie
+             wächst absichtlich erst langsam, denn die unteren Meter sollen eine Säule
+             sein, an der man die Quelle orten kann, und keine Kugel. Das Verbreitern
+             kommt oben, wo sich der Rauch auflösen soll. Wie SIZE_CURVE in X-Plane.
+
+             ⚠ KEIN DOPPELTER BINDESTRICH IN XML-KOMMENTAREN. Das ist laut XML-Norm
+             verboten (nur im schließenden Zeichen erlaubt), und der SPB-Compiler bricht
+             hart ab: "Error (line:36): '>' wird erwartet". -->
+        <VisualEffect.GetBezierCurve InstanceId="{G['groesse_kurve']}">
+            <OutputValue>{W['groesse']}</OutputValue>
+            <FXTime>{W['alter']}, 0.000000</FXTime>
+            <Curve>{groessen_kurve()}</Curve>
         </VisualEffect.GetBezierCurve>
 
         <!-- Auftrieb: ein NEGATIVER Schwerkraftfaktor zieht nach oben. -->
@@ -184,15 +433,15 @@ def effekt_xml(name: str, farbe: tuple[int, int, int]) -> str:
         </VisualEffect.GetParticleAttribute>
         <VisualEffect.RandomValue InstanceId="{G['streu_x']}">
             <OutputValue>{W['streu_x']}</OutputValue>
-            <MinRandValue>{NULL}, -0.700000</MinRandValue>
-            <MaxRandValue>{NULL}, 0.700000</MaxRandValue>
+            <MinRandValue>{NULL}, {-SEIT_STREU_MS:.6f}</MinRandValue>
+            <MaxRandValue>{NULL}, {SEIT_STREU_MS:.6f}</MaxRandValue>
             <RandSeed>{NULL}, 1024.000000</RandSeed>
             <RandIndex>{W['id']}, 0.000000</RandIndex>
         </VisualEffect.RandomValue>
         <VisualEffect.RandomValue InstanceId="{G['streu_z']}">
             <OutputValue>{W['streu_z']}</OutputValue>
-            <MinRandValue>{NULL}, -0.700000</MinRandValue>
-            <MaxRandValue>{NULL}, 0.700000</MaxRandValue>
+            <MinRandValue>{NULL}, {-SEIT_STREU_MS:.6f}</MinRandValue>
+            <MaxRandValue>{NULL}, {SEIT_STREU_MS:.6f}</MaxRandValue>
             <RandSeed>{NULL}, 512.000000</RandSeed>
             <RandIndex>{W['id']}, 0.000000</RandIndex>
         </VisualEffect.RandomValue>
@@ -204,7 +453,140 @@ def effekt_xml(name: str, farbe: tuple[int, int, int]) -> str:
         <VisualEffect.AddOperation InstanceId="{G['summe']}">
             <OutputValue>{W['summe']}</OutputValue>
             <xVariant>{W['richtung']}, 0.000000</xVariant>
-            <yVariant>{W['auftrieb']}, 0.000000</yVariant>
+            <yVariant>{W['steig_dosiert']}, 0.000000</yVariant>
+        </VisualEffect.AddOperation>
+
+        <!-- Der Wind. Ohne ihn steht die Säule senkrecht wie gemalt, gleich wie kräftig es
+             draußen weht (13.09.2026 im Sim gesehen). `Raw` liefert die Windrichtung
+             bereits mit der Windgeschwindigkeit skaliert, in Fuß je Sekunde.
+
+             Er kommt in die ANFANGSgeschwindigkeit, nicht in den Update-Block, und das
+             genügt: Bei gleichmäßigem Wind trägt jedes Partikel seinen Anteil von Geburt
+             an mit, und die Säule legt sich als Ganzes schräg. -->
+        <VisualEffect.WindDirection InstanceId="{G['wind']}">
+            <WindDirOptions>Raw</WindDirOptions>
+            <OutputValue>{W['wind']}</OutputValue>
+        </VisualEffect.WindDirection>
+
+        <!-- Der Anteil, mit dem der Wind am jeweiligen Alter zieht: unten fast null,
+             oben ganz. Das ist der Unterschied zwischen einer Säule, die sich neigt,
+             und einem Strahl, der von der Quelle an schräg liegt. -->
+        <VisualEffect.GetBezierCurve InstanceId="{G['windanteil_kurve']}">
+            <OutputValue>{W['windanteil']}</OutputValue>
+            <FXTime>{W['alter']}, 0.000000</FXTime>
+            <Curve>{windanteil_kurve()}</Curve>
+        </VisualEffect.GetBezierCurve>
+        <VisualEffect.MultiplyOperation InstanceId="{G['wind_dosiert']}">
+            <OutputValue>{W['wind_dosiert']}</OutputValue>
+            <xVariant>{W['wind']}, 0.000000</xVariant>
+            <yVariant>{W['windanteil']}, 0.000000</yVariant>
+        </VisualEffect.MultiplyOperation>
+        <!-- ===== DIE STRECKE BEGRENZT DIE FAHNE ============================
+             Der Weg über `GetSimVar` mit AMBIENT WIND VELOCITY ist erprobt und tot: Ein
+             statisches Objekt bekommt die Variable nicht, der Knoten liefert 0, und die
+             Fahne blieb bei 27 kt so lang wie ohne alles (13.09.2026 gegengeprüft).
+
+             Hier wird deshalb nicht der Wind geschätzt, sondern die tatsächlich
+             zurückgelegte WAAGERECHTE STRECKE gemessen. Das ist genau die Größe, die bei
+             Wind zu groß wird, und sie gilt unabhängig davon, woher der Versatz kommt.
+
+             Gerechnet wird mit dem QUADRAT der Entfernung: Die Wurzel bräuchte einen
+             weiteren Knotentyp, und die Kurve kann das Quadrat ebenso gut abbilden
+             (x = (r/{STRECKE_BEZUG_M:.0f} m)^2). -->
+        <VisualEffect.GetParticleAttribute InstanceId="{G['pos']}">
+            <OutputValue>{W['pos']}</OutputValue>
+            <ParticleAttributeType>Position</ParticleAttributeType>
+        </VisualEffect.GetParticleAttribute>
+        <VisualEffect.Split InstanceId="{G['pos_split']}">
+            <x>{W['pos']}, 0.000000</x>
+            <outX>{W['pos_x']}</outX>
+            <outY>{W['pos_y']}</outY>
+            <outZ>{W['pos_z']}</outZ>
+        </VisualEffect.Split>
+        <VisualEffect.MultiplyOperation InstanceId="{G['x2']}">
+            <OutputValue>{W['x2']}</OutputValue>
+            <xVariant>{W['pos_x']}, 0.000000</xVariant>
+            <yVariant>{W['pos_x']}, 0.000000</yVariant>
+        </VisualEffect.MultiplyOperation>
+        <VisualEffect.MultiplyOperation InstanceId="{G['z2']}">
+            <OutputValue>{W['z2']}</OutputValue>
+            <xVariant>{W['pos_z']}, 0.000000</xVariant>
+            <yVariant>{W['pos_z']}, 0.000000</yVariant>
+        </VisualEffect.MultiplyOperation>
+        <VisualEffect.AddOperation InstanceId="{G['r2']}">
+            <OutputValue>{W['r2']}</OutputValue>
+            <xVariant>{W['x2']}, 0.000000</xVariant>
+            <yVariant>{W['z2']}, 0.000000</yVariant>
+        </VisualEffect.AddOperation>
+        <VisualEffect.MultiplyOperation InstanceId="{G['r2_norm']}">
+            <OutputValue>{W['r2_norm']}</OutputValue>
+            <xVariant>{W['r2']}, 0.000000</xVariant>
+            <yVariant>{NULL}, {1.0 / (STRECKE_BEZUG_M ** 2):.8f}</yVariant>
+        </VisualEffect.MultiplyOperation>
+        <VisualEffect.GetBezierCurve InstanceId="{G['strecke_kurve']}">
+            <OutputValue>{W['strecke_f']}</OutputValue>
+            <FXTime>{W['r2_norm']}, 0.000000</FXTime>
+            <Curve>{strecke_kurve()}</Curve>
+        </VisualEffect.GetBezierCurve>
+        <VisualEffect.MultiplyOperation InstanceId="{G['alpha_final']}">
+            <OutputValue>{W['alpha_final']}</OutputValue>
+            <xVariant>{W['alpha']}, 0.000000</xVariant>
+            <yVariant>{W['strecke_f']}, 0.000000</yVariant>
+        </VisualEffect.MultiplyOperation>
+
+        <!-- ===== DIE VIER STREUUNGEN =========================================
+             Ohne sie leben alle Partikel gleich lang, steigen gleich schnell und sind
+             gleich gross: Daraus MUSS ein glattkantiger Trichter werden. Jede Streuung
+             zieht ihre Zufallszahl ueber die Partikelnummer, damit ein Partikel seinen
+             Wert behaelt, statt je Bild neu zu wuerfeln. Die Startwerte (`RandSeed`)
+             sind verschieden, sonst waeren alle vier Streuungen dieselbe Zahl und die
+             Partikel wieder im Gleichschritt.
+
+             Verhaeltnisse wie in X-Plane (Min/Max-Spalten der .pss). -->
+
+        <!-- Lebensdauer: manche Wolken loesen sich frueher auf als andere. -->
+        <VisualEffect.RandomValue InstanceId="{G['leben_rnd']}">
+            <OutputValue>{W['leben']}</OutputValue>
+            <MinRandValue>{NULL}, {LEBENSDAUER_S * LEBEN_MIN_F:.6f}</MinRandValue>
+            <MaxRandValue>{NULL}, {LEBENSDAUER_S * LEBEN_MAX_F:.6f}</MaxRandValue>
+            <RandSeed>{NULL}, 331.000000</RandSeed>
+            <RandIndex>{W['id']}, 0.000000</RandIndex>
+        </VisualEffect.RandomValue>
+
+        <!-- Steiggeschwindigkeit: die Front zerfasert, statt geschlossen zu steigen. -->
+        <VisualEffect.RandomValue InstanceId="{G['steig_rnd']}">
+            <OutputValue>{W['steig_f']}</OutputValue>
+            <MinRandValue>{NULL}, {STEIG_MIN_F:.6f}</MinRandValue>
+            <MaxRandValue>{NULL}, {STEIG_MAX_F:.6f}</MaxRandValue>
+            <RandSeed>{NULL}, 617.000000</RandSeed>
+            <RandIndex>{W['id']}, 0.000000</RandIndex>
+        </VisualEffect.RandomValue>
+        <VisualEffect.MultiplyOperation InstanceId="{G['steig_dosiert']}">
+            <OutputValue>{W['steig_dosiert']}</OutputValue>
+            <xVariant>{W['auftrieb']}, 0.000000</xVariant>
+            <yVariant>{W['steig_f']}, 0.000000</yVariant>
+        </VisualEffect.MultiplyOperation>
+
+        <!-- Groesse: ungleiche Ballen statt gleichfoermiger Perlen. Der Zufallsfaktor
+             wirkt auf die KURVE, nicht auf einen festen Wert; ein Partikel bleibt also
+             ueber seine ganze Lebenszeit anteilig gleich gross oder klein. -->
+        <VisualEffect.RandomValue InstanceId="{G['gr_rnd']}">
+            <OutputValue>{W['gr_f']}</OutputValue>
+            <MinRandValue>{NULL}, {GROESSE_MIN_F:.6f}</MinRandValue>
+            <MaxRandValue>{NULL}, {GROESSE_MAX_F:.6f}</MaxRandValue>
+            <RandSeed>{NULL}, 929.000000</RandSeed>
+            <RandIndex>{W['id']}, 0.000000</RandIndex>
+        </VisualEffect.RandomValue>
+        <VisualEffect.MultiplyOperation InstanceId="{G['groesse_gestreut']}">
+            <OutputValue>{W['groesse_gestreut']}</OutputValue>
+            <xVariant>{W['groesse']}, 0.000000</xVariant>
+            <yVariant>{W['gr_f']}, 0.000000</yVariant>
+        </VisualEffect.MultiplyOperation>
+
+        <VisualEffect.AddOperation InstanceId="{G['summe_wind']}">
+            <OutputValue>{W['summe_wind']}</OutputValue>
+            <xVariant>{W['summe']}, 0.000000</xVariant>
+            <yVariant>{W['wind_dosiert']}, 0.000000</yVariant>
         </VisualEffect.AddOperation>
     </WorldBase.Flight>
 </SimBase.Document>
@@ -218,8 +600,13 @@ def main() -> None:
     namen = []
     for name, farbe in FARBEN.items():
         datei = f"FrsRauch_{name.capitalize()}"
-        (ziel / f"{datei}.xml").write_text(effekt_xml(name, farbe), encoding="utf-8",
-                                          newline="\r\n")
+        inhalt = effekt_xml(name, farbe)
+        # ⚠ HIER PRÜFEN, NICHT IM SIMULATOR. Der SPB-Compiler meldet XML-Fehler erst beim
+        # Bauen im Project Editor: ein Rückweg, der einen Menschen und mehrere Minuten
+        # kostet. Ein Parser an dieser Stelle kostet Millisekunden und findet dasselbe.
+        kommentar_pruefen(inhalt)
+        defusedxml.minidom.parseString(inhalt)
+        (ziel / f"{datei}.xml").write_text(inhalt, encoding="utf-8", newline="\r\n")
         namen.append(datei)
         print(f"  {datei + '.xml':32} #{farbe[0]:02X}{farbe[1]:02X}{farbe[2]:02X}")
 

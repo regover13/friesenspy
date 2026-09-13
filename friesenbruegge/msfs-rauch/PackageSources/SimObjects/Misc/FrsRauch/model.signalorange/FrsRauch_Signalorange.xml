@@ -2,7 +2,7 @@
 	<LODS>
 		<LOD ModelFile="FrsRauch_Signalorange.gltf"/>
 	</LODS>
-	<Behaviors>
+	<CompileBehaviors version="2">
 		<IncludeBase RelativeFile="FrsRauch_Signalorange.behavior.xml"/>
-	</Behaviors>
+	</CompileBehaviors>
 </ModelInfo>

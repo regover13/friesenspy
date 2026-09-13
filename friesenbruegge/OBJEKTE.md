@@ -466,7 +466,7 @@ X-Plane-Piloten nicht an (PROTOKOLL.md, Abschnitt 3).
 |---|---|
 | `fahrzeug` | X-Plane 12 bringt **kein Bodenfahrzeug als eigenständige `.obj`** mit. Was am Flughafen fährt, liegt in der Szenerie-Bibliothek (`lib/airport/vehicles/…`) und ist nur über `XPLMLookupObjects` erreichbar, nicht über `XPLMLoadObject`. Gangbar, aber ungemessen. |
 | `robbe`, `tier_vieh`, `tier_wasser` | kein Modell im Bordbestand, und kein Addon-Gegenstück zu `human-library-animated` gemessen |
-| `rauch`, `feuer` | X-Plane zeichnet Rauch über Partikelsysteme, nicht über Objekte |
+| `feuer` | X-Plane zeichnet Feuer über Partikelsysteme, nicht über Objekte. Für **Rauch gilt das seit dem 13.09.2026 nicht mehr** — die Säulen liegen als eigenes Werk im Paket, s. unten. |
 | `kegel` | keine Pylone im Bordbestand |
 
 ⚠ **Die dicken Pötte fallen aus, und das ist ein Katalogfund:** `BulkCarrier`,
@@ -480,6 +480,50 @@ Das ist derselbe Vorbehalt wie bei den 1693 grünen Haken der MSFS-Seite, nur ei
 früher: Dort hieß „setzbar ≠ sichtbar", hier heißt es **„gelistet ≠ ladbar"**.
 
 ---
+
+## ⭐ Eigener Rauch — sechs Farben, in beiden Simulatoren (13.09.2026)
+
+Seit diesem Tag hängt keine Rauchgattung mehr an einem Fremdpaket. Die Säulen sind eigenes
+Werk und liegen im jeweiligen Brügge-Paket:
+
+| | X-Plane | MSFS |
+|---|---|---|
+| Quelle | `xplane/rauch_bauen.py` → `.pss` | `msfs-rauch/rauch_bauen.py` → VFX-XML |
+| Titel | `objekte/rauch_<farbe>.obj` | `FrsRauch_<Farbe>` (SimObject) |
+| Farben | navy, hellblau, rot, orange, signalrot, signalorange | dieselben sechs |
+
+**Warum überhaupt selbst:** Am selben Tag wurde im laufenden MSFS alles geprüft, was es von
+der Stange gibt — `SIAI_VFX_Smoke_Red` ist eine Wand über mehrere hundert Meter (und braucht
+das SayIntentions-Abo), `Smoke_Volcano` eine Halbkugel, `VfxSpawner` zeichnet gar nichts,
+Emeralds Schornstein raucht nur unter 10 °C. Keines ist eine Signalsäule, und **mitliefern
+darf man keines**: Emerald verbietet es wörtlich, SayIntentions hängt am Abo, Campout ist
+fremd. Navy und Orange gab es in MSFS überhaupt nicht.
+
+**Dass das ohne Klickeditor geht, war der Fund:** Ein MSFS-Partikeleffekt ist als `.spb`
+kompiliert, seine **Quelle ist aber lesbares XML** (SDK-Beispiel `SimpleFX/EngineSmoke.xml`).
+Damit lässt sich der Effekt schreiben statt klicken — und aus derselben Zahlenbasis wie die
+X-Plane-Fassung erzeugen.
+
+⚠ **Die Fallen stehen als Warnungen im Quelltext**, nicht hier; jede hat einen Tag gekostet.
+Die vier teuersten:
+
+1. **Ein `data:`-URI im glTF baut fehlerfrei und lädt nie.** Der Modell-Compiler schreibt ihn
+   auf eine externe `.bin` um, ohne sie zu erzeugen — das Trägermodell fehlt dann still.
+2. **Farben müssen linear übergeben werden**, nicht als sRGB. Navy (`#191D53`) stand sonst als
+   helles Lavendel am Himmel.
+3. **Drei Größen hängen am Auftrieb** (Dichte, Kegelbreite, Endgröße). Wer ihn ändert und sie
+   stehen lässt, bekommt einen Fächer oder einen Ball — beides im Sim gesehen.
+4. **Das Auflösen hängt am Alter, nicht an der Strecke.** Bei 27 kt zog die Fahne deshalb über
+   300 m. Gelöst über `GetParticleAttribute → Position`: Die Deckkraft wird nach der
+   tatsächlich zurückgelegten waagerechten Strecke gedämpft. Der naheliegendere Weg über
+   `GetSimVar` mit `AMBIENT WIND VELOCITY` ist **erprobt und tot** — ein statisches Objekt
+   bekommt die Variable nicht, der Knoten liefert 0.
+
+**Die Brenndauer ist Absicht:** `TimeEmission` steht auf 30 s. Solange das Trägerobjekt lebt,
+startet MSFS den Emitter nach Ablauf von selbst neu (`FX_CODE` ist dauerhaft wahr), die Säule
+brennt also durchgehend. Erst wenn das Objekt abgeräumt ist, fällt der Neustart aus und es ist
+nach spätestens einer halben Minute Ruhe. Ohne `TimeEmission` raucht es bis zum Neustart des
+Fluges weiter — auch das ist gemessen.
 
 ## Offen
 

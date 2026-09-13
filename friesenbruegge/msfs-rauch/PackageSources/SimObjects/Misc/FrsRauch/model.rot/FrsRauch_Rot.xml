@@ -2,7 +2,7 @@
 	<LODS>
 		<LOD ModelFile="FrsRauch_Rot.gltf"/>
 	</LODS>
-	<Behaviors>
+	<CompileBehaviors version="2">
 		<IncludeBase RelativeFile="FrsRauch_Rot.behavior.xml"/>
-	</Behaviors>
+	</CompileBehaviors>
 </ModelInfo>

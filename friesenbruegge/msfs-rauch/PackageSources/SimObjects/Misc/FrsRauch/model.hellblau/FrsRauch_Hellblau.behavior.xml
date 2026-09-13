@@ -1,8 +1,10 @@
 <ModelBehaviors>
-	<Component ID="FrsRauch_Hellblau">
-		<UseTemplate Name="ASOBO_VFX_Base_Template">
+	<Include ModelBehaviorFile="Asobo_EX1\Index.xml" />
+	<Component ID="FrsRauch_Hellblau" Node="frs_rauch_hellblau">
+		<UseTemplate Name="ASOBO_VFX_Template">
 			<FX_GUID>{529D350F-2BEA-5BCB-9C5A-9E1B145B8430}</FX_GUID>
-			<NODE_ID>frs_rauch_hellblau</NODE_ID>
+			<FX_NAME>FrsRauch_Hellblau</FX_NAME>
+			<FX_CODE>1 0 &gt;</FX_CODE>
 		</UseTemplate>
 	</Component>
 </ModelBehaviors>

@@ -1,8 +1,10 @@
 <ModelBehaviors>
-	<Component ID="FrsRauch_Signalorange">
-		<UseTemplate Name="ASOBO_VFX_Base_Template">
+	<Include ModelBehaviorFile="Asobo_EX1\Index.xml" />
+	<Component ID="FrsRauch_Signalorange" Node="frs_rauch_signalorange">
+		<UseTemplate Name="ASOBO_VFX_Template">
 			<FX_GUID>{C85B96FA-FA58-5189-AD4E-FD19995DC56E}</FX_GUID>
-			<NODE_ID>frs_rauch_signalorange</NODE_ID>
+			<FX_NAME>FrsRauch_Signalorange</FX_NAME>
+			<FX_CODE>1 0 &gt;</FX_CODE>
 		</UseTemplate>
 	</Component>
 </ModelBehaviors>

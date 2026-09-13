@@ -55,7 +55,7 @@
 // Feste Größen
 // ---------------------------------------------------------------------------------------
 
-#define BRUEGGE_VERSION   "1.6.0"
+#define BRUEGGE_VERSION   "1.7.0"
 #define BRUEGGE_URL       "https://friesenspy.devprops.de/api/bruegge/melden"
 #define KENNUNG_DATEI     "\\work\\friesenbruegge.kennung"
 
@@ -169,6 +169,27 @@ static int     g_takt_s = 1;              // was der Server zuletzt vorgegeben h
 static DWORD   g_seit_meldung = 0;
 static FsNetworkRequestId g_laufend = 0;  // 0 = keine Anfrage offen
 static DWORD   g_gilt_bis_s = 300;        // wie lange `soll` ohne neue Auskunft gilt
+
+// ⚠ HIER STAND EINE ERNEUERUNG FUER RAUCHOBJEKTE -- SIE WAR UEBERFLUESSIG.
+//
+// Die Annahme war: Unsere Rauchobjekte tragen ein `TimeEmission` von 60 s, also hoert der
+// Emitter nach einer Minute auf, und ein Objekt, das laenger stehen soll, muesste
+// regelmaessig neu gesetzt werden. Gebaut, eingebaut, Fassung erhoeht.
+//
+// GEMESSEN IST ES ANDERS (13.09.2026, im Sim): Eine Saeule stand DURCHGEHEND, weit laenger
+// als eine Minute, und verschwand erst 60 s NACHDEM das Objekt geloescht wurde.
+//
+// Der Grund steht in der SDK-Doku, nur eine Ebene weiter, als ich gelesen hatte: Ein
+// Effekt wird gespawnt, sobald FX_CODE WAHR WIRD. Unsere Bedingung ist dauerhaft wahr --
+// laeuft ein Emitter aus, startet der Simulator ihn also einfach wieder. Erst wenn das
+// Traegerobjekt weg ist, faellt dieser Neustart aus, und der zuletzt gestartete Emitter
+// laeuft seine 60 s zu Ende.
+//
+// Damit macht `TimeEmission` von allein genau das Richtige: Solange das Objekt steht,
+// brennt die Saeule; ist es abgeraeumt, ist nach spaetestens einer Minute Ruhe. Eine
+// Erneuerung haette nur Last erzeugt und beim Neusetzen Flackern riskiert.
+//
+// Stehen geblieben ist aus 1.7.0 das, was sich bewaehrt hat: die eigenen FrsRauch-Titel.
 static DWORD   g_letzte_antwort_s = 0;    // Sekunde der letzten angekommenen Antwort
 static DWORD   g_laufend_seit = 0;        // Sekunden -- gegen haengende Anfragen
 // Groesse einer Antwort, die nicht in ANTWORT_PUFFER passte. 0 = alles in Ordnung. Geht als
@@ -438,19 +459,16 @@ static const Gattung g_gattungen[] = {
     // Simulators unterscheidet. Der Server fordert `rauch_signalrot` an und muss sich darauf
     // verlassen koennen, dass JEDER Pilot rote Saeulen sieht, gleich in welchem Simulator.
     //
-    // ⚠ UND HIER ZEIGT SICH, WAS DAS KOSTET: Jeder dieser Titel kommt aus einem FREMDPAKET.
-    // SayIntentions installiert seine SimObjects nur mit dem Premium-Abo, Campout muss der
-    // Pilot herunterladen. Wer keines von beiden hat, bekommt EXCEPTION_22 -- und der Server
-    // erfaehrt es ueber `steht`, statt still etwas anderes hinzustellen.
+    // ⚠ DAS WAR TEUER ERKAUFT, SOLANGE ES NUR FREMDTITEL GAB: SayIntentions installiert
+    // seine SimObjects nur mit dem Premium-Abo, Campout muss der Pilot herunterladen. Wer
+    // keines von beiden hatte, bekam EXCEPTION_22 -- und Navy und Orange gab es in MSFS
+    // ueberhaupt nicht, weil kein verfuegbares Paket ein Dunkelblau oder ein reines Orange
+    // mitbrachte.
     //
-    // In X-Plane ist das anders geloest: Dort liegen die Saeulen IM PAKET (`xplane/objekte/`,
-    // sechs Farben, eigenes Werk). Fuer MSFS steht dasselbe noch aus -- es braucht ein
-    // SimObject mit Visual Effect, und die Partikel werden dort im DevMode-Editor geklickt,
-    // nicht geschrieben.
-    //
-    // NAVY UND ORANGE FEHLEN mit Absicht: MSFS bringt in keinem verfuegbaren Paket ein
-    // Dunkelblau oder ein reines Orange mit. Was die Bruegge nicht kann, meldet sie nicht in
-    // `kann` -- und der Server fordert es bei einem MSFS-Piloten gar nicht erst an.
+    // Seit dem 13.09.2026 ist das erledigt: Die Saeulen liegen IM PAKET, in MSFS wie in
+    // X-Plane (`msfs-rauch/`, `xplane/objekte/`, je sechs Farben, eigenes Werk). Dass das
+    // ohne den DevMode-Klickeditor geht, war der Fund des Tages -- die Partikelquelle ist
+    // lesbares XML, das SDK-Beispiel SimpleFX zeigt es.
     // ⚠ NACH DEM AUGENSCHEIN GEORDNET (13.09.2026, alle sechs Titel im Bild gesehen):
     //
     //   SIAI_VFX_Smoke_Red      eine WAND ueber mehrere hundert Meter. Als Rauch richtig,
@@ -465,10 +483,24 @@ static const Gattung g_gattungen[] = {
     //
     // Deshalb stehen die Campout-Fackeln jetzt VORN und die SayIntentions-Titel dahinter:
     // klein und farbig schlaegt gross und unbezahlbar.
-    { "rauch_signalrot",    { "item_flare_red", "SIAI_VFX_Smoke_Red", nullptr } },
-    { "rauch_signalorange", { "SIAI_VFX_Smoke_Orange", nullptr } },
-    { "rauch_rot",          { "item_flare_red", "SIAI_VFX_Smoke_Red", nullptr } },
-    { "rauch_hellblau",     { "item_flare_blue", nullptr } },
+    //
+    // ⭐ SEIT DEM 13.09.2026 STEHT VORN UNSER EIGENES PAKET (`devprops-friesenrauch`).
+    //
+    // Sechs echte Saeulen in den FriesenFlieger-Farben, aus demselben Entwurf wie die
+    // X-Plane-Fassung: schmal an der Quelle, steigend, oben verwehend und sich aufloesend.
+    // Damit fallen alle Nachteile der Fremdtitel weg -- kein Abo, keine Fremdinstallation,
+    // und endlich auch Navy und Orange, die es in MSFS sonst nirgends gibt.
+    //
+    // Die Fremdtitel bleiben als ZWEITE Wahl dahinter: Wer unser Paket nicht installiert
+    // hat, bekommt wenigstens eine Farbwolke statt eines Fehlers.
+    { "rauch_signalrot",    { "FrsRauch_Signalrot", "item_flare_red",
+                              "SIAI_VFX_Smoke_Red", nullptr } },
+    { "rauch_signalorange", { "FrsRauch_Signalorange", "SIAI_VFX_Smoke_Orange", nullptr } },
+    { "rauch_rot",          { "FrsRauch_Rot", "item_flare_red",
+                              "SIAI_VFX_Smoke_Red", nullptr } },
+    { "rauch_orange",       { "FrsRauch_Orange", nullptr } },
+    { "rauch_navy",         { "FrsRauch_Navy", nullptr } },
+    { "rauch_hellblau",     { "FrsRauch_Hellblau", "item_flare_blue", nullptr } },
     // Gruen und Gelb gibt es NUR in MSFS (Campout) und nicht in X-Plane -- die
     // FriesenFlieger-Palette kennt beides nicht. Sie stehen hier trotzdem: Was ein Simulator
     // mehr kann, darf er melden; der Server fordert es dann nur bei ihm an.
@@ -509,6 +541,7 @@ static bool gattung_bekannt(const char* art) {
     }
     return false;
 }
+
 
 // ---------------------------------------------------------------------------------------
 // Die Meldung bauen
@@ -887,7 +920,9 @@ static void soll_abgleichen(const char* json) {
             o.objekt_id = 0;
             o.erzeugt_gerufen = false;
             objekt_erzeugen(i);
+            continue;
         }
+
     }
 }
 
