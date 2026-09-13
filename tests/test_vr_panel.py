@@ -1557,13 +1557,22 @@ def test_bruegge_seite_behauptet_nicht_mehr_reine_vatsim_karte():
     assert "erscheinst du damit in Türkis" in efb
 
 
+def _karten_legende_block() -> str:
+    """Der gesamte Legenden-Block -- BEIDE <ul>-Listen (Flugzeug-Marker, Bedienelemente),
+    nicht nur die erste. Eine freie Suche nach dem ersten `</ul>` haette die zweite Liste
+    (Track-up, Follow, ICAO-Suche) stillschweigend ausgelassen."""
+    start = INDEX.index('<div class="panel-title">Karten-Legende</div>')
+    erstes_ende = INDEX.index("</ul>", start)
+    zweites_ende = INDEX.index("</ul>", erstes_ende + 1)
+    return INDEX[start:zweites_ende]
+
+
 def test_karten_legende_erklaert_farben_und_bedienelemente():
     """Die Legende unter der Live-Karte kannte bislang nur die Drehung des Markers -- Farben
     und Bedienelemente waren stillschweigend vorausgesetztes Wissen. Nutzer, 13.09.2026:
     "Erklaere hier ueberhaupt alle Kartenfunktionen"."""
-    assert "Flugzeug-Marker rotieren mit dem aktuellen Heading" in INDEX
-    stelle = INDEX.index('<div class="panel-title">Karten-Legende</div>')
-    block = INDEX[stelle:INDEX.index("</ul>", stelle)]
+    block = _karten_legende_block()
+    assert "Rotieren mit dem aktuellen Heading" in block
     assert "<strong>Blau</strong>" in block and "FriesenFlieger auf VATSIM" in block
     assert "<strong>Grau</strong>" in block and "Fremdverkehr" in block
     assert 'Haken „Verkehr"' in block, "wie sich der Fremdverkehr ausschalten laesst, muss dastehen"
@@ -1572,6 +1581,55 @@ def test_karten_legende_erklaert_farben_und_bedienelemente():
     assert "Track-up" in block
     assert "folgt dem eigenen Flugzeug" in block
     assert "ICAO-Kennung suchen" in block
+
+
+def test_karten_legende_stellt_die_30_sekunden_richtig():
+    """Weder VATSIM noch unser eigener Abruf sind wirklich 15 Sekunden frisch -- beides
+    zusammen kann sich addieren. Nutzer, 13.09.2026: "erklaere, dass das gemeldete
+    15-Sekunden-Raster auch noch 30 Sekunden alte Positionen zeigt". Dieselbe Richtigstellung
+    muss auch auf der Download-Seite stehen, wo der Vergleich zuerst (und zu optimistisch)
+    formuliert war."""
+    block = _karten_legende_block()
+    assert "30 Sekunden" in block
+    assert "15-Sekunden-Raster" not in block, "die alte, zu optimistische Formulierung darf nicht stehen bleiben"
+    efb = (STATIC / "efb.html").read_text(encoding="utf-8")
+    assert "30 Sekunden" in efb
+    assert "15-Sekunden-Raster" not in efb
+
+
+def test_karten_legende_zeigt_die_echten_flugzeug_symbole():
+    """Nicht nur ein Farbklecks, sondern dieselbe Silhouette wie auf der Karte -- und ueber
+    dieselben Klassen eingefaerbt, damit eine spaetere Farbaenderung an EINER Stelle die
+    Legende nicht vergisst. Nutzer, 13.09.2026: "bau die Symbole in die Legende ein"."""
+    block = _karten_legende_block()
+    assert '<span class="aircraft-marker karten-legende-flz">' in block, "Blau: das normale Marker-Symbol"
+    assert '<span class="aircraft-marker aircraft-marker-fremd karten-legende-flz">' in block, \
+        "Grau: eigene Silhouette wie der echte Fremdverkehr"
+    assert '<span class="aircraft-marker aircraft-marker-bruegge karten-legende-flz">' in block, \
+        "Tuerkis: dieselbe Silhouette wie Blau, nur eingefaerbt ueber die Bruegge-Klasse"
+    # Ebenen-Knopf, Kompass, Moving Map und Lupe -- je ein Symbol, keine reine Textzeile.
+    assert '<use href="#icon-map" xlink:href="#icon-map"/>' in block
+    assert 'M12 3 L16 13 L12 11 Z' in block, "Kompassnadel fehlt"
+    assert 'M12 3 L20 20 L12 16 L4 20 Z' in block, "Moving-Map-Pfeil fehlt"
+    assert 'M10.5 3a7.5 7.5' in block, "ICAO-Lupe fehlt"
+
+
+def test_karten_legende_hat_ueberschriften_ohne_klickbar_farbe():
+    """Zwei Abschnitte (Flugzeug-Marker, Bedienelemente) statt einer undurchsichtigen Liste.
+    Nutzer, 13.09.2026: "strukturiere die Legende mit Ueberschriften" -- UND direkt im
+    selben Atemzug: "auch hier immer wieder die blaue Schrift?!". Beide Ueberschriften
+    muessen also da sein UND duerfen nicht in var(--green) stehen -- das war an der ALTEN
+    ersten Legenden-Zeile ("mono text-green" auf reinem Fliesstext ohne Link) bereits einmal
+    falsch und ist jetzt entfernt."""
+    block = _karten_legende_block()
+    assert '<div class="karten-legende-abschnitt karten-legende-abschnitt--erste">Flugzeug-Marker</div>' in block
+    assert '<div class="karten-legende-abschnitt">Bedienelemente</div>' in block
+    assert "mono text-green" not in block, "eine Ueberschrift/Zeile hier ist kein Link"
+    assert ".karten-legende-abschnitt {" in INDEX
+    stelle = INDEX.index(".karten-legende-abschnitt {")
+    regel = INDEX[stelle:INDEX.index("}", stelle)]
+    assert "var(--green)" not in regel, "Ueberschriften sind nicht klickbar -- keine Klickbar-Farbe"
+    assert "var(--text-bright)" in regel
 
 
 def test_tuerkis_zeile_der_legende_ist_im_kniebrett_ausgeblendet():
