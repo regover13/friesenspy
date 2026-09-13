@@ -23,6 +23,100 @@
 // Schreiben
 // ---------------------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------------------
+// Zahlen ohne Locale
+// ---------------------------------------------------------------------------------------
+//
+// `snprintf("%.*f")` und `strtod` fragen beide LC_NUMERIC. Setzt irgendwer im Prozess
+// `setlocale(LC_ALL, "")` -- X-Plane selbst oder ein beliebiges anderes Plugin, und zwar
+// prozessweit --, dann meldet die Brügge bei einem deutschen Piloten `52,123` statt
+// `52.123`, und der Server antwortet 400. Schlimmer noch beim Lesen: `strtod` liest aus
+// `"lat": 53.5` dann eine 53, aus `1.5E2` eine 1. Gemessen am 13.09.2026 unter
+// `de_DE.UTF-8` (`xplane/pruefen/json_locale.cpp`).
+//
+// In MSFS fällt das nicht auf -- die WASM-Sandbox kennt nur "C". Es ist ein reiner
+// POSIX-Fund, und er trifft ausgerechnet die Piloten, für die die zweite Brügge gebaut wird.
+//
+// Ganzzahlformate (`%lld`) sind nicht betroffen; nur sie werden hier noch benutzt.
+
+inline void zahl_nach_text(char* aus, size_t n, double wert, int stellen) {
+    if (n == 0) return;
+    if (stellen < 0) stellen = 0;
+    if (stellen > 9) stellen = 9;
+
+    // NaN, Unendlich und alles jenseits von long long: JSON kennt dafür keine Schreibweise.
+    // Eine 0 ist falsch, aber gültig -- abgehacktes JSON wäre schlimmer.
+    if (!(wert > -1e15 && wert < 1e15)) { std::snprintf(aus, n, "0"); return; }
+
+    static const long long ZEHN[10] = {1LL, 10LL, 100LL, 1000LL, 10000LL, 100000LL,
+                                       1000000LL, 10000000LL, 100000000LL, 1000000000LL};
+    bool minus = wert < 0.0;
+    if (minus) wert = -wert;
+
+    long long faktor = ZEHN[stellen];
+    long long ganz = (long long)wert;
+    long long nach = (long long)((wert - (double)ganz) * (double)faktor + 0.5);
+    if (nach >= faktor) { nach -= faktor; ganz += 1; }      // 1.999999 mit 3 Stellen -> 2.000
+
+    char tmp[64];
+    int pos = 0;
+    if (minus && (ganz != 0 || nach != 0)) tmp[pos++] = '-';   // kein "-0.00000"
+    pos += std::snprintf(tmp + pos, sizeof(tmp) - (size_t)pos, "%lld", ganz);
+    if (stellen > 0) {
+        tmp[pos++] = '.';
+        pos += std::snprintf(tmp + pos, sizeof(tmp) - (size_t)pos, "%0*lld", stellen, nach);
+    }
+    tmp[pos] = '\0';
+    std::snprintf(aus, n, "%s", tmp);
+}
+
+// Liest `[+-]ddd[.ddd][eE[+-]ddd]`. `ende` zeigt danach auf das erste nicht verbrauchte
+// Zeichen -- wie bei `strtod`, damit die Aufrufer unverändert bleiben. Bleibt `ende` auf dem
+// Anfang stehen, stand dort keine Zahl.
+//
+// Die Genauigkeit ist geringer als bei `strtod` (Ziffern werden aufmultipliziert statt
+// exakt skaliert). Für fünf Nachkommastellen einer Koordinate -- rund einen Meter -- liegt
+// der Unterschied weit jenseits dessen, was hier je zählt.
+inline double text_nach_zahl(const char* p, const char** ende) {
+    const char* anfang = p;
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') ++p;
+
+    bool minus = false;
+    if (*p == '+' || *p == '-') { minus = (*p == '-'); ++p; }
+
+    bool ziffer = false;
+    double wert = 0.0;
+    while (*p >= '0' && *p <= '9') { wert = wert * 10.0 + (*p - '0'); ++p; ziffer = true; }
+    if (*p == '.') {
+        ++p;
+        double teiler = 1.0;
+        while (*p >= '0' && *p <= '9') {
+            wert = wert * 10.0 + (*p - '0'); teiler *= 10.0; ++p; ziffer = true;
+        }
+        wert /= teiler;
+    }
+    if (!ziffer) { if (ende) *ende = anfang; return 0.0; }
+
+    if (*p == 'e' || *p == 'E') {
+        const char* merk = p;                    // ein 'e' ohne Ziffern gehört nicht dazu
+        ++p;
+        bool eminus = false;
+        if (*p == '+' || *p == '-') { eminus = (*p == '-'); ++p; }
+        if (*p >= '0' && *p <= '9') {
+            int ex = 0;
+            while (*p >= '0' && *p <= '9' && ex < 400) { ex = ex * 10 + (*p - '0'); ++p; }
+            double f = 1.0;
+            for (int i = 0; i < ex; ++i) f *= 10.0;
+            if (eminus) wert /= f; else wert *= f;
+        } else {
+            p = merk;
+        }
+    }
+
+    if (ende) *ende = p;
+    return minus ? -wert : wert;
+}
+
 // Ein Puffer, der sich nicht überschreiben lässt. Läuft er voll, bleibt der Inhalt gültiges
 // JSON bis zur letzten vollständigen Ergänzung -- gemeldet wird das über `voll()`, und der
 // Aufrufer entscheidet. Stillschweigend abzuschneiden wäre schlimmer: Der Server bekäme
@@ -44,7 +138,7 @@ public:
 
     void zahl(double wert, int stellen = 5) {
         char tmp[48];
-        std::snprintf(tmp, sizeof(tmp), "%.*f", stellen, wert);
+        zahl_nach_text(tmp, sizeof(tmp), wert, stellen);
         roh(tmp);
     }
 
@@ -98,8 +192,8 @@ inline double json_zahl(const char* json, const char* name, double vorgabe) {
     if (!p) return vorgabe;
     ++p;
     while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') ++p;
-    char* ende = nullptr;
-    double wert = std::strtod(p, &ende);
+    const char* ende = nullptr;
+    double wert = text_nach_zahl(p, &ende);
     return (ende == p) ? vorgabe : wert;
 }
 
@@ -192,8 +286,8 @@ inline double json_zahl_in(const char* element, const char* name, double vorgabe
     ++p;
     while (*p == ' ' || *p == '\t') ++p;
     if (std::strncmp(p, "null", 4) == 0) return vorgabe;   // ausdruecklich "kein Wert"
-    char* zeiger_ende = nullptr;
-    double wert = std::strtod(p, &zeiger_ende);
+    const char* zeiger_ende = nullptr;
+    double wert = text_nach_zahl(p, &zeiger_ende);
     if (zeiger_ende == p) return vorgabe;
     if (gefunden) *gefunden = true;
     return wert;

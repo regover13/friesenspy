@@ -1,0 +1,6 @@
+# Gebaute Pruefwerkzeuge -- sie entstehen mit `pruefen.sh` neu und gehoeren nicht ins Repo.
+json_locale
+netz_pruefen
+laden
+*.xpl
+*.o
