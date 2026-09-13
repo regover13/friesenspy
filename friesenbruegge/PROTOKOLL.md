@@ -554,6 +554,27 @@ Robbe — die ganze Bibliothek ist animiert (`walking`/`running`/`moving` im Mod
 zwischen Simulatoren und zwischen Brügge-Fassungen unterscheiden — der Pilot zählt Tiere, nicht
 Bären. Wer eine bestimmte Art braucht, braucht eine eigene Gattung.
 
+### ⚠ Eine Gattung faltet die SIMULATOREN zusammen — nicht die Varianten
+
+Stehende Regel, vom Nutzer aufgestellt am 13.09.2026:
+
+| | |
+|---|---|
+| **Eine Gattung** | wo sich dieselbe Bedeutung über MSFS 2020/2024 und X-Plane verteilt: `boot_klein` ist dort `Boat01`, hier `SailBoat.obj` |
+| **Zufall darin erlaubt** | wo die Variante beliebig ist — Autos, Busse, Boote, Schiffe, Vieh. Welcher Bus dasteht, ist gleichgültig |
+| **Eigene Gattung** | wo die Variante BEDEUTUNG trägt. Jede Rauchfarbe einzeln: `rauch_signalrot`, `rauch_signalorange`, `rauch_rot`, `rauch_orange`, `rauch_hellblau`, `rauch_navy` |
+
+**Der Grund steht im Zweck des Protokolls:** Der Server fordert `rauch_signalrot` an und muss
+sich darauf verlassen können, dass **jeder** Pilot rote Säulen sieht — gleich in welchem
+Simulator er sitzt. Würfelte die Brügge die Farbe aus, markierte dieselbe Anforderung bei zwei
+Piloten zwei verschiedene Dinge, und ein Zähl- oder Suchspiel wäre nicht mehr durchführbar.
+
+Das ist die Gegenrichtung zum Satz darüber: Die Bedeutung einer Gattung darf **nicht gröber
+sein als das, was der Server unterscheiden können muss.**
+
+`rauch` ohne Zusatz bleibt daneben bestehen und heißt „irgendeine gut sichtbare Säule" — für
+alles, wo die Farbe wirklich gleichgültig ist.
+
 **Neue Gattungen brauchen keine Server-Änderung.** Eine neuere Brügge meldet in `kann` einfach
 mehr; der Server darf anfordern, was mindestens eine Brügge kann.
 

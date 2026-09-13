@@ -59,48 +59,122 @@ ZIEL = HIER / "objekte"
 # app/badge.py und die Widget-Badges. Nur diese vier Farben; ein Grün gibt es in der Marke
 # nicht, und deshalb gibt es hier auch keine grüne Säule.
 FARBEN = {
-    "navy":     (0x19, 0x1D, 0x53),
-    "hellblau": (0x8F, 0xBF, 0xF1),
-    "rot":      (0x8A, 0x1B, 0x1B),
-    "orange":   (0xD7, 0x5F, 0x28),
+    # Die vier aus `Hex codes.txt` des Repaint-Kits -- dieselbe Quelle wie app/badge.py.
+    "navy":         (0x19, 0x1D, 0x53),
+    "hellblau":     (0x8F, 0xBF, 0xF1),
+    "rot":          (0x8A, 0x1B, 0x1B),
+    "orange":       (0xD7, 0x5F, 0x28),
+    # Und zwei Signalfarben dazu (Nutzerwunsch 13.09.2026). Das FF-Rot ist ein dunkles
+    # Weinrot -- vor Wald und Schatten verschwindet es, und genau dort soll eine Säule ja
+    # gefunden werden. Diese beiden sind das, was ein echtes Rauchsignal trägt: hell,
+    # gesättigt, gegen jeden Hintergrund sichtbar.
+    "signalrot":    (0xE3, 0x06, 0x13),
+    "signalorange": (0xFF, 0x6A, 0x13),
 }
 
 # Wie hoch die Säule steht: Aufstiegsgeschwindigkeit × Lebensdauer, gebremst durch DRAG
 # und getragen vom Auftrieb (negativer GRAVITY-Wert).
 #
-# 8 m/s über 35 s ergibt rechnerisch 280 m; mit der Bremsung bleiben gut 150 m. Das ist die
+# 3 m/s über 45 s ergibt rechnerisch 135 m; mit der Bremsung bleiben rund 100 m. Das ist die
 # Größenordnung, die eine Säule über Bäume, Hügel und Dunst hebt -- und genau darum geht es:
 # Am 13.09.2026 hat der Nutzer sechs gesetzte Objekte auf einem Flugplatz gesucht und drei
 # nicht gefunden. Ein Modell am Boden verschwindet hinter allem; eine Säule steht darüber.
-AUFSTIEG_MS = 8.0
-LEBENSDAUER_S = 35.0
-EMIT_RATE = 90.0          # Partikel je Sekunde -- die Dichte kommt aus der ANZAHL
-MAX_PARTICLES = 4000      # 90/s × 35 s = 3150, mit Luft nach oben
+#
+# ⚠ Hier standen 8 m/s, und der Fuß der Säule war ein DÜNNER STRICH (13.09.2026, im Bild
+# gesehen). Bei 90 Partikeln je Sekunde und 8 m/s liegen sie 9 cm auseinander, sind aber nur
+# 1,5 m groß -- das ergibt eine Perlenschnur, keine Säule. Echter Signalrauch quillt mit 2-3
+# m/s; die Dichte unten kommt daher, dass die Partikel eng beieinander bleiben.
+AUFSTIEG_MS = 3.0
+LEBENSDAUER_S = 45.0
+EMIT_RATE = 220.0         # Partikel je Sekunde -- s. ALPHA_CURVE zur Überlappung
+MAX_PARTICLES = 12000     # 220/s × 45 s = 9900, mit Luft nach oben
 
 TEXTUR = "rauch.png"
 
 
-def textur_schreiben(pfad: Path, kante: int = 128) -> None:
-    """Ein weicher, weißer Fleck mit Alpha-Verlauf.
+# Der Atlas: 4x4 Zellen, sechzehn verschiedene Wolkenformen.
+#
+# ⚠ WARUM NICHT EIN FLECK, und das ist der Fund des Nachmittags: Hier stand eine einzige
+# glatte Kreisscheibe -- und die Säule sah im Simulator aus wie eine KETTE AUS KUGELN
+# (13.09.2026, im Bild gesehen). Jeder Partikel war als Kreis erkennbar, und eine Perlenkette
+# kann nicht ausfransen, egal wie sehr man sie verteilt.
+#
+# Laminars eigene Rauchtextur (`Resources/effects/aircraft_system.png`, 1024x1024) ist
+# dagegen ein ATLAS aus Dutzenden unregelmäßiger Wolkenformen. Dafür gibt es die Felder
+# TEX_CELLS_X/Y und ANIM_CELL_RANDOM: Jeder Partikel zieht eine andere Zelle, und dadurch
+# sieht keiner aus wie der andere. Genau das lässt echte Partikel zu Schwaden verschmelzen.
+ATLAS = 4          # 4x4 = 16 Formen
+ZELLE = 128        # Pixel je Zelle -> 512x512 gesamt
 
-    WEISS, nicht farbig: Die Farbe kommt aus `TINT` in der .pss. So tragen alle vier Säulen
-    dieselbe Textur, und eine fünfte Farbe kostet später nur eine .pss.
+
+def _rauschen(kante: int, keim: int):
+    """Fraktales Rauschen über mehrere Oktaven, als Liste von Fließkommawerten.
+
+    Value Noise von Hand: ein grobes Zufallsgitter wird bikubisch hochskaliert, und davon
+    mehrere Oktaven mit halbierender Amplitude addiert. Pillow kann das Hochskalieren, also
+    braucht es dafür kein numpy -- und keine Abhängigkeit, die im Paket landen müsste.
+    """
+    import random
+
+    from PIL import Image
+
+    rnd = random.Random(keim)
+    summe = [0.0] * (kante * kante)
+    amplitude = 1.0
+    gesamt = 0.0
+    for gitter in (2, 4, 8, 16, 32):
+        klein = Image.new("L", (gitter, gitter))
+        klein.putdata([rnd.randrange(256) for _ in range(gitter * gitter)])
+        gross = klein.resize((kante, kante), Image.BICUBIC)
+        for i, wert in enumerate(gross.getdata()):
+            summe[i] += (wert / 255.0) * amplitude
+        gesamt += amplitude
+        amplitude *= 0.55
+    return [w / gesamt for w in summe]
+
+
+def textur_schreiben(pfad: Path) -> None:
+    """Sechzehn wolkige Formen auf einem Blatt.
+
+    WEISS, nicht farbig: Die Farbe kommt aus `TINT` in der .pss. So tragen alle Säulen
+    dieselbe Textur, und eine weitere Farbe kostet nur eine .pss.
     """
     from PIL import Image
 
+    kante = ATLAS * ZELLE
     bild = Image.new("RGBA", (kante, kante), (255, 255, 255, 0))
     pixel = bild.load()
-    mitte = (kante - 1) / 2.0
-    for y in range(kante):
-        for x in range(kante):
-            # Abstand zur Mitte, normiert auf 0..1 am Rand.
-            d = math.hypot(x - mitte, y - mitte) / mitte
-            if d >= 1.0:
-                continue
-            # Weicher Rand: cos²-Abfall. Ein linearer Verlauf zeigt bei großen Partikeln
-            # einen sichtbaren Kreisrand, ein cos²-Verlauf nicht.
-            a = math.cos(d * math.pi / 2.0) ** 2
-            pixel[x, y] = (255, 255, 255, int(round(a * 255)))
+    mitte = (ZELLE - 1) / 2.0
+
+    for zy in range(ATLAS):
+        for zx in range(ATLAS):
+            rausch = _rauschen(ZELLE, keim=1000 + zy * ATLAS + zx)
+            # Das Rauschen auf den vollen Bereich 0..1 strecken. Ohne diesen Schritt liegen
+            # die Werte um 0,5 herum, und nach Schwellwert und Randabfall bleibt ein blasses
+            # Klümpchen in der Zellenmitte übrig -- gemessen am 13.09.2026: Spitzendeckkraft
+            # 155 statt 255, und nur 9,7 % der Fläche überhaupt sichtbar.
+            tief, hoch = min(rausch), max(rausch)
+            spanne = (hoch - tief) or 1.0
+            for y in range(ZELLE):
+                for x in range(ZELLE):
+                    d = math.hypot(x - mitte, y - mitte) / mitte
+                    if d >= 1.0:
+                        continue
+                    # Der Randabfall greift erst im äußeren Drittel. Vorher stand hier ein
+                    # cos²-Verlauf über die ganze Zelle -- der dämpft schon in der Mitte auf
+                    # die Hälfte und lässt der Form keinen Platz.
+                    rand = 1.0 if d < 0.62 else math.cos((d - 0.62) / 0.38 * math.pi / 2.0)
+                    roh = ((rausch[y * ZELLE + x] - tief) / spanne) * rand
+
+                    # Der Schwellwert ist das, was die Form FRANSIG macht: Alles darunter
+                    # fällt weg, der Rest wird gespreizt. Ohne ihn bleibt eine weiche Scheibe
+                    # mit etwas Struktur -- mit ihm entstehen Ausläufer, Löcher und Zipfel,
+                    # so wie auf Laminars Blatt.
+                    a = (roh - 0.18) / 0.82
+                    if a <= 0.0:
+                        continue
+                    pixel[zx * ZELLE + x, zy * ZELLE + y] = (
+                        255, 255, 255, int(round(min(1.0, a) * 255)))
     bild.save(pfad, "PNG")
 
 
@@ -132,12 +206,15 @@ def pss_schreiben(pfad: Path, farbe: tuple[int, int, int]) -> None:
         # Himmel verschwinden und jede Farbe nach Weiß laufen. BLEND legt das Partikel wie
         # eine Ebene darüber, so bleibt die Farbe die Farbe (Laminar: „good for smoke").
         " BLEND_MODE BLEND",
-        " TEX_CELLS_X 1",
-        " TEX_CELLS_Y 1",
+        # Der Atlas, und die Zufallswahl daraus. ANIM_CELL_RANDOM 1 heißt: Jeder Partikel
+        # zieht beim Entstehen eine der 16 Formen -- das ist der Unterschied zwischen einer
+        # Perlenkette und einer Rauchfahne.
+        f" TEX_CELLS_X {ATLAS}",
+        f" TEX_CELLS_Y {ATLAS}",
         " ANIM_CELL_START 0",
-        " ANIM_CELL_COUNT 1",
+        f" ANIM_CELL_COUNT {ATLAS * ATLAS}",
         " ANIM_CELL_REPEAT 1",
-        " ANIM_CELL_RANDOM 0",
+        " ANIM_CELL_RANDOM 1",
         _kurve("ANIM_CELL_KF", [(0.0, 0.0), (1.0, 0.0)]),
         # Die Wolke dehnt sich beim Aufsteigen: 1,5 m am Fuß, 14 m oben.
         #
@@ -149,7 +226,16 @@ def pss_schreiben(pfad: Path, farbe: tuple[int, int, int]) -> None:
         # ganz oben. Der schmale Fuß macht die Quelle ortbar, die breite Krone macht die
         # Säule von weitem sichtbar -- und der Übergang dazwischen ist das, was sie wie
         # aufsteigenden Rauch aussehen lässt statt wie eine Wolke auf einem Stiel.
-        _kurve("SIZE_CURVE", [(0.0, 1.5), (0.25, 5.0), (0.6, 12.0), (1.0, 28.0)],
+        # ⚠ Am Fuß KLEIN halten, sonst verwäscht die Quelle.
+        #
+        # Die Lücken am Fuß (13.09.2026, einzelne Kügelchen mit Luft dazwischen) kamen NICHT
+        # von zu kleinen Partikeln, sondern von zu wenigen: 23 Stück im untersten Meter,
+        # gestreut über einen Kegel von ±20°. Mit 220 statt 70 je Sekunde und ±11° sind es
+        # 72 Stück auf 2,8 m² Querschnitt -- eine 29-fache Überdeckung, da bleibt nichts offen.
+        #
+        # Ein Zwischenstand hatte hier 3,0 m stehen. Das war doppelt gemoppelt und zog gegen
+        # die eben erst verengte Kegelöffnung: Der Fuß wäre breiter geworden als die Säule.
+        _kurve("SIZE_CURVE", [(0.0, 1.2), (0.20, 2.6), (0.45, 6.5), (1.0, 18.0)],
                "CUBIC_AVG"),
         # Kurz aufblenden, lange halten, weich verschwinden.
         #
@@ -161,12 +247,43 @@ def pss_schreiben(pfad: Path, farbe: tuple[int, int, int]) -> None:
         # Laminar bleibt überall darunter -- `engine_smoke_piston` bei 0,19, `tire_smoke`
         # bei 0,25, `rocket_smoke` bei 0,44. Die Dichte einer Rauchsäule entsteht aus der
         # ANZAHL, nicht aus der Deckkraft des einzelnen Partikels.
-        # Schnell da, dann über die ganze Steighöhe ausdünnen. Das Auflösen ist kein
-        # Abschalten am Ende, sondern ein Verlauf: Je höher der Partikel kommt, desto
-        # durchsichtiger wird er -- und weil er gleichzeitig wächst, franst die Säule oben
-        # aus, statt eine Kante zu haben.
-        _kurve("ALPHA_CURVE", [(0.0, 0.0), (0.05, 0.24), (0.30, 0.18),
-                               (0.65, 0.08), (1.0, 0.0)]),
+        # ⚠ DIE DECKKRAFT MUSS SCHNELLER FALLEN, ALS DIE FLÄCHE WÄCHST. Das ist der
+        # Rechenfehler, der am 13.09.2026 die Keule oben erzeugt hat:
+        #
+        #   Ein Partikel wuchs von 1,5 m auf 28 m -- die überdeckte Fläche steigt damit um
+        #   das 350-fache (28²/1,5²). Die Deckkraft fiel im selben Zug nur von 0,24 auf 0,08,
+        #   also auf ein Drittel. Netto war die Krone rund HUNDERTMAL dichter als der Fuß --
+        #   während eine echte Rauchsäule nach oben hin durchsichtiger wird.
+        #
+        # Deshalb jetzt: 0,30 am Fuß, aber schon bei einem Viertel der Höhe nur noch 0,12 und
+        # bei zwei Dritteln 0,035. Zusammen mit der flacheren Größenkurve (18 m statt 28)
+        # nimmt die Gesamtdeckung nach oben ab, statt zu.
+        #
+        # Vorbild sind echte Fotos von Signalrauch (Nutzer, 13.09.2026): unten dicht und
+        # quellend, oben breit, hell und ausgefranst.
+        # ⚠ DIE DECKKRAFT SUMMIERT SICH ÜBER DIE ÜBERLAPPUNGEN, und danach muss sie
+        # bemessen werden -- nicht danach, wie ein einzelner Partikel aussieht:
+        #
+        #   Gesamtdeckung = 1 - (1 - alpha)^N   bei N übereinanderliegenden Partikeln
+        #
+        # Mit alpha 0,30 und N ≈ 20 sind das 99,9 % -- eine massive Wand, durch die weder
+        # die Wolkenstruktur noch der Himmel dringt. Genau so sah es aus. Mit alpha 0,09
+        # und N ≈ 10 bleiben 61 %, und das ist Rauch.
+        # ⚠ DAS ERSTE FÜNFTEL IST UNDURCHSICHTIG, und zwar auf ausdrücklichen Wunsch
+        # (13.09.2026): Eine Rauchquelle, durch die man den Himmel sieht, ist als Marke
+        # wertlos -- sie soll ja auffallen. 0,95 heißt: fast jeder einzelne Partikel deckt
+        # für sich. Was dann noch durchscheint, sind die LÖCHER der Wolkenformen, und die
+        # decken sich bei mehreren übereinander gegenseitig ab.
+        #
+        # Danach fällt die Kurve steil -- die Krone bleibt so dünn und verweht wie zuvor.
+        # Genau dieser Gegensatz macht die Säule aus: unten Quelle, oben Auflösung.
+        # ⚠ DIE OBEREN WERTE SIND GEGEN DIE DREIFACHE PARTIKELZAHL GERECHNET.
+        # Wer EMIT_RATE verdreifacht, verdreifacht auch die Überlappungen -- und damit wäre
+        # die Krone schlagartig wieder eine Wand. Damit die Gesamtdeckung dort gleich bleibt,
+        # muss die Deckkraft auf a_neu = 1 - (1 - a_alt)^(1/3) fallen: aus 0,16 wird 0,06,
+        # aus 0,05 wird 0,018. Unten dagegen bleibt sie hoch, denn dort SOLL es dicht sein.
+        _kurve("ALPHA_CURVE", [(0.0, 0.0), (0.02, 0.70), (0.20, 0.50),
+                               (0.42, 0.06), (0.68, 0.018), (0.88, 0.005), (1.0, 0.0)]),
         _kurve("LENGTH_CURVE", [(0.0, 0.0), (1.0, 0.0)], "CUBIC_AVG"),
         " DIFFUSE 0.500000",
         " AMBIENT 0.750000",
@@ -186,7 +303,7 @@ def pss_schreiben(pfad: Path, farbe: tuple[int, int, int]) -> None:
         # Am Fuß ruhig, oben unruhig. Ohne diesen Verlauf steigt eine gerade Röhre auf;
         # mit ihm verteilt sich die Krone seitlich, so wie Rauch es tut, wenn er an Auftrieb
         # verliert.
-        _kurve("TURBULENCE", [(0.0, 0.02), (0.4, 0.25), (1.0, 0.9)], "CUBIC_AVG"),
+        _kurve("TURBULENCE", [(0.0, 0.05), (0.3, 0.5), (1.0, 1.6)], "CUBIC_AVG"),
         # Wenig Bremsung: Der Partikel soll steigen, nicht auf halber Höhe stehenbleiben.
         _kurve("DRAG_CURVE", [(0.0, 0.1), (0.3, 0.35), (1.0, 0.5)], "CUBIC_AVG"),
         _kurve("SPIN_CURVE", [(0.0, 0.3), (1.0, 0.05)], "CUBIC_AVG"),
@@ -201,24 +318,45 @@ def pss_schreiben(pfad: Path, farbe: tuple[int, int, int]) -> None:
         # Ab hier ALLE Kurven konstant und an SLOT 0 -- s. Kopf der Datei.
         _kurve("EMIT_RATE", [(0.0, EMIT_RATE, EMIT_RATE), (1.0, EMIT_RATE, EMIT_RATE)],
                "LINEAR"),
-        _kurve("INITIAL_SPEED", [(0.0, AUFSTIEG_MS, AUFSTIEG_MS),
-                                 (1.0, AUFSTIEG_MS, AUFSTIEG_MS)], "LINEAR"),
+        # ⚠ DIE ZWEITE UND DRITTE SPALTE SIND EINE SPANNE, kein Wiederholungsfehler:
+        # X-Plane würfelt für jeden Partikel einen Wert dazwischen. Hier stand zweimal
+        # derselbe -- alle Partikel stiegen exakt gleich schnell, im Gleichschritt, und
+        # genau deshalb blieb die Säule eine geschlossene Wurst statt zu zerfasern
+        # (13.09.2026, dreimal im Bild gesehen).
+        #
+        # 1,5 bis 5,5 m/s heißt: Die schnellsten sind nach 45 s dreimal so hoch wie die
+        # langsamsten. Das allein franst die Fahne auf.
+        _kurve("INITIAL_SPEED", [(0.0, AUFSTIEG_MS * 0.5, AUFSTIEG_MS * 1.8),
+                                 (1.0, AUFSTIEG_MS * 0.5, AUFSTIEG_MS * 1.8)], "LINEAR"),
         _kurve("ROTATION_SPEED", [(0.0, 0.5, 1.0), (1.0, 0.5, 1.0)], "CUBIC_AVG"),
         _kurve("INITIAL_HEADING", [(0.0, 0.0, 360.0), (1.0, 0.0, 360.0)], "CUBIC_AVG"),
-        # 90° = senkrecht nach oben. Der Wert steuert laut Laminar „the direction the
-        # particle flies relative to the attached object".
-        _kurve("INITIAL_PITCH", [(0.0, 88.0, 92.0), (1.0, 88.0, 92.0)], "CUBIC_AVG"),
+        # 90° = senkrecht nach oben; die SPANNE ist die Auffächerung.
+        #
+        # ⚠ Hier stand 88-92°, also ±2° -- und damit blieb die Säule geometrisch eine Röhre,
+        # egal wie stark die Turbulenz wackelte. Eine echte Rauchsäule wird nach oben breiter,
+        # weil sie aus einem KEGEL austritt.
+        #
+        # ±12° ergibt bei 10 m Höhe gut 2 m Breite (die Quelle bleibt also ortbar) und bei
+        # 100 m rund 21 m -- genau der Trichter, den die Fotos zeigen. Der Effekt ist reine
+        # Geometrie und damit sicher, während TURBULENCE bei Laminar nie über 0,25 geht und
+        # unser Wert von 1,6 ungemessen ist.
+        # ±11° statt ±20°: Der weite Kegel hat die wenigen Partikel am Fuß über zu viel
+        # Fläche verteilt. Die Breite oben kommt ohnehin aus der gestreuten Geschwindigkeit
+        # und der Turbulenz, nicht aus dem Austrittswinkel.
+        _kurve("INITIAL_PITCH", [(0.0, 79.0, 101.0), (1.0, 79.0, 101.0)], "CUBIC_AVG"),
         _kurve("DX", [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]),
         _kurve("DY", [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]),
         _kurve("DZ", [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]),
         # Etwas Streuung am Fuß, damit die Quelle nicht wie ein Punkt aussieht.
-        _kurve("DLON", [(0.0, 0.0, 1.5), (1.0, 0.0, 1.5)], "CUBIC_AVG"),
-        _kurve("DLAT", [(0.0, 0.0, 1.5), (1.0, 0.0, 1.5)], "CUBIC_AVG"),
+        _kurve("DLON", [(0.0, 0.0, 0.7), (1.0, 0.0, 0.7)], "CUBIC_AVG"),
+        _kurve("DLAT", [(0.0, 0.0, 0.7), (1.0, 0.0, 0.7)], "CUBIC_AVG"),
         _kurve("INITIAL_ROTATION", [(0.0, 0.0, 360.0), (1.0, 0.0, 360.0)], "CUBIC_AVG"),
         _kurve("INITIAL_SIZE", [(0.0, 0.8, 1.2), (1.0, 0.8, 1.2)], "LINEAR"),
         _kurve("INITIAL_ALPHA", [(0.0, 1.0, 1.0), (1.0, 1.0, 1.0)], "CUBIC_AVG"),
-        _kurve("TIME_TO_LIVE", [(0.0, LEBENSDAUER_S, LEBENSDAUER_S),
-                                (1.0, LEBENSDAUER_S, LEBENSDAUER_S)], "LINEAR"),
+        # Auch die Lebensdauer streut -- sonst enden alle Partikel auf derselben Höhe,
+        # und die Krone bekommt eine waagerechte Kante.
+        _kurve("TIME_TO_LIVE", [(0.0, LEBENSDAUER_S * 0.55, LEBENSDAUER_S),
+                                (1.0, LEBENSDAUER_S * 0.55, LEBENSDAUER_S)], "LINEAR"),
         "END_SUB_EMITTER",
         # ⚠ EIN LEERER DATAREF-PLATZ, UND ZWAR ZWINGEND.
         #
@@ -239,8 +377,8 @@ def pss_schreiben(pfad: Path, farbe: tuple[int, int, int]) -> None:
         "DATAREFS 1",
         "DREF ",
         "END_EMITTER",
-        " TEX_CELLS_X 1",
-        " TEX_CELLS_Y 1",
+        f" TEX_CELLS_X {ATLAS}",
+        f" TEX_CELLS_Y {ATLAS}",
         "DATAREFS 0",
         "END_PARTICLE_SYSTEM",
         "",

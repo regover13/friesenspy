@@ -293,7 +293,7 @@ static void kennung_laden_oder_erzeugen() {
 // Die dicken Pötte (BulkCarrier, ContainerCarrier, OilTanker, LNGCarrier) liegen NUR als
 // `.agp` vor -- das ist ein Autogen-Punkt für den Szeneriebau, keine ladbare .obj. Deshalb
 // ist `boot_gross` hier die Fregatte `Perry.obj` (rund 135 m) und nicht ein Containerschiff.
-struct Gattung { const char* art; const char* pfad[5]; };
+struct Gattung { const char* art; const char* pfad[8]; };
 
 // Zwei Herkünfte, und der Unterschied ist wichtiger, als er aussieht:
 //
@@ -359,14 +359,37 @@ static const Gattung g_gattungen[] = {
     //
     // Die Reihenfolge ist die Sichtbarkeit vor hellem Himmel: Orange und Rot zuerst,
     // Navy zuletzt (es steht vor Wald gut, vor Wolken schlecht).
-    { "rauch",       { EIGEN "rauch_orange.obj", EIGEN "rauch_rot.obj",
+    //  ohne Zusatz heisst "irgendeine gut sichtbare Saeule" -- die Reihenfolge ist
+    // die Sichtbarkeit vor hellem Himmel: die Signalfarben zuerst, Navy zuletzt.
+    { "rauch",       { EIGEN "rauch_signalorange.obj", EIGEN "rauch_signalrot.obj",
+                       EIGEN "rauch_orange.obj", EIGEN "rauch_rot.obj",
                        EIGEN "rauch_hellblau.obj", EIGEN "rauch_navy.obj", nullptr } },
+
+    // ⭐ JEDE FARBE IST EINE EIGENE GATTUNG, und das ist keine Verlegenheitslösung:
+    //
+    // „Eine Gattung ist eine BEDEUTUNG, kein Modell" (PROTOKOLL.md, Abschnitt 3). Bei einem
+    // Zähl- oder Suchspiel bedeutet eine rote Säule etwas anderes als eine blaue -- sie
+    // markiert eine andere Station. Die Farbe IST hier die Bedeutung, nicht eine Spielart
+    // desselben Dings.
+    //
+    // Der Server kann damit Stationen unterscheidbar setzen, ohne dass das Protokoll ein
+    // neues Feld braucht und ohne dass die MSFS-Brügge etwas davon wissen muss. Was sie
+    // nicht kann, meldet sie nicht in `kann`.
+    //
+    // `rauch` ohne Zusatz bleibt und heißt „irgendeine gut sichtbare Säule" -- für alles,
+    // wo die Farbe egal ist.
+    { "rauch_signalrot",    { EIGEN "rauch_signalrot.obj",    nullptr } },
+    { "rauch_signalorange", { EIGEN "rauch_signalorange.obj", nullptr } },
+    { "rauch_rot",          { EIGEN "rauch_rot.obj",          nullptr } },
+    { "rauch_orange",       { EIGEN "rauch_orange.obj",       nullptr } },
+    { "rauch_hellblau",     { EIGEN "rauch_hellblau.obj",     nullptr } },
+    { "rauch_navy",         { EIGEN "rauch_navy.obj",         nullptr } },
 };
 
 static const char* pfad_fuer(const char* art, int n) {
     for (unsigned g = 0; g < sizeof(g_gattungen)/sizeof(g_gattungen[0]); ++g) {
         if (std::strcmp(art, g_gattungen[g].art) != 0) continue;
-        if (n < 0 || n >= 5) return nullptr;
+        if (n < 0 || n >= 8) return nullptr;
         return g_gattungen[g].pfad[n];
     }
     return nullptr;   // unbekannte Gattung: nicht raten, sondern melden
