@@ -1,0 +1,45 @@
+Die FriesenBruegge fuer X-Plane 12 -- Fassung @FASSUNG@
+
+EINBAUEN
+  Den Ordner FriesenBruegge nach <X-Plane 12>\Resources\plugins\ kopieren, sodass am Ende
+  diese Dateien liegen:
+
+      <X-Plane 12>\Resources\plugins\FriesenBruegge\win_x64\FriesenBruegge.xpl
+      <X-Plane 12>\Resources\plugins\FriesenBruegge\mac_x64\FriesenBruegge.xpl
+      <X-Plane 12>\Resources\plugins\FriesenBruegge\lin_x64\FriesenBruegge.xpl
+
+  X-Plane sucht sich selbst heraus, was zu ihm passt -- es ist EIN Paket fuer alle drei.
+  Danach X-Plane NEU STARTEN. Plugins liest der Simulator nur beim Start.
+
+WELCHE PLATTFORMEN
+  Windows   geflogen und geprueft am 13.09.2026
+  macOS     gebaut, aber NIE GESTARTET -- Rueckmeldung ausdruecklich erwuenscht
+  Linux     gebaut, aber NIE GESTARTET -- Rueckmeldung ausdruecklich erwuenscht
+
+  Auf dem Mac ist einmalig ein Befehl im Terminal noetig, weil das Plugin nicht signiert
+  ist und macOS jede aus dem Netz geladene Datei in Quarantaene nimmt:
+
+      xattr -dr com.apple.quarantine "<X-Plane 12>/Resources/plugins/FriesenBruegge"
+
+  Wer hinter einem systemweit eingerichteten Proxy sitzt: Die Mac- und die Linux-Fassung
+  lesen dafuer nur die Umgebungsvariable https_proxy, die Windows-Fassung fragt das System.
+
+WAS SIE TUT
+  Sie meldet die eigene Position im Sekundentakt an FriesenSpy -- damit steht das Flugzeug
+  auf der Karte, ohne dass das Kniebrett offen sein muss. Und sie setzt, was der Server
+  anfordert: Tiere, Boote, Bauwerke, Marken.
+
+  Ohne VATSIM geschieht nichts. Wer nicht eingeloggt ist, erscheint nicht -- unabhaengig
+  davon, was hier installiert ist.
+
+NACHSEHEN, OB SIE LAEUFT
+  In <X-Plane 12>\Log.txt steht nach dem Start:
+
+      [FriesenBruegge] Fassung @FASSUNG@ geladen.
+      [FriesenBruegge] Netz: ...
+
+  Die zweite Zeile nennt auf Mac und Linux die gefundene Netzbibliothek. Steht dort
+  "libcurl nicht gefunden", laeuft die Bruegge zwar, meldet aber nichts -- dann bitte
+  Bescheid sagen, mitsamt der Zeile.
+
+devprops.de -- fuer die FriesenFlieger

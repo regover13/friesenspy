@@ -1,124 +1,35 @@
-# Schnuert FriesenBruegge.xpl zu einem ZIP fuer die Download-Seite.
+# Laedt ein in der CI gebautes Bruegge-Paket auf den Server.
 #
-# Anders als bei MSFS gibt es hier kein Manifest und keine layout.json -- X-Plane braucht nur
-# den richtigen Ordner. Das ZIP traegt deshalb genau die Struktur, die der Pilot in
-# <X-Plane>/Resources/plugins/ entpackt:
+# Das Schnueren macht dieses Skript seit dem 13.09.2026 NICHT mehr -- es entsteht im
+# Workflow `.github/workflows/bruegge-xplane.yml` aus allen drei Plattformen und EINEM
+# Commit. Lokal geschnuert hiesse: ein Windows-Binary von heute neben CI-Binaries von
+# gestern, und genau dieser Fall hat beim MSFS-Paket schon einmal eine falsche Fassung
+# auf die Download-Seite gebracht.
 #
-#   FriesenBruegge/
-#     win_x64/
-#       FriesenBruegge.xpl
-#     LIESMICH.txt
+# Der Upload bleibt Handarbeit, und zwar mit Absicht: Ein frisch gebautes Paket ist noch
+# nicht im Simulator geprueft.
 #
-# Der Upload bleibt ein eigener Schritt (-Hochladen): Er faellt nach draussen, und ein Paket,
-# das gerade erst gebaut wurde, ist noch nicht im Simulator geprueft.
+# Ablauf:
+#   1. Workflow laufen lassen (Actions -> "Bruegge X-Plane bauen" -> Run workflow)
+#   2. Artefakt "friesenbruegge-xplane" herunterladen und entpacken
+#   3. Unter Windows einmal starten und im Log.txt nachsehen (s. CLAUDE.md)
+#   4. .\paket.ps1 -Datei friesenbruegge-xplane.zip
 
 param(
-    [switch]$Hochladen
+    [Parameter(Mandatory = $true)][string]$Datei
 )
 
 $ErrorActionPreference = 'Stop'
-$hier = $PSScriptRoot
-$name = "FriesenBruegge"
-$xpl = "$hier\$name.xpl"
-if (-not (Test-Path $xpl)) { throw "$name.xpl fehlt -- erst .\bauen.ps1 laufen lassen." }
+if (-not (Test-Path $Datei)) { throw "$Datei gibt es nicht." }
 
-# Die Fassung kommt aus BRUEGGE_VERSION in bruegge.cpp -- EINE Wahrheit, nicht zwei. Beim
-# MSFS-Paket stand sie eine Zeit lang fest auf 1.0.0, waehrend das Modul bei 1.5.0 war; auf
-# der Download-Seite haette dauerhaft die falsche Zahl gestanden, und ein Pilot mit alter
-# Fassung haette keinen Grund gesehen, neu zu laden.
-$cpp = Get-Content "$hier\bruegge.cpp" -Raw
-if ($cpp -match '#define\s+BRUEGGE_VERSION\s+"([0-9.]+)"') {
-    $fassung = $Matches[1]
+# Derselbe Ort wie das MSFS- und das Kniebrett-ZIP: im Volume neben der Datenbank. KEIN
+# Deploy fasst diese Dateien an -- beim Kniebrett-ZIP ist genau das dreimal schiefgegangen,
+# der Download lief drei Fassungen hinterher und fiel nur im Browsertest auf.
+$ziel = "server:/opt/friesenspy/data/efb/friesenbruegge-xplane.zip"
+Write-Output "Lade hoch nach $ziel ..."
+& scp -q $Datei $ziel
+if ($LASTEXITCODE -eq 0) {
+    Write-Output "Hochgeladen. Die Download-Seite liest die Fassung aus dem Archiv."
 } else {
-    throw "BRUEGGE_VERSION nicht in bruegge.cpp gefunden."
-}
-
-# Im Temp zusammenstellen, damit im Repo nichts liegen bleibt.
-$bau = Join-Path $env:TEMP "bruegge-xplane-$([guid]::NewGuid().ToString('N').Substring(0,8))"
-$ordner = Join-Path $bau $name
-New-Item -ItemType Directory -Force "$ordner\win_x64" | Out-Null
-Copy-Item $xpl "$ordner\win_x64\$name.xpl" -Force
-
-# Die eigenen Objekte gehoeren ins Paket, nicht in den Bordbestand: Rauchsaeulen in
-# FriesenFlieger-Farben, aus rauch_bauen.py. X-Plane bringt keinen Rauch mit, und keine
-# Freeware-Bibliothek darf mitgeliefert werden -- deshalb liegen sie hier.
-$eigene = Join-Path $hier "objekte"
-if (-not (Test-Path $eigene)) {
-    throw "objekte/ fehlt -- erst 'py rauch_bauen.py' laufen lassen. Ohne die Dateien kann die ausgelieferte Bruegge keinen Rauch setzen."
-}
-New-Item -ItemType Directory -Force "$ordner\objekte" | Out-Null
-Copy-Item "$eigene\*" "$ordner\objekte" -Force
-Write-Output ("eigene Objekte: {0} Dateien" -f (Get-ChildItem $eigene -File).Count)
-
-# Eine Begleitdatei, die X-Plane nicht kennt und nicht braucht: Die Download-Seite liest die
-# Version AUS DEM ARCHIV (`_efb_package_version` in main.py), damit die angezeigte gar nicht
-# erst von der ausgelieferten abweichen kann. Ein MSFS-Paket hat dafuer seine manifest.json --
-# ein X-Plane-Plugin hat nichts dergleichen, also kommt hier eine dazu.
-$fassungsdatei = @"
-{
-  "package_version": "$fassung",
-  "simulator": "xplane12",
-  "creator": "devprops"
-}
-"@
-[System.IO.File]::WriteAllText((Join-Path $ordner "fassung.json"), $fassungsdatei,
-                               (New-Object System.Text.UTF8Encoding $false))
-
-$liesmich = @"
-Die FriesenBruegge fuer X-Plane 12 -- Fassung $fassung
-
-EINBAUEN
-  Diesen Ordner ($name) nach <X-Plane 12>\Resources\plugins\ kopieren, sodass am Ende
-  diese Datei liegt:
-
-      <X-Plane 12>\Resources\plugins\$name\win_x64\$name.xpl
-
-  Danach X-Plane NEU STARTEN. Plugins liest der Simulator nur beim Start.
-
-WAS SIE TUT
-  Sie meldet die eigene Position im Sekundentakt an FriesenSpy -- damit steht das Flugzeug
-  auf der Karte, ohne dass das Kniebrett offen sein muss. Und sie setzt, was der Server
-  anfordert: Tiere, Boote, Bauwerke, Marken.
-
-  Ohne VATSIM geschieht nichts. Wer nicht eingeloggt ist, erscheint nicht -- unabhaengig
-  davon, was hier installiert ist.
-
-NUR WINDOWS
-  Diese Fassung laeuft auf Windows. macOS und Linux brauchen eine andere Netzschicht
-  (HTTPS); wer sie braucht, sagt Bescheid.
-
-NACHSEHEN, OB SIE LAEUFT
-  In <X-Plane 12>\Log.txt steht nach dem Start eine Zeile:
-
-      [FriesenBruegge] Fassung $fassung geladen.
-
-devprops.de -- fuer die FriesenFlieger
-"@
-[System.IO.File]::WriteAllText("$ordner\LIESMICH.txt", $liesmich,
-                               (New-Object System.Text.UTF8Encoding $false))
-
-$zip = Join-Path (Split-Path $hier -Parent) "friesenbruegge-xplane.zip"
-if (Test-Path $zip) { Remove-Item $zip -Force }
-Compress-Archive -Path $ordner -DestinationPath $zip -CompressionLevel Optimal
-Remove-Item $bau -Recurse -Force
-
-$zg = (Get-Item $zip).Length
-Write-Output ("ZIP gebaut:  {0}  ({1:N0} Bytes, Fassung {2})" -f $zip, $zg, $fassung)
-
-if ($Hochladen) {
-    # Derselbe Ort wie das MSFS- und das Kniebrett-ZIP: im Volume neben der Datenbank. KEIN
-    # Deploy fasst diese Dateien an -- beim Kniebrett-ZIP ist genau das dreimal schiefgegangen,
-    # der Download lief drei Fassungen hinterher und fiel nur im Browsertest auf.
-    $ziel = "server:/opt/friesenspy/data/efb/friesenbruegge-xplane.zip"
-    Write-Output "Lade hoch nach $ziel ..."
-    & scp -q $zip $ziel
-    if ($LASTEXITCODE -eq 0) {
-        Write-Output "Hochgeladen. Die Download-Seite zeigt jetzt Fassung $fassung."
-    } else {
-        Write-Warning "scp ging schief (Code $LASTEXITCODE) -- die Download-Seite bleibt alt!"
-    }
-} else {
-    Write-Output ""
-    Write-Output "Noch NICHT auf der Download-Seite. Wenn das Plugin im Simulator geprueft ist:"
-    Write-Output "    .\paket.ps1 -Hochladen"
+    Write-Warning "scp ging schief (Code $LASTEXITCODE) -- die Download-Seite bleibt alt!"
 }

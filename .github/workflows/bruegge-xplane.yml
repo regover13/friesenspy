@@ -1,0 +1,141 @@
+# Baut Die FriesenBruegge fuer X-Plane 12 auf allen drei Plattformen und schnuert EIN ZIP.
+#
+# Warum in der CI und nicht mehr lokal (Spec, Abschnitt 8): Alle drei Binaerdateien stammen
+# so aus EINEM Commit. Der frueher lokale Windows-Build haette sich mit CI-Builds eines
+# anderen Standes gemischt -- genau der Fehler, den paket.ps1 im Kommentar festhaelt
+# (Paket auf 1.0.0, Modul auf 1.5.0).
+#
+# ⚠ HOCHGELADEN WIRD HIER NICHTS. Das ZIP faellt als Artefakt an; auf den Server bringt es
+# ein Mensch, und zwar erst nach dem Kontrollstart unter Windows. Die Regel stammt aus
+# paket.ps1: "Ein Paket, das gerade erst gebaut wurde, ist noch nicht im Simulator geprueft."
+name: Bruegge X-Plane bauen
+
+on:
+  workflow_dispatch:
+  push:
+    # Bei jedem Push an der Bruegge bauen -- so faellt ein Fehler, den es nur unter macOS
+    # oder Linux gibt, sofort auf und nicht erst, wenn jemand ein Paket schnueren will.
+    paths:
+      - 'friesenbruegge/**'
+      - '.github/workflows/bruegge-xplane.yml'
+
+env:
+  SDK_URL: https://developer.x-plane.com/wp-content/plugins/code-sample-generation/sdk_zip_files/XPSDK430.zip
+
+jobs:
+  linux:
+    # ⚠ NICHT ubuntu-latest: Auf 24.04 gebaut verlangt das Binary GLIBC_2.38, sobald jemand
+    # -static-libstdc++ ergaenzt -- und laedt dann auf Ubuntu 22.04 nicht mehr. Gemessen am
+    # 13.09.2026 (Spec, Abschnitt 8).
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: curl-Header (nur zum Uebersetzen, gelinkt wird nicht dagegen)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libcurl4-openssl-dev
+      - name: SDK holen
+        run: curl -sSL -o sdk.zip "$SDK_URL" && unzip -q sdk.zip
+      - name: Bauen
+        run: |
+          g++ -std=c++17 -shared -fPIC -fvisibility=hidden -pthread -O2 -DLIN=1 \
+              -DXPLM200=1 -DXPLM210=1 -DXPLM300=1 -DXPLM301=1 -DXPLM400=1 -DXPLM410=1 \
+              -I SDK/CHeaders/XPLM -I SDK/CHeaders/Widgets \
+              -o FriesenBruegge.xpl friesenbruegge/xplane/bruegge.cpp -ldl
+      - name: Nachsehen, was entstanden ist
+        run: |
+          anzahl=$(nm -D --defined-only FriesenBruegge.xpl | grep -c XPlugin)
+          echo "XPlugin-Symbole: $anzahl (soll 5)"
+          test "$anzahl" = "5"
+          readelf -d FriesenBruegge.xpl | grep NEEDED
+          # libcurl kommt per dlopen -- steht es in NEEDED, laedt das Plugin auf einem
+          # System ohne libcurl gar nicht erst, statt es zu melden.
+          ! readelf -d FriesenBruegge.xpl | grep -q libcurl
+          echo "hoechste Symbolversion: $(objdump -T FriesenBruegge.xpl \
+              | grep -oE 'GLIBC(XX)?_[0-9.]+' | sort -Vu | tail -1)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lin_x64
+          path: FriesenBruegge.xpl
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: SDK holen
+        run: curl -sSL -o sdk.zip "$SDK_URL" && unzip -q sdk.zip
+      - name: Zwei Laeufe und lipo
+        # X-Plane 12 verlangt mindestens macOS 10.15, Apple Silicon gibt es aber erst ab
+        # 11.0 -- ein einzelner clang-Aufruf kann nur EIN Deployment-Target tragen. Ohne
+        # Angabe erbt das Binary die SDK-Version des Laeufers (macOS 15), und ein Pilot auf
+        # 13 saehe nur eine Zeile im Log.txt.
+        run: |
+          for paar in "x86_64 10.15" "arm64 11.0"; do
+            set -- $paar
+            clang++ -std=c++17 -dynamiclib -fvisibility=hidden -O2 \
+              -arch "$1" -mmacosx-version-min="$2" -DAPL=1 \
+              -DXPLM200=1 -DXPLM210=1 -DXPLM300=1 -DXPLM301=1 -DXPLM400=1 -DXPLM410=1 \
+              -I SDK/CHeaders/XPLM -I SDK/CHeaders/Widgets \
+              -F SDK/Libraries/Mac -framework XPLM \
+              -o "bruegge-$1.xpl" friesenbruegge/xplane/bruegge.cpp
+          done
+          lipo -create -output FriesenBruegge.xpl bruegge-x86_64.xpl bruegge-arm64.xpl
+      - name: Nachsehen, was entstanden ist
+        run: |
+          lipo -info FriesenBruegge.xpl
+          otool -l FriesenBruegge.xpl | grep -A3 LC_BUILD_VERSION | head -20
+          nm -g FriesenBruegge.xpl | grep XPlugin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac_x64
+          path: FriesenBruegge.xpl
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1      # sonst liegt cl.exe nicht im Pfad
+      - name: SDK holen
+        shell: pwsh
+        run: |
+          Invoke-WebRequest $env:SDK_URL -OutFile sdk.zip
+          Expand-Archive sdk.zip . -Force
+      - name: Bauen
+        shell: cmd
+        run: |
+          cl.exe /nologo /LD /EHsc /O2 /MT /utf-8 /std:c++17 ^
+            /DIBM=1 /DWIN32 /D_CRT_SECURE_NO_WARNINGS ^
+            /DXPLM200=1 /DXPLM210=1 /DXPLM300=1 /DXPLM301=1 /DXPLM400=1 /DXPLM410=1 ^
+            /I SDK\CHeaders\XPLM /I SDK\CHeaders\Widgets ^
+            friesenbruegge\xplane\bruegge.cpp ^
+            /link /OUT:FriesenBruegge.xpl SDK\Libraries\Win\XPLM_64.lib winhttp.lib
+      - uses: actions/upload-artifact@v4
+        with:
+          name: win_x64
+          path: FriesenBruegge.xpl
+
+  paket:
+    needs: [linux, macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: teile
+      - name: Schnueren
+        run: |
+          F=$(grep -oP '#define\s+BRUEGGE_VERSION\s+"\K[0-9.]+' friesenbruegge/xplane/bruegge.cpp)
+          echo "Fassung $F"
+          for p in win_x64 mac_x64 lin_x64; do
+            mkdir -p "FriesenBruegge/$p"
+            cp "teile/$p/FriesenBruegge.xpl" "FriesenBruegge/$p/"
+          done
+          # ⚠ fassung.json bleibt auf DIESER Ebene: _efb_package_version (app/main.py)
+          # findet die Datei nur bei Pfadtiefe <= 1.
+          printf '{\n  "package_version": "%s",\n  "simulator": "xplane12",\n  "creator": "devprops"\n}\n' \
+            "$F" > FriesenBruegge/fassung.json
+          sed "s/@FASSUNG@/$F/g" friesenbruegge/xplane/LIESMICH.txt > FriesenBruegge/LIESMICH.txt
+          zip -qr friesenbruegge-xplane.zip FriesenBruegge
+          unzip -l friesenbruegge-xplane.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: friesenbruegge-xplane
+          path: friesenbruegge-xplane.zip
