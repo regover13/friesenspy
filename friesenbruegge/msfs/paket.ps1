@@ -147,7 +147,35 @@ Write-Output ""
 # ---------------------------------------------------------------------------------------
 $zip = Join-Path (Split-Path $hier -Parent) "friesenbruegge.zip"
 if (Test-Path $zip) { Remove-Item $zip -Force }
-Compress-Archive -Path $paket -DestinationPath $zip -CompressionLevel Optimal
+
+# ---------------------------------------------------------------------------------------
+# DIE RAUCHPAKETE GEHOEREN MIT INS ZIP -- sonst zeigt die Bruegge ins Leere.
+#
+# Seit 1.7.0 bilden die Rauchgattungen auf unsere EIGENEN Titel ab (`FrsRauch_Signalrot`
+# und die fuenf anderen). Wer nur das WASM-Modul bekommt, hat diese SimObjects nicht: Die
+# Bruegge faellt dann auf Fremdtitel zurueck (Campout, SayIntentions -- die kaum jemand
+# installiert hat) oder meldet GATTUNG_UNBEKANNT. Der eigene Rauch kaeme bei niemandem an.
+#
+# Gebaut werden die drei Pakete im Project Editor (`msfs-rauch/FriesenRauch.xml`), nicht
+# hier -- `fspackagetool.exe` ist ohne laufenden Simulator nur ein Wrapper, der nichts tut.
+# Fehlen sie, bricht das Skript NICHT ab: Ein Bruegge-Update soll auch dann moeglich sein,
+# wenn gerade kein Rauch neu gebaut wurde. Es sagt aber deutlich, was fehlt.
+# ---------------------------------------------------------------------------------------
+$rauchQuelle = Join-Path (Split-Path $hier -Parent) "msfs-rauch\Packages"
+$rauchPakete = @("devprops-friesenrauch", "devprops-friesenrauch-mat",
+                 "devprops-friesenrauch-vfx")
+$mitPacken = @($paket)
+foreach ($rp in $rauchPakete) {
+    $pfad = Join-Path $rauchQuelle $rp
+    if (Test-Path (Join-Path $pfad "manifest.json")) {
+        $mitPacken += $pfad
+    } else {
+        Write-Warning "Rauchpaket fehlt: $rp -- im Project Editor bauen (msfs-rauch\FriesenRauch.xml)"
+    }
+}
+Write-Output ("Ins ZIP: {0}" -f (($mitPacken | Split-Path -Leaf) -join ", "))
+
+Compress-Archive -Path $mitPacken -DestinationPath $zip -CompressionLevel Optimal
 $zg = (Get-Item $zip).Length
 Write-Output ("ZIP gebaut:  {0}  ({1:N0} Bytes, Fassung {2})" -f $zip, $zg, $fassung)
 
