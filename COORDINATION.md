@@ -6,6 +6,39 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-13 (nachmittags) — Website-Karte: Friesen mit Brügge im Sekundentakt
+
+**Wer:** Server-Session (VPS), Zweig `karte-bruegge-1hz`.
+
+**Was:** Die Website-Karte zeigt fremde Friesen bisher im VATSIM-Takt — alle 15 Sekunden ein
+echter Punkt, dazwischen fortgerechnet aus Kurs und Fahrt. Wer eine Brügge fliegt, meldet dem
+Server aber **jede Sekunde** seine echte Position (`bruegge_positions`, `_BRUEGGE_TAKT_VORGABE_S = 1`).
+Diese Meldungen landen heute in der Datenbank und gehen von dort nicht weiter —
+`bruegge_positionen_holen` ist in `app/main.py` importiert und **nirgends aufgerufen**; ihr
+Docstring verspricht „für /api/live, das sie über die VATSIM-Punkte legt", und genau das fehlt.
+
+Das Kniebrett macht dasselbe im Kleinen schon: `_verkehrZusammenfuehren` schreibt die
+Sim-Werte eines erkannten Friesen in `_positionsRoh`, und der Sekundentakt (`_naviTakt`) bewegt
+ihn damit sekundengenau. Die Brügge ist die bessere Quelle — sie reicht über den ganzen
+Kartenausschnitt statt nur über den geladenen Umkreis, und sie gilt auf jeder Plattform.
+
+**Berührte Dateien (bitte dort nichts parallel ändern):**
+- `app/main.py` — Brügge-Endpunkt `/api/bruegge/melden`, SSE-Strom
+- `app/poller.py` — SSE-Broadcast
+- `app/static/index.html` — `_positionsRoh`, `_naviTakt`, SSE-Empfang, `updateMap`
+- `tests/` — neue Zusicherungen
+
+**Nicht berührt:** `friesenbruegge/**`. Das Protokoll bleibt, wie es ist — die Brügge sendet
+schon alles Nötige, es wird serverseitig nur nicht weitergereicht. Ein neues Paket ist für
+diese Änderung **nicht** nötig.
+
+**Offen und davon unabhängig:** Der Zweig `bruegge-posix` (macOS/Linux, Fassung 1.1.0) wartet
+auf den Merge nach `main`. Der Kontrollstart unter Windows ist bestanden (13.09., alle vier
+Punkte). Wer an `friesenbruegge/xplane/bruegge.cpp` arbeitet, wartet diesen Merge ab —
+`netz.h` zieht dort Netz und Threads aus der Datei heraus.
+
+---
+
 ## 2026-09-13 (nachts, 02:30) — ✅ X-Plane IST GEFLOGEN, und beide Pakete sind draußen
 
 **Für die parallele Sitzung, damit niemand doppelt misst:** Der Eintrag darunter ist überholt.
