@@ -1143,6 +1143,14 @@ PLUGIN_API int XPluginStart(char* name, char* sig, char* beschreibung) {
     std::strcpy(beschreibung,
                 "Meldet die Position an FriesenSpy und setzt, was der Server anfordert.");
 
+    // ⚠ Diese Zeile MUSS vor jedem Dateizugriff stehen. Ohne sie liefert XPLMGetSystemPath
+    // auf macOS einen klassischen HFS-Pfad mit Doppelpunkten ("Macintosh HD:Applications:
+    // X-Plane 12:"), den fopen nicht öffnet -- die .url-Datei für den Prüfserver wäre dort
+    // unauffindbar und die Kennung würde bei jedem Start neu erfunden. Der SDK-Header sagt
+    // es ausdrücklich: "All plugins should enable this feature on OS X."
+    // Unter Windows dreht sie die Schrägstriche von \ auf /; fopen trägt beides.
+    XPLMEnableFeature("XPLM_USE_NATIVE_PATHS", 1);
+
     InitializeCriticalSection(&g_schloss);
     // Das Ziel MUSS vor dem Netzthread feststehen -- er liest g_host/g_pfad ohne Schloss,
     // weil sie sich danach nie wieder ändern.
