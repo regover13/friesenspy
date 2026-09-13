@@ -713,6 +713,20 @@ Drei Entscheidungen tragen die Tabelle:
 3. **`geprueft_am IS NULL` heißt „nie versucht", nicht „geht nicht".** Nur so lässt sich eine
    Arbeitsliste abarbeiten.
 
+### Eine Brügge ohne VATSIM prüfen (`pruefserver.py`, seit 13.09.2026)
+
+Der Server liefert `soll` nur an einen Piloten, den er über die Position einem VATSIM-Flug
+zuordnen konnte. Das ist richtig so — es heißt aber, dass sich der **halbe Funktionsumfang**
+einer Brügge ohne VATSIM-Verbindung gar nicht messen lässt: alles, was mit Objekten zu tun hat.
+
+`friesenbruegge/pruefserver.py` nimmt die Meldung entgegen, zeigt sie im Klartext und
+antwortet mit einem Sollzustand, den man von Hand zusammenstellt. Die Brügge zeigt auf ihn,
+sobald eine Datei mit einer Zeile danebenliegt (`Output/preferences/friesenbruegge.url` in
+X-Plane); ohne sie ist das Ziel fest einkompiliert und von außen nicht zu verbiegen.
+
+⚠ **Er prüft nicht, was der Server prüft.** Zuordnung, `forum_callsign`, Drosselung, Ablage —
+davon steht dort nichts. Wer hier grün sieht, hat die Brügge geprüft, nicht das Zusammenspiel.
+
 ⚠ **Und die Grenze der Methode gehört dazu: „setzbar" heißt nicht „sichtbar".** Der Katalog
 misst, ob der Simulator ein Objekt anlegt. Ob man es sieht, sagt allein der Blick aus dem
 Cockpit — `HumpbackWhale` ist an drei Orten setzbar und an keinem gezeichnet.

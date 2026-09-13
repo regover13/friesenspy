@@ -268,6 +268,13 @@ ununterscheidbar und soll es auch sein: Sie erfährt nicht, ob sie unbekannt ist
 gerade niemand in der Nähe. **Eine Fehlermeldung wäre hier ein Werkzeug** — wer probieren
 wollte, welche erfundene Position durchgeht, bekäme vom Server die Rückmeldung dazu.
 
+⚠ **Und es heißt, dass sich das Objektsetzen ohne VATSIM nicht prüfen lässt.** Am 13.09.2026
+hat das eine Stunde gekostet: Die X-Plane-Brügge lief nachweislich, meldete sauber, bekam aber
+immer ein leeres `soll` — weil der VATSIM-Client des Piloten seinen eigenen Simulator nicht
+fand. Dafür gibt es jetzt [`pruefserver.py`](pruefserver.py): Er spielt den Server, und eine
+Datei neben dem Plugin biegt die Brügge auf ihn um. **Er prüft nicht, was der Server prüft** —
+Zuordnung, Rechtefrage und Drosselung bleiben außen vor.
+
 **Das ist auch die Antwort auf die Lastfrage**, und es trifft genau die richtige Stelle: Die
 Prüfung ist ein Blick auf den Primärschlüssel von `live_positions` — sie steht **vor** allem
 Teuren. Was dahinter läge, entfällt vollständig:

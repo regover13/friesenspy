@@ -408,6 +408,50 @@ ist weggelassen.
 
 ✅ = im Probeflug gesetzt und im Bild gesehen (11.09.2026)
 
+### ✅ Am 13.09.2026 geflogen — sechs Gattungen auf einmal, alle gesehen
+
+Gesetzt aus dem Stand auf einem Rollweg (47,80461 / 12,99683, Boden 1403,7 ft), eine Reihe
+nach Osten. **Screenshot: Hirsch, Segelboot, Boje, Heißluftballon mit Schattenwurf, und die
+Ölplattform — alle sichtbar, alle auf dem Boden.**
+
+| Objekt | Abstand | gemeldete Höhe |
+|---|---|---|
+| Hirsch (`tier_gross`) | 5 m | 1403,7 ft |
+| Möwe (`tier_klein`) | 8 m | 1403,7 ft |
+| Segelboot (`boot_klein`) | 16 m | 1403,4 ft |
+| Boje (`punkt`) | 24 m | 1403,3 ft |
+| Ballon (`marke`) | 45 m | 1402,7 ft |
+| Ölplattform (`bauwerk`) | 120 m | **1400,5 ft** |
+
+⭐ **Das ist der Befund, der X-Plane von MSFS trennt.** Das Gelände fällt nach Osten um gut
+drei Fuß ab, und **jedes Objekt sitzt auf seiner eigenen Höhe** — jedes einzeln geprobt, alle
+mit `hoehe_gemessen: true`. In MSFS bekämen alle sechs die Höhe unter dem Flugzeug: Genau so
+standen am 12.09.2026 zwölf Objekte in einem Raster von 180 m, eines versunken, eines sauber,
+eines schwebend.
+
+**Nebenbei belegt:**
+
+- **Abräumen.** Fünf der sechs aus `soll` genommen → beim nächsten Takt fort, nur der Hirsch
+  meldete weiter.
+- **Umsetzen.** Der Hirsch von 5 m auf 60 m — er meldete danach 1402,3 ft statt 1403,7, war
+  also wirklich dort. ⚠ Und `seit_s` lief dabei **weiter** (74 s), statt bei null neu zu
+  beginnen: In X-Plane wird dieselbe Instanz verschoben, in MSFS muss sie weg und neu hin.
+  Wer `seit_s` als „seit wann steht es dort" liest, liest es in X-Plane falsch.
+- **Die Kennung übersteht einen Neustart** (`Kennung gelesen`, dieselbe wie vorher). Genau
+  daran ist die MSFS-Fassung anfangs gescheitert.
+- **`alt_agl_ft` ist 0,0, während das Flugzeug 4 ft über dem Boden meldet.** X-Planes
+  `elevation` misst den Referenzpunkt des Musters (bei der Cirrus SR22 rund 1,2 m über Grund),
+  `y_agl` dagegen das Fahrwerk. Wer aus `alt_msl_ft - alt_agl_ft` die Geländehöhe rechnet —
+  der MSFS-Weg —, liegt hier um die Fahrwerkshöhe daneben. In X-Plane braucht es das nicht,
+  die Probe antwortet direkt.
+
+⚠ **Ohne VATSIM war das nicht zu messen**, und das hat an diesem Abend eine Stunde gekostet:
+Der Server liefert `soll` nur an einen zugeordneten Piloten, und der VATSIM-Client (xPilot)
+fand seinen eigenen Simulator nicht. Deshalb gibt es jetzt
+[`pruefserver.py`](pruefserver.py) — er spielt den Server, und eine Datei
+`Output/preferences/friesenbruegge.url` biegt die Brügge auf ihn um. **Der Weg gilt für jede
+Brügge**, auch für MSFS 2020, wenn die drankommt.
+
 ⭐ **Der Heißluftballon ist das X-Plane-Gegenstück zur Rauchsäule.** In MSFS löst `rauch` das
 Problem, dass ein Boot erst ab rund 1 km eingeblendet wird; X-Plane kennt keine
 Rauchobjekte — aber ein Ballon steht in der Luft und ist kilometerweit zu sehen. Für jedes

@@ -95,6 +95,28 @@
 // sie im selben Ordner, den ein Update überschreibt.
 #define KENNUNG_DATEI     "Output/preferences/friesenbruegge.kennung"
 
+// ---------------------------------------------------------------------------------------
+// Und daneben darf eine Datei stehen, die das Ziel umbiegt.
+// ---------------------------------------------------------------------------------------
+//
+// Eine Zeile, z. B.  http://127.0.0.1:8099/api/bruegge/melden
+//
+// WOZU: Der Server liefert `soll` nur an einen Piloten, den er ueber die Position einem
+// VATSIM-Flug zuordnen konnte (PROTOKOLL.md, Abschnitt 5). Das ist richtig so -- es heisst
+// aber, dass sich das OBJEKTSETZEN ohne VATSIM-Verbindung gar nicht pruefen laesst. Am
+// 13.09.2026 hat genau das eine Stunde gekostet: Die Bruegge lief nachweislich, meldete
+// sauber, bekam aber immer ein leeres `soll`, weil der VATSIM-Client des Piloten seinen
+// eigenen Simulator nicht fand.
+//
+// Mit dieser Datei zeigt die Bruegge auf `pruefserver.py` im selben Ordner. Der nimmt die
+// Meldung entgegen, zeigt sie an und antwortet mit einem Sollzustand, den man von Hand
+// zusammenstellt -- also genau die Auskunft, die sonst der Server gaebe.
+//
+// ⚠ SIE IST KEIN SCHALTER FUER DEN BETRIEB. Wer sie liegen laesst, meldet an niemanden; das
+// Log sagt bei jedem Start, welches Ziel gilt. Ohne die Datei ist das Ziel fest einkompiliert
+// und kann von aussen nicht verbogen werden.
+#define ZIEL_DATEI        "Output/preferences/friesenbruegge.url"
+
 #define SPUR_MAX 16
 #define SPRUNG_GRAD 0.005         // rund 555 m in der Breite; 600 kt sind 309 m/s
 #define MELDUNG_PUFFER 8192
@@ -408,6 +430,80 @@ static bool  g_anfrage_laeuft = false;
 static HINTERNET g_sitzung = nullptr;
 static HINTERNET g_verbindung = nullptr;
 
+// Das Ziel. Wird EINMAL beim Start gesetzt (ziel_laden) und danach nur noch gelesen --
+// deshalb braucht es hier kein Schloss, obwohl der Netzthread mitliest.
+static wchar_t   g_host[160] = BRUEGGE_HOST;
+static wchar_t   g_pfad[256] = BRUEGGE_PFAD;
+static INTERNET_PORT g_port = INTERNET_DEFAULT_HTTPS_PORT;
+static bool      g_sicher = true;
+
+// Steht ZIEL_DATEI da, gilt, was drinsteht. Sonst bleibt es beim einkompilierten Ziel.
+//
+// Der Parser ist mit Absicht knapp: Er versteht `http://host[:port]/pfad` und dasselbe mit
+// https. Was er nicht versteht, verwirft er -- ein halb gelesenes Ziel waere schlimmer als
+// gar keins, denn dann meldete die Bruegge irgendwohin und niemand wuesste wohin.
+static void ziel_laden() {
+    char wurzel[512] = {0};
+    XPLMGetSystemPath(wurzel);
+    char pfad[640];
+    std::snprintf(pfad, sizeof(pfad), "%s%s", wurzel, ZIEL_DATEI);
+
+    FILE* f = std::fopen(pfad, "rb");
+    if (!f) {
+        logzeile("Ziel: friesenspy.devprops.de (fest einkompiliert)");
+        return;
+    }
+    char zeile[400] = {0};
+    size_t n = std::fread(zeile, 1, sizeof(zeile) - 1, f);
+    std::fclose(f);
+    zeile[n] = '\0';
+    for (char* p = zeile; *p; ++p) {
+        if (*p == '\r' || *p == '\n' || *p == ' ' || *p == '\t') { *p = '\0'; break; }
+    }
+
+    bool sicher;
+    const char* rest;
+    if (std::strncmp(zeile, "https://", 8) == 0)     { sicher = true;  rest = zeile + 8; }
+    else if (std::strncmp(zeile, "http://", 7) == 0) { sicher = false; rest = zeile + 7; }
+    else { logzeile("Ziel-Datei unbrauchbar (kein http:// oder https://) -- bleibe beim Standard"); return; }
+
+    // Host bis zum ersten ':' oder '/'.
+    char host[160] = {0};
+    size_t i = 0;
+    while (rest[i] && rest[i] != ':' && rest[i] != '/' && i < sizeof(host) - 1) {
+        host[i] = rest[i];
+        ++i;
+    }
+    if (i == 0) { logzeile("Ziel-Datei unbrauchbar (kein Rechnername)"); return; }
+
+    unsigned port = sicher ? 443u : 80u;
+    if (rest[i] == ':') {
+        ++i;
+        unsigned gelesen = 0;
+        bool ziffern = false;
+        while (rest[i] >= '0' && rest[i] <= '9') { gelesen = gelesen * 10 + (unsigned)(rest[i] - '0'); ++i; ziffern = true; }
+        if (!ziffern || gelesen == 0 || gelesen > 65535) { logzeile("Ziel-Datei unbrauchbar (Portnummer)"); return; }
+        port = gelesen;
+    }
+    const char* rumpf = (rest[i] == '/') ? rest + i : "/";
+
+    // Nach wchar_t umsetzen -- WinHTTP will Weitzeichen. Reines ASCII genuegt hier; ein
+    // Rechnername mit Umlauten waere ohnehin ein Fall fuer Punycode.
+    size_t h = 0;
+    for (; host[h] && h < 159; ++h) g_host[h] = (wchar_t)(unsigned char)host[h];
+    g_host[h] = L'\0';
+    size_t r = 0;
+    for (; rumpf[r] && r < 255; ++r) g_pfad[r] = (wchar_t)(unsigned char)rumpf[r];
+    g_pfad[r] = L'\0';
+    g_port = (INTERNET_PORT)port;
+    g_sicher = sicher;
+
+    char sage[500];
+    std::snprintf(sage, sizeof(sage), "Ziel UMGEBOGEN auf %s://%s:%u%s (%s)",
+                  sicher ? "https" : "http", host, port, rumpf, ZIEL_DATEI);
+    logzeile(sage);
+}
+
 static void netz_schliessen() {
     if (g_verbindung) { WinHttpCloseHandle(g_verbindung); g_verbindung = nullptr; }
     if (g_sitzung)    { WinHttpCloseHandle(g_sitzung);    g_sitzung = nullptr; }
@@ -428,7 +524,7 @@ static bool netz_oeffnen() {
     // an der die Brügge eine Meldung aufgibt -- der Wächter im Takt räumt sie danach weg.
     WinHttpSetTimeouts(g_sitzung, 10000, 10000, 15000, 15000);
 
-    g_verbindung = WinHttpConnect(g_sitzung, BRUEGGE_HOST, INTERNET_DEFAULT_HTTPS_PORT, 0);
+    g_verbindung = WinHttpConnect(g_sitzung, g_host, g_port, 0);
     if (!g_verbindung) { netz_schliessen(); return false; }
     return true;
 }
@@ -456,10 +552,10 @@ static DWORD WINAPI netz_lauf(LPVOID) {
         unsigned long zu_gross = 0;
 
         if (netz_oeffnen()) {
-            HINTERNET anf = WinHttpOpenRequest(g_verbindung, L"POST", BRUEGGE_PFAD, nullptr,
+            HINTERNET anf = WinHttpOpenRequest(g_verbindung, L"POST", g_pfad, nullptr,
                                                WINHTTP_NO_REFERER,
                                                WINHTTP_DEFAULT_ACCEPT_TYPES,
-                                               WINHTTP_FLAG_SECURE);
+                                               g_sicher ? WINHTTP_FLAG_SECURE : 0);
             if (anf) {
                 DWORD laenge = (DWORD)std::strlen(sendepuffer);
                 BOOL ok = WinHttpSendRequest(anf, L"Content-Type: application/json\r\n",
@@ -1019,6 +1115,9 @@ PLUGIN_API int XPluginStart(char* name, char* sig, char* beschreibung) {
                 "Meldet die Position an FriesenSpy und setzt, was der Server anfordert.");
 
     InitializeCriticalSection(&g_schloss);
+    // Das Ziel MUSS vor dem Netzthread feststehen -- er liest g_host/g_pfad ohne Schloss,
+    // weil sie sich danach nie wieder ändern.
+    ziel_laden();
     g_netz_wecker = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     g_netz_thread = CreateThread(nullptr, 0, netz_lauf, nullptr, 0, nullptr);
 
