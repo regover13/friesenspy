@@ -153,19 +153,56 @@ def test_seite_sortiert_nur_nach_erlaubten_spalten(conn):
     assert conn.execute("SELECT COUNT(*) FROM bruegge_katalog").fetchone()[0] > 0
 
 
+def _antwort_puffer() -> int:
+    """`ANTWORT_PUFFER`, GELESEN aus den Bruegge-Quellen statt hier abgeschrieben.
+
+    ⚠⚠ ABGESCHRIEBEN WAR ER FALSCH, und das ist der Grund fuer diese Funktion. Hier stand
+    bis zum 15.09.2026 „ANTWORT_PUFFER in bruegge.cpp ist 16384"; im Quelltext stehen
+    **49152**, in beiden Bruegge-Fassungen. Die Zahl war irgendwann verdreifacht worden, der
+    Test zog nicht nach -- und band damit eine Grenze, die es nicht gab.
+
+    Eine Zahl an zwei Orten laeuft auseinander. Jetzt gibt es nur noch einen.
+    """
+    from pathlib import Path
+    import re
+    wurzel = Path(__file__).resolve().parents[1] / "friesenbruegge"
+    werte = {}
+    for datei in (wurzel / "msfs" / "bruegge.cpp", wurzel / "xplane" / "netz.h"):
+        m = re.search(r"#define\s+ANTWORT_PUFFER\s+(\d+)", datei.read_text(encoding="utf-8",
+                                                                           errors="replace"))
+        assert m, f"ANTWORT_PUFFER nicht gefunden in {datei.name}"
+        werte[datei.name] = int(m.group(1))
+    assert len(set(werte.values())) == 1, \
+        f"die beiden Bruegge-Fassungen haben verschiedene Puffer: {werte}"
+    return next(iter(werte.values()))
+
+
 def test_woerterbuch_passt_in_den_antwortpuffer(conn):
-    """ANTWORT_PUFFER in bruegge.cpp ist 16384, und ein Ueberlauf ist LAUTLOS.
+    """Die Titelliste muss in `ANTWORT_PUFFER` passen -- mit Luft nach oben.
 
     Deshalb gehen die Titel als Woerterbuch EINMAL je Antwort hinaus und nicht je Objekt:
-    Zwanzig rote Saeulen kosten so eine Titelliste statt zwanzig. Der Test bindet die
-    Groessenordnung, damit ein sorgloser Zuwachs auffaellt, bevor der Puffer reisst.
+    Zwanzig rote Saeulen kosten so eine Titelliste statt zwanzig.
+
+    ⚠ **X-Plane ist der teure Fall, um das Dreifache.** Dort ist der Bezeichner ein
+    Dateipfad, und `Resources/default scenery/` allein wiederholt sich in jeder Zeile --
+    bei 73 Titeln sind das 1,6 kB reine Wiederholung. MSFS kommt mit rund 66 Bytes je Art
+    aus, X-Plane braucht 200.
+
+    Die Grenze liegt bei der HAELFTE des Puffers, und das ist kein runder Daumenwert: Die
+    andere Haelfte gehoert der `soll`-Liste, die in derselben Antwort steht und mit der Zahl
+    gesetzter Objekte waechst (SOLL_MAX = 200). Reisst der Test, ist die naechste Massnahme
+    NICHT, ihn hochzusetzen -- sondern den gemeinsamen Pfadstamm einmal statt 73-mal zu
+    schicken. Das spart auf einen Schlag ein Viertel.
     """
     import json
+    puffer = _antwort_puffer()
     db.bruegge_arten_erstbefuellen(conn)
     for sim in ("msfs2024", "xplane12"):
         j = json.dumps(db.bruegge_titel_fuer(conn, sim), ensure_ascii=False,
                        separators=(",", ":"))
-        assert len(j) < 4096, f"{sim}: {len(j)} Bytes -- ein Viertel des Puffers ist genug"
+        assert len(j) < puffer // 2, (
+            f"{sim}: {len(j)} Bytes von {puffer} -- mehr als die Haelfte des Puffers. "
+            f"Den Pfadstamm kuerzen, nicht die Grenze heben.")
 
 
 def test_jeder_titel_gehoert_zu_hoechstens_einer_art():
@@ -261,33 +298,53 @@ def test_die_suche_findet_auch_ueber_die_art(conn):
 # Beide Simulatoren muessen liefern koennen -- stehende Regel (Nutzer, 14.09.2026)
 # ---------------------------------------------------------------------------------------
 #
+# ⚠ Diese Tests legen sich ihre EIGENE Art an, statt eine echte zu benutzen. Der erste
+# Anlauf nahm `robbe`, und schon einen Tag spaeter zerfiel die in drei Arten -- vier Tests
+# wurden rot, ohne dass an der Regel etwas falsch war. Der Docstring dieser Datei sagt es
+# oben: gebunden werden die REGELN, nicht der Inhalt.
+
+
+@pytest.fixture()
+def probe(conn):
+    """Eine kuenstliche Art mit je zwei Titeln -- unabhaengig vom echten Katalog."""
+    db.bruegge_arten_erstbefuellen(conn)
+    conn.execute("INSERT INTO bruegge_art (art, bedeutung, status, angelegt_am) "
+                 "VALUES ('probe', 'Probeart fuer die Tests', 'aktiv', datetime('now'))")
+    for sim, titel in (("msfs2024", ("ProbeM1", "ProbeM2")),
+                       ("xplane12", ("Resources/probe/x1.obj", "Resources/probe/x2.obj"))):
+        for rang, t in enumerate(titel, 1):
+            conn.execute(
+                "INSERT INTO bruegge_katalog (simulator, titel, quelle, art, rang, status) "
+                "VALUES (?, ?, 'bord', 'probe', ?, 'aktiv')", (sim, t, rang))
+    conn.commit()
+    return conn
+#
 # "sollten innerhalb einer Art alle Entsprechungen eines Simulators nicht gesetzt werden
 # koennen, wird die Art deaktiviert. Ich muss sichergehen koennen, dass beide SIM immer
 # irgendwas aus der Art anzeigen koennen!"
 
 
-def test_einseitige_art_geht_an_KEINE_bruegge(conn):
+def test_einseitige_art_geht_an_KEINE_bruegge(probe):
     """Der Kern der Regel -- und der Grund, warum sie nicht im Admin allein stehen darf.
 
     Eine Art, deren X-Plane-Titel alle ausfallen, darf auch die MSFS-Bruegge nicht mehr
     bekommen. Sonst zeigt eine Station zwei Dritteln der Gruppe etwas und dem letzten
     Drittel nichts -- und eine Zaehlaufgabe, bei der nicht alle dasselbe sehen, ist keine.
     """
-    db.bruegge_arten_erstbefuellen(conn)
-    assert "robbe" in db.bruegge_titel_fuer(conn, "msfs2024")
-    assert "robbe" in db.bruegge_titel_fuer(conn, "xplane12")
+    assert "probe" in db.bruegge_titel_fuer(probe, "msfs2024")
+    assert "probe" in db.bruegge_titel_fuer(probe, "xplane12")
 
     # Alle X-Plane-Robben fallen aus -- die MSFS-Seite bleibt vollstaendig.
-    conn.execute("UPDATE bruegge_katalog SET status = 'aus' "
-                 "WHERE art = 'robbe' AND simulator = 'xplane12'")
-    conn.commit()
+    probe.execute("UPDATE bruegge_katalog SET status = 'aus' "
+                 "WHERE art = 'probe' AND simulator = 'xplane12'")
+    probe.commit()
 
-    assert "robbe" not in db.bruegge_titel_fuer(conn, "xplane12")
-    assert "robbe" not in db.bruegge_titel_fuer(conn, "msfs2024"), \
+    assert "probe" not in db.bruegge_titel_fuer(probe, "xplane12")
+    assert "probe" not in db.bruegge_titel_fuer(probe, "msfs2024"), \
         "einseitige Art darf auch der Simulator nicht bekommen, der sie noch koennte"
 
 
-def test_ein_einziger_titel_je_seite_genuegt(conn):
+def test_ein_einziger_titel_je_seite_genuegt(probe):
     """Die Regel verlangt EINEN Titel je Simulator, nicht Gleichstand.
 
     Ohne das waere sie unbrauchbar: MSFS bringt zu `tier_gross` sechs Titel mit, X-Plane
@@ -298,63 +355,59 @@ def test_ein_einziger_titel_je_seite_genuegt(conn):
     GEGENRICHTUNG. Rot wird er, wenn jemand die Regel verschaerft und Gleichstand verlangt.
     Die beiden Nachbarn darueber und darunter sind die eigentlichen Regressionstests.
     """
-    db.bruegge_arten_erstbefuellen(conn)
-    conn.execute("UPDATE bruegge_katalog SET status = 'aus' "
-                 "WHERE art = 'robbe' AND simulator = 'xplane12' "
-                 "AND titel NOT LIKE '%seehund_kuh.obj'")
-    conn.commit()
-    xp = db.bruegge_titel_fuer(conn, "xplane12")
-    assert len(xp["robbe"]) == 1
-    assert "robbe" in db.bruegge_titel_fuer(conn, "msfs2024")
+    probe.execute("UPDATE bruegge_katalog SET status = 'aus' "
+                 "WHERE art = 'probe' AND simulator = 'xplane12' "
+                 "AND titel NOT LIKE '%x1.obj'")
+    probe.commit()
+    xp = db.bruegge_titel_fuer(probe, "xplane12")
+    assert len(xp["probe"]) == 1
+    assert "probe" in db.bruegge_titel_fuer(probe, "msfs2024")
 
 
-def test_die_regel_heilt_sich_selbst(conn):
+def test_die_regel_heilt_sich_selbst(probe):
     """Kommt ein Titel zurueck, ist die Art sofort wieder da -- ohne Handgriff.
 
     Das ist der Grund, warum die Regel BERECHNET wird und nicht in `bruegge_art.status`
     gepflegt. Eine gepflegte Liste wuesste vom Ausfall nichts und von der Rueckkehr erst
     recht nicht.
     """
-    db.bruegge_arten_erstbefuellen(conn)
-    conn.execute("UPDATE bruegge_katalog SET status = 'aus' "
-                 "WHERE art = 'robbe' AND simulator = 'xplane12'")
-    conn.commit()
-    assert "robbe" not in db.bruegge_titel_fuer(conn, "msfs2024")
+    probe.execute("UPDATE bruegge_katalog SET status = 'aus' "
+                 "WHERE art = 'probe' AND simulator = 'xplane12'")
+    probe.commit()
+    assert "probe" not in db.bruegge_titel_fuer(probe, "msfs2024")
 
-    conn.execute("UPDATE bruegge_katalog SET status = 'aktiv' "
-                 "WHERE art = 'robbe' AND simulator = 'xplane12' "
-                 "AND titel LIKE '%seehund_kuh.obj'")
-    conn.commit()
-    assert "robbe" in db.bruegge_titel_fuer(conn, "msfs2024")
-    assert "robbe" in db.bruegge_titel_fuer(conn, "xplane12")
+    probe.execute("UPDATE bruegge_katalog SET status = 'aktiv' "
+                 "WHERE art = 'probe' AND simulator = 'xplane12' "
+                 "AND titel LIKE '%x1.obj'")
+    probe.commit()
+    assert "probe" in db.bruegge_titel_fuer(probe, "msfs2024")
+    assert "probe" in db.bruegge_titel_fuer(probe, "xplane12")
 
 
-def test_admin_sagt_WARUM_eine_art_gesperrt_ist(conn):
+def test_admin_sagt_WARUM_eine_art_gesperrt_ist(probe):
     """Ohne Begruendung sucht jemand den Fehler bei sich.
 
     Der Admin zeigt drei verschiedene Gruende -- abgeschaltet, kein Titel, einseitig -- und
     sie sind nicht dasselbe: Der erste ist eine Entscheidung, der zweite eine Luecke, der
     dritte ein Ausfall im Betrieb.
     """
-    db.bruegge_arten_erstbefuellen(conn)
-    conn.execute("UPDATE bruegge_katalog SET status = 'aus' "
-                 "WHERE art = 'robbe' AND simulator = 'xplane12'")
-    conn.commit()
-    u = {d["art"]: d for d in db.bruegge_arten_uebersicht(conn)}
-    assert u["robbe"]["anforderbar"] is False
-    assert u["robbe"]["beidseitig"] is False
-    assert "X-Plane" in u["robbe"]["gesperrt_weil"]
+    probe.execute("UPDATE bruegge_katalog SET status = 'aus' "
+                 "WHERE art = 'probe' AND simulator = 'xplane12'")
+    probe.commit()
+    u = {d["art"]: d for d in db.bruegge_arten_uebersicht(probe)}
+    assert u["probe"]["anforderbar"] is False
+    assert u["probe"]["beidseitig"] is False
+    assert "X-Plane" in u["probe"]["gesperrt_weil"]
     # Eine gesunde Art traegt keine Begruendung.
     assert u["windsack"]["anforderbar"] is True
     assert u["windsack"]["gesperrt_weil"] is None
 
 
-def test_die_regel_gibt_nichts_frei_was_der_nutzer_abgeschaltet_hat(conn):
+def test_die_regel_gibt_nichts_frei_was_der_nutzer_abgeschaltet_hat(probe):
     """Sie kann sperren, nie freigeben -- `bruegge_art.status` bleibt das letzte Wort."""
-    db.bruegge_arten_erstbefuellen(conn)
-    db.bruegge_art_setzen(conn, "robbe", status="aus")
-    conn.commit()
-    u = {d["art"]: d for d in db.bruegge_arten_uebersicht(conn)}
-    assert u["robbe"]["beidseitig"] is True       # die Titel stehen ja
-    assert u["robbe"]["anforderbar"] is False     # trotzdem gesperrt
-    assert u["robbe"]["gesperrt_weil"] == "vom Nutzer abgeschaltet"
+    db.bruegge_art_setzen(probe, "probe", status="aus")
+    probe.commit()
+    u = {d["art"]: d for d in db.bruegge_arten_uebersicht(probe)}
+    assert u["probe"]["beidseitig"] is True       # die Titel stehen ja
+    assert u["probe"]["anforderbar"] is False     # trotzdem gesperrt
+    assert u["probe"]["gesperrt_weil"] == "vom Nutzer abgeschaltet"

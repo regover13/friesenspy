@@ -30,7 +30,13 @@ sieht.
 
 **Der Rang ist die Reihenfolge, in der die Bruegge probiert.** Scheitert Titel 1, rueckt
 Titel 2 nach -- kein theoretischer Fall: `ASO_Ambulance_Japan` liegt im MSFS-2020-Bestand,
-aber nicht in 2024; ohne Nachruecker fiele dort die ganze Art `fahrzeug` aus.
+aber nicht in 2024; er ist dort der EINZIGE Krankenwagen, und faellt er aus, sperrt die
+Regel die Art `krankenwagen` in BEIDEN Simulatoren (s. `bruegge_arten_beidseitig`).
+
+⚠ **Die Bruegge nimmt IMMER Rang 1** und rueckt nur bei einem Fehlschlag nach. Wer gemischte
+Gruppen will -- drei Kuehe, ein Bulle --, bekommt sie deshalb NICHT ueber mehrere Titel in
+einer Art: Es stuende ueberall dasselbe. Dafuer braucht es ein Wuerfeln auf dem Server, wie
+es `kurs_zufall` fuer die Richtung schon tut.
 
 **Ein Titel gehoert zu HOECHSTENS einer Art.** Das ist keine technische Schranke,
 sondern eine Entscheidung vom 14.09.2026: Vorher standen 13 von 91 Titeln in mehreren
@@ -66,17 +72,25 @@ from __future__ import annotations
 XP = "Resources/default scenery/sim objects/"
 # Unser eigenes Plugin-Verzeichnis.
 XP_EIGEN = "Resources/plugins/FriesenBruegge/objekte/"
-# Das Autogen. `katalog_sammeln.py` laesst es aus ("Autogen-Bausteine -- die gehoeren in eine
-# Szenerie, nicht an eine Kieker-Station"), und im Grundsatz stimmt das: Dort liegen Baenke,
-# Gartentische und Basketballkoerbe. Unter `US/industrial/` steht aber auch, was aus der Luft
-# eine Marke abgibt -- Windraeder, LEUCHTTUERME, Tanks, Schornsteine. Ein gezielter
-# Sammellauf ueber diesen Zweig ist vorgemerkt.
+# Das Autogen. `katalog_sammeln.py` liess es zunaechst ganz aus ("Autogen-Bausteine -- die
+# gehoeren in eine Szenerie, nicht an eine Kieker-Station"), und im Grundsatz stimmt das:
+# Dort liegen Baenke, Gartentische und Basketballkoerbe. Unter `US/industrial/` steht aber
+# auch, was aus der Luft eine Marke abgibt -- Windraeder, LEUCHTTUERME, Tanks, Seecontainer.
+# Sechs solche Zweige sind seit dem 14.09.2026 gezielt aufgenommen.
 XP_AUTOGEN = "Resources/default scenery/1000 autogen/"
 
 # Und der Flugplatz-Zweig -- Tankwagen, Schlepper, Busse, Kraene. Beide Zweige kamen
 # erst am 14.09.2026 in den Katalog, nachdem im Flug belegt war, dass X-Plane auch
 # Autogen- und Szenerieobjekte laedt und zeichnet (Windrad und Leuchtturm, Niederbayern).
 XP_APT = "Resources/default scenery/airport scenery/"
+# ⭐ `Common_Elements` und die Strassenobjekte kamen erst am 15.09.2026 in den Katalog. Sie
+# standen pauschal auf der Ausschlussliste ("was nur im Verbund funktioniert"), und fuer
+# Zaeune, Lampen und Absperrungen stimmt das -- nicht aber fuer den Krankenwagen, das Zelt,
+# die Flughafenfeuerwehr, den Leitkegel und den Fahnenmast. An denen scheiterten fuenf
+# Artenpaare, obwohl beide Simulatoren sie hatten.
+XP_CE = XP_APT + "Common_Elements/"
+# ⚠ NUR `static`. Die `dynamic`-Zwillinge sind fuer den fahrenden Verkehr gedacht.
+XP_ROADS = "Resources/default scenery/1000 roads/objects/"
 
 # `aus` statt Loeschen: Der Titel bleibt sichtbar und ist mit einem Klick wieder da.
 AUS = "aus"
@@ -151,14 +165,44 @@ ARTEN: dict[str, tuple[str, dict[str, list]]] = {
     # Wahl erzwingt -- beides nebeneinander geht nicht. Wer die Mischung will, baut sie an
     # der richtigen Stelle: ein Wuerfeln unter den Titeln einer Art, so wie der Server schon
     # den Kurs wuerfelt (`kurs_zufall`, v14.43.0). Dann bleibt es bei einer Art.
-    "robbe": ("Eine Robbe -- Kuh (1,60 m), Bulle (1,80 m), Heuler (0,85 m), "
-              "eigenes Modell in beiden Simulatoren", {
-        "msfs2024": ["FrsSeehund_Kuh", "FrsSeehund_Bulle", "FrsSeehund_Heuler",
-                     ("ahqa seal moving", AUS), ("ahqa sea lion moving", AUS),
+    # ⚠⚠ DREI ARTEN, NICHT EINE -- und dahinter steht der Rang-1-Mechanismus.
+    #
+    # Der Weg hierher ging zweimal hin und her, und beide Male aus gutem Grund. Am
+    # 15.09.2026 fragte der Nutzer: *"gibt es die art Robbe wieder? NUR mit unseren eigenen
+    # Robben?"* -- daraufhin wurden die drei zu einer Art `robbe` gefaltet. Seine Antwort
+    # darauf war eindeutig: *"unsere robben sollen schon trennbar sein. also bitte 3 Arten
+    # fuer Robben."*
+    #
+    # Und das ist technisch zwingend: Ein Soll-Eintrag traegt genau EINE Art, und die
+    # Bruegge nimmt daraus IMMER Rang 1. Mit einer Sammelart `robbe` staende an jeder
+    # Station dieselbe Kuh -- eine Kolonie aus sechs Kuehen, zwei Bullen und zwei Heulern
+    # gibt es nur ueber drei getrennte Arten. Zusammenfalten liesse sich das erst, wenn der
+    # Server unter den Titeln einer Art wuerfelt, so wie er den Kurs schon wuerfelt.
+    #
+    # `robbe` selbst steht in `bruegge_art` auf `aus` und traegt nur noch die drei
+    # `ahqa`-Fremdtitel -- die sind seit dem 15.09.2026 stillgelegt (*"NUR mit unseren
+    # eigenen Robben"*), dieselbe Linie wie beim Rauch. Geloescht ist nichts.
+    #
+    # Herkunft des Modells: "Walrus" von Poly by Google (poly.pizza/m/5T7nIjx9ekP),
+    # CC BY 3.0. Stosszaehne entfernt, Backen eingezogen, Schnauze gerundet, Schwanzflosse
+    # geschlossen, Hals gekuerzt. Drei Groessen nach den Angaben der Seehundstation
+    # Norddeich: Bulle 1,80 m, Kuh 1,60 m, Heuler 0,85 m.
+    "seehund_kuh": ("Eine Seehund-Kuh, 1,60 m", {
+        "msfs2024": ["FrsSeehund_Kuh"],
+        "xplane12": [XP_EIGEN + "seehund_kuh.obj"],
+    }),
+    "seehund_bulle": ("Ein Seehund-Bulle, 1,80 m", {
+        "msfs2024": ["FrsSeehund_Bulle"],
+        "xplane12": [XP_EIGEN + "seehund_bulle.obj"],
+    }),
+    "seehund_heuler": ("Ein Heuler, 0,85 m", {
+        "msfs2024": ["FrsSeehund_Heuler"],
+        "xplane12": [XP_EIGEN + "seehund_heuler.obj"],
+    }),
+    # Bleibt als Huelle stehen -- die Fremdtitel sind damit jederzeit wieder zu holen.
+    "robbe": ("Eine Robbe (Sammelbegriff, stillgelegt)", {
+        "msfs2024": [("ahqa seal moving", AUS), ("ahqa sea lion moving", AUS),
                      ("ahqa walrus moving", AUS)],
-        "xplane12": [XP_EIGEN + "seehund_kuh.obj",
-                     XP_EIGEN + "seehund_bulle.obj",
-                     XP_EIGEN + "seehund_heuler.obj"],
     }),
 
     # --- Fahrzeuge und Schiffe ---------------------------------------------------------
@@ -175,15 +219,97 @@ ARTEN: dict[str, tuple[str, dict[str, list]]] = {
     # Flugplatzfahrzeuge liegen in `airport scenery/`. Zum Nutzer gesagt hatte ich damals
     # trotzdem, X-Plane habe keine Fahrzeuge; seine Antwort ("das glaub ich nicht!") war
     # richtig, es sind rund 300. Eine Verneinung ist nur so gut wie das Suchmuster.
-    "fahrzeug": ("Ein Fahrzeug am Boden", {
-        "msfs2020": ["ASO_CarUtility01", "ASO_Pushback_White", "ASO_Firetruck02",
-                     "ASO_TruckUtility01", "ASO_Tug01_White"],
-        # Gross zuerst: Ein Tankwagen ist aus der Luft zu sehen, ein Gepaeckkarren nicht.
-        "xplane12": [XP_APT + "Dynamic_Vehicles/Fuel_Truck_Large.obj",
+    # ⚠⚠ `fahrzeug` IST AM 15.09.2026 ZERFALLEN -- in sechs Arten, und das war faellig.
+    # Sie warf Tankwagen, Pushback, Bus, Feuerwehr und Crew-Car in einen Topf; wer ein
+    # Feuerwehrauto anfordern wollte, bekam mit gleicher Wahrscheinlichkeit einen
+    # Gepaeckschlepper. Die Titel lagen alle schon da, es fehlte nur die Trennung.
+    #
+    # Anlass war der Satz des Nutzers: *"16 Arten waren viel zu wenig fuer so viele
+    # Objekte!"* -- und genau hier lag der groesste Hebel, ohne ein einziges neues Modell.
+    #
+    # Die Art selbst steht in `bruegge_art` auf `aus` statt geloescht zu sein; wer die alte
+    # Einteilung zurueckwill, hat sie mit einem Klick.
+    "flugplatzfahrzeug": ("Ein Flugplatzfahrzeug -- Pushback, Schlepper, Catering", {
+        "msfs2020": ["ASO_Pushback_White", "ASO_Tug01_White", "ASO_CarUtility01",
+                     "ASO_TruckUtility01"],
+        "xplane12": [XP_APT + "Dynamic_Vehicles/TUG_MA30.obj",
                      XP_APT + "Dynamic_Vehicles/catering_truck.obj",
+                     XP_APT + "Dynamic_Vehicles/TUG_660.obj"],
+    }),
+    "tankwagen": ("Ein Tankwagen", {
+        "msfs2020": ["ASO_FuelTruck01_White", "ASO_FuelTruck02_White"],
+        "xplane12": [XP_APT + "Dynamic_Vehicles/Fuel_Truck_Large.obj",
+                     XP_APT + "Dynamic_Vehicles/Fuel_Truck_Small.obj"],
+    }),
+    "feuerwehr": ("Ein Feuerwehrfahrzeug", {
+        "msfs2020": ["ASO_Firetruck01", "ASO_Firetruck02"],
+        # Gross zuerst: Der Striker 6x6 ist ein Flughafenloeschfahrzeug und aus der Luft
+        # zu erkennen, das kleine Loeschfahrzeug kaum.
+        "xplane12": [XP_CE + "fire_department/striker_6x6_1.obj",
+                     XP_CE + "fire_department/striker_4x4_1.obj",
+                     XP_CE + "fire_department/fire_truck_small_1.obj"],
+    }),
+    "krankenwagen": ("Ein Krankenwagen", {
+        # ⚠ `ASO_Ambulance_Japan` liegt im MSFS-2020-Bestand und ist dort der EINZIGE
+        # Krankenwagen -- faellt er in MSFS 2024 aus, hat die Art dort nichts mehr, und die
+        # Regel sperrt sie in BEIDEN Simulatoren. Ein zweiter MSFS-Titel waere Vorsorge.
+        "msfs2020": ["ASO_Ambulance_Japan"],
+        "xplane12": [XP_CE + "Vehicles/ambulance_eu_01.obj",
+                     XP_CE + "Vehicles/ambulance_eu_02.obj",
+                     XP_CE + "Vehicles/ambulance_us_01.obj"],
+    }),
+    "bus": ("Ein Bus", {
+        "msfs2024": ["Microsoft_Bus_EUR_Vintage", "Microsoft_Bus_Modern",
+                     "Microsoft_Bus_NA_Vintage"],
+        "xplane12": [XP_ROADS + "cars_EU/static/s_busIC_01.obj",
                      XP_APT + "Ramp_Equipment/pax_bus_1.obj",
-                     XP_APT + "Dynamic_Vehicles/TUG_MA30.obj",
+                     XP_APT + "Ramp_Equipment/pax_bus_2.obj"],
+    }),
+    "auto": ("Ein Personenwagen", {
+        "msfs2024": ["Microsoft_Car_EUR_01", "Microsoft_Car_EUR_02",
+                     "Microsoft_Car_EUR_03", "Microsoft_Car_EUR_04"],
+        "xplane12": [XP_ROADS + "cars_EU/static/compact_1_blue.obj",
+                     XP_ROADS + "cars_EU/static/compact_2_black.obj",
+                     XP_ROADS + "cars/static/VWPassat_S.obj",
                      XP_APT + "Dynamic_Vehicles/crew_car.obj"],
+    }),
+
+    # --- Geraet am Boden, neu am 15.09.2026 --------------------------------------------
+    "gabelstapler": ("Ein Gabelstapler", {
+        "msfs2024": ["Microsoft_Forklift_Large", "Microsoft_Forklift_Medium"],
+        "xplane12": [XP_APT + "Euro_Airports/Vehicles/Forklifts/Forklift_DFG430_green.obj",
+                     XP_APT + "Euro_Airports/Vehicles/Forklifts/Forklift_DFG430_green_palette.obj",
+                     XP_APT + "Ramp_Equipment/cargo_loader_ch70w.obj"],
+    }),
+    "baufahrzeug": ("Ein Baufahrzeug", {
+        "msfs2024": ["Microsoft_Bulldozer"],
+        "xplane12": [XP_APT + "construction/bulldozer_1.obj",
+                     XP_APT + "construction/excavator_1.obj",
+                     XP_APT + "construction/wheel_loader_1.obj"],
+    }),
+    "jetway": ("Eine Fluggastbruecke", {
+        "msfs2024": ["EDDF_Jetway_01", "EHAM_Jetway_01", "EGLL_Jetway_01"],
+        "xplane12": [XP_APT + "Ramp_Equipment/Ang_Jetway_400cm.obj",
+                     XP_APT + "Ramp_Equipment/Ang_Jetway_250cm.obj"],
+    }),
+    "seecontainer": ("Ein Seecontainer", {
+        "msfs2024": ["Drop_Container"],
+        "xplane12": [XP_AUTOGEN + "US/industrial/containers/container_20f_01a.obj",
+                     XP_AUTOGEN + "US/industrial/containers/container_20f_02a.obj",
+                     XP_AUTOGEN + "US/industrial/containers/container_40f_01a.obj"],
+    }),
+    "zelt": ("Ein Zelt", {
+        "msfs2024": ["LFPB_AS_Tent_01", "LFPB_AS_Tent_Dome_Blue",
+                     "LFPB_AS_Tent_Dome_Orange"],
+        "xplane12": [XP_CE + "camping/tent_01_green.obj",
+                     XP_CE + "camping/tent_01_white.obj",
+                     XP_CE + "camping/tent_01_green_open.obj"],
+    }),
+    "leitkegel": ("Ein Leitkegel", {
+        "msfs2024": ["Cone_Medium"],
+        "xplane12": [XP_CE + "Miscellaneous/traffic_cone_1.obj",
+                     XP_CE + "Miscellaneous/traffic_cone_2.obj",
+                     XP_CE + "Miscellaneous/traffic_cone_stack_1.obj"],
     }),
     "boot_klein": ("Ein kleines Boot -- Segler, Motorboot, Kajuetboot bis rund 20 m", {
         "msfs2020": ["Boat01", "Boat02", "FishingBoat", "Yacht01"],
@@ -278,11 +404,15 @@ ARTEN: dict[str, tuple[str, dict[str, list]]] = {
         "xplane12": [XP + "landscape/windsock_orange.obj", XP + "landscape/windsock.obj",
                      XP + "landscape/windsock_lit.obj"],
     }),
-    # ⚠ X-Plane: `airport scenery/.../flagpole_20m_1.obj` gibt es, steht aber aus demselben
-    # Grund wie die Fahrzeuge noch nicht im Katalog.
+    # ⭐ SEIT DEM 15.09.2026 BEIDSEITIG. Hier stand vorher, X-Planes `Flags` seien
+    # Schiffsaufbauten und keine Fahnenmasten -- das stimmte, war aber nicht die ganze
+    # Wahrheit: Der echte Mast heisst `flagpole_20m_1.obj` und liegt in `Common_Elements`,
+    # dem Zweig, den der Sammellauf pauschal auslliess. Wieder eine Verneinung, die nur so
+    # gut war wie ihr Suchmuster.
     "flagge": ("Eine Flagge an einem Mast", {
         "msfs2020": ["Flag_Orange", "Flag_Yellow", "Flag_Checker", "Flag_RWB",
                      "Flag_White", "Flag_Green", "flag_DE"],
+        "xplane12": [XP_CE + "Miscellaneous/flagpole_20m_1.obj"],
     }),
     # ⚠ MSFS 2024 HAT EINEN HEISSLUFTBALLON IM STANDARD (Nutzer, 14.09.2026) -- er steht
     # nur nicht im Katalog, weil er ein FLUGZEUG ist und `katalog_sammeln.py` in MSFS keine

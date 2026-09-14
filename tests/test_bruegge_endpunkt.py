@@ -467,11 +467,17 @@ def test_unbekannte_art_wird_abgewiesen(klient, tmp_path):
 def test_robbe_ist_eine_erlaubte_art(klient, tmp_path):
     """Ohne diese Art ist der FriesenKieker nicht messbar.
 
-    Weder MSFS 2020 noch 2024 bringt eine Robbe mit (s. `friesenbruegge/OBJEKTE.md`); die
-    Bruegge holt sie ab Fassung 1.4.0 aus dem Community-Paket `human-library-animated`. Die
-    Pruefliste hier ist die einzige Stelle, die das verhindern koennte -- und sie tat es:
-    `robbe` war nicht drin, das Modul konnte die Art setzen, und im Admin liess sie sich
-    nicht anfordern. Aufgefallen ist das NICHT im Simulator, sondern beim Nachsehen.
+    Weder MSFS noch X-Plane bringt eine Robbe mit -- deshalb gibt es seit dem 14.09.2026 ein
+    EIGENES Modell, und seit dem 15.09.2026 in drei Groessen als drei Arten. Die Pruefliste
+    hier ist die einzige Stelle, die das verhindern koennte -- und sie tat es einmal: `robbe`
+    war nicht drin, das Modul konnte die Art setzen, und im Admin liess sie sich nicht
+    anfordern. Aufgefallen ist das NICHT im Simulator, sondern beim Nachsehen.
+
+    ⚠ Geprueft wird an `seehund_kuh`, nicht mehr an `robbe`. Der Sammelbegriff ist
+    stillgelegt: Ein Soll-Eintrag traegt genau EINE Art, und die Bruegge nimmt daraus immer
+    Rang 1 -- mit einer Sammelart staende an jeder Station dieselbe Kuh. Gemischte Kolonien
+    gibt es nur ueber getrennte Arten (Nutzerwunsch: *"unsere robben sollen schon trennbar
+    sein. also bitte 3 Arten fuer Robben."*).
     """
     from app.auth import make_admin_token, make_confirm_token
     import app.main as main
@@ -479,7 +485,7 @@ def test_robbe_ist_eine_erlaubte_art(klient, tmp_path):
     kekse = {"fs_admin": make_admin_token(s.SECRET_KEY, s.ADMIN_PASSWORD),
              "fs_confirm": make_confirm_token(s.SECRET_KEY, s.ADMIN_PASSWORD, 9_999_999_999)}
     r = klient.post("/api/admin/bruegge/soll",
-                    json={"art": "robbe", "lat": 53.7235, "lon": 7.2502}, cookies=kekse)
+                    json={"art": "seehund_kuh", "lat": 53.7235, "lon": 7.2502}, cookies=kekse)
     assert r.status_code == 200, r.text
 
 
@@ -933,9 +939,9 @@ def test_der_admin_setzt_objekte_standardmaessig_auf_den_boden(klient, tmp_path)
     k = _admin_kekse()
 
     klient.post("/api/admin/bruegge/soll", cookies=k,
-                json={"art": "robbe", "lat": 53.0, "lon": 7.0, "id": "ohne-angabe"})
+                json={"art": "seehund_kuh", "lat": 53.0, "lon": 7.0, "id": "ohne-angabe"})
     klient.post("/api/admin/bruegge/soll", cookies=k,
-                json={"art": "robbe", "lat": 53.0, "lon": 7.0, "id": "ausdruecklich-aus",
+                json={"art": "seehund_kuh", "lat": 53.0, "lon": 7.0, "id": "ausdruecklich-aus",
                       "auf_boden": False})
 
     c = sqlite3.connect(db)

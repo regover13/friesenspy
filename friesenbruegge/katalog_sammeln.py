@@ -189,21 +189,52 @@ def sammle_gestreamt(wurzel: Path) -> list[dict]:
 # Auswahl hat der Nutzer am 14.09.2026 getroffen (Container und Bodenschilder ausdruecklich
 # dazu); wer sie erweitert, erweitert hier -- und nicht mit einer zweiten Liste woanders.
 _XP_ZWEIGE = (
-    # (Pfad unter `Resources/default scenery/`, alles darunter mitnehmen?)
-    ("sim objects", True),                              # 1146 -- Tiere, Boote, Fahrzeuge
-    ("airport scenery/Ramp_Equipment", True),           #  280 -- Tankwagen, Treppen, Schlepper
-    ("airport scenery/Ground_Signs", True),             #  203 -- Rollwegschilder
-    ("airport scenery/construction", True),             #  102 -- Kraene, Bagger, Container
-    ("airport scenery/military", True),                 #   62
-    ("airport scenery/towers", True),                   #   47 -- Tower, Radarmasten
-    ("airport scenery/Aircraft", True),                 #   32 -- statische Flugzeuge
-    ("airport scenery/Dynamic_Vehicles", True),         #   22
-    ("1000 autogen/US/industrial/containers", True),    #  215 -- Seecontainer
-    ("1000 autogen/US/industrial/tanks", True),         #  119 -- Tanks, Silos
-    ("1000 autogen/US/industrial/lighthouses", True),   #   63 -- lighthouse_13 .. _64
-    ("1000 autogen/US/industrial/vehicles", True),      #   15
-    ("1000 autogen/US/industrial/obstacles", True),     #   12 -- Masten bis 630 m
-    ("1000 autogen/US/industrial/power", True),         #    5 -- Windraeder
+    # (Pfad unter `Resources/default scenery/`, Kategorie im Katalog)
+    #
+    # ⚠ Das zweite Feld war bis zum 15.09.2026 ein ungenutztes `True` ("alles darunter
+    # mitnehmen?") -- `rglob` nimmt ohnehin alles. Jetzt traegt es die KATEGORIE, und das
+    # war noetig: Zwei der neuen Zweige enden beide auf `static`
+    # (`cars/static`, `cars_EU/static`), der letzte Pfadteil taugt dort nicht als Name.
+    # `None` heisst: letzter Pfadteil, wie bisher.
+    ("sim objects", None),                              # 1146 -- Tiere, Boote, Fahrzeuge
+    ("airport scenery/Ramp_Equipment", None),           #  280 -- Tankwagen, Treppen, Schlepper
+    ("airport scenery/Ground_Signs", None),             #  203 -- Rollwegschilder
+    ("airport scenery/construction", None),             #  102 -- Kraene, Bagger, Container
+    ("airport scenery/military", None),                 #   62
+    ("airport scenery/towers", None),                   #   47 -- Tower, Radarmasten
+    ("airport scenery/Aircraft", None),                 #   32 -- statische Flugzeuge
+    ("airport scenery/Dynamic_Vehicles", None),         #   22
+    ("1000 autogen/US/industrial/containers", None),    #  215 -- Seecontainer
+    ("1000 autogen/US/industrial/tanks", None),         #  119 -- Tanks, Silos
+    ("1000 autogen/US/industrial/lighthouses", None),   #   63 -- lighthouse_13 .. _64
+    ("1000 autogen/US/industrial/vehicles", None),      #   15
+    ("1000 autogen/US/industrial/obstacles", None),     #   12 -- Masten bis 630 m
+    ("1000 autogen/US/industrial/power", None),         #    5 -- Windraeder
+
+    # ⭐ ZWEITE ERWEITERUNG, 15.09.2026 -- Anlass: "16 Arten waren viel zu wenig fuer so
+    # viele Objekte!" Der Katalog kannte 2327 der 7995 `.obj` unter `default scenery`, also
+    # nicht einmal ein Drittel. Was hier dazukommt, ist nach derselben Regel ausgewaehlt wie
+    # oben: aufgenommen wird, was ALS EINZELNES OBJEKT einen Sinn ergibt.
+    #
+    # ⚠ `Common_Elements` stand bis heute pauschal auf der Ausschlussliste, und fuer den
+    # groessten Teil zu Recht -- `Fence_Facades` (137), `Lighting` (81), `barriers` (58) und
+    # `Parking_Items` (79) sind Verbundteile. In SECHS seiner Unterordner stehen aber
+    # Einzelobjekte, und darunter genau die, an denen bisher vier Artenpaare scheiterten:
+    # der Krankenwagen, das Zelt, die Flughafenfeuerwehr und der Tankwagen.
+    ("airport scenery/Common_Elements/Vehicles", None),         # 126 -- Ambulanz, Pickup, Cargo
+    ("airport scenery/Common_Elements/fire_department", None),  #  18 -- Striker 4x4/6x6
+    ("airport scenery/Common_Elements/camping", None),          #  27 -- Zelte, Tische
+    ("airport scenery/Common_Elements/Water_Towers", None),     #   6 -- WT_1930/1960/1990
+    ("airport scenery/Common_Elements/radars", None),           #  45 -- ASR, SSR, Wetterradar
+    ("airport scenery/Common_Elements/antennas", None),         #  33 -- Antennen, Satellitenschuesseln
+    ("airport scenery/Common_Elements/Fuel", None),             #  34 -- Avgas-Faesser, Hydranten
+    ("airport scenery/Common_Elements/Miscellaneous", None),    #  39 -- Flaggenmast, Boje
+    # Gabelstapler (24) und Silos -- das europaeische Gegenstueck zu Ramp_Equipment.
+    ("airport scenery/Euro_Airports", None),                    # 189
+    # ⚠ NUR `static`. Die `dynamic`-Zwillinge sind fuer den fahrenden Verkehr gedacht und
+    # tragen Animationen; als abgestelltes Objekt ist die statische Fassung die richtige.
+    ("1000 roads/objects/cars/static", "cars"),                   #  36 -- PKW, Polizei (US)
+    ("1000 roads/objects/cars_EU/static", "cars_EU"),                #  43 -- PKW, Busse (EU)
 )
 
 
@@ -221,11 +252,11 @@ def sammle_xplane(wurzel: Path) -> list[dict]:
     raus = []
     szenerie = wurzel / "Resources" / "default scenery"
     gesehen: set[str] = set()
-    for zweig, _ in _XP_ZWEIGE:
+    for zweig, kategorie in _XP_ZWEIGE:
         basis = szenerie / zweig
         if not basis.is_dir():
             continue
-        vorgabe = zweig.rsplit("/", 1)[-1]
+        vorgabe = kategorie or zweig.rsplit("/", 1)[-1]
         for obj in sorted(basis.rglob("*.obj")):
             rel = obj.relative_to(wurzel).as_posix()
             if rel in gesehen:          # Zweige koennen sich ueberlappen
