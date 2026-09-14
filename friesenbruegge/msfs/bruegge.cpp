@@ -204,7 +204,32 @@ static bool    g_lage_gueltig = false;
 // einzige Quelle, die ZUVERLAESSIG sagt, was ein anderer tatsaechlich hat -- dreimal an
 // einem Tag wurde ein Objekt gesetzt, das nur auf einem Rechner existierte.
 static char    g_flugzeug[256] = {0};
-static bool    g_flugzeug_gemeldet = false;   // einmal je Titel genuegt
+// ⚠⚠ EINMAL SENDEN GENUEGT NICHT -- das war ein Wettlauf, den ich selbst gebaut habe.
+//
+// Hier stand ein `bool`: Titel gelesen, einmal gesendet, fertig. Gemessen am 14.09.2026:
+//
+//     TITLE-Callback 331 mal, davon 0 leer, Titel=''
+//
+// Der Callback lieferte also sauber -- aber die EINE Meldung mit dem Titel ging hinaus,
+// BEVOR der Server eine Zuordnung hatte. Ohne CID verwirft er alles, auch den Titel, und
+// die Bruegge schickte ihn nie wieder.
+//
+// Die Zuordnung braucht ihre Zeit: Sie entsteht ueber das Positionsmatching, und dafuer muss
+// der Pilot erst in `live_positions` stehen (VATSIM-Latenz bis 29 s). Der Titel steht schon
+// in der ersten Sekunde fest. Die beiden treffen sich nur, wenn er WIEDERHOLT mitgeht.
+//
+// Deshalb ein Zaehler statt eines Schalters: Der Titel geht die ersten `FLUGZEUG_MELDUNGEN`
+// Meldungen lang mit. Bei Sekundentakt sind das gut zwei Minuten -- laenger, als jede
+// Zuordnung braucht, und danach kostet es nichts mehr. Ein Flugwechsel setzt ihn zurueck
+// (s. den Callback).
+#define FLUGZEUG_MELDUNGEN 150
+static int     g_flugzeug_offen = 0;          // solange > 0, geht der Titel mit
+// ⚠ NUR ZUR DIAGNOSE, und sie war noetig: Am 14.09.2026 kam der Titel nicht an, und aus der
+// Ferne war nicht zu unterscheiden, ob der Callback gar nicht feuert oder ob er feuert und
+// nichts liefert. Das sind zwei voellig verschiedene Fehler -- der eine sitzt in der
+// Datendefinition, der andere im Lesen der Rohdaten.
+static int     g_flugzeug_rufe = 0;           // wie oft der Callback kam
+static int     g_flugzeug_leer = 0;           // ... und davon mit leerem Titel
 static double  g_vor_lat = 0.0, g_vor_lon = 0.0;
 static bool    g_vor_gueltig = false;
 
@@ -349,18 +374,31 @@ static void kennung_gelesen(FsIOFile datei, char* puffer, int, int bytes, void*)
 static void kennung_geschrieben(FsIOFile datei, const char*, int, int, void*) {
     fsIOClose(datei);
 }
+
+// ⚠⚠ UND AUCH DAS OEFFNEN IST ASYNCHRON -- die ganze Kette, nicht nur das Schreiben.
+//
+// Der erste Anlauf legte das Schliessen in den Write-Callback und schrieb weiter direkt
+// nach `fsIOOpen`. Die Datei blieb LEER (14.09.2026, 17:35:10, null Bytes) -- denn
+// `fsIOOpen` nimmt ebenfalls einen Callback (`FsIOFileOpenCallback`, MSFS_IO.h Zeile 59),
+// und der Rueckgabewert ist erst danach benutzbar.
+//
+// Richtig ist die vollstaendige Kette: oeffnen -> im Callback schreiben -> im naechsten
+// Callback schliessen. Jede Abkuerzung darin kostet den Inhalt, und zwar lautlos: Die
+// Datei entsteht, sie ist nur leer.
+static void kennung_datei_offen(FsIOFile datei, void*) {
+    if (datei == FS_IO_ERROR_FILE || g_kennung[0] == '\0') return;
+    fsIOWrite(datei, g_kennung, 0, (int)std::strlen(g_kennung),
+              kennung_geschrieben, nullptr);
+}
 #endif
 
 static void kennung_schreiben() {
 #ifdef KENNUNG_HAELT
-    FsIOFile w = fsIOOpen(KENNUNG_DATEI,
-                          FsIOOpenFlag_WRONLY | FsIOOpenFlag_CREAT | FsIOOpenFlag_TRUNC,
-                          nullptr, nullptr);
-    if (w != FS_IO_ERROR_FILE) {
-        // `g_kennung` ist global und bleibt gueltig, bis der Callback kommt -- ein Puffer
-        // auf dem Stapel waere hier ein Fehler.
-        fsIOWrite(w, g_kennung, 0, (int)std::strlen(g_kennung), kennung_geschrieben, nullptr);
-    }
+    // `g_kennung` ist global und bleibt gueltig, bis die Callbacks kommen -- ein Puffer auf
+    // dem Stapel waere hier ein Fehler.
+    fsIOOpen(KENNUNG_DATEI,
+             FsIOOpenFlag_WRONLY | FsIOOpenFlag_CREAT | FsIOOpenFlag_TRUNC,
+             kennung_datei_offen, nullptr);
 #endif
 }
 
@@ -510,10 +548,15 @@ static void meldung_bauen(char* puffer, size_t groesse) {
     //
     // Bei JEDER Meldung mitzuschicken waere Verschwendung: Ein Titel ist bis zu 256 Zeichen
     // lang, und er aendert sich nur beim Flugwechsel.
-    if (!g_flugzeug_gemeldet && g_flugzeug[0] != '\0') {
+    if (g_flugzeug_offen > 0 && g_flugzeug[0] != '\0') {
         j.feld("flugzeug");    j.text(g_flugzeug);            j.komma();
-        g_flugzeug_gemeldet = true;
+        --g_flugzeug_offen;
     }
+    // Die Diagnose dazu: 0 Rufe heisst, die Datendefinition greift gar nicht. Rufe ohne
+    // Inhalt heissen, sie greift -- aber der Titel steht nicht dort, wo ich ihn lese.
+    // Zwei Zahlen je Meldung, die den Unterschied sichtbar machen.
+    j.feld("fz_rufe");  j.ganzzahl((long)g_flugzeug_rufe);  j.komma();
+    j.feld("fz_leer");  j.ganzzahl((long)g_flugzeug_leer);  j.komma();
 
     // ⚠ HIER STAND `kann` -- entfernt mit Protokollfassung 2 (14.09.2026).
     //
@@ -1121,10 +1164,12 @@ void CALLBACK dispatch(SIMCONNECT_RECV* pData, DWORD, void*) {
         }
         if (d->dwRequestID == REQ_FLUGZEUG) {
             const char* t = (const char*)&d->dwData;
+            ++g_flugzeug_rufe;
+            if (t[0] == 0) ++g_flugzeug_leer;
             // Nur wenn er sich geaendert hat -- sonst wuerde jede Sekunde neu gemeldet.
             if (t[0] != '\0' && std::strncmp(t, g_flugzeug, sizeof(g_flugzeug) - 1) != 0) {
                 std::snprintf(g_flugzeug, sizeof(g_flugzeug), "%s", t);
-                g_flugzeug_gemeldet = false;
+                g_flugzeug_offen = FLUGZEUG_MELDUNGEN;   // neuer Titel -> wieder melden
             }
             break;
         }
@@ -1251,7 +1296,7 @@ extern "C" MSFS_CALLBACK void module_init(void) {
                                    SIMCONNECT_DATATYPE_STRING256);
     // SIMCONNECT_PERIOD_SECOND und nicht ONCE: Ein Flugwechsel aendert den Titel, und eine
     // einmalige Anfrage vor dem Laden liefert den des Menue-Flugzeugs. Die Meldung nach
-    // aussen geht trotzdem nur einmal je Titel hinaus (`g_flugzeug_gemeldet`).
+    // aussen geht er die ersten FLUGZEUG_MELDUNGEN Meldungen mit (s. g_flugzeug_offen).
     SimConnect_RequestDataOnSimObject(g_sim, REQ_FLUGZEUG, DEF_FLUGZEUG,
                                       SIMCONNECT_OBJECT_ID_USER, SIMCONNECT_PERIOD_SECOND);
 

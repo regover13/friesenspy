@@ -134,6 +134,34 @@ def wuerfel_gltf(knoten: str, bin_datei: str) -> tuple[str, bytes]:
     # der Hoehe (genau die Saeulenhoehe) und +-6 m in der Breite (die Krone misst 12 m).
     #
     # In glTF ist Y oben.
+    # ⚠ DIE GROESSE IST EINE MESSREIHE, KEINE EINSTELLUNG -- Stand 14.09.2026:
+    #
+    #     Traeger      sichtbar ab
+    #      2 m           100 m      (der urspruengliche Wuerfel)
+    #     90 m             1 km     (Saeulenhoehe -- Faktor 45 brachte Faktor 10)
+    #    300 m             ?        <- dieser Versuch
+    #
+    # Der Zusammenhang ist NICHT linear. Bringt 300 m rund 3 km, ist er es ab hier doch,
+    # und 10 km waeren erreichbar. Bringt es weniger, laeuft es gegen eine Grenze des
+    # Simulators -- dann ist ein LICHT der richtige Weg (s. MESSLISTE, `wENLK_lightdummy`).
+    #
+    # Der Nutzer will 10 km; gemessen sind fuer ein grosses Objekt 22 km (CruiseShip01,
+    # 11.09.2026), es gibt also keine harte Schranke bei 1 km.
+    # ⚠ 300 m BRACHTEN NICHTS -- die Messreihe ist damit zu Ende:
+    #
+    #      2 m ->  100 m     das Objekt selbst war zu klein
+    #     90 m -> 1830 m     Objekt gross genug; ab hier greift etwas anderes
+    #    300 m -> 1830 m     unveraendert
+    #
+    # 1830 m sind fast genau EINE SEEMEILE (1852 m). Das ist keine Groessenfrage mehr,
+    # sondern eine feste Schranke -- und zwar des PARTIKELSYSTEMS, nicht des Objekts: Der
+    # Traeger ist unsichtbar (ASOBO_material_invisible), gezeichnet wird allein der Effekt.
+    # Zum Vergleich: Ein CruiseShip01 war am 11.09.2026 aus 22 km zu sehen -- das ist
+    # Geometrie.
+    #
+    # Deshalb zurueck auf die Saeulenhoehe: 90 m reichen, um das Objekt selbst nicht
+    # ausblenden zu lassen, und mehr bringt nachweislich nichts. Wer weiter sehen will,
+    # braucht GEOMETRIE oder ein LICHT statt eines groesseren Nichts (s. MESSLISTE).
     B, H = 6.0, 90.0
     flaechen = [
         ((0.0, 0.0, -1.0), [(-B, 0, -B), (-B, H, -B), (B, H, -B), (B, 0, -B)]),

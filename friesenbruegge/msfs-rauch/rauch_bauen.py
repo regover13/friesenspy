@@ -74,6 +74,32 @@ FARBEN = {
 
 # Die Werte stammen aus dem X-Plane-Durchgang vom 13.09.2026, bei dem zehn Anläufe nötig
 # waren. Übertragen, nicht neu erfunden:
+# ⭐⭐ AB HIER SIEHT MAN DIE SAEULE -- UND DAS WAR DIE GANZE SUCHE VOM 14.09.2026.
+#
+# `MaxDistanceEmission` ist laut SDK-Doku das EINZIGE Feld, das die Sichtweite eines
+# Partikeleffekts steuert:
+#
+#   "Once the camera exceeds this distance from the emitter, particles will stop being
+#    created."   Standardwert: 2000 Meter.
+#
+# Wir haben es nie gesetzt, also galt die Vorgabe. Der Nutzer mass **1830 m** (6000 ft) --
+# die Zahl passt, und sie erklaert, warum DREI andere Versuche nichts brachten:
+#
+#     minSize="0" im LOD                 regelt die Bildschirmgroesse des MODELLS
+#     DistanceToNotAnimate=15000         regelt die Animation, nicht das Spawnen
+#     Traeger 2 m -> 90 m -> 300 m       half nur von 100 m auf 1830 m (das Objekt selbst
+#                                        war zu klein), darueber nichts
+#
+# Die 90 m Traegerhoehe bleiben noetig (bei 2 m verschwand das OBJEKT), aber die Schranke
+# lag danach im Partikelsystem.
+#
+# ⚠ WAS ES KOSTET, IST UNGEMESSEN: Ein Emitter, der aus 15 km noch spawnt, laeuft auch
+# dann, wenn ihn niemand ansieht. Bei einer Handvoll Baaken ist das vertretbar; bei
+# hundert gesetzten Objekten gehoert es gemessen (s. MESSLISTE).
+#
+# Der Nutzer wollte 10 km. 15000 laesst Luft.
+MAX_SICHT_M = 15000.0
+
 LEBENSDAUER_S = 30.0
 # Am 14.09.2026 von 22 auf 30 gesetzt -- Nutzerentscheidung im Flug, nachdem er beide
 # Fassungen gesehen hatte: "ich finde xplane zu gross und msfs zu klein". X-Plane ging im
@@ -389,6 +415,7 @@ def effekt_xml(name: str, farbe: tuple[int, int, int]) -> str:
             <ParticleRate>{NULL}, {RATE:.6f}</ParticleRate>
             <Capacity>{KAPAZITAET:.3f}</Capacity>
             <TimeEmission>{BRENNDAUER_S:.6f}</TimeEmission>
+            <MaxDistanceEmission>{MAX_SICHT_M:.6f}</MaxDistanceEmission>
             <ParticleInit>
                 <ObjectReference InstanceId="{G['init']}" id="BlockParticleInit"/>
             </ParticleInit>
