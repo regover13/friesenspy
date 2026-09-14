@@ -91,7 +91,27 @@ läuft FRS61 weiter, ohne etwas herunterzuladen.
 
 ---
 
-## ⭐ NEU UND UNGEPRÜFT: der eigene Seehund (14.09.2026)
+## ⭐ DER SEEHUND STEHT — X-Plane gesehen am 14.09.2026
+
+**Erster Beweis im Simulator, und ausgerechnet in X-Plane** — dem Simulator, für den
+Superspuds Paket nie etwas gelöst hätte. Eine Kolonie aus zwanzig Tieren, 120 m voraus bei
+Passau: elf Kühe, drei Bullen, sechs Heuler, jedes mit gewürfelter Richtung.
+
+Sein Urteil: **„sind da"**.
+
+Damit ist belegt, was sich ohne Simulator nicht prüfen ließ: Die `.obj` lädt, X-Plane
+zeichnet sie, und die Achsenumrechnung von Blender (Z-oben) nach OBJ8 (Y-oben) stimmt —
+sonst läge das Tier auf der Seite oder im Boden.
+
+### Noch offen an derselben Stelle
+
+- **Farbe** — greift die Palettentextur? Graubraun wäre richtig, grau oder schwarz hieße,
+  X-Plane findet `seehund.png` nicht.
+- **Die gewürfelten Richtungen** — sehen sie natürlich aus oder zufällig im schlechten Sinn?
+- **Aus welcher Entfernung ist die Kolonie erkennbar?** X-Plane hat MSFS' LOD-System nicht;
+  die Bounding-Box-Grenze gilt dort nicht.
+
+## ⚠ MSFS: DER SEEHUND IST DORT NOCH UNGEPRÜFT (14.09.2026)
 
 **In keinem Simulator gesehen.** Das Modell ist gebaut, in beide Pakete eingebaut und auf
 dem Server der Art `robbe` zugeordnet — für MSFS **und** X-Plane. Was es leistet, weiß
