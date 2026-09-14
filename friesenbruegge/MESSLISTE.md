@@ -182,10 +182,20 @@ Paketverzeichnis nennt. Ob der Simulator sie **lokal vorliegen** hat, ist etwas 
 anderes — gestreamte Pakete lädt er bei Bedarf nach, und `AICreateSimulatedObject` kann
 nur setzen, was da ist.
 
-⚠ **Das trifft potenziell jeden der 2642 gestreamten Titel**, nicht nur diese beiden Arten.
-Und es fällt erst im Flug auf. Wer aus dem Katalog eine Art zusammenstellt, sollte
-gestreamte Titel nicht allein stehen lassen — mindestens ein Titel aus `bord` oder
-`community` gehört dahinter.
+⚠⚠ **DIESER SCHLUSS WAR FALSCH UND IST WIDERLEGT (noch am selben Abend).**
+Hier stand: *„Das trifft potenziell jeden der 2642 gestreamten Titel."* Zwei Messungen
+sagen etwas anderes:
+
+- `windmill` und `windsock` liegen ebenfalls nur als Hüllarchiv von 0,6 MB vor — und
+  **stehen**.
+- `Microsoft_Aerial_Tank` aus **demselben Paket** wie die gescheiterte Truck_Crane
+  **steht** (14.09.2026, gezielt gesetzt).
+
+Es liegt also weder am Streaming noch am Paket, sondern an einzelnen Titeln. Der
+Fehlschluss entstand aus zwei Fällen mit einer gemeinsamen Eigenschaft, die nicht die
+ursächliche war — dieselbe Falle wie bei einer Verneinung, die nur so gut ist wie ihr
+Suchmuster. Die Spur führt jetzt zum Erfassungsweg (`katalog_sammeln.py` gegen
+`fsarchive.py`), s. `docs/offene-aufgaben.md`.
 
 **In keinem Simulator gesehen.** Das Modell ist gebaut, in beide Pakete eingebaut und auf
 dem Server der Art `robbe` zugeordnet — für MSFS **und** X-Plane. Was es leistet, weiß
