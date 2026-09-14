@@ -196,3 +196,62 @@ def test_keine_fremdtitel_im_rauch():
             for eintrag in titel:
                 name = eintrag[0] if isinstance(eintrag, tuple) else eintrag
                 assert name.startswith("FrsRauch_") or "FriesenBruegge" in name, name
+
+
+def test_wer_nach_zuordnung_filtert_bekommt_auch_die_seitenzahl_dazu(conn):
+    """Filtern und Zählen gehören zusammen — sonst lügt die Seitenzahl.
+
+    Der erste Entwurf filterte „hat eine Art" nachträglich im Browser: Der Server schickte
+    20 Zeilen je Seite, das JavaScript warf fast alle weg, und die Seitenzahl zählte den
+    ungefilterten Bestand. Im Screenshot vom 14.09.2026 stand „Seite 18 / 71 · 1419 Titel"
+    über ZWEI sichtbaren Zeilen — man blätterte durch 71 Seiten für eine Handvoll Treffer.
+
+    Von 2953 Titeln tragen 87 eine Art. Wer danach filtert, sucht die Nadel; dann darf die
+    Seitenrechnung nicht den Heuhaufen zählen.
+    """
+    db.katalog_eintragen(conn, [
+        {"simulator": "msfs2024", "titel": f"ohne-art-{i}", "quelle": "community"}
+        for i in range(50)
+    ])
+    conn.commit()
+
+    mit = db.bruegge_katalog_seite(conn, mit_art=True, je_seite=20)
+    ohne = db.bruegge_katalog_seite(conn, ohne_art=True, je_seite=20)
+    alle = db.bruegge_katalog_seite(conn, je_seite=20)
+
+    # Jede gelieferte Zeile trägt auch wirklich eine Art ...
+    assert mit["zeilen"] and all(z["art"] for z in mit["zeilen"])
+    assert ohne["zeilen"] and all(z["art"] is None for z in ohne["zeilen"])
+    # ... und die Summen gehen auf. Ginge der Filter erst im Browser, stünde hier bei
+    # `mit["gesamt"]` die Gesamtzahl.
+    assert mit["gesamt"] + ohne["gesamt"] == alle["gesamt"]
+    assert mit["gesamt"] < alle["gesamt"], "der Filter muss etwas wegnehmen"
+    assert mit["seiten"] == max(1, (mit["gesamt"] + 19) // 20)
+
+
+def test_der_admin_filtert_nicht_selbst_nach(conn):
+    """Die Oberfläche darf keine geladene Seite nachträglich ausdünnen.
+
+    Sie bindet damit die ABWESENHEIT des alten Fehlers: Wer wieder im Browser filtert, macht
+    die Seitenzahl zur Lüge — und das fällt erst auf, wenn jemand 71 Seiten durchblättert.
+    """
+    from pathlib import Path
+    s = (Path(__file__).resolve().parents[1] / "app" / "static" / "admin.html").read_text(
+        encoding="utf-8")
+    block = s[s.index("function bgTitelZeichnen"):s.index("function bgTitelZeile")]
+    assert ".filter(" not in block, "bgTitelZeichnen zeichnet, es filtert nicht"
+    assert "mit_art" in s, '„hat eine Art" muss als Server-Filter mitgehen'
+
+
+def test_die_suche_findet_auch_ueber_die_art(conn):
+    """Wer `windsack` sucht, kennt das Modell nicht — und soll es auch nicht müssen.
+
+    Das MSFS-Modell heißt `Windsock_05`, das X-Plane-Modell
+    `…/landscape/windsock_orange.obj`. Die Art ist die Bedeutung, das Modell nur ihr Träger;
+    eine Suche, die nur Dateinamen kennt, verlangt Auswendiglernen (14.09.2026 gemeldet).
+    """
+    treffer = db.bruegge_katalog_seite(conn, suche="windsack", je_seite=50)
+    assert treffer["gesamt"] > 0
+    assert all(z["art"] == "windsack" for z in treffer["zeilen"])
+    # ... und die Titelsuche bleibt, wie sie war.
+    assert db.bruegge_katalog_seite(conn, suche="Windsock", je_seite=50)["gesamt"] > 0

@@ -1595,7 +1595,7 @@
             </p>
 
             <div class="bg-t-filter">
-              <input id="bg-t-suche" placeholder="Titel oder Paket suchen …">
+              <input id="bg-t-suche" placeholder="Titel, Paket oder Art suchen …">
               <select id="bg-t-art"><option value="">alle Arten</option></select>
               <select id="bg-t-sim">
                 <option value="">alle Simulatoren</option>
@@ -2482,9 +2482,14 @@
       if (v('bg-t-sim')) p.set('simulator', v('bg-t-sim'));
       if (v('bg-t-quelle')) p.set('quelle', v('bg-t-quelle'));
       if (v('bg-t-ergebnis')) p.set('ergebnis', v('bg-t-ergebnis'));
-      // „ohne Art" ist ein eigener Schalter und kein Wert von `art`: Die Abwesenheit einer
-      // Zuordnung lässt sich nicht als Gleichheit ausdrücken.
+      // „ohne Art" und „hat eine Art" sind eigene Schalter und keine Werte von `art`: Die
+      // An- oder Abwesenheit einer Zuordnung lässt sich nicht als Gleichheit ausdrücken.
+      //
+      // ⚠ BEIDE GEHEN AN DEN SERVER. „hat eine Art" wurde anfangs nachträglich im Browser
+      // gefiltert — dann schickt der Server 20 Zeilen, der Browser wirft 18 weg, und die
+      // Seitenzahl zählt Titel, die niemand sieht („Seite 18 / 71" bei zwei Zeilen).
       if (v('bg-t-zuordnung') === 'ohne') p.set('ohne_art', 'true');
+      if (v('bg-t-zuordnung') === 'mit') p.set('mit_art', 'true');
       return p;
     }
 
@@ -2502,12 +2507,15 @@
       }
     }
 
-    /** „hat eine Art" filtert der Server nicht — dort ist es die Abwesenheit von `ohne_art`
-     *  UND einer Artangabe. Deshalb hier, auf der geladenen Seite. Das ist die einzige
-     *  Filterung im Browser, und sie ist verzerrungsfrei: Sie blendet aus, statt zu suchen. */
+    /** Zeichnet, was der Server geliefert hat — ungefiltert.
+     *
+     *  ⚠ HIER STAND EIN NACHTRÄGLICHER FILTER für „hat eine Art", mit der Begründung, er sei
+     *  „verzerrungsfrei: Sie blendet aus, statt zu suchen". Das war falsch. Von 2953 Titeln
+     *  tragen 87 eine Art; der Server schickte 20 Zeilen je Seite, der Browser warf fast alle
+     *  weg, und man blätterte durch 71 Seiten für zwei Treffer. Filtern gehört dorthin, wo
+     *  auch gezählt wird. */
     function bgTitelZeichnen(d) {
-      const nurMit = (document.getElementById('bg-t-zuordnung') || {}).value === 'mit';
-      const zeilen = (d.zeilen || []).filter(z => !nurMit || z.art);
+      const zeilen = d.zeilen || [];
       const koerper = document.getElementById('bg-titel');
       if (!zeilen.length) {
         koerper.innerHTML = '<tr><td colspan="5" class="empty-hint">Nichts gefunden</td></tr>';

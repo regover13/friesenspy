@@ -1444,6 +1444,7 @@ async def admin_titel_seite(request: Request, art: str | None = None,
                             simulator: str | None = None, quelle: str | None = None,
                             ergebnis: str | None = None, status: str | None = None,
                             suche: str | None = None, ohne_art: bool = False,
+                            mit_art: bool = False,
                             sortieren: str = "titel", absteigend: bool = False,
                             seite: int = 1, je_seite: int = 20):
     """Eine Seite der Titelliste -- gefiltert, sortiert, seitenweise. (Admin)
@@ -1457,8 +1458,8 @@ async def admin_titel_seite(request: Request, art: str | None = None,
     try:
         return bruegge_katalog_seite(
             conn, art=art, simulator=simulator, quelle=quelle, ergebnis=ergebnis,
-            status=status, suche=suche, ohne_art=ohne_art, sortieren=sortieren,
-            absteigend=absteigend, seite=seite, je_seite=je_seite)
+            status=status, suche=suche, ohne_art=ohne_art, mit_art=mit_art,
+            sortieren=sortieren, absteigend=absteigend, seite=seite, je_seite=je_seite)
     finally:
         conn.close()
 

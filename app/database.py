@@ -3183,6 +3183,7 @@ def bruegge_katalog_seite(conn: sqlite3.Connection, *, art: str | None = None,
                           simulator: str | None = None, quelle: str | None = None,
                           ergebnis: str | None = None, status: str | None = None,
                           suche: str | None = None, ohne_art: bool = False,
+                          mit_art: bool = False,
                           sortieren: str = "titel", absteigend: bool = False,
                           seite: int = 1, je_seite: int = 20) -> dict:
     """Eine Seite des Katalogs, gefiltert und sortiert -- fuer die Admin-Oberflaeche.
@@ -3195,6 +3196,15 @@ def bruegge_katalog_seite(conn: sqlite3.Connection, *, art: str | None = None,
         wo.append("art IS NULL")
     elif art:
         wo.append("art = ?"); werte.append(art)
+    elif mit_art:
+        # ⚠ MUSS HIER STEHEN, nicht im Browser. Der erste Entwurf filterte die geladene Seite
+        # nachtraeglich im JavaScript -- mit dem Ergebnis, dass der Server 20 Zeilen schickte,
+        # der Browser 18 davon wegwarf und die Seitenzahl Titel zaehlte, die niemand zu sehen
+        # bekam. Im Screenshot vom 14.09.2026: "Seite 18 / 71, 1419 Titel" und ZWEI Zeilen.
+        #
+        # Von 2953 Titeln tragen 87 eine Art. Wer danach filtert, sucht die Nadel -- und
+        # genau dann darf die Seitenrechnung nicht den Heuhaufen zaehlen.
+        wo.append("art IS NOT NULL")
     if simulator:
         wo.append("simulator = ?"); werte.append(simulator)
     if quelle:
@@ -3206,8 +3216,12 @@ def bruegge_katalog_seite(conn: sqlite3.Connection, *, art: str | None = None,
     elif ergebnis:
         wo.append("ergebnis = ?"); werte.append(ergebnis)
     if suche:
-        wo.append("(titel LIKE ? OR paket LIKE ?)")
-        werte += [f"%{suche}%", f"%{suche}%"]
+        # ⚠ AUCH DIE ART, nicht nur Titel und Paket. Wer `windsack` sucht, findet sonst
+        # nichts -- das Modell heisst `Windsock_05`, und den Namen kennt niemand auswendig.
+        # Genau dafuer gibt es die Art: Sie ist die Bedeutung, das Modell nur ihr Traeger
+        # (14.09.2026 gemeldet).
+        wo.append("(titel LIKE ? OR paket LIKE ? OR art LIKE ?)")
+        werte += [f"%{suche}%", f"%{suche}%", f"%{suche}%"]
     rumpf = " WHERE " + " AND ".join(wo) if wo else ""
 
     gesamt = conn.execute(
