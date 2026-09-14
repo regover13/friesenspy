@@ -2249,7 +2249,9 @@
         nachziehen();
       }
 
-      bgArtPicker();
+      // Erst laden, dann den Picker aufsetzen — die Arten kommen seit dem 14.09.2026 vom
+      // Server und stehen nicht mehr im Quelltext.
+      bgArtenLaden().then(bgArtPicker);
       bgPilotenLaden().then(bgCidPicker);
       bgLaden();
       setInterval(bgLaden, 10000);
@@ -2289,44 +2291,57 @@
         : '';
     }
 
-    // --- Was hinstellen? Die Gattungen ---------------------------------------------------
+    // --- Was hinstellen? Die Arten --------------------------------------------------
     //
-    // MUSS zu `g_gattungen` in msfs/bruegge.cpp und `_BRUEGGE_GATTUNGEN` in main.py passen.
-    // Steht hier eine, die das Modul nicht kennt, meldet die Brügge GATTUNG_UNBEKANNT.
+    // ⚠ HIER STAND `_bgGattungen`, eine Liste von 26 Einträgen -- entfernt am 14.09.2026.
     //
-    // `addon: true` heißt: Der Titel stammt aus einem Community-Paket. Fehlt es beim Piloten,
-    // meldet die Brügge einen Fehler, statt still etwas anderes hinzustellen — und genau das
-    // muss hier sichtbar sein, sonst setzt jemand eine Station, die nur bei ihm selbst steht.
-    const _bgGattungen = [
-      { wert: 'tier_gross',  text: 'Bär, Grizzly',                    hinweis: '' },
-      { wert: 'tier_wasser', text: 'Walross, Seelöwe',              hinweis: 'Addon', addon: true },
-      { wert: 'boot_klein',  text: 'Boot, Kutter, Jacht',             hinweis: '' },
-      { wert: 'boot_gross',  text: 'Kreuzfahrtschiff, Frachter',      hinweis: '' },
-      { wert: 'bauwerk',     text: 'Windmühle, Windsack',             hinweis: '' },
-      { wert: 'fahrzeug',    text: 'Flughafenfahrzeug',               hinweis: 'rollt weg!' },
-      { wert: 'marke',       text: 'Flagge',                          hinweis: '' },
-      { wert: 'robbe',       text: 'Seehund, Seelöwe, Walross',       hinweis: 'Addon', addon: true },
-      { wert: 'tier_klein',  text: 'Papageitaucher, Möwe, Gans',      hinweis: 'Addon', addon: true },
-      { wert: 'tier_vieh',   text: 'Kuh, Schaf, Ziege, Esel',         hinweis: 'Addon', addon: true },
-      { wert: 'tier_wild',   text: 'Hirsch, Elch, Fuchs, Wildschwein',hinweis: 'Addon', addon: true },
-      { wert: 'rauch',       text: 'Rauchsäule, irgendeine Farbe',    hinweis: 'weit sichtbar' },
-      // Jede Rauchfarbe ist eine eigene Gattung: Der Server fordert eine Farbe an, und JEDER
-      // Pilot soll sie in seiner Farbe sehen — gleich in welchem Simulator. In X-Plane
-      // liegen alle sechs im Paket (eigenes Werk), in MSFS kommen sie aus Campout.
-      { wert: 'rauch_signalrot',    text: 'Rauch — Signalrot',        hinweis: 'weit sichtbar' },
-      { wert: 'rauch_signalorange', text: 'Rauch — Signalorange',     hinweis: 'weit sichtbar' },
-      { wert: 'rauch_rot',          text: 'Rauch — Rot',              hinweis: '' },
-      { wert: 'rauch_orange',       text: 'Rauch — Orange',           hinweis: 'nur X-Plane' },
-      { wert: 'rauch_hellblau',     text: 'Rauch — Hellblau',         hinweis: '' },
-      { wert: 'rauch_navy',         text: 'Rauch — Dunkelblau',       hinweis: 'nur X-Plane' },
-      { wert: 'rauch_gruen',        text: 'Rauch — Grün',             hinweis: 'nur MSFS · Addon', addon: true },
-      { wert: 'rauch_gelb',         text: 'Rauch — Gelb',             hinweis: 'nur MSFS · Addon', addon: true },
-      { wert: 'leuchtrakete', text: 'Leuchtrakete',                    hinweis: 'nur MSFS · Addon', addon: true },
-      { wert: 'feuer',       text: 'Signalfeuer',                     hinweis: 'Addon', addon: true },
-      { wert: 'punkt',       text: 'Landepunkt, farbig',              hinweis: 'Addon', addon: true },
-      { wert: 'kegel',       text: 'Pylon',                           hinweis: 'Addon', addon: true },
-      { wert: 'himmel',      text: 'Polarlicht, Fallschirm',          hinweis: 'Addon', addon: true },
-    ];
+    // Sie war eine von VIER Listen derselben Sache: hier, in `_BRUEGGE_GATTUNGEN` (main.py)
+    // und in `g_gattungen[]` beider Brügge-Quelltexte. Eine neue Art kostete damit einen
+    // Windows-Build, eine Verteilung an 61 Piloten UND einen Server-Deploy; ein Test konnte
+    // nur zwei der vier gegeneinander halten, weil sich C++ von Python aus nicht laden lässt.
+    //
+    // Jetzt kommt sie von `/api/admin/bruegge/arten` -- aus der Tabelle `bruegge_art`. Eine
+    // neue Art kostet eine Datenbankzeile.
+    //
+    // `addon` heißt weiterhin: JEDER aktive Titel dieser Art stammt aus einem
+    // Community-Paket. Fehlt es beim Piloten, meldet die Brügge einen Fehler, statt still
+    // etwas anderes hinzustellen -- und genau das muss hier sichtbar sein, sonst setzt jemand
+    // eine Station, die nur bei ihm selbst steht. Der Server leitet es aus `quelle` ab,
+    // niemand pflegt es mehr von Hand.
+    let _bgArten = [];
+
+    async function bgArtenLaden() {
+      try {
+        const r = await fetch('/api/admin/bruegge/arten', { credentials: 'same-origin' });
+        if (!r.ok) return;
+        const d = await r.json();
+        // Nur Anforderbares in den Picker: Eine Art ohne einen einzigen aktiven Titel würde
+        // der Server ohnehin ablehnen (400). Sie anzubieten hieße, einen Fehlschlag
+        // vorzubereiten.
+        _bgArten = (d.arten || []).filter(function (a) { return a.anforderbar; });
+      } catch (e) { /* der Picker bleibt leer, die Eingabe funktioniert weiter */ }
+    }
+
+    /** „BlackBear, GrizzlyBear, SyrianBear“ -- die ersten drei aktiven Titel.
+     *
+     *  Früher stand hier ein handgepflegter Text („Bär, Grizzly“). Der lief zwangsläufig
+     *  irgendwann neben der Wirklichkeit her; die Titel selbst tun das nicht.
+     */
+    function bgArtBeispiele(a) {
+      const b = (a.beispiele || []).map(function (t) {
+        // X-Plane führt Dateipfade -- der letzte Teil genügt zum Wiedererkennen.
+        return t.indexOf('/') >= 0 ? t.slice(t.lastIndexOf('/') + 1) : t;
+      });
+      return b.join(', ');
+    }
+
+    function bgArtHinweis(a) {
+      const teile = [];
+      if (a.addon) teile.push('Addon');
+      if (!a.msfs) teile.push('nur X-Plane');
+      else if (!a.xplane) teile.push('nur MSFS');
+      return teile.join(' · ');
+    }
 
     function bgArtPicker() {
       const feld = document.getElementById('bg-art');
@@ -2335,22 +2350,27 @@
 
       function zeichnen() {
         const q = feld.value.trim().toLowerCase();
-        // Gesucht wird über Gattungsnamen UND Beschreibung: Wer „Möwe" tippt, findet
-        // `tier_klein`, ohne den technischen Namen zu kennen.
-        const treffer = _bgGattungen.filter(function (g) {
-          return !q || g.wert.includes(q) || g.text.toLowerCase().includes(q);
+        // Gesucht wird über Artnamen, Bedeutung UND Beispieltitel: Wer „Möwe" tippt, findet
+        // `tier_klein`; wer „Seagull" tippt, auch. Den technischen Namen muss niemand kennen.
+        const treffer = _bgArten.filter(function (a) {
+          if (!q) return true;
+          return a.art.includes(q)
+            || (a.bedeutung || '').toLowerCase().includes(q)
+            || bgArtBeispiele(a).toLowerCase().includes(q);
         });
         picker.innerHTML = '';
         if (!treffer.length) { picker.style.display = 'none'; return; }
-        treffer.forEach(function (g) {
+        treffer.forEach(function (a) {
           const o = document.createElement('div');
           o.className = 'ke-c-opt';
-          o.innerHTML = '<b>' + g.wert + '</b> <span class="ke-c-optcap">' + g.text
-            + (g.hinweis ? ' — ' + g.hinweis : '') + '</span>';
-          if (g.addon) o.style.opacity = '0.85';
+          const hinweis = bgArtHinweis(a);
+          o.innerHTML = '<b>' + a.art + '</b> <span class="ke-c-optcap">'
+            + (a.bedeutung || bgArtBeispiele(a))
+            + (hinweis ? ' — ' + hinweis : '') + '</span>';
+          if (a.addon) o.style.opacity = '0.85';
           o.addEventListener('mousedown', function (e) {
             e.preventDefault();
-            feld.value = g.wert;
+            feld.value = a.art;
             picker.style.display = 'none';
           });
           picker.appendChild(o);

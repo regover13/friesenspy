@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""Welcher Titel BEDEUTET welche Gattung -- die Erstbefuellung, nicht die Wahrheit.
+"""Welcher Titel BEDEUTET welche Art -- die Erstbefuellung, nicht die Wahrheit.
 
 Die Wahrheit steht in `bruegge_katalog`: eine Zeile je (Simulator, Titel), mit
-Pruefergebnis, Gattung, Rang und Status. Diese Datei fuellt sie EINMAL und wird danach
+Pruefergebnis, Art, Rang und Status. Diese Datei fuellt sie EINMAL und wird danach
 nicht mehr gelesen -- gepflegt wird im Admin.
 
 ## Warum das ueberhaupt hier landet
@@ -22,19 +22,19 @@ funktioniert; eine statische Tabelle im Client kann das grundsaetzlich nicht.
 
 ## Die Regeln fuer diese Tabelle
 
-**Eine Gattung faltet die SIMULATOREN zusammen, nicht die Varianten** (PROTOKOLL.md,
+**Eine Art faltet die SIMULATOREN zusammen, nicht die Varianten** (PROTOKOLL.md,
 Abschnitt 3). `boot_klein` ist in MSFS `Boat01` und in X-Plane `SailBoat.obj` -- dieselbe
-Bedeutung, zwei Baender. Aber jede Rauchfarbe ist eine EIGENE Gattung: Der Server fordert
+Bedeutung, zwei Baender. Aber jede Rauchfarbe ist eine EIGENE Art: Der Server fordert
 `rauch_signalrot` an und muss sich darauf verlassen koennen, dass jeder Pilot rote Saeulen
 sieht.
 
 **Der Rang ist die Reihenfolge, in der die Bruegge probiert.** Scheitert Titel 1, rueckt
 Titel 2 nach -- kein theoretischer Fall: `ASO_Ambulance_Japan` liegt im MSFS-2020-Bestand,
-aber nicht in 2024; ohne Nachruecker fiele dort die ganze Gattung `fahrzeug` aus.
+aber nicht in 2024; ohne Nachruecker fiele dort die ganze Art `fahrzeug` aus.
 
-**Ein Titel gehoert zu HOECHSTENS einer Gattung.** Das ist keine technische Schranke,
+**Ein Titel gehoert zu HOECHSTENS einer Art.** Das ist keine technische Schranke,
 sondern eine Entscheidung vom 14.09.2026: Vorher standen 13 von 91 Titeln in mehreren
-Gattungen (`item_flare_red` war `rauch`, `rauch_rot` UND `rauch_signalrot`), und der Katalog
+Arten (`item_flare_red` war `rauch`, `rauch_rot` UND `rauch_signalrot`), und der Katalog
 haette das Pruefergebnis dann mehrfach fuehren muessen. Mit dem Wegfall der Fremdtitel und
 des Sammelbegriffs `rauch` loeste sich die Mehrfachzuordnung von selbst auf.
 
@@ -46,17 +46,17 @@ des Sammelbegriffs `rauch` loeste sich die Mehrfachzuordnung von selbst auf.
 | `rauch_gelb`, `rauch_gruen` | ein Campout-Titel statt eigenem Modell, kein X-Plane |
 | `tier_wild` | in X-Plane DIESELBEN zwei Hirsche wie `tier_gross` -- unterschied nichts |
 | `tier_wasser` | beide Titel standen auch unter `robbe` |
-| `himmel` | Polarlicht und Fallschirm in einer Gattung: eine Restekiste |
+| `himmel` | Polarlicht und Fallschirm in einer Art: eine Restekiste |
 | `rauch` (Sammelbegriff) | alle sechs Farben laufen jetzt in BEIDEN Simulatoren aus eigener Fertigung |
 | `bauwerk` | *"Windmuehlen und Oelplattform sind voellig unterschiedliche Dinge!"* -- wird `windrad` |
 | `marke` | *"Das sind Heissluftballons, keine Marker!"* -- wird `windsack`, `flagge`, `ballon` |
 
 **Alle Fremdtitel aus dem Rauch sind raus** (*"Wir nehmen nur unseren eigenen Rauch"*).
 
-**Heimatlos geworden und bewusst OHNE Gattung:** `dynamic/OilPlatform.obj`,
+**Heimatlos geworden und bewusst OHNE Art:** `dynamic/OilPlatform.obj`,
 `dynamic/OilRig.obj`, `legacy env files/radio_tower.obj`. Sie bleiben im Katalog stehen und
 sind damit jederzeit wieder zuzuordnen -- das ist der ganze Sinn der Liste. Fuer die Nordsee
-waere eine Oelplattform naheliegend; sie braucht dann eine eigene Gattung, keine Sammelrubrik.
+waere eine Oelplattform naheliegend; sie braucht dann eine eigene Art, keine Sammelrubrik.
 """
 
 from __future__ import annotations
@@ -81,7 +81,7 @@ AUS = "aus"
 # Die Reihenfolge IST der Rang. `simulator` ist der Bestand, in dem der Titel gefunden
 # wurde -- welcher Simulator ihn SETZEN kann, steht im Katalog unter `geprueft_in` und ist
 # etwas anderes (`BlackBear` liegt im 2020er Bestand und funktioniert in 2024).
-GATTUNGEN: dict[str, tuple[str, dict[str, list]]] = {
+ARTEN: dict[str, tuple[str, dict[str, list]]] = {
 
     # --- Tiere ------------------------------------------------------------------------
     # ⚠ HIER STAND DER BESTE BELEG FUER DEN GANZEN UMBAU. Von den fuenf Titeln, die die
@@ -109,7 +109,7 @@ GATTUNGEN: dict[str, tuple[str, dict[str, list]]] = {
     }),
     # ⚠ Haengt VOLLSTAENDIG an human-library-animated -- wer das Paket nicht hat, sieht
     # nichts. X-Plane bringt kein Nutzvieh mit (in 7000 .obj kein einziges Tier ausserhalb
-    # von `dynamic/`). Noch nicht entschieden, ob die Gattung so bleiben darf.
+    # von `dynamic/`). Noch nicht entschieden, ob die Art so bleiben darf.
     "tier_vieh": ("Nutzvieh auf der Weide", {
         "msfs2024": ["ahqa cow walking", "ahqa sheep walking", "ahqa goat walking",
                      "ahqa donkey walking"],
@@ -117,7 +117,7 @@ GATTUNGEN: dict[str, tuple[str, dict[str, list]]] = {
     # ⚠ OFFEN: "die Loesung sollten wir aus human-library-animated herausloesen" -- fuer
     # X-Plane gibt es UEBERHAUPT keine Robbe (gesucht in allen 1146 Bordobjekten und in der
     # Szeneriebibliothek), fuer MSFS nur diese drei. Ein eigenes Modell steht aus; bis dahin
-    # bleibt die Gattung an einem Fremdpaket haengen.
+    # bleibt die Art an einem Fremdpaket haengen.
     "robbe": ("Eine Robbe -- fuer die Zaehlaufgabe", {
         "msfs2024": ["ahqa seal moving", "ahqa sea lion moving", "ahqa walrus moving"],
     }),
@@ -126,7 +126,7 @@ GATTUNGEN: dict[str, tuple[str, dict[str, list]]] = {
     # ⚠ X-Plane fehlt hier NICHT, weil es keine Fahrzeuge haette -- es hat 333, darunter
     # `airport scenery/Common_Elements/fire_department/fire_truck_small_1.obj`. Sie stehen
     # nur nicht im Katalog: `katalog_sammeln.py` durchsucht bewusst allein `sim objects/`.
-    # Bis zu einem Sammellauf ueber `airport scenery/` bleibt die Gattung MSFS-eigen.
+    # Bis zu einem Sammellauf ueber `airport scenery/` bleibt die Art MSFS-eigen.
     #
     # ⚠ Alle fuenf stehen im MSFS-2020-Bestand und funktionieren in MSFS 2024 -- in der
     # Bruegge-Tabelle sahen sie wie 2024er Titel aus. Genau diese Verwechslung meint die
@@ -150,10 +150,10 @@ GATTUNGEN: dict[str, tuple[str, dict[str, list]]] = {
                      (XP + "dynamic/Perry.obj", AUS)],
     }),
 
-    # --- Marken: aus einer Gattung sind drei geworden -----------------------------------
+    # --- Marken: aus einer Art sind drei geworden -----------------------------------
     #
     # "Windmuehlen und Oelplattform sind voellig unterschiedliche Dinge! Ausserdem ein
-    # Windsack?!" -- die alte Gattung `bauwerk` warf alles zusammen, was gross und gebaut
+    # Windsack?!" -- die alte Art `bauwerk` warf alles zusammen, was gross und gebaut
     # war. Jetzt trennt sie sich nach dem, was der Pilot tatsaechlich sieht.
     #
     # ⚠ HIER STAND ERST "X-Plane hat kein Windrad, null Treffer in ueber 7000 .obj". Das war
@@ -222,7 +222,7 @@ GATTUNGEN: dict[str, tuple[str, dict[str, list]]] = {
 
     # --- Abgestellte Flugzeuge (Nutzerwunsch 14.09.2026) -------------------------------
     #
-    # ⚠ ZWEI DINGE SIND HIER UNGEPRUEFT, und beide entscheiden, ob die Gattungen in MSFS
+    # ⚠ ZWEI DINGE SIND HIER UNGEPRUEFT, und beide entscheiden, ob die Arten in MSFS
     # ueberhaupt tragen:
     #
     #   1. In MSFS ist ein Flugzeug ein SimObject vom Typ *Airplane*, und dafuer gibt es
@@ -258,8 +258,8 @@ GATTUNGEN: dict[str, tuple[str, dict[str, list]]] = {
     }),
     # ⚠ LEER, UND DAS IST DER PUNKT. Weder X-Plane noch MSFS bringen ein statisches
     # Oldtimer-Flugzeug mit -- keine Ju 52, keine DC-3, keine Piper Cub (gesucht in allen
-    # 298 statischen X-Plane-Flugzeugen und im MSFS-Katalog). Die Gattung steht trotzdem
-    # hier: Eine Gattung ohne aktiven Titel ist nirgends anzufordern, aber sie ist da, und
+    # 298 statischen X-Plane-Flugzeugen und im MSFS-Katalog). Die Art steht trotzdem
+    # hier: Eine Art ohne aktiven Titel ist nirgends anzufordern, aber sie ist da, und
     # der Tag, an dem ein Titel auftaucht, kostet dann keinen Client-Release mehr.
     "flugzeug_klassik": ("Ein abgestelltes Oldtimer-Flugzeug", {}),
 
@@ -293,7 +293,7 @@ def erstbefuellung() -> list[dict]:
     dem letzten Sammellauf), werden dabei ANGELEGT. Die Liste soll vollstaendig sein.
     """
     raus = []
-    for art, (bedeutung, je_sim) in GATTUNGEN.items():
+    for art, (bedeutung, je_sim) in ARTEN.items():
         for simulator, titel in je_sim.items():
             # Der Rang zaehlt JE SIMULATOR von vorn -- er ist die Reihenfolge, in der die
             # Bruegge probiert, und die bekommt sie immer nur fuer ihren eigenen Bestand.
@@ -301,10 +301,10 @@ def erstbefuellung() -> list[dict]:
             for eintrag in titel:
                 name, status = eintrag if isinstance(eintrag, tuple) else (eintrag, "aktiv")
                 rang += 1
-                raus.append({"simulator": simulator, "titel": name, "gattung": art,
+                raus.append({"simulator": simulator, "titel": name, "art": art,
                              "rang": rang, "status": status, "bedeutung": bedeutung})
     return raus
 
 
-#: Alle Gattungen, die es gibt -- fuer die Auswahl im Admin und die Pruefung im Endpunkt.
-ALLE_GATTUNGEN = tuple(GATTUNGEN)
+#: Alle Arten, die es gibt -- fuer die Auswahl im Admin und die Pruefung im Endpunkt.
+ALLE_ARTEN = tuple(ARTEN)

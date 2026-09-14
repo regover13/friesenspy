@@ -426,8 +426,8 @@ def test_ohne_zuordnung_kommt_kein_soll(klient, tmp_path):
     assert klient.post("/api/bruegge/melden", json=_meldung()).json()["soll"] == []
 
 
-def test_unbekannte_gattung_wird_abgewiesen(klient, tmp_path):
-    """Ein Tippfehler in der Gattung darf nicht als stille Nicht-Anforderung enden."""
+def test_unbekannte_art_wird_abgewiesen(klient, tmp_path):
+    """Ein Tippfehler in der Art darf nicht als stille Nicht-Anforderung enden."""
     from app.auth import make_admin_token, make_confirm_token
     import app.main as main
     s = main.get_settings()
@@ -436,16 +436,16 @@ def test_unbekannte_gattung_wird_abgewiesen(klient, tmp_path):
     r = klient.post("/api/admin/bruegge/soll",
                     json={"art": "raumschiff", "lat": 53.0, "lon": 7.0}, cookies=kekse)
     assert r.status_code == 400
-    assert "Gattung" in r.json()["detail"]
+    assert "Art" in r.json()["detail"]
 
 
-def test_robbe_ist_eine_erlaubte_gattung(klient, tmp_path):
-    """Ohne diese Gattung ist der FriesenKieker nicht messbar.
+def test_robbe_ist_eine_erlaubte_art(klient, tmp_path):
+    """Ohne diese Art ist der FriesenKieker nicht messbar.
 
     Weder MSFS 2020 noch 2024 bringt eine Robbe mit (s. `friesenbruegge/OBJEKTE.md`); die
     Bruegge holt sie ab Fassung 1.4.0 aus dem Community-Paket `human-library-animated`. Die
     Pruefliste hier ist die einzige Stelle, die das verhindern koennte -- und sie tat es:
-    `robbe` war nicht drin, das Modul konnte die Gattung setzen, und im Admin liess sie sich
+    `robbe` war nicht drin, das Modul konnte die Art setzen, und im Admin liess sie sich
     nicht anfordern. Aufgefallen ist das NICHT im Simulator, sondern beim Nachsehen.
     """
     from app.auth import make_admin_token, make_confirm_token
@@ -620,7 +620,7 @@ def test_antwort_zu_gross_wird_geloggt_und_stoert_nicht(klient, tmp_path, caplog
 def test_auf_boden_geht_bis_zur_bruegge_durch(klient, tmp_path):
     """Die Sonden-Idee: Der Server kann `OnGround=1` je Objekt verlangen.
 
-    Gebaut fuer EINE Frage (Nutzeridee 12.09.2026): Setzt in WASM irgendeine Gattung mit
+    Gebaut fuer EINE Frage (Nutzeridee 12.09.2026): Setzt in WASM irgendeine Art mit
     OnGround=1 auf, meldet sie danach ihre TATSAECHLICHE Hoehe -- und das ist die
     Gelaendehoehe am ZIELORT, ohne Hoehenmodell und ohne dass jemand hinfliegen muss.
     Mit `Boat01` wirkt das Flag nicht; Tier, Bauwerk und Fahrzeug sind ungemessen.
@@ -788,28 +788,28 @@ def test_geratene_titel_kommen_gar_nicht_erst_in_die_pruefung(klient):
     assert "animals" not in offen, "ein geratener Titel gehoert nicht in die Pruefung"
 
 
-def test_die_gattungsliste_im_admin_passt_zum_server():
-    """Drei Stellen fuehren dieselbe Liste -- Modul, Server, Admin. Laufen sie auseinander,
-    bietet der Admin etwas an, das die Bruegge nicht kennt (GATTUNG_UNBEKANNT), oder er
-    verschweigt etwas, das ginge.
+def test_die_gattungsliste_steht_nur_noch_an_einer_stelle():
+    """Der Vorgaenger dieses Tests hielt ZWEI Listen gegeneinander -- und war damit selbst
+    ein Beleg fuer das Problem.
 
-    Geprueft wird hier Admin gegen Server; das Modul laesst sich von Python aus nicht laden,
-    steht aber als Liste in `friesenbruegge/msfs/bruegge.cpp` (`g_gattungen`) und wird beim
-    Bauen mitgeprueft -- `kann` erzeugt die Bruegge seit Fassung 1.4.0 daraus.
+    Bis zum 14.09.2026 stand dieselbe Aufzaehlung dreimal: `_BRUEGGE_GATTUNGEN` (main.py),
+    `_bgGattungen` (admin.html) und `g_gattungen[]` in BEIDEN Bruegge-Quelltexten. Ein Test
+    konnte nur zwei davon vergleichen, weil sich C++ von Python aus nicht laden laesst -- die
+    dritte und vierte blieben ungeprueft. Und eine neue Art kostete einen Windows-Build,
+    eine Verteilung an 61 Piloten UND einen Server-Deploy.
+
+    Jetzt steht sie in der Tabelle `bruegge_art`. Dieser Test bindet die ABWESENHEIT der
+    Konstanten -- wer eine neue danebenlegt, faengt von vorn an.
     """
-    import re
     from pathlib import Path
     import app.main as main
 
+    assert not hasattr(main, "_BRUEGGE_GATTUNGEN"), (
+        "Die Arten gehoeren in die Datenbank, nicht in eine Konstante")
     html = (Path(__file__).resolve().parents[1] / "app" / "static" / "admin.html").read_text(
         encoding="utf-8")
-    block = html[html.index("const _bgGattungen = ["):html.index("];", html.index("const _bgGattungen = ["))]
-    im_admin = set(re.findall(r"wert:\s*'([a-z_]+)'", block))
-    im_server = set(main._BRUEGGE_GATTUNGEN)
-
-    assert im_admin == im_server, (
-        f"nur im Admin: {sorted(im_admin - im_server)} · "
-        f"nur im Server: {sorted(im_server - im_admin)}")
+    assert "const _bgGattungen = [" not in html, (
+        "Der Admin laedt die Arten vom Server, er fuehrt sie nicht selbst")
 
 
 def test_das_cid_feld_sucht_ueber_callsign_name_und_cid():
@@ -882,7 +882,7 @@ def test_ein_xplane_pfad_gehoert_nicht_in_einen_msfs_lauf(klient):
     fuer_xp = {z["titel"] for z in klient.get(
         "/api/admin/bruegge/katalog?offen_fuer=xplane12", cookies=_admin_kekse()
     ).json()["eintraege"]}
-    # Keine Gleichheit mehr: Seit dem 14.09.2026 legt die Erstbefuellung der Gattungen beim
+    # Keine Gleichheit mehr: Seit dem 14.09.2026 legt die Erstbefuellung der Arten beim
     # Start weitere X-Plane-Pfade an (Ballons, Moewen, unseren eigenen Rauch), und die sind
     # naturgemaess ungeprueft. Gesichert wird, worum es hier geht -- dass die BAENDER
     # getrennt bleiben, nicht wie viele Zeilen zufaellig im Katalog stehen.
@@ -908,9 +908,9 @@ def test_der_admin_setzt_objekte_standardmaessig_auf_den_boden(klient, tmp_path)
     k = _admin_kekse()
 
     klient.post("/api/admin/bruegge/soll", cookies=k,
-                json={"art": "tier_wasser", "lat": 53.0, "lon": 7.0, "id": "ohne-angabe"})
+                json={"art": "robbe", "lat": 53.0, "lon": 7.0, "id": "ohne-angabe"})
     klient.post("/api/admin/bruegge/soll", cookies=k,
-                json={"art": "tier_wasser", "lat": 53.0, "lon": 7.0, "id": "ausdruecklich-aus",
+                json={"art": "robbe", "lat": 53.0, "lon": 7.0, "id": "ausdruecklich-aus",
                       "auf_boden": False})
 
     c = sqlite3.connect(db)

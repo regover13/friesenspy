@@ -103,6 +103,13 @@ from app.database import (
     bruegge_aufraeumen,
     bruegge_soll_fuer,
     bruegge_soll_setzen,
+    bruegge_arten_anforderbar,
+    bruegge_arten_uebersicht,
+    bruegge_art_setzen,
+    bruegge_art_loeschen,
+    bruegge_katalog_seite,
+    bruegge_katalog_setzen,
+    bruegge_titel_fuer,
     bruegge_steht_melden,
     bruegge_steht_alle,
     katalog_eintragen,
@@ -884,55 +891,20 @@ _BRUEGGE_TAKT_OHNE_VATSIM_S = 10
 # Kandidatenproblem, und die naechste Meldung soll bald kommen.
 _BRUEGGE_TAKT_UNERKANNT_S = 3
 
-# Die Gattungen aus PROTOKOLL.md, Abschnitt 3. Eine Gattung ist eine BEDEUTUNG, kein Modell:
-# Welches Tier ein tier_gross ist, darf sich zwischen Simulatoren unterscheiden -- der Pilot
-# zaehlt Tiere, nicht Baeren. Der Server prueft nur gegen diese Liste, damit ein Tippfehler
-# nicht als stille Nicht-Anforderung endet.
+# ⚠ HIER STAND `_BRUEGGE_GATTUNGEN` -- entfernt am 14.09.2026.
 #
-# `robbe` ist die erste Gattung, die NICHT aus dem Bordbestand kommt: Weder MSFS 2020 noch
-# 2024 bringt eine Robbe mit (s. `friesenbruegge/OBJEKTE.md`), die Bruegge holt sie ab
-# Fassung 1.4.0 aus einem Community-Paket. Fuer den Server aendert das nichts -- er nennt die
-# Bedeutung, nicht das Modell -- aber ohne den Eintrag hier laesst sich die Gattung im Admin
-# nicht anfordern, und damit ist sie auch nicht messbar.
-# Die Gattungen, die der Admin anfordern darf. MUSS zu `g_gattungen` in bruegge.cpp passen --
-# steht hier eine, die das Modul nicht kennt, meldet die Bruegge GATTUNG_UNBEKANNT; fehlt hier
-# eine, die es kennt, weist der Admin sie ab, obwohl sie ginge.
+# Es war eine von DREI Listen derselben Sache: hier, in `_bgGattungen` (admin.html) und in
+# `g_gattungen[]` beider Bruegge-Quelltexte. Eine neue Art kostete damit einen
+# Windows-Build, eine Verteilung an 61 Piloten UND einen Server-Deploy; ein Test musste zwei
+# der drei gegeneinander halten, und die dritte war von Python aus gar nicht lesbar.
 #
-# Alle Titel dahinter sind am 12.09.2026 einzeln im laufenden MSFS 2024 gesetzt worden
-# (`probe-msfs/titel_schau.py`, s. OBJEKTE.md). Was nicht ging, steht nicht in der Liste.
-_BRUEGGE_GATTUNGEN = (
-    # Bordmittel -- laufen ueberall
-    "tier_gross", "bauwerk", "fahrzeug", "boot_klein", "boot_gross",
-    "marke",
-    # brauchen ein Community-Paket; fehlt es, meldet die Bruegge einen Fehler,
-    # statt still etwas anderes hinzustellen
-    #
-    # `tier_wasser` stand bis zum 13.09.2026 bei den Bordmitteln -- mit `HumpbackWhale`.
-    # Der wird von MSFS 2024 ueberhaupt nicht gezeichnet (an drei Orten geprueft, jedes
-    # Mal mit einem sichtbaren Boot daneben), also gibt es dafuer kein Bordmittel mehr.
-    "robbe", "tier_klein", "tier_vieh", "tier_wild", "tier_wasser",
-    "punkt", "kegel", "rauch", "feuer", "himmel",
-    # --- Rauch nach Farben (13.09.2026) ------------------------------------------------
-    #
-    # Jede Farbe ist eine eigene Gattung, und das ist keine Verlegenheitsloesung: Eine
-    # Gattung fasst zusammen, was sich ueber die SIMULATOREN verteilt -- nicht, was sich
-    # innerhalb eines Simulators unterscheidet (PROTOKOLL.md, Abschnitt 3). Der Server
-    # fordert `rauch_signalrot` an und muss sich darauf verlassen koennen, dass JEDER Pilot
-    # rote Saeulen sieht, gleich in welchem Simulator. Wuerfelte die Bruegge die Farbe,
-    # markierte dieselbe Anforderung bei zwei Piloten zwei verschiedene Dinge.
-    #
-    # Nicht jede Farbe kann jeder Simulator. In X-Plane liegen alle sechs IM PAKET (eigenes
-    # Werk, FriesenFlieger-Palette plus zwei Signalfarben); MSFS hat dafuer Gruen und Gelb
-    # aus dem Campout-Paket, aber kein Orange und kein Navy. Was eine Bruegge nicht kann,
-    # meldet sie nicht in `kann` -- der Server darf hier also mehr auffuehren, als jeder
-    # einzelne Simulator bedient.
-    "rauch_signalrot", "rauch_signalorange", "rauch_rot", "rauch_orange",
-    "rauch_hellblau", "rauch_navy", "rauch_gruen", "rauch_gelb",
-    # Kein Rauch, sondern ein heller Punkt hoch am Himmel (`si_flare_l_red`, im Bild
-    # gesehen): Rauch sagt "hier ist die Station", eine Leuchtrakete sagt "schaut hierher".
-    # Bisher nur MSFS.
-    "leuchtrakete",
-)
+# Jetzt steht die Liste in der Tabelle `bruegge_art`, und wer sie braucht, fragt
+# `bruegge_arten_anforderbar(conn)`. Der GRUND fuer die Pruefung bleibt derselbe -- ein
+# Tippfehler soll nicht als stille Nicht-Anforderung enden -- nur die Quelle wechselt.
+#
+# Eine Art ist weiterhin eine BEDEUTUNG, kein Modell (PROTOKOLL.md, Abschnitt 3): Welches
+# Tier ein `tier_gross` ist, darf sich zwischen Simulatoren unterscheiden, denn der Pilot
+# zaehlt Tiere, nicht Baeren.
 _BRUEGGE_TAKT_VORGABE_S = 1          # Regeltakt, gemessen (s. Protokoll, Abschnitt 6)
 
 
@@ -1223,15 +1195,21 @@ async def admin_bruegge_soll_setzen(request: Request):
         lon = float(body["lon"])
     except (KeyError, TypeError, ValueError):
         raise HTTPException(status_code=400, detail="art, lat und lon sind Pflicht")
-    if art not in _BRUEGGE_GATTUNGEN:
-        raise HTTPException(status_code=400,
-                            detail=f"unbekannte Gattung -- erlaubt: {', '.join(_BRUEGGE_GATTUNGEN)}")
     if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
         raise HTTPException(status_code=400, detail="lat/lon außerhalb des Gültigen")
 
     kennung_id = str(body.get("id") or f"admin-{secrets.token_hex(4)}")[:60]
     conn = get_connection(get_settings().DB_PATH)
     try:
+        # Die Positivliste kommt seit dem 14.09.2026 AUS DER DATENBANK, nicht mehr aus einer
+        # Konstante. Der Grund für die Prüfung bleibt derselbe (ein Tippfehler soll nicht als
+        # stille Nicht-Anforderung enden) — aber eine neue Art kostet jetzt eine Zeile in
+        # `bruegge_art` statt eines Deploys.
+        erlaubt = bruegge_arten_anforderbar(conn)
+        if art not in erlaubt:
+            raise HTTPException(
+                status_code=400,
+                detail=f"unbekannte oder leere Art -- anforderbar: {', '.join(erlaubt)}")
         bruegge_soll_setzen(
             conn, kennung_id, art, lat, lon,
             cid=int(body["cid"]) if body.get("cid") else None,
@@ -1365,6 +1343,118 @@ async def admin_katalog_lesen(request: Request, simulator: str | None = None,
                 "eintraege": katalog_lesen(conn, simulator, quelle,
                                            nur_offen=offen, grenze=min(grenze, 2000),
                                            offen_fuer=offen_fuer)}
+    finally:
+        conn.close()
+
+
+@app.get("/api/admin/bruegge/arten")
+async def admin_arten_lesen(request: Request):
+    """Alle Arten mit ihren Zahlen -- die Auswahlliste des Admin. (Admin)
+
+    **Die einzige Quelle.** Bis zum 14.09.2026 stand dieselbe Liste in `_BRUEGGE_GATTUNGEN`
+    (hier), in `_bgGattungen` (admin.html) und in `g_gattungen[]` beider Bruegge-Quelltexte.
+    Der Admin holt sie jetzt von hier, und eine neue Art kostet eine Datenbankzeile.
+    """
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        return {"arten": bruegge_arten_uebersicht(conn),
+                "anforderbar": bruegge_arten_anforderbar(conn)}
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/bruegge/arten")
+async def admin_art_setzen(request: Request):
+    """Eine Art anlegen, umbenennen im Sinn der Bedeutung, aus- oder wieder einschalten.
+
+    ``{"art": "windrad", "bedeutung": "Ein Windrad", "status": "aktiv"}``
+
+    ⚠ ``{"art": "...", "loeschen": true}`` nimmt die Art weg und GIBT IHRE TITEL FREI -- die
+    Katalogzeilen bleiben stehen, sie verlieren nur ihre Zuordnung. Wer eine Art wegnimmt,
+    wollte die Bedeutung los, nicht die Objekte.
+    """
+    require_admin(request)
+    body = await request.json()
+    art = str(body.get("art") or "").strip()[:40]
+    if not art or not re.fullmatch(r"[a-z][a-z0-9_]*", art):
+        raise HTTPException(status_code=400,
+                            detail="art: klein, ohne Leerzeichen, z. B. `tier_gross`")
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        if body.get("loeschen"):
+            weg = bruegge_art_loeschen(conn, art)
+            conn.commit()
+            return {"ok": True, "geloescht": weg}
+        bruegge_art_setzen(
+            conn, art,
+            bedeutung=(str(body["bedeutung"])[:200] if "bedeutung" in body else ...),
+            status=(str(body["status"])[:10] if "status" in body else ...))
+        conn.commit()
+        return {"ok": True, "arten": bruegge_arten_uebersicht(conn)}
+    finally:
+        conn.close()
+
+
+@app.get("/api/admin/bruegge/titel")
+async def admin_titel_seite(request: Request, art: str | None = None,
+                            simulator: str | None = None, quelle: str | None = None,
+                            ergebnis: str | None = None, status: str | None = None,
+                            suche: str | None = None, ohne_art: bool = False,
+                            sortieren: str = "titel", absteigend: bool = False,
+                            seite: int = 1, je_seite: int = 20):
+    """Eine Seite der Titelliste -- gefiltert, sortiert, seitenweise. (Admin)
+
+    Seitenweise, weil es 2935 Zeilen sind. Alle stehen drin, auch die 2875 ohne Art: *"Das
+    soll aber trotzdem alles in der Liste vorhanden sein!"* -- wer keine Art hat, ist nicht
+    zugeordnet und damit nicht anforderbar, bleibt aber jederzeit zuzuordnen.
+    """
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        return bruegge_katalog_seite(
+            conn, art=art, simulator=simulator, quelle=quelle, ergebnis=ergebnis,
+            status=status, suche=suche, ohne_art=ohne_art, sortieren=sortieren,
+            absteigend=absteigend, seite=seite, je_seite=je_seite)
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/bruegge/titel")
+async def admin_titel_setzen(request: Request):
+    """Einen Titel einer Art zuordnen, seinen Rang oder seinen Status aendern. (Admin)
+
+    ``{"simulator": "msfs2020", "titel": "BlackBear", "art": "tier_gross", "rang": 1}``
+
+    ``"art": null`` nimmt die Zuordnung weg. Rang und Status gehen dann mit -- ohne Art
+    behaupteten sie eine Ordnung, zu der es nichts zu ordnen gibt.
+    """
+    require_admin(request)
+    body = await request.json()
+    simulator = str(body.get("simulator") or "")
+    titel = str(body.get("titel") or "")
+    if not simulator or not titel:
+        raise HTTPException(status_code=400, detail="simulator und titel sind Pflicht")
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        art = ... if "art" not in body else (
+            None if body["art"] is None else str(body["art"])[:40])
+        if art not in (None, ...):
+            # Eine Art, die es nicht gibt, waere ein Tippfehler mit stiller Wirkung: Der
+            # Titel haette eine Zuordnung, die in keiner Auswahlliste auftaucht.
+            bekannt = {z["art"] for z in bruegge_arten_uebersicht(conn)}
+            if art not in bekannt:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"unbekannte Art `{art}` -- erst unter /arten anlegen")
+        getroffen = bruegge_katalog_setzen(
+            conn, simulator, titel, art=art,
+            rang=(int(body["rang"]) if body.get("rang") is not None else ...),
+            status=(str(body["status"])[:10] if "status" in body else ...))
+        conn.commit()
+        if not getroffen:
+            raise HTTPException(status_code=404, detail="Titel steht nicht im Katalog")
+        return {"ok": True}
     finally:
         conn.close()
 

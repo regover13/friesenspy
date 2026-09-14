@@ -706,7 +706,7 @@ CREATE TABLE IF NOT EXISTS bruegge_soll (
     bemerkung     TEXT,
     -- OnGround=1 beim Setzen verlangen (0/1). Aus WASM heraus wirkt das Flag mit `Boat01`
     -- NICHT (11.09.2026 ausgemessen) -- ob ein Tier, Bauwerk oder Fahrzeug sich anders
-    -- verhaelt, ist offen. Setzt EINE Gattung auf, taugt sie als Sonde: hinstellen, die
+    -- verhaelt, ist offen. Setzt EINE Art auf, taugt sie als Sonde: hinstellen, die
     -- gemeldete Hoehe ablesen, das eigentliche Objekt mit `erwartete_hoehe_ft` setzen.
     -- Damit waere die Gelaendehoehe am ZIELORT bekannt, ohne Hoehenmodell.
     auf_boden     INTEGER NOT NULL DEFAULT 0
@@ -726,7 +726,7 @@ CREATE INDEX IF NOT EXISTS idx_bruegge_soll_cid ON bruegge_soll(cid);
 --
 -- WOZU das ueberhaupt gebraucht wird: Ohne diese Rueckmeldung weiss der Server nie, ob ein
 -- Objekt tatsaechlich dasteht. Er schriebe eine Station in `soll`, die Bruegge scheiterte
--- still (unbekannte Gattung, Stelle unbrauchbar), und das Event liefe mit einer Station, die
+-- still (unbekannte Art, Stelle unbrauchbar), und das Event liefe mit einer Station, die
 -- es nicht gibt. Beim FriesenKieker hiesse das: Ein Pilot fliegt hin und findet nichts.
 CREATE TABLE IF NOT EXISTS bruegge_steht (
     kennung     TEXT NOT NULL,       -- WELCHE Bruegge meldet; dieselbe id kann mehrfach stehen
@@ -788,6 +788,30 @@ CREATE TABLE IF NOT EXISTS bruegge_katalog (
 
 CREATE INDEX IF NOT EXISTS idx_bruegge_katalog_quelle ON bruegge_katalog(quelle, ergebnis);
 CREATE INDEX IF NOT EXISTS idx_bruegge_katalog_paket ON bruegge_katalog(paket);
+
+-- Die Arten selbst. NICHT dieselbe Liste wie der Katalog darueber -- der fuehrt TITEL,
+-- diese hier fuehrt BEDEUTUNGEN. Ein Titel steht genau einmal im Katalog, eine Art
+-- genau einmal hier; doppelt steht nichts.
+--
+-- Warum sie ueberhaupt eine eigene Tabelle braucht und nicht aus `SELECT DISTINCT art`
+-- faellt: Eine Art darf LEER sein. `flugzeug_klassik` ist so ein Fall -- weder MSFS noch
+-- X-Plane bringt einen statischen Oldtimer mit, aber die Art soll dastehen und auf einen
+-- Titel warten. Aus den Katalogzeilen abgeleitet waere sie unsichtbar, und niemand kaeme auf
+-- die Idee, ihr einen zuzuordnen.
+--
+-- ⚠ HIER ENDET DIE RELEASE-PFLICHT. Vor dem 14.09.2026 stand dieselbe Liste dreimal: in
+-- `g_gattungen[]` beider Bruegge-Quelltexte, in `_BRUEGGE_GATTUNGEN` (main.py) und in
+-- `_bgGattungen` (admin.html). Eine neue Art kostete damit einen Windows-Build, eine
+-- Verteilung an 61 Piloten UND einen Server-Deploy. Jetzt kostet sie eine Zeile hier.
+CREATE TABLE IF NOT EXISTS bruegge_art (
+    art         TEXT PRIMARY KEY,   -- rauch_signalrot, tier_gross, …
+    bedeutung   TEXT,               -- was der Server damit meint (Anzeige im Admin)
+    -- 'aktiv' = im Admin anwaehlbar, 'aus' = ausgeblendet, ohne die Zuordnungen zu verlieren.
+    -- Das ist die Ebene ueber `bruegge_katalog.status`: dort einzelne Titel, hier die ganze
+    -- Art.
+    status      TEXT NOT NULL DEFAULT 'aktiv',
+    angelegt_am TEXT
+);
 """
 
 
@@ -919,24 +943,32 @@ _BRUEGGE_MIGRATIONS = [
     # 14.09.2026: DIE GATTUNG ZIEHT VOM CLIENT IN DEN KATALOG.
     #
     # Bis hierher trug jede Bruegge ihre eigene Tabelle `g_gattungen[]`. Das widersprach dem
-    # Leitbild ("Die Bruegge ist dumm") und kostete real: Eine neue Gattung brauchte einen
+    # Leitbild ("Die Bruegge ist dumm") und kostete real: Eine neue Art brauchte einen
     # Windows-Build und eine Verteilung an 61 Piloten.
     #
     # EINE LISTE, EINE WAHRHEIT -- Nutzervorgabe vom 14.09.2026. Alle 2935 Titel bleiben
-    # stehen; wer keine `gattung` hat, ist schlicht nicht zugeordnet und im Admin nicht
+    # stehen; wer keine `art` hat, ist schlicht nicht zugeordnet und im Admin nicht
     # anwaehlbar. Das ist die Abwesenheit einer Zuordnung, kein Status -- dieselbe
     # Unterscheidung wie bei `geprueft_am IS NULL` darueber.
     #
     # `rang` ist die Reihenfolge, in der die Bruegge probiert (scheitert Titel 1, rueckt 2
     # nach). `status` blendet einzelne Titel aus, ohne sie zu verlieren: 'aktiv' geht
     # hinaus, 'aus' bleibt sichtbar und wird nicht ausgeliefert.
-    "ALTER TABLE bruegge_katalog ADD COLUMN gattung TEXT",
+    "ALTER TABLE bruegge_katalog ADD COLUMN art TEXT",
     "ALTER TABLE bruegge_katalog ADD COLUMN rang INTEGER",
     "ALTER TABLE bruegge_katalog ADD COLUMN status TEXT",
-    # Der Auslieferungspfad fragt immer nach (gattung, status) -- ohne Index scannt er bei
+    # Der Auslieferungspfad fragt immer nach (art, status) -- ohne Index scannt er bei
     # jeder Bruegge-Meldung 2935 Zeilen, und das im 1-Sekunden-Takt je Pilot.
-    "CREATE INDEX IF NOT EXISTS idx_bruegge_katalog_gattung "
-    "ON bruegge_katalog(gattung, status, rang)",
+    "CREATE INDEX IF NOT EXISTS idx_bruegge_katalog_art "
+    "ON bruegge_katalog(art, status, rang)",
+    # Die Artentabelle selbst -- fuer bestehende Datenbanken, die das CREATE TABLE im
+    # Schema nicht mehr erreicht (IF NOT EXISTS legt nichts nach).
+    """CREATE TABLE IF NOT EXISTS bruegge_art (
+        art         TEXT PRIMARY KEY,
+        bedeutung   TEXT,
+        status      TEXT NOT NULL DEFAULT 'aktiv',
+        angelegt_am TEXT
+    )""",
 ]
 
 _VISIBILITY_MIGRATIONS = [
@@ -1237,9 +1269,9 @@ def init_db(db_path: str) -> None:
         except sqlite3.OperationalError:
             pass
         try:
-            # 14.09.2026: Die Gattungen ziehen aus den Brüggen in den Katalog (idempotent —
+            # 14.09.2026: Die Arten ziehen aus den Brüggen in den Katalog (idempotent —
             # steht schon eine Zuordnung drin, passiert nichts).
-            bruegge_gattungen_erstbefuellen(conn)
+            bruegge_arten_erstbefuellen(conn)
         except (sqlite3.OperationalError, ImportError):
             pass
         try:
@@ -2964,17 +2996,17 @@ def katalog_lesen(conn: sqlite3.Connection, simulator: str | None = None,
 
 
 # ---------------------------------------------------------------------------
-# Gattungen: welcher Titel bedeutet was
+# Arten: welcher Titel bedeutet was
 #
-# Die Zuordnung lebt seit dem 14.09.2026 IM KATALOG (Spalten `gattung`, `rang`, `status`)
+# Die Zuordnung lebt seit dem 14.09.2026 IM KATALOG (Spalten `art`, `rang`, `status`)
 # und nicht mehr in den Brueggen. Der Grund steht im Leitbild des Protokolls: Die Bruegge
-# ist dumm, und eine neue Gattung darf keinen Windows-Build kosten.
+# ist dumm, und eine neue Art darf keinen Windows-Build kosten.
 # ---------------------------------------------------------------------------
 
-def bruegge_gattungen_erstbefuellen(conn: sqlite3.Connection) -> dict:
-    """Die Zuordnung aus ``app.bruegge_gattungen`` EINMAL in den Katalog schreiben.
+def bruegge_arten_erstbefuellen(conn: sqlite3.Connection) -> dict:
+    """Die Zuordnung aus ``app.bruegge_arten`` EINMAL in den Katalog schreiben.
 
-    Idempotent und bewusst zurueckhaltend: Wo schon eine `gattung` steht, wird nichts
+    Idempotent und bewusst zurueckhaltend: Wo schon eine `art` steht, wird nichts
     angefasst -- gepflegt wird im Admin, und ein Neustart darf Handarbeit nicht ueberschreiben.
     Titel, die der Katalog noch nicht kennt (unser eigener Rauch etwa), werden angelegt.
 
@@ -2984,12 +3016,20 @@ def bruegge_gattungen_erstbefuellen(conn: sqlite3.Connection) -> dict:
     `deer_o_hemionus` bei jedem Fehlversuch durch, obwohl alle drei am 12.09.2026 mit
     EXCEPTION_22 gescheitert waren. Eine Tabelle im Client kann das nicht wissen.
     """
-    from app.bruegge_gattungen import erstbefuellung
+    from app.bruegge_arten import ARTEN, erstbefuellung
 
     schon = conn.execute(
-        "SELECT COUNT(*) FROM bruegge_katalog WHERE gattung IS NOT NULL").fetchone()[0]
+        "SELECT COUNT(*) FROM bruegge_katalog WHERE art IS NOT NULL").fetchone()[0]
     if schon:
         return {"uebersprungen": True, "zugeordnet": schon}
+
+    # Erst die Arten selbst -- auch die leeren. `flugzeug_klassik` hat keinen Titel und
+    # waere sonst nirgends zu sehen; sie soll aber dastehen und auf einen warten.
+    for art, (bedeutung, _) in ARTEN.items():
+        conn.execute(
+            "INSERT INTO bruegge_art (art, bedeutung, status, angelegt_am) "
+            "VALUES (?, ?, 'aktiv', ?) ON CONFLICT(art) DO NOTHING",
+            (art, bedeutung, _now_utc()))
 
     neu = gesetzt = abgeschaltet = 0
     for e in erstbefuellung():
@@ -2999,7 +3039,7 @@ def bruegge_gattungen_erstbefuellen(conn: sqlite3.Connection) -> dict:
         if vorhanden is None:
             conn.execute(
                 "INSERT INTO bruegge_katalog (simulator, titel, quelle, kategorie, bemerkung) "
-                "VALUES (?, ?, 'unbekannt', NULL, 'beim Gattungs-Umzug angelegt')",
+                "VALUES (?, ?, 'unbekannt', NULL, 'beim Arten-Umzug angelegt')",
                 (e["simulator"], e["titel"]))
             neu += 1
             status = e["status"]
@@ -3008,16 +3048,16 @@ def bruegge_gattungen_erstbefuellen(conn: sqlite3.Connection) -> dict:
             if status == "aus" and e["status"] != "aus":
                 abgeschaltet += 1
         conn.execute(
-            "UPDATE bruegge_katalog SET gattung = ?, rang = ?, status = ? "
+            "UPDATE bruegge_katalog SET art = ?, rang = ?, status = ? "
             "WHERE simulator = ? AND titel = ?",
-            (e["gattung"], e["rang"], status, e["simulator"], e["titel"]))
+            (e["art"], e["rang"], status, e["simulator"], e["titel"]))
         gesetzt += 1
     return {"uebersprungen": False, "zugeordnet": gesetzt, "angelegt": neu,
             "wegen_fehlschlag_aus": abgeschaltet}
 
 
 def bruegge_titel_fuer(conn: sqlite3.Connection, simulator: str) -> dict[str, list[str]]:
-    """Gattung -> Titel in der Reihenfolge, in der diese Bruegge sie probieren soll.
+    """Art -> Titel in der Reihenfolge, in der diese Bruegge sie probieren soll.
 
     **MSFS 2020 und 2024 bilden EINEN Topf.** Das ist keine Bequemlichkeit, sondern der
     gemessene Stand: `BlackBear` liegt im 2020er Bestand und funktioniert in MSFS 2024,
@@ -3034,45 +3074,115 @@ def bruegge_titel_fuer(conn: sqlite3.Connection, simulator: str) -> dict[str, li
     else:
         wo = "simulator IN ('msfs2020', 'msfs2024')"
     rows = conn.execute(
-        f"SELECT gattung, titel FROM bruegge_katalog "
-        f"WHERE gattung IS NOT NULL AND status = 'aktiv' AND {wo} "
-        f"ORDER BY gattung, rang, titel").fetchall()
+        f"SELECT art, titel FROM bruegge_katalog "
+        f"WHERE art IS NOT NULL AND status = 'aktiv' AND {wo} "
+        f"ORDER BY art, rang, titel").fetchall()
     raus: dict[str, list[str]] = {}
-    for gattung, titel in rows:
-        raus.setdefault(gattung, []).append(titel)
+    for art, titel in rows:
+        raus.setdefault(art, []).append(titel)
     return raus
 
 
-def bruegge_gattungen_uebersicht(conn: sqlite3.Connection) -> list[dict]:
-    """Je Gattung: wie viele Titel, wie viele aktiv, in welchen Simulatoren.
+def bruegge_arten_uebersicht(conn: sqlite3.Connection) -> list[dict]:
+    """Alle Arten mit ihren Zahlen -- die Auswahlliste des Admin.
 
-    Eine Gattung OHNE aktiven Titel ist nirgends anzufordern -- das leitet sich hier ab und
-    steht nirgends extra, damit es keine zweite Wahrheit gibt.
+    **Die einzige Quelle dafuer.** Bis zum 14.09.2026 stand dieselbe Liste dreimal (in beiden
+    Bruegge-Quelltexten, in `_BRUEGGE_GATTUNGEN` und in `_bgGattungen`), und ein Test musste
+    zwei davon gegeneinander halten. Wer hier eine Konstante daneben legt, baut genau das neu.
+
+    LEFT JOIN, damit leere Arten mitkommen: `flugzeug_klassik` hat keinen Titel und soll
+    trotzdem sichtbar sein -- nur eben nicht anwaehlbar (`anforderbar` ist falsch).
+
+    `beispiele` ist die Anzeige im Admin, aus den ersten drei aktiven Titeln erzeugt statt
+    von Hand gepflegt. `addon` sagt, ob die Art ein Fremdpaket braucht -- das MUSS
+    sichtbar sein, sonst setzt jemand eine Station, die nur bei ihm selbst steht.
     """
     rows = conn.execute(
-        "SELECT gattung, COUNT(*) AS titel_gesamt, "
-        "       SUM(CASE WHEN status = 'aktiv' THEN 1 ELSE 0 END) AS aktiv, "
-        "       SUM(CASE WHEN simulator LIKE 'msfs%' AND status = 'aktiv' "
+        "SELECT g.art AS art, g.bedeutung, g.status AS art_status, "
+        "       COUNT(k.titel) AS titel_gesamt, "
+        "       SUM(CASE WHEN k.status = 'aktiv' THEN 1 ELSE 0 END) AS aktiv, "
+        "       SUM(CASE WHEN k.simulator LIKE 'msfs%' AND k.status = 'aktiv' "
         "                THEN 1 ELSE 0 END) AS msfs, "
-        "       SUM(CASE WHEN simulator = 'xplane12' AND status = 'aktiv' "
+        "       SUM(CASE WHEN k.simulator = 'xplane12' AND k.status = 'aktiv' "
         "                THEN 1 ELSE 0 END) AS xplane, "
-        "       SUM(CASE WHEN ergebnis = 'steht' THEN 1 ELSE 0 END) AS belegt "
-        "FROM bruegge_katalog WHERE gattung IS NOT NULL "
-        "GROUP BY gattung ORDER BY gattung"
+        "       SUM(CASE WHEN k.ergebnis = 'steht' THEN 1 ELSE 0 END) AS belegt, "
+        # Braucht JEDER aktive Titel ein Fremdpaket? Dann steht bei einem Piloten ohne das
+        # Paket nichts da. `bord`/`streamed`/`unbekannt` (unser eigenes) zaehlen als eigen.
+        "       SUM(CASE WHEN k.status = 'aktiv' AND k.quelle = 'community' "
+        "                THEN 1 ELSE 0 END) AS aus_addon "
+        "FROM bruegge_art g "
+        "LEFT JOIN bruegge_katalog k ON k.art = g.art "
+        "GROUP BY g.art, g.bedeutung, g.status ORDER BY g.art"
     ).fetchall()
-    return [_row_to_dict(r) for r in rows]
+    raus = []
+    for r in rows:
+        d = _row_to_dict(r)
+        aktiv = d.get("aktiv") or 0
+        d["anforderbar"] = bool(aktiv) and d.get("art_status") == "aktiv"
+        d["addon"] = bool(aktiv) and (d.get("aus_addon") or 0) == aktiv
+        d["beispiele"] = [z[0] for z in conn.execute(
+            "SELECT titel FROM bruegge_katalog WHERE art = ? AND status = 'aktiv' "
+            "ORDER BY rang, titel LIMIT 3", (d["art"],)).fetchall()]
+        raus.append(d)
+    return raus
+
+
+def bruegge_art_setzen(conn: sqlite3.Connection, art: str, *,
+                           bedeutung: str | None = ..., status: str | None = ...) -> None:
+    """Eine Art anlegen oder aendern (kein commit).
+
+    Damit ist eine NEUE GATTUNG eine Zeile in der Datenbank -- kein Client-Release, kein
+    Server-Deploy. Genau das war der Zweck des ganzen Umbaus.
+    """
+    conn.execute(
+        "INSERT INTO bruegge_art (art, bedeutung, status, angelegt_am) "
+        "VALUES (?, ?, 'aktiv', ?) ON CONFLICT(art) DO NOTHING",
+        (art, None if bedeutung is ... else bedeutung, _now_utc()))
+    setz, werte = [], []
+    if bedeutung is not ...:
+        setz.append("bedeutung = ?"); werte.append(bedeutung)
+    if status is not ...:
+        setz.append("status = ?"); werte.append(status)
+    if setz:
+        conn.execute(f"UPDATE bruegge_art SET {', '.join(setz)} WHERE art = ?",
+                     werte + [art])
+
+
+def bruegge_art_loeschen(conn: sqlite3.Connection, art: str) -> int:
+    """Eine Art entfernen und ihre Titel freigeben (kein commit).
+
+    Die Titel selbst bleiben im Katalog stehen -- sie verlieren nur ihre Zuordnung. Wer eine
+    Art wegnimmt, wollte die Bedeutung los, nicht die Objekte.
+    """
+    conn.execute("UPDATE bruegge_katalog SET art = NULL, rang = NULL, status = NULL "
+                 "WHERE art = ?", (art,))
+    cur = conn.execute("DELETE FROM bruegge_art WHERE art = ?", (art,))
+    return cur.rowcount or 0
+
+
+def bruegge_arten_anforderbar(conn: sqlite3.Connection) -> list[str]:
+    """Welche Arten darf der Admin anfordern? Ersetzt `_BRUEGGE_GATTUNGEN`.
+
+    Eine Art ohne einen einzigen aktiven Titel faellt heraus: Der Server sendet nie ins
+    Leere, und ein Tippfehler soll nicht als stille Nicht-Anforderung enden (das war der
+    Grund fuer die alte Positivliste -- der Grund bleibt, nur die Quelle wechselt).
+    """
+    return [z[0] for z in conn.execute(
+        "SELECT DISTINCT g.art FROM bruegge_art g "
+        "JOIN bruegge_katalog k ON k.art = g.art AND k.status = 'aktiv' "
+        "WHERE g.status = 'aktiv' ORDER BY g.art").fetchall()]
 
 
 #: Spalten, nach denen der Admin sortieren darf. Eine Positivliste, weil der Name direkt in
 #: die ORDER-BY-Klausel geht -- alles andere waere eine Einladung.
-_KATALOG_SPALTEN = ("simulator", "titel", "paket", "quelle", "kategorie", "gattung",
+_KATALOG_SPALTEN = ("simulator", "titel", "paket", "quelle", "kategorie", "art",
                     "rang", "status", "ergebnis", "geprueft_am", "geprueft_in")
 
 
-def bruegge_katalog_seite(conn: sqlite3.Connection, *, gattung: str | None = None,
+def bruegge_katalog_seite(conn: sqlite3.Connection, *, art: str | None = None,
                           simulator: str | None = None, quelle: str | None = None,
                           ergebnis: str | None = None, status: str | None = None,
-                          suche: str | None = None, ohne_gattung: bool = False,
+                          suche: str | None = None, ohne_art: bool = False,
                           sortieren: str = "titel", absteigend: bool = False,
                           seite: int = 1, je_seite: int = 20) -> dict:
     """Eine Seite des Katalogs, gefiltert und sortiert -- fuer die Admin-Oberflaeche.
@@ -3081,10 +3191,10 @@ def bruegge_katalog_seite(conn: sqlite3.Connection, *, gattung: str | None = Non
     Umschalter der Seiten je 20. Wir brauchen keine 2000 Objekte."*
     """
     wo, werte = [], []
-    if ohne_gattung:
-        wo.append("gattung IS NULL")
-    elif gattung:
-        wo.append("gattung = ?"); werte.append(gattung)
+    if ohne_art:
+        wo.append("art IS NULL")
+    elif art:
+        wo.append("art = ?"); werte.append(art)
     if simulator:
         wo.append("simulator = ?"); werte.append(simulator)
     if quelle:
@@ -3110,7 +3220,7 @@ def bruegge_katalog_seite(conn: sqlite3.Connection, *, gattung: str | None = Non
     rows = conn.execute(
         f"SELECT * FROM bruegge_katalog{rumpf} "
         # Zweiter Schluessel: Ohne ihn wandern Zeilen mit gleichem Sortierwert zwischen den
-        # Seiten -- bei 2875 Titeln ohne Gattung waere die Sortierung sonst reine Zierde.
+        # Seiten -- bei 2875 Titeln ohne Art waere die Sortierung sonst reine Zierde.
         f"ORDER BY {spalte} {richtung}, simulator, titel LIMIT ? OFFSET ?",
         werte + [je_seite, (seite - 1) * je_seite]).fetchall()
     return {"gesamt": gesamt, "seite": seite, "je_seite": je_seite,
@@ -3119,18 +3229,18 @@ def bruegge_katalog_seite(conn: sqlite3.Connection, *, gattung: str | None = Non
 
 
 def bruegge_katalog_setzen(conn: sqlite3.Connection, simulator: str, titel: str, *,
-                           gattung: str | None = ..., rang: int | None = ...,
+                           art: str | None = ..., rang: int | None = ...,
                            status: str | None = ...) -> bool:
     """Zuordnung, Rang oder Status einer Katalogzeile aendern (kein commit).
 
     Nicht uebergebene Felder bleiben, wie sie sind -- deshalb `...` als Vorgabe und nicht
-    `None`: `None` ist hier ein gueltiger Wert ("Gattung wegnehmen").
+    `None`: `None` ist hier ein gueltiger Wert ("Art wegnehmen").
     """
     setz, werte = [], []
-    if gattung is not ...:
-        setz.append("gattung = ?"); werte.append(gattung)
-        if gattung is None:
-            # Ohne Gattung sind Rang und Status gegenstandslos. Sie stehen zu lassen hiesse,
+    if art is not ...:
+        setz.append("art = ?"); werte.append(art)
+        if art is None:
+            # Ohne Art sind Rang und Status gegenstandslos. Sie stehen zu lassen hiesse,
             # eine Ordnung zu behaupten, zu der es nichts zu ordnen gibt.
             setz += ["rang = NULL", "status = NULL"]
     if rang is not ...:

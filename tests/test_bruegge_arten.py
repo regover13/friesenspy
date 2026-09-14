@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Die Gattungen leben im Katalog, nicht mehr in der Bruegge (14.09.2026).
+"""Die Arten leben im Katalog, nicht mehr in der Bruegge (14.09.2026).
 
 Was hier gebunden wird, ist absichtlich wenig: die REGELN, nicht der Inhalt. Welche Titel zu
 `tier_gross` gehoeren, entscheidet der Admin und darf sich jederzeit aendern -- dass ein
@@ -10,7 +10,7 @@ import sqlite3
 import pytest
 
 from app import database as db
-from app.bruegge_gattungen import GATTUNGEN, erstbefuellung
+from app.bruegge_arten import ARTEN, erstbefuellung
 
 
 @pytest.fixture()
@@ -35,9 +35,9 @@ def leer(tmp_path):
     pfad = str(tmp_path / "leer.db")
     db.init_db(pfad)
     c = db.get_connection(pfad)
-    c.execute("UPDATE bruegge_katalog SET gattung = NULL, rang = NULL, status = NULL")
+    c.execute("UPDATE bruegge_katalog SET art = NULL, rang = NULL, status = NULL")
     c.execute("DELETE FROM bruegge_katalog "
-              "WHERE bemerkung = 'beim Gattungs-Umzug angelegt'")
+              "WHERE bemerkung = 'beim Arten-Umzug angelegt'")
     c.commit()
     yield c
     c.close()
@@ -49,7 +49,7 @@ def test_erstbefuellung_legt_fehlende_titel_an(leer):
     Die Liste soll vollstaendig sein ("Das soll aber trotzdem alles in der Liste vorhanden
     sein!"), also legt die Erstbefuellung an, was sie nicht findet.
     """
-    ergebnis = db.bruegge_gattungen_erstbefuellen(leer)
+    ergebnis = db.bruegge_arten_erstbefuellen(leer)
     assert ergebnis["uebersprungen"] is False
     assert ergebnis["angelegt"] == len(erstbefuellung())   # leerer Katalog: alles neu
     titel = db.bruegge_titel_fuer(leer, "msfs2024")
@@ -63,7 +63,7 @@ def test_erstbefuellung_faesst_handarbeit_nicht_an(conn):
     Start. Ein Neustart darf die Pflege nicht zuruecksetzen.
     """
     db.bruegge_katalog_setzen(conn, "msfs2020", "BlackBear", status="aus")
-    zweiter = db.bruegge_gattungen_erstbefuellen(conn)
+    zweiter = db.bruegge_arten_erstbefuellen(conn)
     assert zweiter["uebersprungen"] is True
     assert "BlackBear" not in db.bruegge_titel_fuer(conn, "msfs2024").get("tier_gross", [])
 
@@ -85,12 +85,12 @@ def test_gescheiterter_titel_wird_nicht_ausgeliefert(leer):
                                  "quelle": "bord"}])
     db.katalog_ergebnis(leer, "msfs2020", "BlackBear", "fehlgeschlagen",
                         fehler="EXCEPTION_22", geprueft_in="msfs2024")
-    db.bruegge_gattungen_erstbefuellen(leer)
+    db.bruegge_arten_erstbefuellen(leer)
     assert "BlackBear" not in db.bruegge_titel_fuer(leer, "msfs2024").get("tier_gross", [])
     # ... aber die Zeile bleibt stehen. Wer sie loescht, verliert den Befund.
     zeile = leer.execute(
-        "SELECT gattung, status FROM bruegge_katalog WHERE titel = 'BlackBear'").fetchone()
-    assert zeile["gattung"] == "tier_gross"
+        "SELECT art, status FROM bruegge_katalog WHERE titel = 'BlackBear'").fetchone()
+    assert zeile["art"] == "tier_gross"
     assert zeile["status"] == "aus"
 
 
@@ -100,7 +100,7 @@ def test_msfs_bekommt_beide_bestaende_xplane_nur_seinen(conn):
     Deshalb bilden msfs2020 und msfs2024 EINEN Topf. X-Plane bleibt getrennt: dort ist der
     Bezeichner ein Dateipfad, ein MSFS-Titel waere sinnlos.
     """
-    db.bruegge_gattungen_erstbefuellen(conn)
+    db.bruegge_arten_erstbefuellen(conn)
     msfs = db.bruegge_titel_fuer(conn, "msfs2024")
     xp = db.bruegge_titel_fuer(conn, "xplane12")
     assert "BlackBear" in msfs["tier_gross"]          # aus dem 2020er Bestand
@@ -113,41 +113,41 @@ def test_msfs_bekommt_beide_bestaende_xplane_nur_seinen(conn):
 
 def test_rang_bestimmt_die_reihenfolge(conn):
     """Scheitert Titel 1, rueckt Titel 2 nach -- die Reihenfolge ist Absicht, kein Zufall."""
-    db.bruegge_gattungen_erstbefuellen(conn)
+    db.bruegge_arten_erstbefuellen(conn)
     boote = db.bruegge_titel_fuer(conn, "xplane12")["boot_klein"]
     assert boote[0].endswith("SailBoat.obj")   # im Bild gesehen, steht deshalb vorn
 
 
-def test_ohne_gattung_ist_kein_status(conn):
-    """Ein Titel ohne Gattung ist nicht zugeordnet -- das ist die Abwesenheit, kein Zustand.
+def test_ohne_art_ist_kein_status(conn):
+    """Ein Titel ohne Art ist nicht zugeordnet -- das ist die Abwesenheit, kein Zustand.
 
     Dieselbe Unterscheidung wie `geprueft_am IS NULL` ("nie versucht") und wie
     `nicht_gefunden` bei den AIP-Blaettern. Nur so bleibt die Arbeitsliste abarbeitbar.
     """
     db.katalog_eintragen(conn, [{"simulator": "msfs2024", "titel": "Irgendwas",
                                  "quelle": "community"}])
-    db.bruegge_gattungen_erstbefuellen(conn)
+    db.bruegge_arten_erstbefuellen(conn)
     zeile = conn.execute(
-        "SELECT gattung, rang, status FROM bruegge_katalog WHERE titel = 'Irgendwas'"
+        "SELECT art, rang, status FROM bruegge_katalog WHERE titel = 'Irgendwas'"
     ).fetchone()
-    assert zeile["gattung"] is None and zeile["rang"] is None and zeile["status"] is None
-    seite = db.bruegge_katalog_seite(conn, ohne_gattung=True)
+    assert zeile["art"] is None and zeile["rang"] is None and zeile["status"] is None
+    seite = db.bruegge_katalog_seite(conn, ohne_art=True)
     assert any(z["titel"] == "Irgendwas" for z in seite["zeilen"])
 
 
-def test_gattung_wegnehmen_raeumt_rang_und_status_mit(conn):
-    """Ohne Gattung sind Rang und Status gegenstandslos -- sonst behaupten sie eine Ordnung."""
-    db.bruegge_gattungen_erstbefuellen(conn)
-    db.bruegge_katalog_setzen(conn, "msfs2020", "BlackBear", gattung=None)
+def test_art_wegnehmen_raeumt_rang_und_status_mit(conn):
+    """Ohne Art sind Rang und Status gegenstandslos -- sonst behaupten sie eine Ordnung."""
+    db.bruegge_arten_erstbefuellen(conn)
+    db.bruegge_katalog_setzen(conn, "msfs2020", "BlackBear", art=None)
     zeile = conn.execute(
-        "SELECT gattung, rang, status FROM bruegge_katalog WHERE titel = 'BlackBear'"
+        "SELECT art, rang, status FROM bruegge_katalog WHERE titel = 'BlackBear'"
     ).fetchone()
-    assert zeile["gattung"] is None and zeile["rang"] is None and zeile["status"] is None
+    assert zeile["art"] is None and zeile["rang"] is None and zeile["status"] is None
 
 
 def test_seite_sortiert_nur_nach_erlaubten_spalten(conn):
     """Der Spaltenname geht direkt in ORDER BY -- eine Positivliste ist Pflicht."""
-    db.bruegge_gattungen_erstbefuellen(conn)
+    db.bruegge_arten_erstbefuellen(conn)
     s = db.bruegge_katalog_seite(conn, sortieren="titel; DROP TABLE bruegge_katalog")
     assert s["gesamt"] > 0
     assert conn.execute("SELECT COUNT(*) FROM bruegge_katalog").fetchone()[0] > 0
@@ -161,15 +161,15 @@ def test_woerterbuch_passt_in_den_antwortpuffer(conn):
     Groessenordnung, damit ein sorgloser Zuwachs auffaellt, bevor der Puffer reisst.
     """
     import json
-    db.bruegge_gattungen_erstbefuellen(conn)
+    db.bruegge_arten_erstbefuellen(conn)
     for sim in ("msfs2024", "xplane12"):
         j = json.dumps(db.bruegge_titel_fuer(conn, sim), ensure_ascii=False,
                        separators=(",", ":"))
         assert len(j) < 4096, f"{sim}: {len(j)} Bytes -- ein Viertel des Puffers ist genug"
 
 
-def test_jeder_titel_gehoert_zu_hoechstens_einer_gattung():
-    """Vorher standen 13 von 91 Titeln in mehreren Gattungen -- der Katalog kann das nicht.
+def test_jeder_titel_gehoert_zu_hoechstens_einer_art():
+    """Vorher standen 13 von 91 Titeln in mehreren Arten -- der Katalog kann das nicht.
 
     Mit dem Wegfall der Fremdtitel und des Sammelbegriffs `rauch` loeste sich das auf. Wer
     eine Mehrfachzuordnung wieder einfuehrt, braucht eine zweite Tabelle; dieser Test sagt
@@ -179,8 +179,8 @@ def test_jeder_titel_gehoert_zu_hoechstens_einer_gattung():
     for e in erstbefuellung():
         schluessel = (e["simulator"], e["titel"])
         assert schluessel not in gesehen, (
-            f"{e['titel']} steht in {gesehen.get(schluessel)} UND {e['gattung']}")
-        gesehen[schluessel] = e["gattung"]
+            f"{e['titel']} steht in {gesehen.get(schluessel)} UND {e['art']}")
+        gesehen[schluessel] = e["art"]
 
 
 def test_keine_fremdtitel_im_rauch():
@@ -189,7 +189,7 @@ def test_keine_fremdtitel_im_rauch():
     Nutzerentscheidung vom 14.09.2026. Fremdtitel hier haetten zwei Folgen: ein Abo bzw. ein
     fremdes Paket als Voraussetzung, und eine Farbe, die nicht unsere ist.
     """
-    for art, (_, je_sim) in GATTUNGEN.items():
+    for art, (_, je_sim) in ARTEN.items():
         if not art.startswith("rauch"):
             continue
         for titel in je_sim.values():
