@@ -111,6 +111,39 @@ sonst läge das Tier auf der Seite oder im Boden.
 - **Aus welcher Entfernung ist die Kolonie erkennbar?** X-Plane hat MSFS' LOD-System nicht;
   die Bounding-Box-Grenze gilt dort nicht.
 
+## ⭐ 200 OBJEKTE, DREIZEHN ARTEN, ALLES GLEICHZEITIG — X-Plane, 14.09.2026
+
+**Der bisher größte Lauf, und er trägt.** Zwei Durchgänge, beide abgenommen:
+
+| | |
+|---|---|
+| 200 Seehunde in fünf Rudeln, 90 bis 420 m gestaffelt | „scheint zu klappen" |
+| 200 gemischte Objekte im Halbkreis, bis 400 m | **„sieht gut aus. lass sie stehen"** |
+
+Die Mischung umfasste **alle dreizehn Arten, die X-Plane kann** — Boote, Hirsche, Möwen,
+Windräder, Tanks, Masten, Kräne, Flugplatzfahrzeuge, Windsäcke und unsere beiden eigenen
+Modelle (Rauch und Seehund). Sechs Rauchsäulen als Baaken, eine je Farbe; bei
+gleichmäßiger Mischung wären es über dreißig gewesen, und darunter hätte man von den
+Tieren nichts mehr gesehen.
+
+### Was damit zum ersten Mal belegt ist
+
+- **`SOLL_MAX` 200 trägt praktisch.** Die Grenze stand bis heute bei 32, und die Antwort
+  bricht bei Überlauf **lautlos** ab — man hätte es nur an fehlenden Objekten gemerkt.
+- **Die zufälligen Richtungen wirken.** Erster Praxistest des Kurses, der seit heute im
+  Server gewürfelt wird; vorher zeigte alles nach Norden.
+- **Die Autogen-Arten `kran`, `tank` und `mast` standen zum ersten Mal im Bild.** Sie
+  stammen aus dem Sammellauf über `1000 autogen/US/industrial/` vom selben Tag — bis dahin
+  war nur belegt, dass Autogen-Objekte *grundsätzlich* ladbar sind (Windrad, Leuchtturm).
+- **Zweihundert Objekte gleichzeitig kosten nichts Sichtbares.** Vorher waren dreißig das
+  Maximum (12.09.2026).
+
+### Und was weiterhin offen ist
+
+- **Aus welcher Entfernung ist eine Kolonie erkennbar?** Die Staffelung 90–420 m lag im
+  Bild, aber gezählt hat sie niemand. Für den Kieker ist das die eigentliche Zahl.
+- **Die Farbe des Seehunds** — greift die Palettentextur? Aus der Ferne nicht zu beurteilen.
+
 ## ⚠ MSFS: DER SEEHUND IST DORT NOCH UNGEPRÜFT (14.09.2026)
 
 **In keinem Simulator gesehen.** Das Modell ist gebaut, in beide Pakete eingebaut und auf
