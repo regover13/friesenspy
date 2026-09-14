@@ -31,8 +31,22 @@
 #include <mutex>
 #include <thread>
 
-#define MELDUNG_PUFFER 8192
-#define ANTWORT_PUFFER 16384
+// ⚠⚠ AUCH DIESER PUFFER HAENGT AN SOLL_MAX -- die Meldung traegt `steht` JE OBJEKT.
+//
+// Ein `steht`-Eintrag ist rund 70 Bytes:
+//     {"id":"kolonie-norderney-12","zustand":"steht","hoehe_ft":1388.2}
+//
+//     SOLL_MAX   steht-Teil   + Lage/Spur (~1,5 kB)   noetiger Puffer
+//         32        2,2 kB           3,7 kB               8192  (traegt 2,2x)
+//        200       14,0 kB          15,5 kB              32768  (traegt 2,1x)
+//
+// Der Antwortpuffer war der offensichtliche (s. ANTWORT_PUFFER); dieser hier ist der
+// stillere, weil ein Ueberlauf nicht die Antwort abschneidet, sondern die eigene Meldung --
+// und die landet dann als kaputtes JSON beim Server.
+#define MELDUNG_PUFFER 32768
+// Und die Antwort -- dieselbe Rechnung wie in msfs/bruegge.cpp: 126 Bytes je `soll`-Eintrag,
+// bei SOLL_MAX = 200 also 25,2 kB plus `arten`. 16384 liefe ueber, und zwar LAUTLOS.
+#define ANTWORT_PUFFER 49152
 
 // Was von einem Sendeversuch zurückkommt.
 struct NetzMeldung {

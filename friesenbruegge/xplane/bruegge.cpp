@@ -125,7 +125,14 @@
 
 #define SPUR_MAX 16
 #define SPRUNG_GRAD 0.005         // rund 555 m in der Breite; 600 kt sind 309 m/s
-#define SOLL_MAX 32
+// Am 14.09.2026 von 32 auf 200 gehoben, gleichlautend mit der MSFS-Fassung.
+//
+// ⚠ BEIDE PUFFER IN `netz.h` MUSSTEN MITGEHEN -- ANTWORT_PUFFER (die Antwort traegt
+// `soll` je Objekt) und MELDUNG_PUFFER (die Meldung traegt `steht` je Objekt). Die
+// Rechnung steht dort.
+//
+// ⚠ Die Leistung ist UNGEMESSEN: Gemessen sind 30 gleichzeitige Instanzen (12.09.2026).
+#define SOLL_MAX 200
 #define OBJEKTE_MAX 24            // verschiedene .obj gleichzeitig geladen
 
 #define FT_JE_M 3.280839895

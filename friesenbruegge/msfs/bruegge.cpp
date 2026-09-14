@@ -76,17 +76,48 @@
 #define SPRUNG_GRAD 0.005     // rund 555 m in der Breite
 
 // Soviel Puffer braucht die Meldung mit voller Spur, großzügig gerechnet.
-#define MELDUNG_PUFFER 8192
+// ⚠⚠ AUCH DIESER PUFFER HAENGT AN SOLL_MAX -- die Meldung traegt `steht` JE OBJEKT.
+//
+// Ein `steht`-Eintrag ist rund 70 Bytes:
+//     {"id":"kolonie-norderney-12","zustand":"steht","hoehe_ft":1388.2}
+//
+//     SOLL_MAX   steht-Teil   + Lage/Spur (~1,5 kB)   noetiger Puffer
+//         32        2,2 kB           3,7 kB               8192  (traegt 2,2x)
+//        200       14,0 kB          15,5 kB              32768  (traegt 2,1x)
+//
+// Der Antwortpuffer war der offensichtliche (s. ANTWORT_PUFFER); dieser hier ist der
+// stillere, weil ein Ueberlauf nicht die Antwort abschneidet, sondern die eigene Meldung --
+// und die landet dann als kaputtes JSON beim Server.
+#define MELDUNG_PUFFER 32768
 
-// Und soviel die ANTWORT des Servers. Gemessen am 12.09.2026: 126 Bytes je `soll`-Eintrag,
-// also rund 4 KB bei SOLL_MAX = 32 -- der frühere Wert von 4096 lief damit über, lautlos
-// (s. anfrage_fertig). 16384 trägt einen vollen Sollzustand rund viermal.
-#define ANTWORT_PUFFER 16384
+// Und soviel die ANTWORT des Servers.
+//
+// ⚠⚠ DIESE ZAHL HAENGT AN SOLL_MAX, UND EIN UEBERLAUF IST LAUTLOS (s. anfrage_fertig).
+// Gemessen am 12.09.2026: **126 Bytes je `soll`-Eintrag**. Daraus die Rechnung:
+//
+//     SOLL_MAX   soll-Teil   + `arten` (bis 2 kB)   noetiger Puffer
+//         32        4,0 kB          6,0 kB              16384  (traegt 2,7x)
+//        200       25,2 kB         27,2 kB              49152  (traegt 1,8x)
+//
+// Der fruehere Wert 4096 lief bei 32 Objekten ueber -- lautlos, die Bruegge behielt ihren
+// alten Stand und meldete nur `antwort_zu_gross`. Wer SOLL_MAX hebt, MUSS hier mitgehen.
+#define ANTWORT_PUFFER 49152
 
-// Soviele Objekte haelt die Bruegge gleichzeitig. Der Simulator vertraegt deutlich mehr
-// (im Probeflug gemessen), aber eine feste Obergrenze im Modul ist billiger als eine
-// dynamische Verwaltung -- und der Server weiss ohnehin, was er anfordert.
-#define SOLL_MAX 32
+// Soviele Objekte haelt die Bruegge gleichzeitig.
+//
+// Am 14.09.2026 von 32 auf 200 gehoben (Nutzer: "wir brauchen viel mehr!!!"). Fuer eine
+// Kieker-Station mit verteilten Kolonien sind 32 zu wenig -- schon ein Vorfeld voller Tiere
+// erreicht die Grenze.
+//
+// ⚠ WAS DAS KOSTET, und beides ist UNGEMESSEN:
+//   * Speicher: `g_soll[200]` plus zwei Puffer zu 48 kB. In WASM tragbar, aber nicht nichts.
+//   * Leistung im Simulator: Gemessen sind DREISSIG gleichzeitige Objekte (12.09.2026,
+//     MESSLISTE Abschnitt 5d). 200 sind das Sechsfache und im Flug noch nie probiert.
+//
+// Der Nummernraum traegt es: REQ_ERZEUGEN 1000..1200, REQ_OBJEKT 2000..2200 -- die
+// Bereiche beruehren sich nicht. Bei SOLL_MAX > 1000 waere das anders, und eine Kollision
+// endet mit UNRECOGNIZED_ID an voellig unverdaechtiger Stelle (11.09.2026 gemessen).
+#define SOLL_MAX 200
 
 enum {
     EV_SEKUNDE   = 1,
