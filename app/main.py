@@ -1357,10 +1357,26 @@ async def admin_bruegge_soll_setzen(request: Request):
             raise HTTPException(
                 status_code=400,
                 detail=f"unbekannte oder leere Art -- anforderbar: {', '.join(erlaubt)}")
+        # ⚠ ZUFAELLIGE RICHTUNG -- sonst steht alles in Reih und Glied nach NORDEN.
+        #
+        # Der Server schickte `kurs: null`, und die Bruegge macht daraus 0
+        # (`json_zahl_in(e, "kurs", 0.0)` in beiden Fassungen). Bei einem einzelnen Objekt
+        # faellt das nicht auf, bei einer Robbenkolonie sofort -- "Das machen Robben eher
+        # selten" (Nutzer, 14.09.2026).
+        #
+        # Gewuerfelt wird HIER und nicht in der Bruegge: Die soll dumm bleiben, und sie
+        # bekommt ohnehin nur das Ergebnis. Und HIER und nicht im Browser, damit auch der
+        # kuenftige Kieker davon hat, der Kolonien ohne Admin setzt.
+        #
+        # Jedes Hinstellen wuerfelt neu -- auch wenn dieselbe `id` ueberschrieben wird.
+        kurs = float(body["kurs"]) if body.get("kurs") is not None else None
+        if body.get("kurs_zufall"):
+            kurs = round(secrets.randbelow(3600) / 10.0, 1)
+
         bruegge_soll_setzen(
             conn, kennung_id, art, lat, lon,
             cid=int(body["cid"]) if body.get("cid") else None,
-            kurs=float(body["kurs"]) if body.get("kurs") is not None else None,
+            kurs=kurs,
             erwartete_hoehe_ft=(float(body["erwartete_hoehe_ft"])
                                 if body.get("erwartete_hoehe_ft") is not None else None),
             gilt_bis=str(body["gilt_bis"])[:32] if body.get("gilt_bis") else None,

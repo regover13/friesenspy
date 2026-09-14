@@ -1536,6 +1536,17 @@
               <input id="bg-hoehe" type="number" step="1" placeholder="Höhe ft MSL" disabled
                      title="Höhe über Meer in Fuß. Nur wenn „auf den Boden“ abgewählt ist."
                      style="width:120px;padding:6px;">
+              <!-- Ohne Kurs steht jedes Objekt nach NORDEN: Der Server schickt dann
+                   `kurs: null`, und die Brügge macht daraus 0. Bei einem einzelnen Tier
+                   egal, bei einer Kolonie sofort sichtbar — „Das machen Robben eher
+                   selten" (14.09.2026). Der Haken würfelt bei JEDEM Hinstellen neu. -->
+              <label style="color:#8aa0b8;font-size:0.78rem;display:flex;align-items:center;gap:4px;"
+                     title="Der Server würfelt die Richtung — bei jedem Hinstellen neu. Sonst steht alles nach Norden.">
+                <input type="checkbox" id="bg-kurs-zufall" checked> zufällige Richtung
+              </label>
+              <input id="bg-kurs" type="number" step="1" min="0" max="359" placeholder="Richtung °" disabled
+                     title="Rechtweisender Kurs in Grad (0–359). Nur wenn „zufällige Richtung“ abgewählt ist."
+                     style="width:110px;padding:6px;">
               <button class="btn btn-sm" id="bg-soll-setzen">Hinstellen</button>
               <button class="btn btn-sm" id="bg-karte-auf">🗺 Karte</button>
             </div>
@@ -2307,6 +2318,15 @@
             art: art,
             lat: lat, lon: lon, cid: cid ? parseInt(cid, 10) : null,
             auf_boden: document.getElementById('bg-auf-boden').checked,
+            // Beides mitschicken: Der Server würfelt, wenn `kurs_zufall` steht, sonst
+            // nimmt er `kurs`. Gewürfelt wird DORT und nicht hier, damit der künftige
+            // Kieker dasselbe bekommt, ohne durch den Browser zu müssen.
+            kurs_zufall: document.getElementById('bg-kurs-zufall').checked,
+            kurs: (function () {
+              const v = parseFloat(document.getElementById('bg-kurs').value);
+              return (!document.getElementById('bg-kurs-zufall').checked && isFinite(v))
+                     ? ((v % 360) + 360) % 360 : null;
+            })(),
             erwartete_hoehe_ft: (function () {
               const h = document.getElementById('bg-hoehe');
               const v = parseFloat(h.value);
@@ -2360,6 +2380,19 @@
         };
         hakenB.addEventListener('change', nachziehen);
         nachziehen();
+      }
+
+      // Dasselbe für die Richtung: Der Haken sperrt das Gradfeld. Eine bedienbare
+      // Gradangabe neben „zufällig" wäre dieselbe Lüge wie oben — der Wert käme nie an.
+      const hakenK = document.getElementById('bg-kurs-zufall');
+      const kursF = document.getElementById('bg-kurs');
+      if (hakenK && kursF) {
+        const nachziehenK = function () {
+          kursF.disabled = hakenK.checked;
+          kursF.style.opacity = hakenK.checked ? '0.45' : '1';
+        };
+        hakenK.addEventListener('change', nachziehenK);
+        nachziehenK();
       }
 
       // Erst laden, dann den Picker aufsetzen — die Arten kommen seit dem 14.09.2026 vom
