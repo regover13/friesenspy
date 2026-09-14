@@ -1145,6 +1145,22 @@ async def bruegge_melden(request: Request):
         # Flugzeug fliegt, heisst nicht, dass es sich als Objekt setzen laesst -- die Mi-2
         # scheiterte am selben Tag mit `EXCEPTION_22`, obwohl ihr Besitzer sie flog. Das
         # Ergebnis entsteht erst beim ersten Setzversuch.
+        # ⚠ NUR ZUR DIAGNOSE, und nur solange die Frage offen ist: Kommt `TITLE` fuer das
+        # EIGENE Flugzeug ueberhaupt an? Die Bruegge zaehlt mit, wie oft der SimConnect-
+        # Callback feuerte und wie oft er leer war (s. `fz_rufe` in bruegge.cpp).
+        #
+        #   0 Rufe          -> die Datendefinition greift nicht
+        #   Rufe == leer    -> sie greift, aber TITLE ist fuer USER nicht gefuellt
+        #   Rufe > leer     -> sie funktioniert, der Fehler liegt danach
+        #
+        # Einmal je Minute genuegt -- bei Sekundentakt waere es sonst eine Logzeile je
+        # Sekunde und je Pilot.
+        _rufe = body.get("fz_rufe")
+        if _rufe is not None and secrets.randbelow(60) == 0:
+            _logger.info("Bruegge %s: TITLE-Callback %s mal, davon %s leer, Titel=%r",
+                         kennung or "?", _rufe, body.get("fz_leer"),
+                         str(body.get("flugzeug") or "")[:60])
+
         flugzeug = str(body.get("flugzeug") or "")[:200].strip()
         if flugzeug and simulator:
             katalog_eintragen(conn, [{
