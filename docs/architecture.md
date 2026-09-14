@@ -463,8 +463,25 @@ mit dieser Fassung entfallen; der Weg läuft jetzt am Speicher entlang statt an 
   dieselbe Tabelle `_positionsRoh`, aus der `_naviTakt` ohnehin liest. Es entsteht **kein zweiter
   Zeichenweg** — die Fortrechnung läuft danach über eine Sekunde statt über fünfzehn und ist
   praktisch null. Höhe und Fahrt fürs Schild stehen in `_brueggeWerte` (dasselbe Muster wie
-  `_friesenSimWerte`), `_mitSimWerten` gibt ihnen Vorrang vor dem lokalen Sim-Verkehr: Der hängt an
-  einer **geratenen** Zuordnung über Position und Kurs, die Brügge trägt die cid.
+  `_friesenSimWerte`).
+- ⚠ **Nur auf der Website, nicht im Kniebrett** (seit 15.09.2026). `_brueggeStromEinarbeiten`
+  steigt bei `_PANEL_MODUS` sofort aus; im Cockpit trägt das Sim-Matching.
+
+  Hier stand die Begründung **umgekehrt** — „der lokale Sim-Verkehr hängt an einer *geratenen*
+  Zuordnung, die Brügge trägt die cid" — und das war falsch. Die Brügge trägt **keine** cid: Sie
+  schickt eine Kennung, und welcher Pilot dazugehört, rät der Server über die Position, mit
+  demselben Verfahren (`app/bruegge.py` ist die Übersetzung von `_verkehrZusammenfuehren`). Die
+  cid im Strom ist das *Ergebnis* eines Ratens, keine gemeldete Tatsache.
+
+  Bei gleichem Verfahren entscheiden die Eingangsdaten, und im Cockpit hat das Sim-Matching die
+  besseren: Es sieht **alle** Flugzeuge im Umkreis auf einmal und kann deshalb per Ausschluss
+  zuordnen, der Server je Meldung genau eines. Dazu der kürzere Weg — Simulator → Browser gegen
+  Simulator → Brügge → Netz → Server → Netz → Tablet.
+
+  Der alte Vorrang fragte außerdem nur `_brueggeFrisch()`, also „meldet sie?", nie „stimmt sie?".
+  Eine falsche Server-Zuordnung verdrängte damit das funktionierende Sim-Matching — und über
+  `_positionsRoh`, aus dem `_friesenAlsKandidaten` seine Kandidaten baut, vergiftete sie sogar
+  dessen eigene Suche.
 - **`_markerGehoertDemSim`** hält den 15-Sekunden-Abruf vom frischen Punkt fern — ohne das schriebe
   `updateMap` ihn reihum auf den alten zurück (derselbe Rückwärtssprung wie beim eigenen Flugzeug).
 - **Rückfall ohne Abmeldung**: Der Strom meldet sein Ende nicht — wer den Simulator schließt, hört

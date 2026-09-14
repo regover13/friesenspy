@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.45.0",
+    "date": "2026-09-15",
+    "highlight": false,
+    "title": "Objekte bleiben stehen, Meldungen gehen nicht mehr verloren",
+    "items": [
+      "🪧 Gesetzte Objekte verschwanden gelegentlich für ein paar Sekunden und kamen dann wieder. Ursache: Wenn eine einzelne Positionsmeldung nicht zur erkannten Zuordnung passte — ein Aussetzer im VATSIM-Netz genügt —, antwortete der Server mit einer leeren Objektliste, und die FriesenBrügge räumte daraufhin folgerichtig alles ab. Jetzt behält sie ihre Objekte: Die gelten für den Piloten, nicht für seine Position in dieser einen Sekunde.",
+      "🚦 Die FriesenBrügge hat auf dem Server eine eigene Spur bekommen. Vorher teilte sie sich ein Anfragelimit mit der Website und dem Kniebrett — und wenn die Karte beim Öffnen viele Kacheln nachlud, wurden Meldungen der FriesenBrügge abgewiesen. Am 14.09. sind so 67 Meldungen verloren gegangen, jede eine Sekunde, in der ein Punkt auf der Karte stehen blieb.",
+      "🎯 Im Kniebrett bewegen sich andere Friesen wieder nach den Daten aus dem eigenen Simulator statt nach dem Umweg über den Server. Der direkte Weg ist kürzer, und er sieht alle Flugzeuge in der Umgebung auf einmal — deshalb erkennt er auch besser, welches Flugzeug zu wem gehört. Auf der Website bleibt es beim bisherigen Weg über die FriesenBrügge; dort gibt es keinen Simulator, der mitreden könnte."
+    ]
+  },
+  {
     "version": "14.44.0",
     "date": "2026-09-15",
     "highlight": false,

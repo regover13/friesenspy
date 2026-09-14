@@ -6310,16 +6310,18 @@ function _verkehrZusammenfuehren() {
     // Friese im Kniebrett so genau wie das eigene Flugzeug -- gemessen jede Sekunde statt
     // vierzehn von fuenfzehn Sekunden geschaetzt.
     if (v && v._friese) {
-      // ... es sei denn, er fliegt eine FriesenBruegge. Dann steht sein Punkt schon da, und
-      // zwar ohne die Unsicherheit dieser Zuordnung: Hier wird ueber Position und Kurs
-      // GERATEN, welches Sim-Flugzeug welcher Friese ist. Die Bruegge meldet die cid mit.
-      // Trifft die Zuordnung daneben, schoebe diese Zeile einen Friesen an den Ort eines
-      // ganz anderen Flugzeugs -- die Bruegge kann das nicht.
-      if (!_brueggeFrisch(v.cs)) {
-        _positionsRoh[v.cs] = { lat: s.lat, lon: s.lon, hdg: Number(s.hdg) || 0,
-                                gs: Number(s.gs) || 0, ts: _simVerkehr.ts };
-        _friesenSimWerte[v.cs] = { alt: s.alt, gs: s.gs };
-      }
+      // ⚠ HIER STAND EIN VORRANG FUER DIE FRIESENBRUEGGE (`if (!_brueggeFrisch(v.cs))`),
+      // und er ist am 15.09.2026 entfernt worden -- mitsamt seiner Begruendung, die falsch
+      // war: „Die Bruegge meldet die cid mit." Tut sie nicht. Sie meldet eine Kennung, und
+      // welcher Pilot dazu gehoert, RAET der Server ueber die Position -- mit demselben
+      // Verfahren wie hier, nur mit einem einzigen Flugzeug statt allen im Umkreis.
+      //
+      // Der Strom kommt im Kniebrett gar nicht mehr an (s. `_brueggeStromEinarbeiten`), der
+      // Zweig waere also ohnehin tot. Toter Code mit falscher Begruendung ist schlimmer als
+      // keiner: Er haette beim naechsten Lesen wieder ueberzeugt.
+      _positionsRoh[v.cs] = { lat: s.lat, lon: s.lon, hdg: Number(s.hdg) || 0,
+                              gs: Number(s.gs) || 0, ts: _simVerkehr.ts };
+      _friesenSimWerte[v.cs] = { alt: s.alt, gs: s.gs };
       continue;
     }
     const e = { lat: s.lat, lon: s.lon, alt: s.alt, hdg: s.hdg, gs: s.gs,
@@ -10523,6 +10525,31 @@ function _brueggeFrisch(callsign) {
  * bewegen koennte.
  */
 function _brueggeStromEinarbeiten(liste) {
+  // ⚠⚠ IM KNIEBRETT NICHT. Dort traegt das Sim-Matching, und es ist die bessere Quelle.
+  //
+  // Beide beantworten dieselbe Frage -- „welches Flugzeug gehoert zu welchem Piloten?" --
+  // und beide RATEN dabei ueber Position und Hoehe, mit demselben Verfahren: `app/bruegge.py`
+  // ist die woertliche Uebersetzung von `_verkehrZusammenfuehren`. Die cid, die in diesem
+  // Strom steht, ist also kein gemeldeter Wert, sondern das Ergebnis eines Ratens auf dem
+  // Server. (Hier stand einmal das Gegenteil, und es war falsch.)
+  //
+  // Bei gleichem Verfahren entscheidet, wer die besseren Eingangsdaten hat -- und das ist im
+  // Cockpit eindeutig das Sim-Matching:
+  //
+  //   * Es sieht ALLE Flugzeuge im Umkreis auf einmal und kann deshalb per Ausschluss
+  //     zuordnen (Schritt 3). Der Server sieht je Meldung eines.
+  //   * Sein Weg ist Simulator -> Browser. Der der Bruegge ist Simulator -> Bruegge -> Netz
+  //     -> Server -> Netz -> Tablet, mit Rate-Limit und Zuordnung dazwischen.
+  //
+  // Bis zum 15.09.2026 hatte der Strom hier trotzdem VORRANG (`_brueggeFrisch` in
+  // `_verkehrZusammenfuehren`), und der Vorrang fragte nur „meldet sie?", nie „stimmt sie?".
+  // Eine falsche Server-Zuordnung hat damit das funktionierende Sim-Matching verdraengt --
+  // und ueber `_positionsRoh`, aus dem `_friesenAlsKandidaten` seine Kandidaten baut, sogar
+  // dessen eigene Suche vergiftet.
+  //
+  // Auf der WEBSITE bleibt der Strom, was er ist: die einzige Echtzeitquelle, denn dort gibt
+  // es keine Simulatordaten. Genau dafuer ist er gebaut (v14.36.0).
+  if (_PANEL_MODUS) return;
   if (!Array.isArray(liste) || !liste.length) return;
   const jetzt = Date.now();
   for (let i = 0; i < liste.length; i++) {

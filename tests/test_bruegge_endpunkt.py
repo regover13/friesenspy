@@ -1012,3 +1012,43 @@ def test_nur_die_angeforderten_arten_gehen_hinaus(klient, tmp_path):
                 json={"art": "tier_gross", "lat": 53.78, "lon": 7.92, "id": "nur-eins"})
     arten = klient.post("/api/bruegge/melden", json=_meldung(protokoll=2)).json()["arten"]
     assert list(arten) == ["tier_gross"]
+
+
+# ---------------------------------------------------------------------------------------
+# Das Verstoß-Fenster: die Zuordnung gilt, die Position nicht
+# ---------------------------------------------------------------------------------------
+
+def test_im_verstoss_fenster_bleiben_die_objekte_stehen(klient, tmp_path):
+    """Ein einzelner Ausreißer darf der Brügge nicht alle Objekte wegnehmen.
+
+    `soll` ist die VOLLSTÄNDIGE Liste dessen, was dastehen soll — kein Strom von Befehlen.
+    Kommt sie leer zurück, räumt `soll_abgleichen` (friesenbruegge/msfs/bruegge.cpp) alles ab
+    und setzt es drei Takte später neu. Bis zum 15.09.2026 löste genau das ein einziger
+    VATSIM-Ausreißer aus: Der Verstoß-Zweig gab `cid = None` zurück, und ohne cid antwortet
+    der Endpunkt mit leerem `soll`.
+
+    Das Kniebrett macht es im selben Fall richtig — dort gilt die Zuordnung im Verstoß-Fenster
+    weiter. Die Objekte hängen am Piloten, nicht an seiner Momentanposition.
+    """
+    db = str(tmp_path / "t.db")
+    _friese_anlegen(db)
+    klient.post("/api/admin/bruegge/soll", cookies=_admin_kekse(),
+                json={"art": "tier_gross", "lat": 53.78, "lon": 7.92, "id": "bleibt-stehen"})
+
+    erste = klient.post("/api/bruegge/melden", json=_meldung()).json()
+    assert erste["soll"], "Voraussetzung: das Objekt geht beim guten Fall mit"
+
+    # 0,004° Breite ≈ 445 m: über PAARUNG_MIN_M (400, also ein Verstoß), aber unter
+    # SPRUNG_M (500) — sonst greift die Sprungerkennung und löst die Zuordnung sofort.
+    zweite = klient.post("/api/bruegge/melden",
+                         json=_meldung(lat=53.78227 + 0.004)).json()
+    assert zweite["soll"], "im Verstoß-Fenster darf `soll` NICHT leer werden"
+
+    # ... und die unplausible Position darf trotzdem nicht in die Ablage.
+    from app.database import get_connection
+    conn = get_connection(db)
+    zeile = conn.execute("SELECT lat FROM bruegge_positions WHERE cid = 1234567").fetchone()
+    conn.close()
+    assert zeile is not None
+    assert abs(zeile[0] - 53.78227) < 1e-6, (
+        "die Karte behält den letzten guten Punkt, statt dem Ausreißer zu folgen")

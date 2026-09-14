@@ -1087,7 +1087,7 @@ async def bruegge_melden(request: Request):
     conn = get_connection(settings.DB_PATH)
     try:
         takt = _bruegge_takt(conn)
-        cid, kandidaten_da, zugeteilt = _bruegge_zuordnen(
+        cid, kandidaten_da, zugeteilt, lage_gilt = _bruegge_zuordnen(
             conn, kennung, lat, lon, alt_ft, gs_kt, simulator, settings, vs_ft_min)
         # Ab jetzt gilt die zugeteilte auch hier -- `steht` und die Ablage haengen daran.
         kennung = kennung or (zugeteilt or "")
@@ -1106,7 +1106,13 @@ async def bruegge_melden(request: Request):
                 _BRUEGGE_TAKT_UNERKANNT_S if kandidaten_da else _BRUEGGE_TAKT_OHNE_VATSIM_S,
                 gilt_bis=0, fassung=fassung if isinstance(fassung, int) else None)
 
-        bruegge_position_schreiben(conn, cid, lage, simulator, kennung or None)
+        # ⭐ Die Lage nur uebernehmen, wenn sie zur Zuordnung passt (`lage_gilt`). Im
+        # Verstoss-Fenster steht die Zuordnung, die Position aber nicht -- dann behaelt die
+        # Karte den letzten guten Punkt, statt einem Ausreisser zu folgen. `soll` und die
+        # `steht`-Rueckmeldung laufen weiter, denn die haengen am Piloten, nicht an seiner
+        # Momentanposition.
+        if lage_gilt:
+            bruegge_position_schreiben(conn, cid, lage, simulator, kennung or None)
 
         # ... und denselben Wert gleich in den Sekundenstrom legen, der die offenen Karten
         # versorgt (s. `VatsimPoller.bruegge_strom_senden`). Erst HIER, nach der Zuordnung:
@@ -1117,7 +1123,7 @@ async def bruegge_melden(request: Request):
         # scheitert. Sie ist dann gespeichert, aber nicht live; das ist die richtige
         # Rangfolge.
         _poller = getattr(request.app.state, "poller", None)
-        if _poller is not None:
+        if _poller is not None and lage_gilt:
             _poller.bruegge_position_merken(cid, lage)
 
         # Die Gegenrichtung: Was steht WIRKLICH? Ohne diese Zeile erfaehrt der Server nie, ob
@@ -1204,13 +1210,30 @@ async def bruegge_melden(request: Request):
 
 def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
                       gs_kt: float, simulator: str | None, settings,
-                      vs_ft_min: float = 0.0) -> tuple[int | None, bool, str | None]:
-    """Welcher Pilot meldet hier? ``(cid | None, ob Friesen in der Luft waren, neue Kennung)``.
+                      vs_ft_min: float = 0.0) -> tuple[int | None, bool, str | None, bool]:
+    """Welcher Pilot meldet hier?
+
+    ``(cid | None, ob Friesen in der Luft waren, neue Kennung, ob die Lage gilt)``
 
     Das dritte Feld ist gesetzt, wenn dieser Meldung EINE KENNUNG ZUGETEILT wurde -- sie geht
     dann in der Antwort mit hinaus, und die Bruegge merkt sie sich (s. `_bruegge_antwort`).
 
     Das zweite Feld entscheidet ueber den TAKT der Absage -- s. _BRUEGGE_TAKT_UNERKANNT_S.
+
+    ⭐ **Das vierte Feld trennt „wer ist das?" von „wo ist er?"** (15.09.2026). Es ist genau
+    dann ``False``, wenn die Zuordnung steht, die gemeldete Position aber gerade nicht zu ihr
+    passt -- also im Verstoss-Fenster, das `PAARUNG_LOESEN_TAKTE` offen haelt.
+
+    **Vorher gab dieser Fall `cid = None` zurueck, und das hatte eine Folge, die niemand
+    wollte:** Ohne cid antwortet der Endpunkt mit leerem `soll` -- und `soll` ist die
+    VOLLSTAENDIGE Liste dessen, was dastehen soll, kein Strom von Befehlen. Die Bruegge las
+    daraus „nichts mehr gefordert" und raeumte SAEMTLICHE Objekte ab
+    (`soll_abgleichen`, friesenbruegge/msfs/bruegge.cpp), um sie drei Takte spaeter neu zu
+    setzen. Ein einzelner VATSIM-Ausreisser genuegte dafuer.
+
+    Das Kniebrett macht es im selben Fall richtig: Dort gilt die Zuordnung im Verstoss-Fenster
+    weiter (`index.html`, `zugeordnet[s.id] = partner.v` trotz Verstoss). Die Objekte haengen
+    am Piloten, nicht an seiner Momentanposition.
 
     Drei Bedingungen, und alle drei muessen erfuellt sein:
       1. Der Pilot steht in `live_positions` -- fliegt also auf VATSIM, mit Friesen-Praefix.
@@ -1235,7 +1258,7 @@ def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
                                       sekunden_her, gs_kt):
         bruegge_zuordnung_loesen(conn, kennung)
         bruegge_position_loeschen(conn, int(gemerkt["cid"]))
-        return None, bool(kandidaten), None
+        return None, bool(kandidaten), None, False
 
     # --- Eine gemerkte Zuordnung: pruefen, nicht neu rechnen ---------------------------
     if gemerkt:
@@ -1252,7 +1275,7 @@ def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
             # IN FOLGE, ein einzelner Ausreisser loest nichts.
             bruegge_zuordnung_bestaetigen(conn, kennung, lat, lon)
             bruegge_vs_spitze_merken(conn, kennung, vs_ft_min)
-            return cid, True, None
+            return cid, True, None, True
         # Der Partner ist fort (ausgeloggt) oder die Position passt nicht mehr. Geloest wird
         # erst nach mehreren Verstoessen IN FOLGE -- ein einzelner Ausreisser loest nichts.
         if partner is None or bruegge.PAARUNG_LOESEN_TAKTE <= bruegge_zuordnung_verstoss(
@@ -1260,10 +1283,16 @@ def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
         ):
             bruegge_zuordnung_loesen(conn, kennung)
             bruegge_position_loeschen(conn, cid)
-            return None, bool(kandidaten), None
-        # Noch im Toleranzfenster: Die Zuordnung gilt, aber die Position wird nicht
+            return None, bool(kandidaten), None, False
+        # Noch im Toleranzfenster: Die Zuordnung GILT, aber die Position wird nicht
         # uebernommen -- sie passt ja gerade nicht.
-        return None, True, None
+        #
+        # Deshalb kommt hier die cid zurueck und nicht None. Bis zum 15.09.2026 stand hier
+        # `return None, True, None`, und damit fiel der Endpunkt in den Zweig „ohne Zuordnung
+        # geschieht NICHTS": Er antwortete mit leerem `soll`, und die Bruegge raeumte
+        # daraufhin alle ihre Objekte ab (s. den Docstring oben). Gemeint war immer nur, die
+        # unplausible POSITION nicht zu uebernehmen -- das erledigt jetzt das vierte Feld.
+        return cid, True, None, False
 
     # --- Erstzuordnung -----------------------------------------------------------------
     #
@@ -1306,11 +1335,11 @@ def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
         # Zeile sucht man ihn im Simulator statt im Log.
         _logger.info("Bruegge: keine Zuordnung (%d Kandidaten) -- %s", len(kandidaten), grund)
     if treffer is None:
-        return None, bool(kandidaten), None
+        return None, bool(kandidaten), None, False
     if not cid_ist_authentifiziert(conn, treffer.cid):
         # Auf VATSIM mit FRS-Praefix, aber nie im Forum angemeldet. Ein gesetztes Callsign
         # allein genuegt nicht -- sonst koennte jeder ein Praefix waehlen und damit melden.
-        return None, bool(kandidaten), None
+        return None, bool(kandidaten), None, False
 
     # ⭐ OHNE KENNUNG: EINE VERGEBEN. Das ist der Normalweg beim allerersten Kontakt.
     #
@@ -1339,7 +1368,7 @@ def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
     bruegge_zuordnung_setzen(conn, kennung, treffer.cid, simulator)
     bruegge_zuordnung_bestaetigen(conn, kennung, lat, lon)
     bruegge_vs_spitze_merken(conn, kennung, vs_ft_min)
-    return treffer.cid, True, zugeteilt
+    return treffer.cid, True, zugeteilt, True
 
 
 @app.post("/api/admin/bruegge/soll")

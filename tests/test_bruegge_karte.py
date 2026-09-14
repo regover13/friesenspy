@@ -221,6 +221,11 @@ global.liveData = [];
 global._eigenes = null;
 function _istEigenesFlugzeug(cs) { return global._eigenes === cs; }
 
+// Im Original oben in der Datei gesetzt (aus der CSS-Klasse `vr-panel`). Der Ausschnitt
+// beginnt weiter unten, deshalb hier: Vorgabe ist die WEBSITE -- das Kniebrett bekommt den
+// Strom seit dem 15.09.2026 nicht mehr, dort traegt das Sim-Matching.
+global._PANEL_MODUS = false;
+
 __QUELLTEXT__
 
 __PRUEFUNG__
@@ -274,6 +279,44 @@ def test_das_eigene_flugzeug_kommt_nicht_aus_der_bruegge():
       global._eigenes = 'FRS49';
       _brueggeStromEinarbeiten([{ cid: 1234567, lat: 53.5, lon: 8.1 }]);
       assert.deepStrictEqual(Object.keys(_positionsRoh), []);
+    """)
+
+
+def test_im_kniebrett_kommt_der_strom_gar_nicht_an():
+    """Dort trägt das Sim-Matching — es hat den direkten Weg und sieht alle Flugzeuge.
+
+    Beide Verfahren raten über Position und Höhe, mit demselben Code (`app/bruegge.py` ist
+    die Übersetzung von `_verkehrZusammenfuehren`). Bei gleichem Verfahren entscheidet, wer
+    die besseren Eingangsdaten hat: Das Sim-Matching sieht ALLE Flugzeuge im Umkreis auf
+    einmal und kann per Ausschluss zuordnen, der Server je Meldung genau eines.
+
+    Bis zum 15.09.2026 hatte der Strom im Kniebrett Vorrang, und der fragte nur „meldet
+    sie?", nie „stimmt sie?" — eine falsche Server-Zuordnung verdrängte damit das
+    funktionierende Sim-Matching.
+    """
+    _node("""
+      global._PANEL_MODUS = true;
+      global.liveData = [{ cid: 1234567, callsign: 'FRS49' }];
+      _brueggeStromEinarbeiten([{ cid: 1234567, lat: 53.5, lon: 8.1, gs: 92.6 }]);
+      assert.deepStrictEqual(Object.keys(_positionsRoh), [],
+        'im Kniebrett darf der Bruegge-Strom _positionsRoh nicht anfassen');
+      assert.deepStrictEqual(Object.keys(_brueggeWerte), []);
+      assert.strictEqual(_brueggeFrisch('FRS49'), false);
+    """)
+
+
+def test_auf_der_website_kommt_er_sehr_wohl_an():
+    """Die Gegenprobe — dort ist die FriesenBrügge die EINZIGE Echtzeitquelle.
+
+    Ohne Simulator daneben gibt es nichts, was sie ersetzen könnte; genau dafür wurde der
+    Strom gebaut (v14.36.0).
+    """
+    _node("""
+      global._PANEL_MODUS = false;
+      global.liveData = [{ cid: 1234567, callsign: 'FRS49' }];
+      _brueggeStromEinarbeiten([{ cid: 1234567, lat: 53.5, lon: 8.1, gs: 92.6 }]);
+      assert.ok(_positionsRoh['FRS49'], 'auf der Website muss er ankommen');
+      assert.strictEqual(_brueggeFrisch('FRS49'), true);
     """)
 
 

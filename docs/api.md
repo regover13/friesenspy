@@ -2342,6 +2342,14 @@ hier kurzzeitig eine Umhäng-Regel (`deutlich_besser`), die bei jeder Meldung so
 sobald ein anderer Kandidat halb so weit weg war; sie hat einem Piloten seine Zuordnung bei
 572 m Abstand an jemanden 1,2 km entfernt abgegeben und ist wieder entfernt.
 
+⭐ **Im Verstoß-Fenster bleibt `soll` gefüllt** (seit 15.09.2026). Passt eine Position gerade
+nicht zur gemerkten Zuordnung, wird sie nicht übernommen — die Zuordnung selbst gilt aber
+weiter, und damit gehen Objekte und Arten normal hinaus. Vorher antwortete der Server in
+diesem Fall mit leerem `soll`, und weil `soll` die **vollständige** Liste ist, räumte die
+Brügge daraufhin sämtliche Objekte ab, um sie drei Takte später neu zu setzen: Ein einzelner
+VATSIM-Ausreißer genügte dafür. Die Objekte hängen am Piloten, nicht an seiner
+Momentanposition — so hält es das Kniebrett auch.
+
 **Ablehnungen sehen alle gleich aus:** „nicht auf VATSIM", „niemand passt" und „nicht
 authentifiziert" ergeben allesamt HTTP 200 mit leerem `soll` — nur der Takt unterscheidet sie
 intern. Eine Fehlermeldung wäre ein Werkzeug für den, der ausprobiert, welche erfundene
