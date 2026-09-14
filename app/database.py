@@ -2846,6 +2846,12 @@ def bruegge_soll_alle(conn: sqlite3.Connection) -> list[dict]:
     return [_row_to_dict(r) for r in rows]
 
 
+# Soviele `steht`-Eintraege nimmt der Server je Meldung entgegen. ⚠ MUSS ZU `SOLL_MAX` IN
+# friesenbruegge/msfs/bruegge.cpp PASSEN (dort 200) -- ein zu kleiner Wert schneidet die
+# Rueckmeldung ab, und zwar lautlos.
+_STEHT_MAX = 256
+
+
 def bruegge_steht_melden(conn: sqlite3.Connection, kennung: str, cid: int | None,
                          steht: list) -> int:
     """Die Rueckmeldung der Bruegge festhalten (kein commit). Gibt die Zahl der Zeilen zurueck.
@@ -2857,15 +2863,22 @@ def bruegge_steht_melden(conn: sqlite3.Connection, kennung: str, cid: int | None
 
     **Fremddaten, also misstrauisch lesen.** Was hier ankommt, hat kein Login passiert (s.
     PROTOKOLL.md, Abschnitt 5) -- jeder kann diesen Endpunkt bedienen. Deshalb: Laengen
-    begrenzen, Zahlen erzwingen, Zahl der Eintraege deckeln. Die Bruegge selbst hat ein
-    Limit von SOLL_MAX = 32; alles darueber ist entweder ein Fehler oder Absicht.
+    begrenzen, Zahlen erzwingen, Zahl der Eintraege deckeln.
+
+    ⚠ **DER DECKEL MUSS ZU SOLL_MAX IM CLIENT PASSEN, UND ER TAT ES NICHT.** Er stand auf 32,
+    weil die Bruegge damals nicht mehr halten konnte. Am 14.09.2026 ging SOLL_MAX auf 200 --
+    diese Stelle blieb stehen, und im Flug meldete die Bruegge brav 200 Objekte, von denen
+    genau 32 ankamen. Der Rest verschwand lautlos, und es sah aus wie eine Client-Grenze.
+
+    `_STEHT_MAX` liegt bewusst etwas ueber SOLL_MAX: Was darueber hinausgeht, ist entweder
+    ein Fehler oder Absicht, und beides soll nicht durchgehen.
     """
     conn.execute("DELETE FROM bruegge_steht WHERE kennung = ?", (kennung,))
     if not isinstance(steht, list):
         return 0
     jetzt = _now_utc()
     n = 0
-    for eintrag in steht[:32]:
+    for eintrag in steht[:_STEHT_MAX]:
         if not isinstance(eintrag, dict):
             continue
         obj_id = str(eintrag.get("id") or "")[:64]

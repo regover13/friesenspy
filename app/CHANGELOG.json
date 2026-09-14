@@ -1,5 +1,14 @@
 [
   {
+    "version": "14.42.1",
+    "date": "2026-09-14",
+    "highlight": false,
+    "title": "Die Rückmeldung der FriesenBrügge wurde bei 32 Objekten abgeschnitten",
+    "items": [
+      "🐛 Behoben: Die FriesenBrügge kann seit heute 200 Objekte halten — der Server nahm aber nur die Rückmeldung zu den ersten 32 entgegen. Der Rest verschwand lautlos, und es sah aus, als läge die Grenze im Simulator."
+    ]
+  },
+  {
     "version": "14.42.0",
     "date": "2026-09-14",
     "highlight": false,
