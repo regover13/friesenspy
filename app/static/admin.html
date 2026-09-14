@@ -817,7 +817,11 @@
       .login-box { padding: 24px 20px; }
     }
     /* #78: mobil-tauglicher Frachtart-Picker (ersetzt die native datalist). */
-    .ke-c-picker { display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 50;
+    /* ⚠ z-index MUSS über Leaflet liegen. Leaflet vergibt seinen Ebenen 200–700 und den
+       Bedienelementen 800–1000; bei 50 verschwand die Auswahlliste beim Anfordern eines
+       Objekts unter der geöffneten Karte (14.09.2026 gemeldet). 1200 liegt über allem,
+       was Leaflet selbst setzt. */
+    .ke-c-picker { display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 1200;
       max-height: 200px; overflow-y: auto; background: #0d1b2a;
       border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; margin-top: 2px;
       box-shadow: 0 6px 18px rgba(0,0,0,0.5); }
@@ -826,6 +830,21 @@
     .ke-c-opt:last-child { border-bottom: none; }
     .ke-c-opt:hover, .ke-c-opt.sel { background: rgba(45,156,219,0.18); }
     .ke-c-optcap { color: #8aa0b8; font-size: 0.72rem; }
+
+    /* Die Filterzeile der Titelliste.
+       ⚠ `width: auto` ist hier Pflicht: Eine globale Regel weiter oben setzt
+       `input, select, textarea { width: 100% }`, und damit stand jeder Filter auf einer
+       eigenen Zeile — fünf Auswahlfelder über die volle Breite, gestapelt. Im Browser
+       gesehen, nicht im Quelltext (14.09.2026). */
+    .bg-t-filter { display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+      margin-bottom: 10px; }
+    .bg-t-filter select { width: auto; min-width: 120px; font-size: 0.82rem; }
+    .bg-t-filter input { width: auto; flex: 1 1 200px; min-width: 0; }
+    /* Die Zuordnungszeile unter jedem Titel -- dieselbe Falle, dieselbe Antwort. */
+    #bg-titel .bg-t-zuordnung select { width: auto; min-width: 110px; font-size: 0.8rem; }
+    #bg-titel .bg-t-zuordnung input { width: 56px; }
+    #bg-titel .bg-t-zuordnung td { border-top: none; }
+    #bg-titel .bg-t-daten td { border-bottom: none; }
   </style>
 </head>
 <body>
@@ -1541,16 +1560,102 @@
               </p>
             </div>
             <p style="color:#8aa0b8;font-size:0.78rem;margin:0 0 10px;">
-              Eine <b>Gattung</b>, kein Modell: Welches Tier ein <code>tier_gross</code> ist,
-              entscheidet die FriesenBrügge — sie kennt ihren Simulator, der Server nicht.
-              <code>robbe</code> braucht ein Community-Paket (MSFS bringt keine Robben mit) —
-              fehlt es, meldet die FriesenBrügge einen Fehler statt still ein anderes Tier zu setzen.
+              Eine <b>Art</b>, kein Modell: Welches Tier ein <code>tier_gross</code> ist, steht
+              in der Titelliste unten — der Server liefert die Titel der FriesenBrügge mit, sie
+              probiert sie der Reihe nach. Was ein Community-Paket braucht, ist im Auswahlfeld
+              als <i>Addon</i> gekennzeichnet: Fehlt es beim Piloten, meldet die FriesenBrügge
+              einen Fehler, statt still etwas anderes hinzustellen.
             </p>
             <div class="table-wrap">
               <table>
-                <thead><tr><th>id</th><th>Gattung</th><th>Ort</th><th>für</th><th>steht wirklich?</th><th></th></tr></thead>
+                <thead><tr><th>id</th><th>Art</th><th>Ort</th><th>für</th><th>steht wirklich?</th><th></th></tr></thead>
                 <tbody id="bg-soll"><tr><td colspan="6" class="empty-hint">Lädt …</td></tr></tbody>
               </table>
+            </div>
+          </div>
+
+          <!-- ================================================================================
+               DIE TITELLISTE — eine Liste, eine Wahrheit (14.09.2026)
+
+               Hier steht der GESAMTE Bestand: 2935 Titel, die `katalog_sammeln.py` von der
+               Platte gelesen hat. Wer eine Art trägt, wird ausgeliefert; wer keine hat, ist
+               schlicht nicht zugeordnet — und bleibt trotzdem sichtbar, damit man ihn
+               jederzeit zuordnen kann.
+
+               Seitenweise zu 20, weil 2935 Zeilen niemand am Stück liest. Gefiltert und
+               sortiert wird auf dem SERVER (`/api/admin/bruegge/titel`): Eine Sortierung, die
+               nur die sichtbare Seite umdreht, sortiert nichts.
+               ================================================================================ -->
+          <div style="margin-top:22px;border-top:1px solid #1e2d3d;padding-top:16px;">
+            <div class="panel-title" style="font-size:0.95rem;"><span>📚 Titel und Arten</span></div>
+            <p style="color:#8aa0b8;font-size:0.78rem;margin:4px 0 10px;">
+              Der ganze Objektbestand beider Simulatoren. <b>Eine Art zuzuordnen oder
+              abzuschalten kostet hier einen Klick</b> — kein Update der FriesenBrügge, kein
+              Deploy. <span id="bg-titel-zahlen" style="color:#cfe0f2;"></span>
+            </p>
+
+            <div class="bg-t-filter">
+              <input id="bg-t-suche" placeholder="Titel oder Paket suchen …">
+              <select id="bg-t-art"><option value="">alle Arten</option></select>
+              <select id="bg-t-sim">
+                <option value="">alle Simulatoren</option>
+                <option value="msfs2020">MSFS 2020</option>
+                <option value="msfs2024">MSFS 2024</option>
+                <option value="xplane12">X-Plane 12</option>
+              </select>
+              <select id="bg-t-quelle">
+                <option value="">jede Quelle</option>
+                <option value="bord">Bordmittel</option>
+                <option value="community">Community</option>
+                <option value="streamed">gestreamt</option>
+              </select>
+              <select id="bg-t-ergebnis">
+                <option value="">geprüft egal</option>
+                <option value="steht">steht ✅</option>
+                <option value="fehlgeschlagen">gescheitert ✕</option>
+                <option value="offen">nie versucht</option>
+              </select>
+              <select id="bg-t-zuordnung">
+                <option value="">zugeordnet egal</option>
+                <option value="mit">hat eine Art</option>
+                <option value="ohne">ohne Art</option>
+              </select>
+            </div>
+
+            <div class="table-wrap" style="max-height:460px;overflow:auto;">
+              <!-- ⚠ DIE ZUORDNUNG STEHT UNTER DEN DATEN, nicht rechts daneben.
+                   Erst so gebaut, dann im Browser angesehen: Mit acht Spalten lagen Art,
+                   Rang und Status außerhalb des Sichtfelds — also ausgerechnet die drei
+                   Bedienelemente, um die es hier geht. Das ist das Erkennungslücken-Muster
+                   aus CLAUDE.md („Aktionen in eine eigene Zeile UNTER die Daten, statt in
+                   eine Spalte ganz rechts, die erst nach Scrollen erreichbar ist"). -->
+              <table>
+                <thead>
+                  <tr>
+                    <th class="bg-sort" data-sp="titel">Titel</th>
+                    <th class="bg-sort" data-sp="simulator">Sim</th>
+                    <th class="bg-sort" data-sp="quelle">Quelle</th>
+                    <th class="bg-sort" data-sp="paket">Paket</th>
+                    <th class="bg-sort" data-sp="ergebnis">geprüft</th>
+                  </tr>
+                  <tr>
+                    <th colspan="5" style="font-weight:400;color:#8aa0b8;font-size:0.76rem;">
+                      sortieren nach:
+                      <span class="bg-sort" data-sp="art">Art</span> ·
+                      <span class="bg-sort" data-sp="rang">Rang</span> ·
+                      <span class="bg-sort" data-sp="status">Status</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody id="bg-titel"><tr><td colspan="5" class="empty-hint">Lädt …</td></tr></tbody>
+              </table>
+            </div>
+
+            <div style="display:flex;gap:8px;align-items:center;margin-top:8px;font-size:0.82rem;">
+              <button class="btn btn-sm" id="bg-t-zurueck">←</button>
+              <span id="bg-t-seite" style="color:#cfe0f2;">–</span>
+              <button class="btn btn-sm" id="bg-t-vor">→</button>
+              <span style="color:#8aa0b8;margin-left:auto;" id="bg-t-treffer"></span>
             </div>
           </div>
         </div>
@@ -2251,7 +2356,8 @@
 
       // Erst laden, dann den Picker aufsetzen — die Arten kommen seit dem 14.09.2026 vom
       // Server und stehen nicht mehr im Quelltext.
-      bgArtenLaden().then(bgArtPicker);
+      bgArtenLaden().then(function () { bgArtPicker(); bgTitelLaden(); });
+      bgTitelBedienung();
       bgPilotenLaden().then(bgCidPicker);
       bgLaden();
       setInterval(bgLaden, 10000);
@@ -2308,17 +2414,23 @@
     // etwas anderes hinzustellen -- und genau das muss hier sichtbar sein, sonst setzt jemand
     // eine Station, die nur bei ihm selbst steht. Der Server leitet es aus `quelle` ab,
     // niemand pflegt es mehr von Hand.
-    let _bgArten = [];
+    let _bgArten = [];        // nur Anforderbares -- fuer den Picker
+    let _bgArtenAlle = [];    // alle -- fuer die Titelverwaltung
 
     async function bgArtenLaden() {
       try {
         const r = await fetch('/api/admin/bruegge/arten', { credentials: 'same-origin' });
         if (!r.ok) return;
         const d = await r.json();
+        _bgArtenAlle = d.arten || [];
         // Nur Anforderbares in den Picker: Eine Art ohne einen einzigen aktiven Titel würde
         // der Server ohnehin ablehnen (400). Sie anzubieten hieße, einen Fehlschlag
         // vorzubereiten.
-        _bgArten = (d.arten || []).filter(function (a) { return a.anforderbar; });
+        //
+        // In der Titelverwaltung dagegen müssen ALLE stehen — dort ordnet man einer leeren
+        // Art ja gerade ihren ersten Titel zu.
+        _bgArten = _bgArtenAlle.filter(function (a) { return a.anforderbar; });
+        bgArtenFilterFuellen();
       } catch (e) { /* der Picker bleibt leer, die Eingabe funktioniert weiter */ }
     }
 
@@ -2341,6 +2453,202 @@
       if (!a.msfs) teile.push('nur X-Plane');
       else if (!a.xplane) teile.push('nur MSFS');
       return teile.join(' · ');
+    }
+
+    // --- Die Titelliste -----------------------------------------------------------------
+    //
+    // 2935 Zeilen, seitenweise zu 20. GEFILTERT UND SORTIERT WIRD AUF DEM SERVER
+    // (`/api/admin/bruegge/titel`) -- eine Sortierung, die nur die sichtbare Seite umdreht,
+    // sortiert nichts, und ein Filter, der nur 20 Zeilen durchsieht, findet nichts.
+    let _bgTStand = { seite: 1, sortieren: 'titel', absteigend: false };
+
+    function bgTAbfrage() {
+      const p = new URLSearchParams();
+      p.set('seite', _bgTStand.seite);
+      p.set('je_seite', 20);
+      p.set('sortieren', _bgTStand.sortieren);
+      if (_bgTStand.absteigend) p.set('absteigend', 'true');
+      const v = id => (document.getElementById(id) || {}).value || '';
+      if (v('bg-t-suche')) p.set('suche', v('bg-t-suche'));
+      if (v('bg-t-art')) p.set('art', v('bg-t-art'));
+      if (v('bg-t-sim')) p.set('simulator', v('bg-t-sim'));
+      if (v('bg-t-quelle')) p.set('quelle', v('bg-t-quelle'));
+      if (v('bg-t-ergebnis')) p.set('ergebnis', v('bg-t-ergebnis'));
+      // „ohne Art" ist ein eigener Schalter und kein Wert von `art`: Die Abwesenheit einer
+      // Zuordnung lässt sich nicht als Gleichheit ausdrücken.
+      if (v('bg-t-zuordnung') === 'ohne') p.set('ohne_art', 'true');
+      return p;
+    }
+
+    async function bgTitelLaden() {
+      const koerper = document.getElementById('bg-titel');
+      if (!koerper) return;
+      try {
+        const r = await fetch('/api/admin/bruegge/titel?' + bgTAbfrage().toString(),
+                              { credentials: 'same-origin' });
+        if (!r.ok) { koerper.innerHTML = '<tr><td colspan="5" class="empty-hint">Fehler ' + r.status + '</td></tr>'; return; }
+        const d = await r.json();
+        bgTitelZeichnen(d);
+      } catch (e) {
+        koerper.innerHTML = '<tr><td colspan="5" class="empty-hint">Nicht erreichbar</td></tr>';
+      }
+    }
+
+    /** „hat eine Art" filtert der Server nicht — dort ist es die Abwesenheit von `ohne_art`
+     *  UND einer Artangabe. Deshalb hier, auf der geladenen Seite. Das ist die einzige
+     *  Filterung im Browser, und sie ist verzerrungsfrei: Sie blendet aus, statt zu suchen. */
+    function bgTitelZeichnen(d) {
+      const nurMit = (document.getElementById('bg-t-zuordnung') || {}).value === 'mit';
+      const zeilen = (d.zeilen || []).filter(z => !nurMit || z.art);
+      const koerper = document.getElementById('bg-titel');
+      if (!zeilen.length) {
+        koerper.innerHTML = '<tr><td colspan="5" class="empty-hint">Nichts gefunden</td></tr>';
+      } else {
+        koerper.innerHTML = zeilen.map(bgTitelZeile).join('');
+      }
+      document.getElementById('bg-t-seite').textContent = 'Seite ' + d.seite + ' / ' + d.seiten;
+      document.getElementById('bg-t-treffer').textContent = d.gesamt + ' Titel';
+      document.getElementById('bg-t-zurueck').disabled = d.seite <= 1;
+      document.getElementById('bg-t-vor').disabled = d.seite >= d.seiten;
+    }
+
+    function bgTitelZeile(z) {
+      const kurz = z.titel.indexOf('/') >= 0
+        ? '…/' + z.titel.slice(z.titel.lastIndexOf('/') + 1) : z.titel;
+      const gepr = z.ergebnis === 'steht' ? '<span style="color:#5cb85c;">steht</span>'
+                 : z.ergebnis === 'fehlgeschlagen'
+                   ? '<span style="color:#d9534f;" title="' + escH(z.fehler || '') + '">✕</span>'
+                   : '<span style="color:#8aa0b8;">—</span>';
+      // Auswahl statt Freitext: Eine Art, die es nicht gibt, lehnt der Server ohnehin ab —
+      // sie hier anbieten hieße, einen Fehlschlag vorzubereiten.
+      const artWahl = '<select class="bg-t-setzart" data-sim="' + escA(z.simulator)
+        + '" data-titel="' + escA(z.titel) + '">'
+        + '<option value="">— keine —</option>'
+        + _bgArtenAlle.map(a => '<option value="' + escA(a.art) + '"'
+            + (a.art === z.art ? ' selected' : '') + '>' + escH(a.art) + '</option>').join('')
+        + '</select>';
+      const statusWahl = z.art
+        ? '<select class="bg-t-setzstatus" data-sim="' + escA(z.simulator)
+          + '" data-titel="' + escA(z.titel) + '">'
+          + ['aktiv', 'aus'].map(w => '<option value="' + w + '"'
+              + (w === (z.status || 'aktiv') ? ' selected' : '') + '>' + w + '</option>').join('')
+          + '</select>'
+        : '<span style="color:#8aa0b8;">—</span>';
+      const rang = z.art
+        ? '<input class="bg-t-setzrang" type="number" min="1" max="99" value="'
+          + (z.rang || '') + '" style="width:52px;" data-sim="' + escA(z.simulator)
+          + '" data-titel="' + escA(z.titel) + '">'
+        : '<span style="color:#8aa0b8;">—</span>';
+      // ZWEI Zeilen je Titel: oben die Daten, darunter die Zuordnung über die volle
+      // Breite. Nebeneinander lägen die drei Bedienelemente außerhalb des Sichtfelds.
+      const zugeordnet = !!z.art;
+      return '<tr class="bg-t-daten">'
+        + '<td title="' + escA(z.titel) + '"><code>' + escH(kurz) + '</code></td>'
+        + '<td>' + escH((z.simulator || '').replace('msfs', 'MSFS ').replace('xplane', 'XP ')) + '</td>'
+        + '<td>' + escH(z.quelle || '') + '</td>'
+        + '<td style="color:#8aa0b8;font-size:0.78rem;">' + escH(z.paket || '—') + '</td>'
+        + '<td>' + gepr + '</td>'
+        + '</tr>'
+        + '<tr class="bg-t-zuordnung"><td colspan="5" style="padding-top:0;">'
+        + '<span style="color:#8aa0b8;font-size:0.76rem;">Art</span> ' + artWahl
+        + (zugeordnet
+            ? ' <span style="color:#8aa0b8;font-size:0.76rem;margin-left:10px;">Rang</span> ' + rang
+              + ' <span style="color:#8aa0b8;font-size:0.76rem;margin-left:10px;">Status</span> ' + statusWahl
+            : ' <span style="color:#8aa0b8;font-size:0.76rem;margin-left:10px;">nicht zugeordnet</span>')
+        + '</td></tr>';
+    }
+
+    async function bgTitelSetzen(nutzlast) {
+      try {
+        const r = await fetch('/api/admin/bruegge/titel', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(nutzlast),
+        });
+        if (!r.ok) { alert('Ging nicht: ' + (await r.text())); return false; }
+        // Die Auswahlliste im Picker hängt daran: Eine Art, deren letzter aktiver Titel
+        // abgeschaltet wird, ist nicht mehr anforderbar.
+        await bgArtenLaden();
+        return true;
+      } catch (e) { alert('Nicht erreichbar'); return false; }
+    }
+
+    function bgTitelBedienung() {
+      const tab = document.getElementById('bg-titel');
+      if (!tab) return;
+
+      tab.addEventListener('change', async function (e) {
+        const el = e.target;
+        const basis = { simulator: el.dataset.sim, titel: el.dataset.titel };
+        if (el.classList.contains('bg-t-setzart')) {
+          await bgTitelSetzen(Object.assign(basis, { art: el.value || null }));
+          bgTitelLaden();                      // Rang und Status ziehen mit
+        } else if (el.classList.contains('bg-t-setzstatus')) {
+          await bgTitelSetzen(Object.assign(basis, { status: el.value }));
+        } else if (el.classList.contains('bg-t-setzrang')) {
+          await bgTitelSetzen(Object.assign(basis, { rang: parseInt(el.value, 10) || null }));
+        }
+      });
+
+      // Spaltensortierung: derselbe Kopf zweimal dreht die Richtung um.
+      document.querySelectorAll('.bg-sort').forEach(function (th) {
+        th.style.cursor = 'pointer';
+        // Der Name steht einmal fest: Die Pfeilmarke wird angehängt und beim nächsten Klick
+        // wieder abgeschnitten — ohne den gemerkten Namen fräße ein zweiter Klick jedes Mal
+        // ein Zeichen mehr weg.
+        th.dataset.name = th.textContent.trim();
+        th.addEventListener('click', function () {
+          const sp = th.dataset.sp;
+          _bgTStand.absteigend = (_bgTStand.sortieren === sp) ? !_bgTStand.absteigend : false;
+          _bgTStand.sortieren = sp;
+          _bgTStand.seite = 1;
+          document.querySelectorAll('.bg-sort').forEach(x => { x.textContent = x.dataset.name; });
+          th.textContent = th.dataset.name + (_bgTStand.absteigend ? ' ▼' : ' ▲');
+          bgTitelLaden();
+        });
+      });
+
+      // Filter: jede Änderung beginnt wieder bei Seite 1 — sonst steht man auf Seite 47
+      // eines Ergebnisses mit drei Seiten und sieht nichts.
+      ['bg-t-art', 'bg-t-sim', 'bg-t-quelle', 'bg-t-ergebnis', 'bg-t-zuordnung']
+        .forEach(function (id) {
+          const el = document.getElementById(id);
+          if (el) el.addEventListener('change', function () { _bgTStand.seite = 1; bgTitelLaden(); });
+        });
+      const suche = document.getElementById('bg-t-suche');
+      if (suche) {
+        let zeit = null;
+        suche.addEventListener('input', function () {
+          clearTimeout(zeit);
+          // Erst tippen lassen: Jede Taste eine Abfrage über 2935 Zeilen wäre Unfug.
+          zeit = setTimeout(function () { _bgTStand.seite = 1; bgTitelLaden(); }, 300);
+        });
+      }
+      document.getElementById('bg-t-zurueck').addEventListener('click', function () {
+        if (_bgTStand.seite > 1) { _bgTStand.seite--; bgTitelLaden(); }
+      });
+      document.getElementById('bg-t-vor').addEventListener('click', function () {
+        _bgTStand.seite++; bgTitelLaden();
+      });
+    }
+
+    /** Das Auswahlfeld „alle Arten" und die Zahlenzeile — aus derselben Quelle wie der
+     *  Picker, nur ohne den Filter auf Anforderbares: Hier soll auch sichtbar sein, was
+     *  (noch) keinen aktiven Titel hat. */
+    function bgArtenFilterFuellen() {
+      const f = document.getElementById('bg-t-art');
+      if (f) {
+        const vorher = f.value;
+        f.innerHTML = '<option value="">alle Arten</option>'
+          + _bgArtenAlle.map(a => '<option value="' + escA(a.art) + '">' + escH(a.art)
+              + (a.anforderbar ? '' : ' (leer)') + '</option>').join('');
+        f.value = vorher;
+      }
+      const z = document.getElementById('bg-titel-zahlen');
+      if (z) {
+        const zugeordnet = _bgArtenAlle.reduce((n, a) => n + (a.titel_gesamt || 0), 0);
+        z.textContent = _bgArtenAlle.length + ' Arten · ' + zugeordnet + ' Titel zugeordnet';
+      }
     }
 
     function bgArtPicker() {
