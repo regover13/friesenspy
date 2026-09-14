@@ -6,6 +6,44 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-15 — #23 geht an eine Server-Sitzung: Grenze und Vorgabe
+
+**Wer:** eine noch zu startende Sitzung (Cloud oder lokal), Vorgabe vom Nutzer.
+
+**Was:** Das Kniebrett soll melden, welche Flugzeuge es erkannt hat — nicht nur sich selbst.
+Zuschnitt und Messwerte stehen in
+[#23](https://github.com/regover13/friesenspy/issues/23).
+
+### ⚠ Die Grenze, damit sich zwei Sitzungen nicht ins Gehege kommen
+
+| Datei | wer |
+|---|---|
+| `app/main.py`, **`/api/bruegge/melden` und `_bruegge_zuordnen`** | Sitzung „Sim restart ⑂" — **nicht anfassen** |
+| `app/main.py`, **neuer Endpunkt** (additiv, eigener Block) | #23-Sitzung |
+| `app/static/index.html`, Sender im Panel-Modus | #23-Sitzung |
+| `app/bruegge.py`, `bruegge_belegte_cids` | „Sim restart ⑂" — Änderungen dort vorher absprechen |
+
+### Die Entscheidung ist gefallen: Weg 3
+
+Ein **eigener Endpunkt** mit `cs` statt Kennung. Begründung:
+
+- Das angemeldete Kniebrett **kennt** die CID (`_meineCid`, aus `/api/me`) und die
+  Rufzeichen der erkannten Flugzeuge (aus dem Matching). Es muss nichts raten — anders als
+  die Brügge, bei der der Server die Zuordnung aus der Position herleitet.
+- Damit bleibt `bruegge_belegte_cids` unangetastet. Die Sperre ist gegen **verwechselte**
+  Identitäten gebaut, nicht gegen mehrere Quellen für dieselbe; sie gilt weiter nur zwischen
+  Brüggen.
+- `bruegge_positions` hat `cid` als Schlüssel und trägt beides, weil ohnehin nur der letzte
+  Stand zählt.
+
+### Was schon steht und nicht neu gebaut werden muss
+
+Ablage je CID, SSE-Strom (`VatsimPoller.bruegge_strom_senden`), Kartenüberlagerung über
+`_positionsRoh`, Verfallsfrist (`bruegge.MELDUNG_FRIST_S` = 10 s) und seit v14.45.0 die
+eigene nginx-Zone. Alles für die Brügge gebaut, alles trägt beides.
+
+---
+
 ## 2026-09-15 — Zuständigkeiten, vom Nutzer verteilt
 
 Damit niemand zweimal dasselbe anfängt:
