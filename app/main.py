@@ -936,7 +936,8 @@ def _bruegge_takt(conn) -> int:
 
 
 def _bruegge_antwort(takt: int, soll=None, gilt_bis: int | None = None,
-                     arten=None, fassung: int | None = None) -> dict:
+                     arten=None, fassung: int | None = None,
+                     kennung: str | None = None) -> dict:
     """Die Antwort an die Bruegge.
 
     ⚠ `arten` GEHT EINMAL JE ANTWORT HINAUS, NICHT JE OBJEKT -- und das ist gemessen, nicht
@@ -964,6 +965,13 @@ def _bruegge_antwort(takt: int, soll=None, gilt_bis: int | None = None,
     }
     if soll and arten:
         antwort["arten"] = arten
+    # ⭐ EINE ZUGETEILTE KENNUNG, und zwar nur bei der Meldung, die sie bekommen hat.
+    #
+    # Sie geht auch an eine Bruegge der Fassung 1 hinaus -- die ignoriert ein unbekanntes
+    # Feld und meldet weiter ohne Kennung. Das ist kein Verlust, sondern der Zustand von
+    # vorher: Der Server matcht dann eben bei jeder Meldung voll.
+    if kennung:
+        antwort["kennung"] = kennung
     return antwort
 
 
@@ -1078,8 +1086,10 @@ async def bruegge_melden(request: Request):
     conn = get_connection(settings.DB_PATH)
     try:
         takt = _bruegge_takt(conn)
-        cid, kandidaten_da = _bruegge_zuordnen(conn, kennung, lat, lon, alt_ft, gs_kt,
-                                               simulator, settings, vs_ft_min)
+        cid, kandidaten_da, zugeteilt = _bruegge_zuordnen(
+            conn, kennung, lat, lon, alt_ft, gs_kt, simulator, settings, vs_ft_min)
+        # Ab jetzt gilt die zugeteilte auch hier -- `steht` und die Ablage haengen daran.
+        kennung = kennung or (zugeteilt or "")
         if cid is None:
             # Ohne Zuordnung geschieht NICHTS -- keine Anzeige, keine Ablage, keine Objekte.
             # Die Pruefung steht damit vor allem Teuren; ein Pilot, der den Simulator laufen
@@ -1146,14 +1156,17 @@ async def bruegge_melden(request: Request):
     #
     # Seit dem 14.09.2026 gilt das auch fuer eine neue ART: Die Titel gehen in `arten` mit,
     # und die Bruegge probiert sie der Reihe nach. Sie fuehrt keine eigene Tabelle mehr.
-    return _bruegge_antwort(takt, soll=soll, arten=arten,
+    return _bruegge_antwort(takt, soll=soll, arten=arten, kennung=zugeteilt,
                             fassung=fassung if isinstance(fassung, int) else None)
 
 
 def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
                       gs_kt: float, simulator: str | None, settings,
-                      vs_ft_min: float = 0.0) -> tuple[int | None, bool]:
-    """Welcher Pilot meldet hier? ``(cid | None, ob Friesen in der Luft waren)``.
+                      vs_ft_min: float = 0.0) -> tuple[int | None, bool, str | None]:
+    """Welcher Pilot meldet hier? ``(cid | None, ob Friesen in der Luft waren, neue Kennung)``.
+
+    Das dritte Feld ist gesetzt, wenn dieser Meldung EINE KENNUNG ZUGETEILT wurde -- sie geht
+    dann in der Antwort mit hinaus, und die Bruegge merkt sie sich (s. `_bruegge_antwort`).
 
     Das zweite Feld entscheidet ueber den TAKT der Absage -- s. _BRUEGGE_TAKT_UNERKANNT_S.
 
@@ -1180,7 +1193,7 @@ def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
                                       sekunden_her, gs_kt):
         bruegge_zuordnung_loesen(conn, kennung)
         bruegge_position_loeschen(conn, int(gemerkt["cid"]))
-        return None, bool(kandidaten)
+        return None, bool(kandidaten), None
 
     # --- Eine gemerkte Zuordnung: pruefen, nicht neu rechnen ---------------------------
     if gemerkt:
@@ -1213,10 +1226,10 @@ def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
                 bruegge_zuordnung_setzen(conn, kennung, anderer.cid, simulator)
                 bruegge_zuordnung_bestaetigen(conn, kennung, lat, lon)
                 bruegge_vs_spitze_merken(conn, kennung, vs_ft_min)
-                return anderer.cid, True
+                return anderer.cid, True, None
             bruegge_zuordnung_bestaetigen(conn, kennung, lat, lon)
             bruegge_vs_spitze_merken(conn, kennung, vs_ft_min)
-            return cid, True
+            return cid, True, None
         # Der Partner ist fort (ausgeloggt) oder die Position passt nicht mehr. Geloest wird
         # erst nach mehreren Verstoessen IN FOLGE -- ein einzelner Ausreisser loest nichts.
         if partner is None or bruegge.PAARUNG_LOESEN_TAKTE <= bruegge_zuordnung_verstoss(
@@ -1224,10 +1237,10 @@ def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
         ):
             bruegge_zuordnung_loesen(conn, kennung)
             bruegge_position_loeschen(conn, cid)
-            return None, bool(kandidaten)
+            return None, bool(kandidaten), None
         # Noch im Toleranzfenster: Die Zuordnung gilt, aber die Position wird nicht
         # uebernommen -- sie passt ja gerade nicht.
-        return None, True
+        return None, True, None
 
     # --- Erstzuordnung -----------------------------------------------------------------
     treffer, grund = bruegge.zuordnen(lat, lon, alt_ft, gs_kt, kandidaten, vs_wirksam)
@@ -1237,16 +1250,40 @@ def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
         # Zeile sucht man ihn im Simulator statt im Log.
         _logger.info("Bruegge: keine Zuordnung (%d Kandidaten) -- %s", len(kandidaten), grund)
     if treffer is None:
-        return None, bool(kandidaten)
+        return None, bool(kandidaten), None
     if not cid_ist_authentifiziert(conn, treffer.cid):
         # Auf VATSIM mit FRS-Praefix, aber nie im Forum angemeldet. Ein gesetztes Callsign
         # allein genuegt nicht -- sonst koennte jeder ein Praefix waehlen und damit melden.
-        return None, bool(kandidaten)
-    if kennung:
-        bruegge_zuordnung_setzen(conn, kennung, treffer.cid, simulator)
-        bruegge_zuordnung_bestaetigen(conn, kennung, lat, lon)
-        bruegge_vs_spitze_merken(conn, kennung, vs_ft_min)
-    return treffer.cid, True
+        return None, bool(kandidaten), None
+
+    # ⭐ OHNE KENNUNG: EINE VERGEBEN. Das ist der Normalweg beim allerersten Kontakt.
+    #
+    # ⚠ WARUM DER SERVER SIE VERGIBT UND NICHT DIE BRUEGGE, und das ist am 14.09.2026 teuer
+    # gelernt: Die MSFS-Bruegge baute sie aus einer Speicheradresse und `rand()` ohne
+    # `srand()` -- in einem WASM-Modul ist beides auf jedem Rechner gleich, also erzeugte
+    # JEDE Installation dieselbe Zeichenfolge `9e3711c100000000`. Zwei Piloten auf Wangerooge
+    # meldeten darunter, und der Server schrieb die Position des einen unter die CID des
+    # anderen.
+    #
+    # Jeder Versuch, das im Client zu reparieren, laeuft auf dieselbe Frage hinaus: Woher
+    # nimmt ein WASM-Modul Entropie? Position, Simulatorzeit, Adressen -- alles Quellen, die
+    # in Sonderfaellen zusammenfallen koennen, und jede kostet eine eigene Begruendung.
+    #
+    # HIER GIBT ES DIE FRAGE NICHT. Der Server sieht alle Kennungen; Eindeutigkeit ist fuer
+    # ihn eine Zusicherung, keine Wahrscheinlichkeit. Das ist dasselbe Argument wie bei den
+    # Objektlisten (s. `arten` in _bruegge_antwort): Was eindeutig sein muss, gehoert dorthin,
+    # wo alle Faelle zusammenlaufen.
+    #
+    # Der Moment ist der bestmoegliche -- und das ist gemessen, nicht gewaehlt: Der Pilot
+    # steht gerade (Zuordnungs-Spec vom 16.08.2026, "Im Stand ist die Latenz
+    # gegenstandslos"), die Zuordnung gelingt auf Meter. Genau dann bekommt er seine Kennung.
+    zugeteilt = None
+    if not kennung:
+        kennung = zugeteilt = secrets.token_hex(8)
+    bruegge_zuordnung_setzen(conn, kennung, treffer.cid, simulator)
+    bruegge_zuordnung_bestaetigen(conn, kennung, lat, lon)
+    bruegge_vs_spitze_merken(conn, kennung, vs_ft_min)
+    return treffer.cid, True, zugeteilt
 
 
 @app.post("/api/admin/bruegge/soll")

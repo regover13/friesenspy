@@ -55,7 +55,7 @@
 // Feste Größen
 // ---------------------------------------------------------------------------------------
 
-#define BRUEGGE_VERSION   "1.8.1"
+#define BRUEGGE_VERSION   "1.9.0"
 #define BRUEGGE_URL       "https://friesenspy.devprops.de/api/bruegge/melden"
 #define KENNUNG_DATEI     "\\work\\friesenbruegge.kennung"
 
@@ -227,15 +227,44 @@ static char    g_antwort[ANTWORT_PUFFER] = {0};
 // eine neue, und der Server matcht einmal je Sitzung voll statt einmal je Installation. Bei
 // einer Flugstunde im Sekundentakt ist das ein voller Match statt 3600 -- der Nutzen bleibt
 // praktisch vollständig erhalten.
-static void kennung_erzeugen() {
-    // Kein Zufallsgenerator nötig und keiner verfügbar, der hier etwas Besseres liefern
-    // würde: Die Kennung muss eindeutig sein, nicht unvorhersagbar.
-    unsigned long long a = (unsigned long long)(size_t)&g_sim;
-    unsigned long long b = (unsigned long long)std::rand();
-    unsigned long long c = (unsigned long long)(g_sekunden + 1) * 2654435761u;
-    std::snprintf(g_kennung, sizeof(g_kennung), "%08llx%08llx",
-                  (a ^ c) & 0xFFFFFFFFull, (b ^ (a >> 16)) & 0xFFFFFFFFull);
-}
+// ⚠⚠ HIER ERFAND DIE BRUEGGE IHRE KENNUNG SELBST -- UND ERFAND AUF JEDEM RECHNER DIESELBE.
+//
+//     unsigned long long a = (unsigned long long)(size_t)&g_sim;   // Adresse
+//     unsigned long long b = (unsigned long long)std::rand();      // ohne srand()
+//     unsigned long long c = (unsigned long long)(g_sekunden + 1) * 2654435761u;
+//
+// In einem WASM-Modul ist der Speicher linear und bei jedem Start identisch, `&g_sim` also
+// ueberall dieselbe Zahl; `std::rand()` ohne `srand()` liefert ueberall dieselbe Folge; und
+// `g_sekunden` ist beim Erzeugen null. JEDE Installation erzeugte `9e3711c100000000`.
+//
+// AM 14.09.2026 LIVE VORGEFUEHRT, zwei Piloten auf Wangerooge, 130 m auseinander:
+//
+//     Zuordnung  9e3711c100000000 -> 1642160 (FRS123)
+//     gemeldet   53.787559/7.909491   <- das ist FRS49s Position
+//     Verstoesse 0
+//
+// FRS123 stand auf der Karte exakt auf FRS49. Wer zuletzt meldete, bekam die Kennung -- und
+// damit die Objekte, die fuer den anderen gesetzt waren.
+//
+// JETZT VERGIBT SIE DER SERVER, und die Bruegge erfindet gar nichts mehr.
+//
+// Der Weg ist derselbe wie im Kniebrett (`getOrCreateDeviceId`): einmal beschaffen, dauerhaft
+// speichern, bei JEDER Meldung mitliefern. Nur die Quelle ist eine andere -- dort
+// `crypto.getRandomValues` im Browser, hier `secrets.token_hex` auf dem Server. Und das ist
+// nicht der zweitbeste Weg, sondern der bessere: Der Server SIEHT alle Kennungen.
+// Eindeutigkeit ist fuer ihn eine Zusicherung, fuer jeden Client nur eine
+// Wahrscheinlichkeit.
+//
+//   1. Erste Meldung ueberhaupt: ohne Kennung. Der Server matcht ueber die Position -- der
+//      Pilot steht dabei, und im Stand ist die VATSIM-Latenz gegenstandslos (Zuordnungs-Spec
+//      vom 16.08.2026). Die Zuordnung gelingt auf Meter.
+//   2. Er antwortet mit `"kennung": "..."`.
+//   3. Die Bruegge speichert sie und liefert sie ab jetzt bei jeder Meldung mit.
+//   4. Nach einem Simulator-Neustart liest sie die Datei -- dieselbe Kennung, dieselbe
+//      Zuordnung.
+//
+// Bis Schritt 2 meldet sie mit LEERER Kennung. Das ist kein Notbehelf: Der Server matcht
+// dann voll, was er ohnehin kann, und genau das stand seit jeher im Kommentar unten.
 
 #ifdef KENNUNG_HAELT
 // Hier landet die gelesene Kennung, sobald der Lesevorgang fertig ist.
@@ -271,7 +300,8 @@ static void kennung_laden_oder_erzeugen() {
     fsIOOpenRead(KENNUNG_DATEI, FsIOOpenFlag_RDONLY, 0, (int)sizeof(puffer) - 1,
                  kennung_gelesen, nullptr);
 #endif
-    kennung_erzeugen();
+    // Erzeugt wird hier nichts mehr (s. oben). Bleibt `g_kennung` leer, meldet die Bruegge
+    // ohne -- und bekommt vom Server eine zugeteilt.
 
     // ⚠ HIER STAND `kennung_schreiben()`, UND DAS WAR EIN WETTLAUF MIT DEM EIGENEN LESEN.
     //
@@ -302,9 +332,12 @@ static void kennung_pruefen() {
     // Ist die gespeicherte Kennung nach KENNUNG_WARTE_S nicht da, kommt sie nicht mehr --
     // dann gilt die erzeugte und wird jetzt (und nur jetzt) auf die Platte geschrieben.
     // Vorher zu schreiben hiesse, das eigene Lesen zu ueberholen (s. kennung_laden_oder_erzeugen).
+    // Nach KENNUNG_WARTE_S ist klar, dass keine gespeicherte mehr kommt. Frueher wurde hier
+    // die erfundene festgeschrieben; jetzt gibt es keine, und die Bruegge meldet so lange
+    // ohne, bis der Server eine zuteilt (s. `kennung_uebernehmen`).
     if (!g_kennung_fest && g_sekunden >= KENNUNG_WARTE_S && g_kennung_gelesen[0] == '\0') {
         g_kennung_fest = true;
-        kennung_schreiben();
+        if (g_kennung[0] != '\0') kennung_schreiben();
         return;
     }
     if (g_kennung_gelesen[0] == '\0') return;
@@ -762,7 +795,36 @@ static void soll_abgleichen(const char* json) {
 // Die Antwort lesen
 // ---------------------------------------------------------------------------------------
 
+// Eine vom Server zugeteilte Kennung entgegennehmen -- einmal, und dann nie wieder.
+//
+// ⚠ NUR WENN WIR NOCH KEINE HABEN. Der Server schickt das Feld ohnehin nur bei der Meldung
+// mit, die es bekommen hat; die Pruefung hier ist die zweite Schranke. Eine bestehende
+// Zuordnung darf keine neue Kennung bekommen -- das waere genau das Flackern, das die
+// Zuordnungs-Spec vermeiden will ("Zuordnung halten, sobald sie steht").
+static void kennung_uebernehmen(const char* json) {
+    if (g_kennung[0] != '\0') return;
+    char neu[40] = {0};
+    if (!json_text_in(json, "kennung", neu, sizeof(neu))) return;
+    size_t n = std::strlen(neu);
+    // Dieselbe Pruefung wie beim Lesen aus der Datei, nur weiter gefasst: Der Server schickt
+    // 16 Hexziffern (`secrets.token_hex(8)`), aber eine spaetere Laenge soll nicht scheitern.
+    if (n < 8 || n >= sizeof(g_kennung)) return;
+    for (size_t i = 0; i < n; ++i) {
+        char c = neu[i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return;
+    }
+    std::snprintf(g_kennung, sizeof(g_kennung), "%s", neu);
+    g_kennung_fest = true;
+    kennung_schreiben();
+    // Kein Log: Die MSFS-Fassung hat keinen Ausgabeweg (anders als die X-Plane-Fassung mit
+    // `logzeile`). Ob es geklappt hat, steht ohnehin dort, wo es zaehlt -- in der naechsten
+    // Meldung, und damit in `bruegge_zuordnung` auf dem Server.
+}
+
 static void antwort_lesen(const char* json) {
+    // ZUERST -- sie gilt schon fuer die naechste Meldung.
+    kennung_uebernehmen(json);
+
     // Der Server bestimmt den Takt, nicht die Brügge. Er darf ihn je Meldung und je Pilot
     // verschieden setzen -- und über die Admin-Drossel für alle auf einmal ändern, ohne
     // Deploy und ohne dass ein Pilot etwas tun muss.

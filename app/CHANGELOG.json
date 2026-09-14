@@ -1,5 +1,17 @@
 [
   {
+    "version": "14.40.0",
+    "date": "2026-09-14",
+    "highlight": false,
+    "title": "Die FriesenBrügge bekommt ihre Kennung jetzt vom Server",
+    "items": [
+      "🔑 Jede FriesenBrügge trägt eine Kennung, damit der Server sie wiedererkennt, ohne bei jeder Meldung neu suchen zu müssen. Diese Kennung hat sie sich bisher selbst ausgedacht — und in MSFS kam dabei auf jedem Rechner dieselbe heraus.",
+      "🛠️ Jetzt vergibt der Server sie: Bei der allerersten Meldung erkennt er den Piloten an seiner Position — im Stand geht das metergenau — und schickt ihm eine eigene Kennung zurück. Die FriesenBrügge merkt sie sich und nutzt sie fortan.",
+      "🧭 Am Verfahren ändert sich sonst nichts: Einmal zugeordnet, bleibt die Verbindung bestehen, und erst wenn die Positionen dauerhaft nicht mehr zusammenpassen, wird neu zugeordnet.",
+      "📦 Dazu: FriesenBrügge 1.9.0 für MSFS. Wer die alte behält, wird weiterhin bedient — der Server nimmt dann ihre eigene Kennung."
+    ]
+  },
+  {
     "version": "14.39.1",
     "date": "2026-09-14",
     "highlight": false,

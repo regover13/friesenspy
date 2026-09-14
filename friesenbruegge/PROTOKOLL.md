@@ -49,8 +49,9 @@ Content-Type: application/json
 
 **Kein `Authorization`-Kopf, aber eine Kennung.** Die Brügge weist sich nicht aus — sie meldet
 eine Position, und der Server sucht sich den Piloten dazu (Abschnitt 5). Was sie trotzdem
-mitschickt, ist eine selbst erzeugte, dauerhafte `kennung`: **kein Geheimnis, sondern ein
-Wiedererkennungszeichen.** Was sie leistet, steht in Abschnitt 5 unter „Die Kennung
+mitschickt, ist eine dauerhafte `kennung`: **kein Geheimnis, sondern ein
+Wiedererkennungszeichen.** Sie wird **vom Server vergeben** (seit 14.09.2026) und von der
+Brügge nur aufbewahrt. Was sie leistet, steht in Abschnitt 5 unter „Die Kennung
 beschleunigt, sie autorisiert nicht".
 
 Die Brügge muss ohnehin sagen, wo sie ist, damit der Server weiß, was um sie herum stehen
@@ -64,7 +65,8 @@ die natürliche Form.
   "protokoll": 1,
   "simulator": "msfs2024",        // msfs2020 | msfs2024 | xplane12
   "bruegge_version": "1.0.0",
-  "kennung": "a3f9c1e0…",        // dauerhaft, je Installation -- s. unten
+  "kennung": "a3f9c1e0…",        // vom Server vergeben, dauerhaft -- s. unten
+                                 // leer bei der allerersten Meldung
   "kann": ["tier_gross", "bauwerk", "fahrzeug", "boot_klein"],
 
   "lage": {                        // der Stand JETZT -- maßgeblich für "soll"
@@ -379,18 +381,70 @@ zweite Satz erledigt ihn endgültig: Ohne zweite VATSIM-Verbindung gibt es keine
 Position, der eine zweite Brügge zugeordnet werden könnte.
 
 **An seine Stelle tritt etwas anderes, mit einem anderen Zweck.** Die `kennung` wird
-**einmal** erzeugt und bleibt — über Prozessstarts, Sim-Neustarts und Rechner-Neustarts hinweg.
-Sie sagt nicht „ich bin Friese 12345", sondern nur: **„ich bin dieselbe wie vorhin."**
+**einmal** beschafft und bleibt — über Prozessstarts, Sim-Neustarts und Rechner-Neustarts
+hinweg. Sie sagt nicht „ich bin Friese 12345", sondern nur: **„ich bin dieselbe wie vorhin."**
 
 **Das Vorbild steht schon im Kniebrett.** Dort erzeugt das Panel eine `device_id` und legt sie
-in MSFS' eigener Ablage ab (`SetStoredData`, s. `panel_devices` in `app/database.py:577`).
+in MSFS' eigener Ablage ab (`getOrCreateDeviceId`, s. `panel_devices` in `app/database.py`).
 Heute wird sie **nach einem Forum-Login** an die CID gebunden; morgen entsteht dieselbe
 Bindung **über die Position**. Die Kennung selbst ändert sich dabei nicht — nur, wodurch sie
 ihren Piloten bekommt.
 
 **Wo sie liegt, ist je Umsetzung verschieden** und keine Protokollfrage: in MSFS' Ablage, in
 einer Datei neben dem X-Plane-Plugin, in der Registry. Verloren gegangen ist sie nie ein
-Problem — die Brügge zieht eine neue, und der nächste Positionsmatch bindet sie erneut.
+Problem — die Brügge meldet dann ohne, und der nächste Positionsmatch bringt eine neue.
+
+### ⭐ DER SERVER VERGIBT SIE — die Brügge erfindet nichts (seit 14.09.2026)
+
+Bis dahin erzeugte jede Umsetzung ihre Kennung selbst. **In MSFS ging das schief, und zwar
+vollständig:** Die Brügge baute sie aus einer Speicheradresse und `rand()` ohne `srand()`. In
+einem WASM-Modul ist der Speicher linear und bei jedem Start identisch, und `rand()` liefert
+ohne Saat überall dieselbe Folge — **jede Installation erzeugte `9e3711c100000000`.** Das ist
+keine Kennung, sondern eine Konstante.
+
+**Live vorgeführt**, zwei Piloten auf Wangerooge, 130 m auseinander:
+
+```
+Zuordnung  9e3711c100000000 -> 1642160 (FRS123)
+gemeldet   53.787559/7.909491   <- das ist FRS49s Position
+Verstoesse 0
+```
+
+FRS123 stand auf der Karte exakt auf FRS49. Wer zuletzt meldete, bekam die Kennung — und
+damit die Objekte, die für den anderen gesetzt waren. Die vorhandene Plausibilitätsprüfung
+konnte das nicht sehen: Die Toleranz für ein stehendes Flugzeug ist 400 m, und **auf einem
+Flugplatz stehen alle näher beieinander.** Bei einem Kieker-Event ist das der Normalfall.
+
+**Der Ablauf ist jetzt:**
+
+```
+1. Erste Meldung überhaupt   →  "kennung": ""        (die Brügge hat keine)
+2. Server matcht über die Position, vergibt eine
+                             ←  "kennung": "a7f3…"   (secrets.token_hex(8))
+3. Brügge speichert sie und liefert sie ab jetzt bei JEDER Meldung mit
+4. Nach einem Neustart: aus der Datei gelesen, dieselbe Zuordnung
+```
+
+Ab Schritt 3 ändert sich **nichts** am Verfahren — das Halten der Zuordnung bleibt, wie es
+war. Es wird nur **einmal** ohne Kennung gematcht statt nie.
+
+⚠ **Warum der Server und nicht der Client**, und das ist der eigentliche Punkt: Jeder Versuch,
+es im Client zu lösen, läuft auf dieselbe Frage hinaus — *woher nimmt ein WASM-Modul
+Entropie?* Position, Simulatorzeit, Adressen: Jede Quelle kann in Sonderfällen zusammenfallen,
+und jede kostet eine eigene Begründung. **Der Server hat diese Frage nicht.** Er sieht alle
+Kennungen; Eindeutigkeit ist für ihn eine Zusicherung, für jeden Client nur eine
+Wahrscheinlichkeit.
+
+Das ist dasselbe Argument wie bei den Objektlisten (Abschnitt 3) und dasselbe Leitbild:
+**Die Brügge ist dumm. Alle Klugheit bleibt auf dem Server.**
+
+⚠ **Der Moment der Vergabe ist der bestmögliche, und das ist gemessen:** Der Pilot steht
+gerade — im Stand ist die VATSIM-Latenz gegenstandslos, und die Zuordnung gelingt auf Meter
+statt auf Kilometer (Zuordnungs-Spec vom 16.08.2026). Genau dann bekommt er seine Kennung.
+
+**Abwärtskompatibel in beide Richtungen:** Eine Brügge der Fassung 1 schickt weiter ihre
+selbst erzeugte Kennung mit — der Server nimmt sie und vergibt keine. Und das Feld `kennung`
+in der Antwort ignoriert sie, wie jedes unbekannte Feld.
 
 #### Die übrigen Felder
 
@@ -896,8 +950,9 @@ ID matchen kann."*
 läuft **nicht** bei jeder Meldung neu:
 
 ```
-erste Meldung einer kennung  →  voller Match gegen alle Friesen in live_positions
-                                 Treffer? → bruegge_zuordnung(kennung, cid) merken
+erste Meldung OHNE kennung   →  voller Match gegen alle Friesen in live_positions
+                                 Treffer? → Kennung vergeben, in der Antwort mitgeben,
+                                            bruegge_zuordnung(kennung, cid) merken
 jede weitere Meldung         →  cid nachschlagen (ein Indexzugriff),
                                  Position nur noch gegen DIESE eine VATSIM-Meldung prüfen
 ```

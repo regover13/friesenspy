@@ -2259,6 +2259,12 @@ behaupten. Der Server schickt für den gemeldeten `simulator`, was er hat, und e
 `steht`, was tatsächlich stand: belegt statt behauptet. **Fassung 1 darf es weiter mitschicken**;
 es wird übergangen, wie schon immer.
 
+⭐ **`kennung` darf leer sein** (seit 14.09.2026). Dann vergibt der Server eine und schickt
+sie in der Antwort mit; die Brügge speichert sie und liefert sie ab dann bei jeder Meldung
+mit. Grund: Die MSFS-Brügge erzeugte bis dahin auf **jedem** Rechner dieselbe
+(`9e3711c100000000` — Speicheradresse ⊕ `rand()` ohne `srand()`, in WASM beides konstant), und
+zwei Piloten auf einem Flugplatz verwechselten sich damit gegenseitig.
+
 `steht` ist die Gegenrichtung: was tatsächlich im Simulator steht — ohne diesen Block erführe
 der Server nie, ob ein angefordertes Objekt existiert (bis zum 12.09.2026 wurde er
 weggeworfen). `antwort_zu_gross` kommt nur mit, wenn unsere letzte Antwort nicht in ihren
@@ -2301,6 +2307,11 @@ Objekten und X-Plane-Pfaden von rund 45 Zeichen wären das +9,6 kB bei einem Cli
 tatsächlich angeforderten Arten.
 
 `auf_boden: 1` setzt das Objekt auf die Geländehöhe, ohne dass der Server sie kennen müsste.
+
+⭐ **`kennung` in der Antwort** (seit 14.09.2026) steht nur in der **einen** Antwort, mit der
+sie vergeben wird — nämlich auf eine Meldung ohne Kennung, deren Positionsmatch gelungen ist.
+Wer eine mitbringt, bekommt keine neue; sonst flackerte die Zuordnung bei jeder Meldung.
+Ohne Zuordnung gibt es auch keine Kennung, sonst wäre die Vergabe ein offenes Tor.
 
 **Ablehnungen sehen alle gleich aus:** „nicht auf VATSIM", „niemand passt" und „nicht
 authentifiziert" ergeben allesamt HTTP 200 mit leerem `soll` — nur der Takt unterscheidet sie
