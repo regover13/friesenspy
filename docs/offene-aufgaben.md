@@ -8,11 +8,10 @@ und prüfen, ob eine andere die Aufgabe schon erledigt hat.
 
 ---
 
-## ⚠ Gestreamte Titel sind nicht setzbar (gefunden 14.09.2026)
+## ⚠ Zwei Titel lassen sich nicht setzen — und es liegt NICHT am Streaming
 
-**Der Katalog führt seit heute 2642 Titel aus den gestreamten `.fsarchive`-Paketen — und
-mindestens ein Teil davon lässt sich nicht setzen.** Gefunden beim Lasttest mit 200
-gemischten Objekten: Von 402 Anforderungen scheiterten 25, ausschließlich in zwei Arten.
+Gefunden beim Lasttest mit 200 gemischten Objekten: Von 402 Anforderungen scheiterten 25,
+ausschließlich in zwei Arten.
 
 | Art | Fehlschläge | MSFS-Titel | Quelle |
 |---|---|---|---|
@@ -28,6 +27,11 @@ hätte fallen können.
 Hier stand zuerst „die Ursache liegt in der Natur des Streamings" und daneben die
 Vermutung, `VO_Fire_R1_*` seien gar keine SimObjects. **Beides stimmt nicht** — nachgesehen
 mit [`fsarchive.py`](../friesenbruegge/fsarchive.py) in den Archiven selbst.
+
+⭐ **Und im Simulator gegengeprüft (14.09.2026, MSFS bei Rügen):**
+`Microsoft_Aerial_Tank` — aus **demselben Paket** wie die gescheiterte Truck_Crane — wurde
+gezielt gesetzt und meldete `steht`. Damit ist auch das Paket als Ursache erledigt; es
+liegt an einzelnen Titeln.
 
 **Verzeichnis: Es sind SimObjects, beide.**
 
