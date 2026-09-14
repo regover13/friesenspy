@@ -8,6 +8,61 @@ messen. Die laufende Sim-Sitzung ist die knappe Ressource, nicht die Bauzeit.
 
 ---
 
+## ✅ ABGENOMMEN 14.09.2026 — Protokollfassung 2 trägt
+
+**Der Umbau ist im Flug belegt.** Die Brügge führt keine Artentabelle mehr; der Server
+liefert die Titel mit. Gemessen auf Wangerooge, MSFS 2024, Brügge **1.8.0**:
+
+| angefordert | Art | zurückgemeldet | gesehen |
+|---|---|---|---|
+| `p2-tier` | `tier_gross` | steht, 0,9 ft | — |
+| `p2-rad` | **`windrad`** | steht, 4,4 ft | ✅ **„windrad ist da"** |
+| `p2-rauch` | `rauch_signalrot` | steht, 1,7 ft | — |
+
+⭐ **`windrad` ist der eigentliche Befund.** Diese Art existiert in **keiner**
+Brügge-Fassung — sie entstand am selben Tag auf dem Server. Die Brügge hat ein Windrad
+hingestellt, ohne zu wissen, was ein Windrad ist: `Windmill` kam aus `bruegge_katalog`.
+Damit ist bewiesen, was der Umbau versprach — **eine neue Art kostet kein Client-Release
+mehr.**
+
+`auf_boden` traf zwischen 0,9 und 4,4 ft. Das Objektsetzen über den Admin funktioniert
+unverändert (`windsack` gesetzt, angekommen, ohne Fehlermeldung).
+
+### Was der Fassungssprung unterwegs bewies
+
+**Der 426-Pfad läuft — und er ist teuer.** Die 1.8.0 meldete sich beim noch alten Server
+(Fassung 1) und bekam `426`; sie räumte auf und setzte ihren Takt auf **900 s**, genau wie
+vorgesehen. Danach kam sie 15 Minuten lang nicht wieder, und ein Flugwechsel half nicht:
+**MSFS lädt WASM-Module nur beim Simulator-Start.**
+
+> ⚠ **Für den nächsten Fassungssprung heißt das: Server ZUERST.** Ein Deploy braucht ein
+> paar Minuten, in denen jede neue Brügge auf 900 s geht — und dann muss der Pilot den
+> Simulator neu starten. Die Reihenfolge ist nicht Geschmack, sondern spart einen Neustart.
+>
+> Ob 900 s nach einem `426` richtig gewählt sind, ist offen: Ein Server-Update ist genau der
+> Fall, in dem man schnell zurückwill. Ein kürzerer Wiederanlauf (60 s) wäre zu erwägen —
+> gegen das Argument, in einem toten Vertrag nicht weiterzureden, steht hier nichts.
+
+### Und zwei Dinge, die dabei auffielen
+
+**Die Melderliste hatte keine Altersgrenze.** FRS61s Position von sieben Stunden zuvor stand
+als blauer Punkt gleichwertig neben der aktuellen. Behoben: Die Karte zeichnet nur Frisches,
+die Tabelle nennt das Alter.
+
+**`bauen.ps1` installierte nicht von selbst.** Die X-Plane-Fassung 1.2.0 lag gebaut im
+Arbeitsordner, während im Simulator 1.1.0 lief — der Probeflug hätte getestet, was sich
+nicht geändert hat. Behoben: Installieren ist jetzt die Vorgabe, `-NurBauen` die Ausnahme.
+
+### Offen geblieben
+
+- **X-Plane 1.2.0 ist ungemessen.** Sie war beim Probeflug nicht installiert; die Datei ist
+  gesperrt, solange X-Plane läuft.
+- **Sichtbarkeit der übrigen Arten** — nur das Windrad wurde im Bild bestätigt.
+- **Autogen-Objekte** (Leuchttürme, Windräder in X-Plane): Ob `XPLMLoadObject` sie lädt, ist
+  weiterhin ungemessen.
+
+---
+
 ## Vorbereitung (einmal, vor dem Start)
 
 **Der Stand ist schon abgelegt** — Paket `friesenbruegge` liegt im Community-Ordner, Fassung
