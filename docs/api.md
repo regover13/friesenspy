@@ -2336,6 +2336,33 @@ keinen Simulator-Start durch, derselbe Mensch meldet danach also unter einer neu
 die alte noch frisch dasteht. Der Rückfall kostet nichts: Wo die Sperre hilft, bleibt ja
 gerade jemand übrig, und dann kommt er nie zustande.
 
+⭐ **Der Katalog lernt aus der Rückmeldung** (seit 15.09.2026). Was die Brügge unter `steht`
+zurückmeldet, landet nicht mehr nur in `bruegge_steht` (wo es beim nächsten Takt überschrieben
+wird), sondern auch in `bruegge_katalog.ergebnis`. Vorher füllte dieses Feld allein
+`probe-msfs/titel_schau.py`, ein MSFS-Werkzeug — die X-Plane-Seite hatte **2932 Titel und kein
+einziges Prüfergebnis**, obwohl seit dem ersten Flug am 11.09.2026 Objekte gesetzt werden. Und
+`bruegge_arten_beidseitig` hängt daran: Die Regel fußt auf `status='aus'`.
+
+⚠ **Die Rückmeldung nennt keinen Titel**, nur die Objekt-`id`. Geschrieben wird deshalb nur,
+was eindeutig ist:
+
+| Fall | Wirkung |
+|---|---|
+| `KEIN_TITEL_GING` (MSFS) bzw. `KEIN_MODELL_MEHR` (X-Plane) | alle Titel dieser Art in **diesem** Simulator auf `ergebnis='fehlgeschlagen'`, `status='aus'` |
+| Fehlschlag bei einer Art mit **genau einem** aktiven Titel | derselbe Eintrag, nur für diesen Titel |
+| Fehlschlag bei mehreren Titeln | **nichts** — es ist nicht zu erkennen, welcher gemeint war |
+| `steht` | `ergebnis='steht'` und Höhe; `status` bleibt unangetastet |
+| `verschwunden` | nichts — das Objekt *war* da, der Grund kann die Reality Bubble sein |
+
+Geschrieben wird auf die Zeile des **meldenden** Simulators, nie auf die des Topfes: Sonst
+legte eine MSFS-2020-Brügge Titel still, die in 2024 laufen.
+
+⚠ **Jede Stilllegung wird protokolliert** (`Bruegge: <sim>/<art> stillgelegt`). Grund: Am
+15.09.2026 wurde beobachtet, dass im Admin unter `steht` schon einmal `fehlgeschlagen` stand,
+obwohl das Objekt im Simulator sichtbar war. Die Ursache ist offen — solange sie es ist, darf
+eine Stilllegung nicht still geschehen. Zurückdrehen ist ein Klick im Admin, den Fall zu
+finden wäre teuer.
+
 **Eine gemerkte Zuordnung wird geprüft, nicht neu ausgehandelt.** Gelöst wird erst nach
 `PAARUNG_LOESEN_TAKTE` = 4 Verstößen **in Folge**. Zwischen dem 14. und 15.09.2026 gab es
 hier kurzzeitig eine Umhäng-Regel (`deutlich_besser`), die bei jeder Meldung sofort wechselte,

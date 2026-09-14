@@ -2644,6 +2644,71 @@ def bruegge_zuordnung_holen(conn: sqlite3.Connection, kennung: str) -> dict | No
     return _row_to_dict(row) if row else None
 
 
+def bruegge_katalog_ergebnis_melden(conn: sqlite3.Connection, simulator: str, art: str,
+                                    ergebnis: str, fehler: str | None = None,
+                                    hoehe_ft: float | None = None,
+                                    alle: bool = False) -> int:
+    """Was die Brügge beim Setzen erlebt hat, in den Katalog zurückschreiben (kein commit).
+
+    **Die Information lief monatelang durchs Haus, ohne anzukommen.** Die Brügge meldet bei
+    JEDEM Setzversuch ``steht`` oder ``fehlgeschlagen``; das landete in ``bruegge_steht`` und
+    war beim nächsten Takt überschrieben. Der Katalog wusste deshalb nach Wochen Betrieb
+    nicht, was funktioniert: 2932 X-Plane-Titel, **kein einziges** Prüfergebnis — ``ergebnis``
+    füllte allein ``probe-msfs/titel_schau.py``, ein MSFS-Werkzeug.
+
+    ⚠ **Und die Regel „eine Art wird gesperrt, wenn ein Simulator nichts kann" hängt daran**
+    (``bruegge_arten_beidseitig``): Sie fußt auf ``status='aus'``, das aus dem Prüfergebnis
+    kommt. Ohne Rückfluss greift sie nur dort, wo jemand von Hand gepflegt hat.
+
+    ⚠⚠ **DIE RÜCKMELDUNG NENNT KEINEN TITEL** — nur ``id``, ``zustand`` und ``fehler``
+    (PROTOKOLL.md, Abschnitt „steht"). Der Server weiß also, dass *Objekt k7-3-b* scheiterte,
+    nicht *welcher Titel* probiert wurde. Deshalb werden genau die zwei Fälle geschrieben, in
+    denen die Zuordnung trotzdem eindeutig ist:
+
+    ``alle=True`` — die Brügge hat ALLE Titel der Art durchprobiert und keiner ging
+        (``KEIN_TITEL_GING`` in MSFS, ``KEIN_MODELL_MEHR`` in X-Plane — zwei Namen, eine
+        Sache). Dann gilt das Ergebnis für jeden Titel der Art in diesem Simulator.
+
+    ``alle=False`` — nur wenn die Art in diesem Simulator **genau einen** aktiven Titel hat.
+        Dann kann kein anderer gemeint sein. Bei mehreren wird NICHTS geschrieben: Ein
+        falsch stillgelegter Titel wäre schlimmer als eine Lücke, denn man sieht ihm nicht
+        an, dass er zu Unrecht aus ist.
+
+    Alles darüber hinaus bräuchte den Titel in der Rückmeldung und damit ein Client-Release
+    an alle Piloten.
+
+    ``status`` wird nur auf ``aus`` gesetzt, nie auf ``aktiv`` zurück: Die Zuordnung einer Art
+    ist eine Entscheidung des Nutzers (s. ``bruegge_arten_zuordnen``), ein gelungener
+    Setzversuch ist bloß eine Beobachtung.
+    """
+    if not simulator or not art or ergebnis not in ("steht", "fehlgeschlagen"):
+        return 0
+    wo_sim = _BRUEGGE_TOPF["xplane12" if simulator == "xplane12" else "msfs"]
+
+    if not alle:
+        # Eindeutig nur bei genau einem aktiven Titel -- und gezaehlt wird im TOPF, weil die
+        # Bruegge genau den geliefert bekommt (s. bruegge_titel_fuer).
+        (n,) = conn.execute(
+            f"SELECT COUNT(*) FROM bruegge_katalog "
+            f"WHERE art = ? AND status = 'aktiv' AND {wo_sim}", (art,)
+        ).fetchone()
+        if n != 1:
+            return 0
+
+    # ⚠ Geschrieben wird auf die Zeile des MELDENDEN Simulators, nicht auf die des Topfes.
+    # Sonst legte eine MSFS-2020-Bruegge Titel still, die in 2024 einwandfrei laufen -- der
+    # Topf fasst beide zusammen, der Bestand tut es nicht.
+    cur = conn.execute(
+        "UPDATE bruegge_katalog SET ergebnis = ?, fehler = ?, geprueft_am = ?, "
+        "    geprueft_in = ?, hoehe_ft = COALESCE(?, hoehe_ft), "
+        "    status = CASE WHEN ? = 'fehlgeschlagen' THEN 'aus' ELSE status END "
+        "WHERE art = ? AND simulator = ?",
+        (ergebnis, (str(fehler)[:120] if fehler else None), _now_utc(),
+         simulator, hoehe_ft, ergebnis, art, simulator),
+    )
+    return cur.rowcount
+
+
 def bruegge_belegte_cids(conn: sqlite3.Connection, ausser_kennung: str,
                          frist_s: float) -> set[int]:
     """Welche CIDs meldet gerade eine ANDERE Brügge? (`frei` aus dem Kniebrett)

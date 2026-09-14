@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.46.0",
+    "date": "2026-09-15",
+    "highlight": false,
+    "title": "Der Objektkatalog merkt sich endlich, was im Simulator wirklich klappt",
+    "items": [
+      "📋 Die FriesenBrügge meldet bei jedem Versuch zurück, ob ein Objekt tatsächlich dasteht — und diese Information verpuffte bisher: Sie wurde im nächsten Takt überschrieben. Der Katalog wusste deshalb von den 2932 Objekten auf der X-Plane-Seite bei keinem einzigen, ob er sich überhaupt setzen lässt. Jetzt wird es festgehalten.",
+      "🔕 Was sich nachweislich nicht setzen lässt, wird nicht mehr angeboten. Das wirkt in beide Richtungen: Eine Art verschwindet auch für die anderen, sobald ein Simulator nichts mehr aus ihr zeigen kann — sonst sähen bei einer Zählaufgabe die einen eine Robbe und die anderen nichts.",
+      "🔍 Vorsichtig eingebaut: Die Rückmeldung nennt nur das Objekt, nicht das verwendete Modell. Deshalb wird nur dort etwas eingetragen, wo es eindeutig ist — hat eine Art mehrere Modelle und eines davon scheitert, bleibt der Katalog stumm, statt das falsche stillzulegen. Und jede Abschaltung wird protokolliert, damit ein Fehlgriff auffällt statt unbemerkt zu bleiben."
+    ]
+  },
+  {
     "version": "14.45.0",
     "date": "2026-09-15",
     "highlight": false,

@@ -107,7 +107,7 @@ Wochen Objekte gesetzt werden. Der Grund: `katalog_ergebnis` wird ausschließlic
 meldet bei **jedem** Setzversuch `steht` oder `fehlgeschlagen` — das landet in
 `bruegge_steht` und ist nach der nächsten Meldung überschrieben.
 
-Damit weiß der Katalog nach Monaten Betrieb nicht, was funktioniert, obwohl die Information
+Damit weiß der Katalog seit dem ersten Betriebstag nicht, was funktioniert, obwohl die Information
 jeden Tag durchs Haus läuft. **Und die Regel „eine Art wird gesperrt, wenn ein Simulator
 nichts kann" hängt daran:** Sie fußt auf `status='aus'`, das aus dem Prüfergebnis kommt.
 Ohne Rückfluss greift sie nur, wo jemand von Hand gepflegt hat.

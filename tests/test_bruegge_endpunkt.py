@@ -1111,3 +1111,162 @@ def test_eine_normale_kennung_loest_keine_warnung_aus(klient, tmp_path, caplog):
     with caplog.at_level(logging.WARNING, logger="app.main"):
         klient.post("/api/bruegge/melden", json=_meldung())
     assert not [r for r in caplog.records if "KOLLISIONSKENNUNG" in r.getMessage()]
+
+
+# ---------------------------------------------------------------------------------------
+# Der Katalog lernt aus der Rückmeldung
+# ---------------------------------------------------------------------------------------
+
+def _katalog_anlegen(db_pfad, eintraege):
+    """(simulator, titel, art, status) direkt in den Katalog — der Admin-Weg bräuchte drei
+    Aufrufe je Zeile und würde nur verdecken, worum es geht.
+
+    ⚠ **`init_db` bringt einen GRUNDKATALOG mit**, und der ist keine leere Tafel: `tier_gross`
+    hat dort in X-Plane bereits `deer_buck.obj` und `deer_doe.obj`. Wer hier einen einzelnen
+    Titel anlegt und „genau einer" prüft, prüft in Wahrheit drei — die Tests waren beim ersten
+    Anlauf genau daran rot, und der Code war richtig.
+
+    Deshalb wird die Art vorher freigeräumt: Was der Test danach anlegt, ist alles, was es
+    von ihr gibt.
+    """
+    from app.database import get_connection
+    conn = get_connection(db_pfad)
+    for art in {e[2] for e in eintraege}:
+        conn.execute("UPDATE bruegge_katalog SET art = NULL, status = NULL WHERE art = ?",
+                     (art,))
+    for sim, titel, art, status in eintraege:
+        conn.execute(
+            "INSERT OR REPLACE INTO bruegge_katalog (simulator, titel, art, status, quelle) "
+            "VALUES (?, ?, ?, ?, 'bord')", (sim, titel, art, status))
+    conn.commit()
+    conn.close()
+
+
+def _katalog_lesen(db_pfad, art):
+    from app.database import get_connection
+    conn = get_connection(db_pfad)
+    rows = conn.execute(
+        "SELECT titel, simulator, ergebnis, status, fehler FROM bruegge_katalog "
+        "WHERE art = ? ORDER BY simulator, titel", (art,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def _soll_und_melden(klient, steht, simulator="xplane12", art="tier_gross"):
+    """⚠ Die Art muss in BEIDEN Töpfen einen Titel haben, sonst lehnt der Admin-Endpunkt das
+    Anfordern ab (`bruegge_arten_beidseitig`, stehende Regel seit 14.09.2026: eine Art, die
+    ein Simulator nicht zeigen kann, geht an KEINEN hinaus). Ohne Soll-Zeile gibt es keine
+    Art zur Objekt-`id`, und der Rückfluss hätte nichts zu lernen — die Tests hier wären
+    dann grün, ohne etwas zu prüfen."""
+    klient.post("/api/admin/bruegge/soll", cookies=_admin_kekse(),
+                json={"art": art, "lat": 53.78, "lon": 7.92, "id": "t1"})
+    return klient.post("/api/bruegge/melden",
+                       json=_meldung(simulator=simulator, steht=steht))
+
+
+#: Der Gegenpart im jeweils anderen Topf -- nur damit die Art überhaupt anforderbar ist.
+#: Er wird in den Prüfungen nicht angefasst und darf sich auch nicht verändern.
+def _gegenpart(simulator):
+    return ("msfs2024", "Gegenpart_Deer") if simulator == "xplane12" \
+        else ("xplane12", "gegenpart.obj")
+
+
+def test_kein_titel_ging_legt_die_ganze_art_still(klient, tmp_path):
+    """Die Brügge hat ALLE Titel durchprobiert — dann gilt es für jeden von ihnen.
+
+    Ohne diesen Rückfluss wusste der Katalog nach Monaten Betrieb nicht, was funktioniert:
+    2932 X-Plane-Titel, kein einziges Prüfergebnis. Und `bruegge_arten_beidseitig` hängt
+    daran — die Regel fußt auf `status='aus'`.
+    """
+    db = str(tmp_path / "t.db")
+    _friese_anlegen(db)
+    _katalog_anlegen(db, [
+        ("xplane12", "a.obj", "tier_gross", "aktiv"),
+        ("xplane12", "b.obj", "tier_gross", "aktiv"),
+        ("msfs2024", "Deer", "tier_gross", "aktiv"),   # darf NICHT mitsterben
+    ])
+    _soll_und_melden(klient, [{"id": "t1", "zustand": "fehlgeschlagen",
+                               "fehler": "KEIN_MODELL_MEHR"}])
+
+    zeilen = {(z["simulator"], z["titel"]): z for z in _katalog_lesen(db, "tier_gross")}
+    assert zeilen[("xplane12", "a.obj")]["status"] == "aus"
+    assert zeilen[("xplane12", "b.obj")]["status"] == "aus"
+    assert zeilen[("xplane12", "a.obj")]["ergebnis"] == "fehlgeschlagen"
+    assert zeilen[("msfs2024", "Deer")]["status"] == "aktiv", (
+        "ein X-Plane-Fehlschlag darf keinen MSFS-Titel stilllegen")
+
+
+def test_msfs_sagt_dasselbe_mit_einem_anderen_wort(klient, tmp_path):
+    """MSFS meldet `KEIN_TITEL_GING`, X-Plane `KEIN_MODELL_MEHR` — beide müssen greifen."""
+    db = str(tmp_path / "t.db")
+    _friese_anlegen(db)
+    _katalog_anlegen(db, [("msfs2024", "Deer", "tier_gross", "aktiv"),
+                          ("msfs2024", "Elk", "tier_gross", "aktiv"),
+                          (*_gegenpart("msfs2024"), "tier_gross", "aktiv")])
+    _soll_und_melden(klient, [{"id": "t1", "zustand": "fehlgeschlagen",
+                               "fehler": "KEIN_TITEL_GING"}], simulator="msfs2024")
+    zeilen = {z["titel"]: z for z in _katalog_lesen(db, "tier_gross")}
+    assert zeilen["Deer"]["status"] == "aus"
+    assert zeilen["Elk"]["status"] == "aus"
+    assert zeilen["gegenpart.obj"]["status"] == "aktiv", "X-Plane bleibt unberührt"
+
+
+def test_ein_einzelner_fehlschlag_raet_nicht(klient, tmp_path):
+    """Bei mehreren Titeln nennt die Rückmeldung nicht, WELCHER scheiterte.
+
+    Ein falsch stillgelegter Titel wäre schlimmer als eine Lücke — man sieht ihm nicht an,
+    dass er zu Unrecht aus ist.
+    """
+    db = str(tmp_path / "t.db")
+    _friese_anlegen(db)
+    _katalog_anlegen(db, [("xplane12", "a.obj", "tier_gross", "aktiv"),
+                          ("xplane12", "b.obj", "tier_gross", "aktiv"),
+                          (*_gegenpart("xplane12"), "tier_gross", "aktiv")])
+    _soll_und_melden(klient, [{"id": "t1", "zustand": "fehlgeschlagen",
+                               "fehler": "NAME_UNRECOGNIZED"}])
+    assert all(z["ergebnis"] is None for z in _katalog_lesen(db, "tier_gross")), \
+        "bei zwei Titeln darf nichts geschrieben werden"
+
+
+def test_bei_genau_einem_titel_ist_auch_das_einzelergebnis_eindeutig(klient, tmp_path):
+    db = str(tmp_path / "t.db")
+    _friese_anlegen(db)
+    _katalog_anlegen(db, [("xplane12", "nur_der.obj", "tier_gross", "aktiv"),
+                          (*_gegenpart("xplane12"), "tier_gross", "aktiv")])
+    _soll_und_melden(klient, [{"id": "t1", "zustand": "fehlgeschlagen",
+                               "fehler": "NAME_UNRECOGNIZED"}])
+    z = [x for x in _katalog_lesen(db, "tier_gross") if x["titel"] != "Gegenpart_Deer"][0]
+    assert z["ergebnis"] == "fehlgeschlagen" and z["status"] == "aus"
+    assert z["fehler"] == "NAME_UNRECOGNIZED"
+
+
+def test_ein_gelungener_versuch_wird_vermerkt_aber_aendert_den_status_nicht(klient, tmp_path):
+    """`steht` ist eine Beobachtung, keine Entscheidung.
+
+    Die Zuordnung einer Art gehört dem Nutzer (`bruegge_arten_zuordnen`); ein gelungener
+    Setzversuch hält nur fest, dass es geklappt hat. Der Status wird ausschließlich beim
+    Fehlschlag angefasst — und dann nur in eine Richtung.
+
+    ⚠ Ein Titel auf `aus` taucht in dieser Prüfung bewusst nicht auf: Er wird gar nicht erst
+    ausgeliefert (`bruegge_titel_fuer` filtert auf `status='aktiv'`), die Brügge kann ihn
+    also nicht probiert haben. Ein Test dafür prüfte einen Fall, den es nicht gibt.
+    """
+    db = str(tmp_path / "t.db")
+    _friese_anlegen(db)
+    _katalog_anlegen(db, [("xplane12", "nur_der.obj", "tier_gross", "aktiv"),
+                          (*_gegenpart("xplane12"), "tier_gross", "aktiv")])
+    _soll_und_melden(klient, [{"id": "t1", "zustand": "steht", "hoehe_ft": 12.5}])
+    z = [x for x in _katalog_lesen(db, "tier_gross") if x["titel"] == "nur_der.obj"][0]
+    assert z["ergebnis"] == "steht"
+    assert z["status"] == "aktiv", "der Status bleibt, wie der Nutzer ihn gesetzt hat"
+
+
+def test_verschwunden_sagt_nichts_ueber_den_titel(klient, tmp_path):
+    """Das Objekt WAR da — der Grund kann die Reality Bubble sein, nicht der Titel."""
+    db = str(tmp_path / "t.db")
+    _friese_anlegen(db)
+    _katalog_anlegen(db, [("xplane12", "nur_der.obj", "tier_gross", "aktiv"),
+                          (*_gegenpart("xplane12"), "tier_gross", "aktiv")])
+    _soll_und_melden(klient, [{"id": "t1", "zustand": "verschwunden", "seit_s": 12}])
+    z = [x for x in _katalog_lesen(db, "tier_gross") if x["titel"] != "Gegenpart_Deer"][0]
+    assert z["ergebnis"] is None and z["status"] == "aktiv"

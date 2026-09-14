@@ -102,6 +102,7 @@ from app.database import (
     bruegge_position_loeschen,
     bruegge_uebersicht,
     bruegge_aufraeumen,
+    bruegge_katalog_ergebnis_melden,
     bruegge_soll_fuer,
     bruegge_soll_setzen,
     bruegge_arten_anforderbar,
@@ -1169,7 +1170,9 @@ async def bruegge_melden(request: Request):
         # ausgewertet wurde er bis zum 12.09.2026 nicht -- aufgefallen ist das erst, als
         # Punkt 2 der Messliste im Simulator gemessen werden sollte und nichts da war.
         if kennung:
-            bruegge_steht_melden(conn, kennung, cid, body.get("steht") or [])
+            rueck = body.get("steht") or []
+            bruegge_steht_melden(conn, kennung, cid, rueck)
+            _bruegge_katalog_lernen(conn, simulator, cid, rueck)
 
         # ⭐ DER TITEL DES EIGENEN FLUGZEUGS -- so faellt der Bestand von selbst an.
         #
@@ -1242,6 +1245,80 @@ async def bruegge_melden(request: Request):
     # und die Bruegge probiert sie der Reihe nach. Sie fuehrt keine eigene Tabelle mehr.
     return _bruegge_antwort(takt, soll=soll, arten=arten, kennung=zugeteilt,
                             fassung=fassung if isinstance(fassung, int) else None)
+
+
+#: Was die beiden Brueggen melden, wenn ALLE Titel einer Art durchprobiert sind und keiner
+#: ging. Zwei Namen fuer dieselbe Sache -- MSFS sagt `KEIN_TITEL_GING`
+#: (friesenbruegge/msfs/bruegge.cpp), X-Plane sagt `KEIN_MODELL_MEHR`
+#: (friesenbruegge/xplane/bruegge.cpp). Die Asymmetrie ist historisch; wer sie vereinheitlicht,
+#: braucht ein Client-Release und muss die alte Schreibweise trotzdem weiter annehmen.
+_BRUEGGE_ART_ERSCHOEPFT = ("KEIN_TITEL_GING", "KEIN_MODELL_MEHR")
+
+
+def _bruegge_katalog_lernen(conn, simulator: str | None, cid: int, steht: list) -> None:
+    """Aus der Rueckmeldung lernen, was sich in welchem Simulator setzen laesst.
+
+    Die Brueggen melden seit dem ersten Tag bei jedem Versuch, ob ein Objekt steht -- und es kam
+    nirgends an: `bruegge_steht` wird beim naechsten Takt ueberschrieben, und `ergebnis` im
+    Katalog fuellte allein ein MSFS-Werkzeug (`probe-msfs/titel_schau.py`). Die X-Plane-Seite
+    hatte deshalb 2932 Titel und NULL Pruefergebnisse.
+
+    ⚠ Daran haengt mehr als die Statistik: `bruegge_arten_beidseitig` sperrt eine Art, sobald
+    ein Simulator nichts aus ihr zeigen kann, und fusst dabei auf `status='aus'` -- also auf
+    genau diesen Ergebnissen. Ohne Rueckfluss greift die Regel nur, wo jemand von Hand
+    gepflegt hat.
+
+    Geschrieben wird nur, was eindeutig ist (s. `bruegge_katalog_ergebnis_melden`): Die
+    Rueckmeldung nennt die Objekt-`id`, nicht den Titel.
+    """
+    if not simulator or not isinstance(steht, list) or not steht:
+        return
+    art_zu_id = {s["id"]: s["art"] for s in bruegge_soll_fuer(conn, cid) if s.get("art")}
+    if not art_zu_id:
+        return
+    for eintrag in steht:
+        if not isinstance(eintrag, dict):
+            continue
+        art = art_zu_id.get(str(eintrag.get("id") or ""))
+        if not art:
+            continue
+        zustand = str(eintrag.get("zustand") or "")
+        fehler = str(eintrag.get("fehler") or "") or None
+        if zustand == "fehlgeschlagen":
+            # Alle Titel durch? Dann gilt es fuer die ganze Art in diesem Simulator.
+            # Sonst nur, wenn die Art dort ohnehin nur einen Titel hat.
+            alle = fehler in _BRUEGGE_ART_ERSCHOEPFT
+            n = bruegge_katalog_ergebnis_melden(
+                conn, simulator, art, "fehlgeschlagen", fehler=fehler, alle=alle)
+            # ⚠ JEDE Stilllegung wird protokolliert, und das ist kein Beiwerk.
+            #
+            # Der Nutzer hat am 15.09.2026 beobachtet, dass im Admin unter `steht` schon
+            # einmal `fehlgeschlagen` stand, OBWOHL das Objekt im Simulator zu sehen war.
+            # Die Ursache ist offen. Solange sie es ist, darf eine Stilllegung nicht still
+            # geschehen: Ein zu Unrecht ausgeschalteter Titel sieht im Katalog aus wie ein
+            # zu Recht ausgeschalteter, und niemand weiss hinterher, warum.
+            #
+            # Zurueckdrehen ist billig (im Admin ein Klick auf `aktiv`), den Fall zu FINDEN
+            # ist teuer. Deshalb die Zeile -- sie nennt Art, Simulator und Umfang.
+            if n:
+                _logger.info(
+                    "Bruegge: %s/%s stillgelegt -- %d Titel, Grund %s%s",
+                    simulator, art, n, fehler or "?",
+                    " (alle Titel der Art durchprobiert)" if alle
+                    else " (einziger Titel dieser Art)")
+        elif zustand == "steht":
+            bruegge_katalog_ergebnis_melden(
+                conn, simulator, art, "steht",
+                hoehe_ft=_bruegge_zahl(eintrag.get("hoehe_ft")))
+        # `verschwunden` sagt nichts ueber den Titel -- das Objekt WAR da und ist es nicht
+        # mehr. Ein Grund dafuer kann die Reality Bubble sein, nicht der Titel.
+
+
+def _bruegge_zahl(wert):
+    try:
+        return float(wert) if wert is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
