@@ -20,5 +20,13 @@
 			<AssetDir>PackageSources\SimObjects\Misc\FrsRauch\</AssetDir>
 			<OutputDir>SimObjects\Misc\FrsRauch\</OutputDir>
 		</AssetGroup>
+		<AssetGroup Name="SeehundObjects">
+			<Type Version="1">SimObject</Type>
+			<Flags>
+				<FSXCompatibility>false</FSXCompatibility>
+			</Flags>
+			<AssetDir>PackageSources\SimObjects\Misc\FrsSeehund\</AssetDir>
+			<OutputDir>SimObjects\Misc\FrsSeehund\</OutputDir>
+		</AssetGroup>
 	</AssetGroups>
 </AssetPackage>

@@ -45,14 +45,29 @@ $auftrag = Start-Job -ScriptBlock {
     & $w "FriesenRauch.xml" 2>&1 | Out-String
 } -ArgumentList $werkzeug, $hier
 
-# Fertig ist der Bau, wenn alle sechs .spb NEUER sind als der Start -- nicht, wenn der
-# Prozess endet. Er endet naemlich nicht.
+# Fertig ist der Bau, wenn unter Packages\ eine Weile NICHTS MEHR geschrieben wurde --
+# nicht, wenn der Prozess endet. Er endet naemlich nicht.
+#
+# ⚠ HIER STAND "wenn alle sechs .spb neuer sind als der Start", und das war zu eng.
+# Am 14.09.2026 kam der Seehund als SimObject dazu; an den Rauch-Effekten aenderte sich
+# dabei nichts, also schrieb der Builder die .spb gar nicht neu. Der Bau war nach zwei
+# Minuten fertig -- das Skript haette bis zum 10-Minuten-Timeout gewartet und dann
+# "NICHT fertig" gemeldet, obwohl alles dastand.
+#
+# Die Ruhe-Erkennung ist unabhaengig davon, WAS gebaut wird: Sobald seit $RuheSekunden
+# keine Datei mehr angefasst wurde und mindestens eine neuer ist als der Start, ist der
+# Builder durch. Das traegt auch alles, was spaeter noch dazukommt.
+$RuheSekunden = 40
 $fertig = $false
 while (((Get-Date) - $start).TotalMinutes -lt $MaxMinuten) {
     Start-Sleep -Seconds 10
-    $neu = @(Get-ChildItem "$spb\*.spb" -ErrorAction SilentlyContinue |
-             Where-Object { $_.LastWriteTime -gt $start })
-    if ($neu.Count -ge 6) { $fertig = $true; break }
+    $neueste = Get-ChildItem "$hier\Packages" -Recurse -File -ErrorAction SilentlyContinue |
+               Where-Object { $_.LastWriteTime -gt $start } |
+               Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($neueste -and ((Get-Date) - $neueste.LastWriteTime).TotalSeconds -ge $RuheSekunden) {
+        $fertig = $true
+        break
+    }
 }
 
 Start-Sleep -Seconds 15      # dem Manifest-Schreiben noch Luft lassen

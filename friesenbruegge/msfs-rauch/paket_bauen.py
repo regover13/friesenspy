@@ -7,8 +7,33 @@ braucht, damit `AICreateSimulatedObject` einen Titel wie `FrsRauch_Signalrot` an
       VisualEffectLibs/devprops/friesenrauch/   die sechs Effekte (aus rauch_bauen.py)
       MaterialLibs/friesenrauch-mat/            Textur + Material
       SimObjects/Misc/FrsRauch/                 sim.cfg + ein Trägermodell je Farbe
+      SimObjects/Misc/FrsSeehund/               der Seehund, drei Größen (14.09.2026)
     PackageDefinitions/                         drei Pakete
     FriesenRauch.xml                            das Projekt für fspackagetool
+
+⚠⚠ EIGENE MODELLE MIT TEXTUR: ZWEI STILLE FALLEN, BEIDE OHNE FEHLERMELDUNG
+==========================================================================
+Am 14.09.2026 beim Seehund zweimal hintereinander hineingelaufen. Der Package Builder
+meldet in beiden Fällen **nichts** — er schreibt brav ein glTF, das auf
+`<NAME>.PNG.KTX2` verweist, und erzeugt diese Datei einfach nicht. Im Simulator erscheint
+ein farbloses Modell, und man sucht den Fehler beim Material.
+
+1. **Die Textur gehört in `SimObjects/<Kategorie>/<Name>/texture/`**, nicht neben das
+   glTF. Blenders Exporter legt sie in den Modellordner; MSFS sucht sie im
+   Geschwisterordner `texture` — genau das sagt die leere Zeile `texture=` in der sim.cfg.
+
+2. **Und sie braucht eine `.png.xml` daneben**, sonst sammelt der Builder sie nicht ein:
+
+       <BitmapConfiguration>
+           <BitmapSlot>MTL_BITMAP_DECAL0</BitmapSlot>
+       </BitmapConfiguration>
+
+   `MTL_BITMAP_DECAL0` ist der Albedo-Kanal, also die Farbe. Das Vorbild steht im SDK
+   unter `Samples/DevmodeProjects/Misc/TrafficVehicles` — dort hat JEDE Textur so eine
+   Begleitdatei.
+
+Beides erzeugt `export_msfs.py` (im Robben-Arbeitsordner) automatisch; wer ein weiteres
+Modell von Hand anlegt, muss daran denken.
 
 DAS TRÄGERMODELL IST EIN UNSICHTBARER WÜRFEL
 ============================================
@@ -390,7 +415,20 @@ def definitionen_schreiben() -> None:
           # gibt, und hielt folglich alles fuer Beiwerk.
           gruppe("SimObjects", "SimObject",
                  "PackageSources\\SimObjects\\Misc\\FrsRauch\\",
-                 "SimObjects\\Misc\\FrsRauch\\"))
+                 "SimObjects\\Misc\\FrsRauch\\") +
+          # Der Seehund liegt im SELBEN Teilpaket, nur in einer zweiten Gruppe. Ein eigenes
+          # Paket waere ein vierter Teil, den `msfs/paket.ps1` mitfuehren muesste -- und der
+          # Nutzer wollte ausdruecklich EIN Paket ("aber ich wollte EIN Paket
+          # FriesenBruegge!"). Im fertigen Community-Ordner stehen beide nebeneinander unter
+          # SimObjects\Misc\.
+          #
+          # ⚠ Der Ordnername `msfs-rauch/` stimmt damit nicht mehr mit seinem Inhalt
+          # ueberein -- hier entsteht inzwischen alles, was die Bruegge an eigenen Modellen
+          # mitbringt. Eine Umbenennung ist faellig, fasst aber viele Pfade an und gehoert
+          # deshalb in einen eigenen Schritt.
+          gruppe("SeehundObjects", "SimObject",
+                 "PackageSources\\SimObjects\\Misc\\FrsSeehund\\",
+                 "SimObjects\\Misc\\FrsSeehund\\"))
 
     (HIER / "FriesenRauch.xml").write_text(
         '<?xml version="1.0" encoding="utf-8"?>\n'

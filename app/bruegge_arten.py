@@ -119,12 +119,29 @@ ARTEN: dict[str, tuple[str, dict[str, list]]] = {
         "msfs2024": ["ahqa cow walking", "ahqa sheep walking", "ahqa goat walking",
                      "ahqa donkey walking"],
     }),
-    # ⚠ OFFEN: "die Loesung sollten wir aus human-library-animated herausloesen" -- fuer
-    # X-Plane gibt es UEBERHAUPT keine Robbe (gesucht in allen 1146 Bordobjekten und in der
-    # Szeneriebibliothek), fuer MSFS nur diese drei. Ein eigenes Modell steht aus; bis dahin
-    # bleibt die Art an einem Fremdpaket haengen.
+    # ⭐ SEIT DEM 14.09.2026 EIGENES MODELL -- und das war kein Ausweichen, sondern der
+    # einzige Weg. In KEINEM der beiden Simulatoren gibt es eine Robbe:
+    #
+    #   MSFS 2020/2024   45 Tiertitel + 41 Tierpakete durchsucht, dazu 2642 Titel aus den
+    #                    gestreamten .fsarchive-Dateien -- kein seal, sea lion, walrus
+    #   X-Plane 12       alle 1146 Bordobjekte und die Szeneriebibliothek -- nichts
+    #
+    # Superspuds `human-library-animated` hat welche, ist aber ein MSFS-Paket: Fuer das
+    # Drittel der Gruppe, das X-Plane fliegt, haette es nie etwas geloest. Deshalb steht
+    # unser Modell VOR seinen Titeln und nicht dahinter -- wer sein 556-MB-Addon hat,
+    # bekommt als Zugabe die animierte Robbe, alle anderen brauchen nichts weiter.
+    #
+    # Herkunft: "Walrus" von Poly by Google (poly.pizza/m/5T7nIjx9ekP), CC BY 3.0 --
+    # Aenderung und Weitergabe ausdruecklich erlaubt, Bedingung ist die Namensnennung.
+    # Stosszaehne entfernt, Backen eingezogen, Schnauze gerundet, Schwanzflosse
+    # geschlossen, Hals gekuerzt. Drei Groessen nach den Angaben der Seehundstation
+    # Norddeich: Bulle 1,80 m, Kuh 1,60 m, Heuler 0,85 m.
     "robbe": ("Eine Robbe -- fuer die Zaehlaufgabe", {
-        "msfs2024": ["ahqa seal moving", "ahqa sea lion moving", "ahqa walrus moving"],
+        "msfs2024": ["FrsSeehund_Kuh", "FrsSeehund_Bulle", "FrsSeehund_Heuler",
+                     "ahqa seal moving", "ahqa sea lion moving", "ahqa walrus moving"],
+        "xplane12": [XP_EIGEN + "seehund_kuh.obj",
+                     XP_EIGEN + "seehund_bulle.obj",
+                     XP_EIGEN + "seehund_heuler.obj"],
     }),
 
     # --- Fahrzeuge und Schiffe ---------------------------------------------------------
