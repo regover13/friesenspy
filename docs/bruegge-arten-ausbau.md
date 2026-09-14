@@ -1,6 +1,6 @@
 # Mehr Arten für die FriesenBrügge
 
-> Stand 15.09.2026 · **umgesetzt** — aus 17 anforderbaren Arten sind **32** geworden
+> Stand 15.09.2026 · **umgesetzt** — aus 17 anforderbaren Arten sind **37** geworden
 
 Anlass war ein Satz des Nutzers: *„16 Arten waren viel zu wenig für so viele Objekte!"*
 Er hatte recht, und die Zahl war zwischenzeitlich sogar gesunken.
@@ -8,7 +8,7 @@ Er hatte recht, und die Zahl war zwischenzeitlich sogar gesunken.
 **Der Maßstab ist die stehende Regel vom 14.09.2026:** Eine Art geht nur hinaus, wenn
 **beide** Simulatoren etwas aus ihr zeigen können, und sie darf **kein Fremdpaket**
 brauchen. Alles unten ist daran gemessen — und beide Brücken bekommen heute exakt dieselben
-32 Arten.
+37 Arten.
 
 ---
 
@@ -50,12 +50,12 @@ mit einem Klick.
 
 ---
 
-## Die 32 Arten
+## Die 37 Arten
 
 | | |
 |---|---|
 | **Tiere** | `seehund_kuh` · `seehund_bulle` · `seehund_heuler` · `tier_gross` · `tier_klein` |
-| **Schiffe** | `boot_gross` · `boot_klein` · `schiff_segel` |
+| **Schiffe** | `boot_gross` · `boot_klein` · `schiff_segel` · `schiff_massengut` · `schiff_container` · `schiff_tanker` · `schiff_gastanker` · `schnellboot` |
 | **Fahrzeuge** | `auto` · `bus` · `tankwagen` · `feuerwehr` · `krankenwagen` · `flugplatzfahrzeug` |
 | **Gerät** | `gabelstapler` · `baufahrzeug` · `kran` · `jetway` · `leitkegel` · `seecontainer` |
 | **Marken** | `windrad` · `windsack` · `flagge` · `mast` · `tank` · `zelt` |
@@ -70,19 +70,52 @@ wie er den Kurs schon würfelt.
 
 ---
 
+## ⭐ Die Messung ist durch — X-Plane zeichnet aus `ships/parts/`
+
+**Am 15.09.2026 im Flug gemessen und im Bild belegt.** `BulkCarrier_342A_StaticOnly` stand
+in niederbayerischen Feldern: Rumpf, rote Aufbauten, alle Lukendeckel, die Ladekräne, die
+Beschriftung am Rumpf — ein vollständiges 342-m-Schiff.
+`ContainerCarrier_399A_BaseModel` daneben ebenso.
+
+Das war nicht selbstverständlich: Unter `parts/` liegen **Bausteine** der
+Szeneriebibliothek, aus denen X-Plane ein Schiff sonst aus vier Dateien zusammensetzt
+(`_BaseModel` + `_Static_Add` + `_Flags` + `_ContainersA/B`). Dass ein Baustein **allein**
+lädt *und dabei aussieht wie ein Schiff*, musste gemessen werden — „erzeugt" und
+„gezeichnet" sind zwei verschiedene Dinge, das hat der Rauch teuer genug gelehrt. Die
+Rückmeldung sagte bei beiden nur `steht`; entschieden hat das Auge.
+
+**Gemessen wurde mit Kontrolle:** ein Seehund 50 m hinter dem Piloten, der nachweislich
+läuft. Ohne ihn wäre ein Fehlschlag mehrdeutig gewesen — `parts/` oder die Kette dahinter.
+
+Damit sind fünf Arten dazugekommen: `schiff_massengut` · `schiff_container` ·
+`schiff_tanker` · `schiff_gastanker` · `schnellboot`. `_StaticOnly` steht vorn, wo es sie
+gibt (genau zwei: 342A und 190B) — sie trägt das ganze Schiff in einer Datei.
+
+**Und der Ausgangsfehler ist behoben:** Die beiden Cruiser stehen jetzt bei `boot_klein`,
+wo sie mit 19 m und 12 m hingehören. `boot_gross` bleibt als Sammelbegriff und behält die
+Frachter ohne eigene Art.
+
+---
+
 ## Was noch offen ist
 
-### Die eine Messung, die fünf weitere Arten freigibt
+### ⚠ Die Rückmeldung fließt nicht in den Katalog zurück
 
-`schiff_container` · `schiff_massengut` · `schiff_tanker` · `schiff_gastanker` ·
-`schnellboot` sind vorbereitet, aber **nicht angelegt**. Ihre X-Plane-Seite liegt
-vollständig in `ships/parts/` — dort setzt X-Plane ein Schiff aus Bausteinen zusammen
-(`_BaseModel` + `_Static_Add` + `_Flags`), und ob `XPLMLoadObject` daraus lädt, ist
-ungemessen.
+**Die X-Plane-Seite hat null Prüfergebnisse** — 2932 Titel, kein einziges, obwohl seit
+Wochen Objekte gesetzt werden. Der Grund: `katalog_ergebnis` wird ausschließlich von
+`probe-msfs/titel_schau.py --katalog` gefüttert, einem MSFS-Werkzeug. Die laufende Brügge
+meldet bei **jedem** Setzversuch `steht` oder `fehlgeschlagen` — das landet in
+`bruegge_steht` und ist nach der nächsten Meldung überschrieben.
 
-**Die Messung ist vorbereitet:** `boot_gross` steht in X-Plane auf
-`BulkCarrier_342A_StaticOnly` (Rang 1, 342 m), mit den Kajütbooten als Rückfall auf Rang 5/6.
-Ein gesetztes `boot_gross` beantwortet die Frage für alle fünf auf einmal.
+Damit weiß der Katalog nach Monaten Betrieb nicht, was funktioniert, obwohl die Information
+jeden Tag durchs Haus läuft. **Und die Regel „eine Art wird gesperrt, wenn ein Simulator
+nichts kann" hängt daran:** Sie fußt auf `status='aus'`, das aus dem Prüfergebnis kommt.
+Ohne Rückfluss greift sie nur, wo jemand von Hand gepflegt hat.
+
+Der Einbau ist klein — beim Verarbeiten der Meldung dieselben Zeilen in den Katalog
+schreiben. ⚠ **Aber im Meldepfad:** Der Endpunkt ist heute atomar, *weil* er blockiert;
+zwischen Lesen und Commit liegt kein `await`. Wer ihn in den Threadpool legt, baut den
+Wettlauf ein, den `belegt` gerade verhindert (Hinweis der Parallelsitzung, 15.09.2026).
 
 ### Was nur ein Simulator hat — und deshalb gesperrt bleibt
 
@@ -112,8 +145,8 @@ warten auf den Tag, an dem MSFS etwas Vergleichbares bekommt oder wir es bauen.
 ## Die Grenze, die das Wachstum irgendwann stoppt
 
 Die Titelliste geht als Wörterbuch **einmal je Antwort** hinaus und muss in
-`ANTWORT_PUFFER` passen — **49152 Bytes**, in beiden Brügge-Fassungen. Bei 32 Arten braucht
-X-Plane rund 6 kB, MSFS 2 kB.
+`ANTWORT_PUFFER` passen — **49152 Bytes**, in beiden Brügge-Fassungen. Bei 37 Arten braucht
+X-Plane rund 7,7 kB (15 % des Puffers), MSFS 2,5 kB.
 
 **X-Plane ist der teure Fall, um das Dreifache:** Dort ist der Bezeichner ein Dateipfad, und
 `Resources/default scenery/` allein wiederholt sich in jeder Zeile — bei 73 Titeln sind das
