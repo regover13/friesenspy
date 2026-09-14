@@ -1052,3 +1052,62 @@ def test_im_verstoss_fenster_bleiben_die_objekte_stehen(klient, tmp_path):
     assert zeile is not None
     assert abs(zeile[0] - 53.78227) < 1e-6, (
         "die Karte behält den letzten guten Punkt, statt dem Ausreißer zu folgen")
+
+
+# ---------------------------------------------------------------------------------------
+# Die alte Kollisionskennung — gemeldet, nicht behandelt
+# ---------------------------------------------------------------------------------------
+
+def test_die_kollisionskennung_wird_im_log_gemeldet(klient, tmp_path, caplog):
+    """Damit sie beim nächsten Mal in Sekunden auffällt statt in Stunden.
+
+    Die MSFS-Brügge baute ihre Kennung bis zum 14.09.2026 aus Modul-Adresse und `rand()` ohne
+    `srand()` — in WASM auf jedem Rechner gleich. Zwei Piloten darunter, und der Server
+    schrieb die Position des einen unter die CID des anderen.
+
+    ⚠ Bewusst NUR eine Warnung: Den Wert als „keine Kennung" zu behandeln und eine zuzuteilen
+    macht es schlimmer, weil eine alte Brügge die Zuteilung nicht annehmen kann
+    (`kennung_uebernehmen` gibt es erst in der neuen Fassung). Sie zöge dann bei jeder Meldung
+    eine frische — ohne Sprungerkennung, ohne Verstoßzähler, ohne Hysterese.
+    """
+    import logging
+    import app.main as main
+
+    main._bruegge_kollision_gemeldet.clear()
+    _friese_anlegen(str(tmp_path / "t.db"))
+    with caplog.at_level(logging.WARNING, logger="app.main"):
+        klient.post("/api/bruegge/melden",
+                    json=_meldung(kennung=main._BRUEGGE_KOLLISIONSKENNUNG))
+    treffer = [r for r in caplog.records if "KOLLISIONSKENNUNG" in r.getMessage()]
+    assert len(treffer) == 1, "die alte Kennung muss auffallen"
+    assert main._BRUEGGE_KOLLISIONSKENNUNG in treffer[0].getMessage()
+
+
+def test_die_warnung_flutet_das_log_nicht(klient, tmp_path, caplog):
+    """Die Brügge meldet im Sekundentakt — eine Zeile je Meldung wären 3600 in der Stunde.
+
+    Das ist genau das Rauschen, gegen das der Log-Filter in nginx gebaut wurde
+    (`access_log … if=$fs_bruegge_loggen`). Eine Warnung, die man wegfiltern muss, ist keine.
+    """
+    import logging
+    import app.main as main
+
+    main._bruegge_kollision_gemeldet.clear()
+    _friese_anlegen(str(tmp_path / "t.db"))
+    with caplog.at_level(logging.WARNING, logger="app.main"):
+        for _ in range(5):
+            klient.post("/api/bruegge/melden",
+                        json=_meldung(kennung=main._BRUEGGE_KOLLISIONSKENNUNG))
+    treffer = [r for r in caplog.records if "KOLLISIONSKENNUNG" in r.getMessage()]
+    assert len(treffer) == 1, f"fünf Meldungen, aber {len(treffer)} Warnungen"
+
+
+def test_eine_normale_kennung_loest_keine_warnung_aus(klient, tmp_path, caplog):
+    import logging
+    import app.main as main
+
+    main._bruegge_kollision_gemeldet.clear()
+    _friese_anlegen(str(tmp_path / "t.db"))
+    with caplog.at_level(logging.WARNING, logger="app.main"):
+        klient.post("/api/bruegge/melden", json=_meldung())
+    assert not [r for r in caplog.records if "KOLLISIONSKENNUNG" in r.getMessage()]

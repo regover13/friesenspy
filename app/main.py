@@ -916,6 +916,16 @@ _BRUEGGE_TAKT_UNERKANNT_S = 3
 # zaehlt Tiere, nicht Baeren.
 _BRUEGGE_TAKT_VORGABE_S = 1          # Regeltakt, gemessen (s. Protokoll, Abschnitt 6)
 
+#: Die Kennung, die JEDE MSFS-Bruegge vor dem 14.09.2026 erzeugte -- Modul-Adresse ⊕ `rand()`
+#: ohne `srand()`, in WASM auf jedem Rechner identisch. Steht hier, damit der Wert genau
+#: EINMAL im Quelltext vorkommt und nicht in Kommentaren verstreut.
+_BRUEGGE_KOLLISIONSKENNUNG = "9e3711c100000000"
+
+#: Einmal je Prozess warnen, nicht je Meldung: Die Bruegge meldet im Sekundentakt, eine
+#: Warnung je Meldung waere 3600 Zeilen in der Stunde -- und damit genau das Rauschen, gegen
+#: das der Log-Filter in nginx gebaut wurde.
+_bruegge_kollision_gemeldet: set[str] = set()
+
 
 def _bruegge_takt(conn) -> int:
     """Der Takt, den der Server vorgibt -- aus `app_settings`, bei JEDER Antwort gelesen.
@@ -1059,6 +1069,32 @@ async def bruegge_melden(request: Request):
 
     kennung = str(body.get("kennung") or "")[:64]
     simulator = str(body.get("simulator") or "")[:20] or None
+
+    # ⚠ DIE KOLLISIONSKENNUNG -- melden, nicht behandeln.
+    #
+    # Bis zum 14.09.2026 baute die MSFS-Bruegge ihre Kennung aus der Modul-Adresse und
+    # `rand()` ohne `srand()`. In einem WASM-Modul ist beides auf jedem Rechner gleich, also
+    # erzeugte JEDE Installation dieselbe Zeichenfolge. Zwei Piloten darunter, und der Server
+    # schrieb die Position des einen unter die CID des anderen -- gesucht haben wir das
+    # stundenlang, weil nichts darauf hinwies.
+    #
+    # ⚠ WARUM HIER NUR GEWARNT UND NICHT REPARIERT WIRD: Den Wert als "keine Kennung" zu
+    # behandeln und eine zuzuteilen, liegt nahe und macht es SCHLIMMER. Eine alte Bruegge
+    # kann die zugeteilte gar nicht annehmen (`kennung_uebernehmen` gibt es erst in der neuen
+    # Fassung, s. friesenbruegge/msfs/bruegge.cpp) -- sie bekaeme bei jeder Meldung eine
+    # frische, und damit fielen Sprungerkennung, Verstoesse und Hysterese fuer sie weg. Fuer
+    # genau den Piloten, dem zu helfen waere, waere das ein Rueckschritt.
+    #
+    # Der Fall ist heute keiner mehr (alle bekannten Brueggen sind aktualisiert, X-Plane hatte
+    # die Kollision nie). Bleibt das Risiko, dass jemand ein altes ZIP weiterreicht -- und
+    # dann soll es in Sekunden im Log stehen statt wieder in Stunden gesucht zu werden.
+    if kennung == _BRUEGGE_KOLLISIONSKENNUNG and kennung not in _bruegge_kollision_gemeldet:
+        _bruegge_kollision_gemeldet.add(kennung)
+        _logger.warning(
+            "Bruegge: ALTE KOLLISIONSKENNUNG %s gemeldet (simulator=%s) -- diese Fassung "
+            "erzeugt sie auf JEDEM Rechner gleich. Fliegen zwei davon gleichzeitig, "
+            "verwechseln sie sich. Der Pilot braucht ein neues friesenbruegge.zip.",
+            kennung, simulator)
 
     # Die Bruegge meldet, wenn unsere letzte Antwort nicht in ihren Puffer passte. Dann hat
     # sie den Sollzustand GAR NICHT erfahren -- sie wertet eine abgeschnittene Antwort
