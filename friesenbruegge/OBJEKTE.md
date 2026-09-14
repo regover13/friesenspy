@@ -1,8 +1,24 @@
 # Welche Objekte gibt es? — Titel je Simulator
 
-**Nachschlagewerk für `titel_fuer` in `msfs/bruegge.cpp`.** Der Server nennt nur eine
-**Gattung**; welches Modell daraus wird, entscheidet die Brügge, weil nur sie ihren Simulator
-kennt (PROTOKOLL.md, Abschnitt 2).
+**Nachschlagewerk für die Tabelle `bruegge_katalog` auf dem Server.** Der Server nennt eine
+**Art** und liefert die Titel gleich mit (PROTOKOLL.md, Abschnitt 3).
+
+> ### ⚠ Umgekehrt seit dem 14.09.2026
+>
+> Hier stand: *„Nachschlagewerk für `titel_fuer` in `msfs/bruegge.cpp`. Welches Modell daraus
+> wird, entscheidet die Brügge, weil nur sie ihren Simulator kennt."*
+>
+> **Die Brügge entscheidet das nicht mehr.** Ihre Tabelle `g_gattungen[]` ist entfernt — in
+> beiden Umsetzungen, zusammen rund 320 Zeilen. Die Zuordnung steht im Katalog des Servers,
+> und dieses Dokument beschreibt, was dort drinsteht und warum.
+>
+> Der Grund ist das Leitbild des Protokolls (*„Die Brügge ist dumm"*) und ein doppelter Preis:
+> Eine neue Art kostete einen Windows-Build und eine Verteilung an 61 Piloten — und die
+> Tabelle wusste nichts darüber, was tatsächlich funktioniert. Drei ihrer Titel scheiterten
+> nachweislich seit dem 12.09.2026, sie probierte sie trotzdem bei jedem Fehlversuch durch.
+>
+> **Was daraus für dieses Dokument folgt:** Es ist eine *Fundgeschichte*, kein Verzeichnis.
+> Das Verzeichnis ist die Datenbank; hier steht, warum etwas drinsteht.
 
 > ### ⚠ Diese Listen sind AUSGELESEN, nicht recherchiert
 >

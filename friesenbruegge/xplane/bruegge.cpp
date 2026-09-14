@@ -92,7 +92,7 @@
 // Die Fassung gehört der UMSETZUNG, nicht dem Protokoll. Das WASM-Modul steht bei 1.6.0,
 // weil es sechs Runden im Simulator hinter sich hat; diese Brügge fängt bei 1.0.0 an. Was
 // beide verbindet, ist `protokoll: 1` -- und das steht in der Meldung daneben.
-#define BRUEGGE_VERSION   "1.1.0"
+#define BRUEGGE_VERSION   "1.2.0"
 #define SIMULATOR_NAME    "xplane12"
 
 
@@ -260,146 +260,48 @@ static void kennung_laden_oder_erzeugen() {
     }
 }
 
+// Die zuletzt empfangene Antwort. Sie traegt seit Protokollfassung 2 die Titel, und der
+// Nachrueck-Fall (Pfad scheitert -> naechsten probieren) braucht sie noch, wenn
+// `soll_abgleichen` laengst durchgelaufen ist.
+//
+// ⚠ Immer die ZULETZT empfangene, nicht die, unter der ein Objekt entstanden ist. Aendert
+// der Server die Liste einer Art, gilt sofort die neue -- er ist die Wahrheit, nicht das
+// Gedaechtnis der Bruegge.
+static char g_antwort[ANTWORT_PUFFER] = {0};
+
 // ---------------------------------------------------------------------------------------
-// Gattung -> .obj-Pfad
+// Art -> .obj-Pfad: DIE ZUORDNUNG KOMMT VOM SERVER (Protokollfassung 2, 14.09.2026)
 // ---------------------------------------------------------------------------------------
 //
-// DIE ZUORDNUNGSTABELLE GEHÖRT ZUR BRÜGGE, nicht zum Server (PROTOKOLL.md, Abschnitt 3). Der
-// Server spricht in Gattungen; welches Modell das ist, weiß nur, wer den Simulator kennt.
+// ⚠ HIER STAND `g_gattungen[]` -- 15 Arten, 35 Pfade. Entfernt, wie in der MSFS-Bruegge und
+// aus demselben Grund (PROTOKOLL.md, Zeile eins):
 //
-// Eine Gattung ist eine BEDEUTUNG, kein Modell: In MSFS ist ein `tier_gross` ein Bär, hier
-// ein Hirsch. Der Pilot zählt Tiere, nicht Bären -- und ein Event, das auf einer bestimmten
-// Art besteht, braucht eine eigene Gattung (wie `robbe`).
+//     Die Bruegge ist dumm. Alle Klugheit bleibt auf dem Server.
 //
-// ALLE PFADE SIND AUF DER PLATTE NACHGESEHEN, nicht aus einer Doku übernommen. Genau daran
-// hing der X-Plane-Probeflug: Der oft zitierte Pfad zu `SailBoat.obj` stammte aus einer
-// XPPython3-Doku und nicht von Laminar -- er hielt, aber das war Glück (probe-xplane/
-// ERGEBNIS.md). Vier Kandidaten waren vorbereitet, weil der erste hätte falsch sein können.
+// Eine Tabelle im Client kostet ein Release, sobald sich etwas aendert -- und sie weiss
+// nichts darueber, was tatsaechlich funktioniert. Der Server fuehrt 2935 Titel mit
+// Pruefergebnis; was hier stand, steht jetzt dort.
 //
-// ⚠ WAS HIER NICHT STEHT, KANN DIE BRÜGGE NICHT -- und meldet es auch nicht in `kann`:
+// ⚠ WAS DABEI AUFFIEL, ALS DIE TABELLE GELESEN WURDE: Zwei Verneinungen in ihren Kommentaren
+// waren falsch. "X-Plane bringt kein Bodenfahrzeug als eigenstaendige .obj mit" -- es bringt
+// 333 mit, unter `airport scenery/`. "Kein Windrad im Bestand" -- es sind drei, sie heissen
+// nur `WindTbn2m5_100.obj`. Beide Male lag es am Suchmuster, nicht am Bestand. Im selben
+// Zweig liegen 64 Leuchttuerme.
 //
-//   fahrzeug     X-Plane 12 bringt KEIN Bodenfahrzeug als eigenständige .obj mit. Was der
-//                Simulator an Flughafenverkehr zeichnet, liegt in der Szenerie-Bibliothek
-//                (`lib/airport/vehicles/...`) und ist nur über XPLMLookupObjects erreichbar,
-//                nicht über XPLMLoadObject. Das ist ein gangbarer Weg für später -- aber
-//                einer, der eigene Messungen braucht, und geraten wird hier nichts.
-//   robbe        kein Modell im Bordbestand, und kein Addon-Gegenstück zu
-//   tier_vieh     `human-library-animated` gemessen.
-//   tier_wasser
-//   rauch        X-Plane zeichnet Rauch über Partikelsysteme, nicht über Objekte.
-//   feuer
-//   kegel        keine Pylone im Bordbestand.
-//
-// Die dicken Pötte (BulkCarrier, ContainerCarrier, OilTanker, LNGCarrier) liegen NUR als
-// `.agp` vor -- das ist ein Autogen-Punkt für den Szeneriebau, keine ladbare .obj. Deshalb
-// ist `boot_gross` hier die Fregatte `Perry.obj` (rund 135 m) und nicht ein Containerschiff.
-struct Gattung { const char* art; const char* pfad[8]; };
+// Die Pfade stehen weiterhin relativ zum X-System-Ordner, so will es XPLMLoadObject -- der
+// Server schickt sie in genau dieser Form, weil sein Katalog sie so fuehrt.
 
-// Zwei Herkünfte, und der Unterschied ist wichtiger, als er aussieht:
-//
-//   BORD   Was X-Plane mitbringt. Jeder Pilot hat es, niemand muss etwas installieren --
-//          aber wir haben keinen Einfluss darauf, und was fehlt, fehlt.
-//   EIGEN  Was IM BRÜGGE-PAKET liegt. Gehört uns, ist in FriesenFlieger-Farben und braucht
-//          keine fremde Erlaubnis.
-//
-// Die zweite Zeile gibt es seit dem 13.09.2026, und zwar aus einem gemessenen Grund: Für
-// Rauch bringt X-Plane nichts mit (kein einziges Bordobjekt enthält ein PARTICLE_SYSTEM),
-// und keine Freeware-Bibliothek darf mitgeliefert werden -- Emerald verbietet es wörtlich,
-// OpenSceneryX ebenso, SayIntentions hängt am Abo. Also bauen wir sie selbst
-// (`rauch_bauen.py`).
-//
-// Die Pfade stehen relativ zum X-System-Ordner, so will es XPLMLoadObject. Zusammengesetzt
-// werden sie vom Übersetzer, nicht zur Laufzeit -- benachbarte Zeichenkettenliterale in C++
-// verschmelzen, und damit steht in der Tabelle genau das, was auf der Platte liegt.
-#define BORD  "Resources/default scenery/sim objects/"
-#define EIGEN "Resources/plugins/FriesenBruegge/objekte/"
-static const Gattung g_gattungen[] = {
-    // Hirsch und Ricke. Die einzigen Landtiere im Bordbestand -- und der Sache näher als
-    // alles, was Asobo für MSFS 2024 mitbringt (dort gibt es 41 Tier-Pakete, aber keine
-    // Robbe; hier immerhin Wild und Möwen).
-    { "tier_gross",  { BORD "dynamic/deer_buck.obj", BORD "dynamic/deer_doe.obj", nullptr } },
-    { "tier_wild",   { BORD "dynamic/deer_buck.obj", BORD "dynamic/deer_doe.obj", nullptr } },
-    // Möwen in drei Flugzuständen. `glide` steht ruhig, `flap` schlägt mit den Flügeln --
-    // für eine Zählaufgabe aus der Luft ist der Gleitflug die ruhigere Marke.
-    { "tier_klein",  { BORD "dynamic/seagull_glide.obj", BORD "dynamic/seagull_flap.obj",
-                       BORD "dynamic/seagull_far.obj", nullptr } },
-    // Die Ölplattform ist 63 MB gross und entsprechend weit zu sehen -- für die Nordsee das
-    // passendste Bauwerk, das der Simulator mitbringt. Dahinter Kleineres.
-    { "bauwerk",     { BORD "dynamic/OilPlatform.obj", BORD "dynamic/OilRig.obj",
-                       BORD "legacy env files/radio_tower.obj", nullptr } },
-    // Segelboote, Motorboote, Schlauchboote. `SailBoat.obj` ist das im Probeflug am
-    // 11.09.2026 gesetzte und im Bild gesehene Modell -- es steht deshalb vorn.
-    { "boot_klein",  { BORD "dynamic/SailBoat.obj", BORD "ships/Sail_1000_01.obj",
-                       BORD "ships/Runabout_750_01.obj", BORD "ships/Dinghy_400_01.obj", nullptr } },
-    // Fregatte (~135 m) und die grösste ladbare Yacht (19 m).
-    { "boot_gross",  { BORD "dynamic/Perry.obj", BORD "ships/Cruiser_1900_01.obj",
-                       BORD "ships/Cruiser_1200_01.obj", nullptr } },
-    // ⭐ Der Heissluftballon löst dasselbe Problem wie `rauch` in MSFS: Ein Boot ist erst ab
-    // rund 1 km eingeblendet -- ein Ballon steht in der Luft und ist kilometerweit zu sehen.
-    // Für jedes Event, bei dem jemand etwas FINDEN soll, ist das wertvoller als das genauere
-    // Modell am Boden.
-    { "marke",       { BORD "dynamic/balloon1.obj", BORD "dynamic/balloon2.obj",
-                       BORD "dynamic/balloon3.obj", BORD "landscape/windsock_orange.obj", nullptr } },
-    // Eine Boje markiert einen Punkt auf dem Wasser -- das Gegenstück zu den flachen
-    // Landepunkten aus der SayIntentions-Bibliothek in MSFS.
-    { "punkt",       { BORD "landscape/buoy.obj", BORD "landscape/radar.obj", nullptr } },
-
-    // ⭐ RAUCH -- die einzige Gattung aus EIGENER Fertigung, und die einzige, fuer die
-    // X-Plane gar nichts mitbringt: Kein Bordobjekt enthaelt ein PARTICLE_SYSTEM.
-    //
-    // Sie loest ein Problem, das am 13.09.2026 gemessen wurde: Auf EDMV standen sechs
-    // Objekte, und der Pilot fand drei Hirsche NICHT -- obwohl alle sechs nachweislich da
-    // waren und ihre Hoehe zurueckmeldeten. Ein Boot ist aus wenigen hundert Metern zu
-    // sehen, eine 100 m hohe Saeule kilometerweit. Fuer jedes Event, bei dem jemand etwas
-    // FINDEN soll, ist das mehr wert als das schoenere Modell am Boden.
-    //
-    // Vier Farben aus der FriesenFlieger-Palette (Repaint-Kit), damit sich Stationen
-    // unterscheiden lassen, ohne dass jemand Text lesen muss. Ein Gruen gibt es in der
-    // Marke nicht -- deshalb steht hier keins.
-    //
-    // Die Reihenfolge ist die Sichtbarkeit vor hellem Himmel: Orange und Rot zuerst,
-    // Navy zuletzt (es steht vor Wald gut, vor Wolken schlecht).
-    //  ohne Zusatz heisst "irgendeine gut sichtbare Saeule" -- die Reihenfolge ist
-    // die Sichtbarkeit vor hellem Himmel: die Signalfarben zuerst, Navy zuletzt.
-    { "rauch",       { EIGEN "rauch_signalorange.obj", EIGEN "rauch_signalrot.obj",
-                       EIGEN "rauch_orange.obj", EIGEN "rauch_rot.obj",
-                       EIGEN "rauch_hellblau.obj", EIGEN "rauch_navy.obj", nullptr } },
-
-    // ⭐ JEDE FARBE IST EINE EIGENE GATTUNG, und das ist keine Verlegenheitslösung:
-    //
-    // „Eine Gattung ist eine BEDEUTUNG, kein Modell" (PROTOKOLL.md, Abschnitt 3). Bei einem
-    // Zähl- oder Suchspiel bedeutet eine rote Säule etwas anderes als eine blaue -- sie
-    // markiert eine andere Station. Die Farbe IST hier die Bedeutung, nicht eine Spielart
-    // desselben Dings.
-    //
-    // Der Server kann damit Stationen unterscheidbar setzen, ohne dass das Protokoll ein
-    // neues Feld braucht und ohne dass die MSFS-Brügge etwas davon wissen muss. Was sie
-    // nicht kann, meldet sie nicht in `kann`.
-    //
-    // `rauch` ohne Zusatz bleibt und heißt „irgendeine gut sichtbare Säule" -- für alles,
-    // wo die Farbe egal ist.
-    { "rauch_signalrot",    { EIGEN "rauch_signalrot.obj",    nullptr } },
-    { "rauch_signalorange", { EIGEN "rauch_signalorange.obj", nullptr } },
-    { "rauch_rot",          { EIGEN "rauch_rot.obj",          nullptr } },
-    { "rauch_orange",       { EIGEN "rauch_orange.obj",       nullptr } },
-    { "rauch_hellblau",     { EIGEN "rauch_hellblau.obj",     nullptr } },
-    { "rauch_navy",         { EIGEN "rauch_navy.obj",         nullptr } },
-};
-
+// Den n-ten Pfad einer Art -- aus der letzten Antwort des Servers.
 static const char* pfad_fuer(const char* art, int n) {
-    for (unsigned g = 0; g < sizeof(g_gattungen)/sizeof(g_gattungen[0]); ++g) {
-        if (std::strcmp(art, g_gattungen[g].art) != 0) continue;
-        if (n < 0 || n >= 8) return nullptr;
-        return g_gattungen[g].pfad[n];
-    }
-    return nullptr;   // unbekannte Gattung: nicht raten, sondern melden
+    static char puffer[256];   // X-Plane-Pfade sind lang: "Resources/default scenery/..."
+    if (!json_titel_fuer(g_antwort, art, n, puffer, sizeof(puffer))) return nullptr;
+    return puffer;
 }
 
-static bool gattung_bekannt(const char* art) {
-    for (unsigned g = 0; g < sizeof(g_gattungen)/sizeof(g_gattungen[0]); ++g) {
-        if (std::strcmp(art, g_gattungen[g].art) == 0) return true;
-    }
-    return false;
+// Kennt der Server diese Art? Eine LEERE Liste zaehlt als bekannt -- das unterscheidet
+// "gibt es hier nicht" von "gibt es gar nicht".
+static bool art_bekannt(const char* art) {
+    return json_art_bekannt(g_antwort, art);
 }
 
 // ---------------------------------------------------------------------------------------
@@ -563,7 +465,7 @@ static void lage_lesen() {
 static void meldung_bauen(char* puffer, size_t groesse) {
     JsonSchreiber j(puffer, groesse);
     j.roh("{");
-    j.feld("protokoll");       j.ganzzahl(1);            j.komma();
+    j.feld("protokoll");       j.ganzzahl(2);            j.komma();
     j.feld("simulator");       j.text(SIMULATOR_NAME);   j.komma();
     j.feld("bruegge_version"); j.text(BRUEGGE_VERSION);  j.komma();
     if (g_antwort_zu_gross > 0) {
@@ -571,17 +473,11 @@ static void meldung_bauen(char* puffer, size_t groesse) {
     }
     j.feld("kennung");         j.text(g_kennung);        j.komma();
 
-    // `kann` wird AUS der Gattungstabelle erzeugt, nicht danebengeschrieben. Im WASM-Modul
-    // stand dieselbe Liste einmal zu viel, und beim Eintragen der Gattung `robbe` meldete es
-    // prompt, es könne eine Gattung nicht, die es setzen konnte.
-    j.feld("kann");
-    j.roh("[");
-    for (unsigned g = 0; g < sizeof(g_gattungen)/sizeof(g_gattungen[0]); ++g) {
-        if (g) j.komma();
-        j.text(g_gattungen[g].art);
-    }
-    j.roh("]");
-    j.komma();
+    // ⚠ HIER STAND `kann` -- entfernt mit Protokollfassung 2 (14.09.2026).
+    //
+    // Ohne eigene Artentabelle kann die Bruegge nichts mehr behaupten. Der Server schickt
+    // fuer den gemeldeten Simulator, was er hat, und erfaehrt aus `steht`, was tatsaechlich
+    // stand. Belegt statt behauptet -- und ausgewertet hat er `kann` ohnehin nie.
 
     j.feld("lage");
     j.roh("{");
@@ -707,8 +603,17 @@ static void objekt_setzen(int i) {
 
     const char* pfad = pfad_fuer(o.art, o.titel_nr);
     if (!pfad) {
+        // Zwei verschiedene Befunde, und der Server soll sie unterscheiden koennen:
+        // KEIN_MODELL_MEHR heisst "die Art gibt es, aber keiner ihrer Pfade liess sich
+        // laden" (die Dateien fehlen bei DIESEM Piloten), GATTUNG_UNBEKANNT heisst "der
+        // Server hat zu dieser Art gar nichts mitgeschickt".
+        //
+        // Die Fehlercodes bleiben wortgleich, obwohl `GATTUNG_UNBEKANNT` seit Fassung 2
+        // etwas anderes bedeutet als vorher (frueher: die Bruegge kennt die Art nicht --
+        // ein Fall fuer ein Client-Release; jetzt: der Server lieferte sie nicht mit --
+        // ein Fall fuer den Admin). Ein aelterer Server soll den Code wiedererkennen.
         std::snprintf(o.fehler, sizeof(o.fehler), "%s",
-                      gattung_bekannt(o.art) ? "KEIN_MODELL_MEHR" : "GATTUNG_UNBEKANNT");
+                      art_bekannt(o.art) ? "KEIN_MODELL_MEHR" : "GATTUNG_UNBEKANNT");
         return;
     }
 
@@ -904,7 +809,11 @@ static void antwort_abholen() {
     static NetzMeldung m;
     if (!netz_antwort(&m)) return;
 
-    const char* kopie = m.text;
+    // Die Antwort AUFHEBEN: Seit Protokollfassung 2 traegt sie die Titel, und der
+    // Nachrueck-Fall braucht sie spaeter noch -- `m` wird beim naechsten Abholen
+    // ueberschrieben.
+    std::snprintf(g_antwort, sizeof(g_antwort), "%s", m.text);
+    const char* kopie = g_antwort;
     int status = (int)m.code;
     unsigned long zu_gross = m.zu_gross ? (unsigned long)m.laenge : 0ul;
 

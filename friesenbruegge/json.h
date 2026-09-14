@@ -308,3 +308,113 @@ inline bool json_array_leer(const char* json, const char* name, bool* gefunden) 
     while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') ++p;
     return *p == ']';
 }
+
+// ---------------------------------------------------------------------------------------
+// Das Artenwoerterbuch (Protokollfassung 2, 14.09.2026)
+// ---------------------------------------------------------------------------------------
+//
+// Die Antwort traegt neben `soll` ein Woerterbuch mit DYNAMISCHEN Schluesseln:
+//
+//     "arten": { "rauch_signalrot": ["FrsRauch_Signalrot"], "tier_gross": ["BlackBear", …] }
+//
+// Das ist die einzige Stelle im Protokoll, an der ein Feldname nicht vorher feststeht --
+// deshalb eine eigene Funktion statt eines weiteren `json_*_in`.
+//
+// ⚠ GESUCHT WIRD NUR INNERHALB VON `arten`, und das ist keine Vorsicht auf Verdacht:
+// "rauch_signalrot" steht in derselben Antwort AUCH als Wert von `art` in jedem
+// `soll`-Eintrag. Ohne die Begrenzung faende `strstr` je nach Reihenfolge das falsche
+// Vorkommen und liefe von dort in ein Array, das einem anderen Feld gehoert.
+
+// Das Ende des Objekts, das bei `anfang` (dem Zeichen NACH der oeffnenden Klammer) beginnt.
+// Zaehlt Klammern mit und ueberspringt Zeichenketten, damit eine Klammer in einem Titel
+// nicht zaehlt. ``nullptr``, wenn die Klammer nie geschlossen wird.
+inline const char* json_objekt_ende(const char* anfang) {
+    if (!anfang) return nullptr;
+    int tiefe = 0;
+    bool in_text = false;
+    for (const char* p = anfang; *p; ++p) {
+        if (in_text) {
+            if (*p == '\\' && p[1]) { ++p; continue; }
+            if (*p == '"') in_text = false;
+            continue;
+        }
+        if (*p == '"') { in_text = true; continue; }
+        if (*p == '{' || *p == '[') { ++tiefe; continue; }
+        if (*p == '}' || *p == ']') {
+            if (tiefe == 0) return p;
+            --tiefe;
+        }
+    }
+    return nullptr;
+}
+
+// Den n-ten Titel der Art `art` aus dem Woerterbuch `arten`. ``false``, wenn es die Art
+// nicht gibt ODER die Liste kuerzer ist -- der Aufrufer unterscheidet beides ueber
+// `json_art_bekannt`.
+//
+// Die Reihenfolge IST der Rang: Scheitert Titel 0, nimmt die Bruegge Titel 1.
+inline bool json_titel_fuer(const char* json, const char* art, int n,
+                            char* ziel, size_t ziel_gross) {
+    if (!json || !art || !ziel || ziel_gross == 0 || n < 0) return false;
+    ziel[0] = '\0';
+
+    const char* w = std::strstr(json, "\"arten\"");
+    if (!w) return false;
+    w = std::strchr(w, '{');
+    if (!w) return false;
+    ++w;
+    const char* w_ende = json_objekt_ende(w);
+    if (!w_ende) return false;
+
+    char muster[64];
+    std::snprintf(muster, sizeof(muster), "\"%s\"", art);
+    const char* p = std::strstr(w, muster);
+    if (!p || p >= w_ende) return false;
+    p = std::strchr(p, '[');
+    if (!p || p >= w_ende) return false;
+    const char* liste_ende = json_objekt_ende(p + 1);
+    ++p;
+
+    // Zum n-ten Element vorruecken. Elemente sind Zeichenketten; gezaehlt wird ueber die
+    // oeffnenden Anfuehrungszeichen, Maskierungen uebersprungen.
+    int gesehen = 0;
+    while (p && *p && (!liste_ende || p < liste_ende)) {
+        while (*p && *p != '"' && (!liste_ende || p < liste_ende)) ++p;
+        if (!*p || (liste_ende && p >= liste_ende)) return false;
+        ++p;                                     // hinter das oeffnende Anfuehrungszeichen
+        if (gesehen == n) {
+            size_t k = 0;
+            while (*p && *p != '"' && k + 1 < ziel_gross) {
+                if (*p == '\\' && p[1]) ++p;
+                ziel[k++] = *p++;
+            }
+            ziel[k] = '\0';
+            return k > 0;
+        }
+        while (*p && *p != '"') { if (*p == '\\' && p[1]) ++p; ++p; }
+        if (!*p) return false;
+        ++p;                                     // hinter das schliessende
+        ++gesehen;
+    }
+    return false;
+}
+
+// Steht die Art ueberhaupt im Woerterbuch? Der Unterschied zaehlt: Eine unbekannte Art ist
+// ein anderer Befund als eine Art, deren Titel allesamt scheiterten -- dort fehlen die
+// Modelle im Simulator, hier war die Anforderung falsch.
+inline bool json_art_bekannt(const char* json, const char* art) {
+    char eins[8];
+    if (json_titel_fuer(json, art, 0, eins, sizeof(eins))) return true;
+    // Auch eine LEERE Liste heisst "Art bekannt, aber kein Titel" -- das soll nicht als
+    // GATTUNG_UNBEKANNT durchgehen.
+    if (!json || !art) return false;
+    const char* w = std::strstr(json, "\"arten\"");
+    if (!w) return false;
+    w = std::strchr(w, '{');
+    if (!w) return false;
+    const char* w_ende = json_objekt_ende(w + 1);
+    char muster[64];
+    std::snprintf(muster, sizeof(muster), "\"%s\"", art);
+    const char* p = std::strstr(w + 1, muster);
+    return p && w_ende && p < w_ende;
+}

@@ -50,9 +50,13 @@ def _meldung(lat=53.78227, lon=7.92593, kennung="a3f9c1e0b2d48576", **mehr):
         "simulator": "msfs2024",
         "bruegge_version": "1.0.0",
         "kennung": kennung,
-        # Dieselbe Liste, die `meldung_bauen` aus `g_gattungen` erzeugt -- ab Bruegge 1.4.0
-        # samt `robbe`. Sie steht hier woertlich, weil die Attrappe die Nutzlast spiegeln soll;
-        # im Modul ist sie KEINE eigene Zeichenkette mehr (das war eine zweite Wahrheit).
+        # ⚠ `kann` GIBT ES SEIT PROTOKOLLFASSUNG 2 NICHT MEHR (14.09.2026) -- die Bruegge
+        # fuehrt keine Artentabelle mehr und kann deshalb nichts behaupten.
+        #
+        # Es steht hier trotzdem, und zwar mit Absicht: Die Attrappe spielt eine Bruegge der
+        # Fassung 1, wie FRS61 sie fliegt. Dass der Server sie weiter bedient, ist kein
+        # Nebenschauplatz -- ein Feld zu entfernen darf niemanden brechen, der nichts
+        # herunterlaedt. Der Server wirft `kann` weg, wie seit jeher.
         "kann": ["tier_gross", "bauwerk", "fahrzeug", "boot_klein", "boot_gross", "robbe"],
         "lage": lage,
         "spur": [],

@@ -55,7 +55,7 @@
 // Feste Größen
 // ---------------------------------------------------------------------------------------
 
-#define BRUEGGE_VERSION   "1.7.1"
+#define BRUEGGE_VERSION   "1.8.0"
 #define BRUEGGE_URL       "https://friesenspy.devprops.de/api/bruegge/melden"
 #define KENNUNG_DATEI     "\\work\\friesenbruegge.kennung"
 
@@ -115,7 +115,7 @@ struct SollObjekt {
     bool   erzeugt_gerufen;   // AICreateSimulatedObject ist raus
     DWORD  objekt_id;         // vom Simulator vergeben, 0 = noch keine
     DWORD  sende_id;          // Paketnummer des Erzeugungsaufrufs -- ordnet Exceptions zu
-    int    titel_nr;          // welcher Titel der Gattung gerade versucht wird (s. titel_fuer)
+    int    titel_nr;          // welcher Titel der Art gerade versucht wird (s. titel_fuer)
     double hoehe_ft;          // zuletzt gemeldete Hoehe
     DWORD  letzte_meldung_s;  // Sekunde der letzten Lagemeldung
     DWORD  seit_s;            // seit wann im aktuellen Zustand
@@ -197,6 +197,23 @@ static DWORD   g_laufend_seit = 0;        // Sekunden -- gegen haengende Anfrage
 // Objekte fehlen, statt es zu raten -- und die Zahl sagt ihm zugleich, wie weit er kuerzen
 // muss.
 static unsigned long g_antwort_zu_gross = 0;
+
+// ---------------------------------------------------------------------------------------
+// DIE LETZTE ANTWORT -- sie traegt seit Protokollfassung 2 die Titel (14.09.2026)
+// ---------------------------------------------------------------------------------------
+//
+// Sie wird aufgehoben, weil der NACHRUECK-FALL sie spaeter noch braucht: Scheitert ein Titel,
+// kommt die Exception erst Bilder danach an, lange nachdem `soll_abgleichen` durchgelaufen
+// ist. Ohne die aufgehobene Antwort wuesste die Bruegge dann nicht mehr, welcher Titel als
+// naechster dran waere.
+//
+// Die Kopie gab es ohnehin (sie stand als `static` im Callback) -- sie wird hier nur
+// sichtbar gemacht. Kein zusaetzlicher Speicher.
+//
+// ⚠ Sie ist IMMER die zuletzt empfangene, nicht die, unter der ein Objekt entstanden ist.
+// Das ist Absicht: Aendert der Server die Titelliste einer Art, gilt sofort die neue. Der
+// Server ist die Wahrheit, nicht das Gedaechtnis der Bruegge.
+static char    g_antwort[ANTWORT_PUFFER] = {0};
 
 // ---------------------------------------------------------------------------------------
 // Kennung -- dauerhaft, wo es geht
@@ -312,234 +329,48 @@ static void kennung_pruefen() {
 }
 
 // ---------------------------------------------------------------------------------------
-// Gattung -> Container-Titel
+// Art -> Titel: DIE ZUORDNUNG KOMMT VOM SERVER (Protokollfassung 2, 14.09.2026)
 // ---------------------------------------------------------------------------------------
 //
-// DIE ZUORDNUNGSTABELLE GEHOERT ZUR BRUEGGE, nicht zum Server. Sie kennt ihren Simulator;
-// der Server kennt ihn nicht. Eine Gattung ist eine BEDEUTUNG, kein Modell -- welches Tier
-// ein tier_gross ist, darf sich zwischen Simulatoren unterscheiden, denn der Pilot zaehlt
-// Tiere, nicht Baeren.
+// ⚠ HIER STAND `g_gattungen[]` -- 25 Arten, 71 Titel, rund 180 Zeilen. Entfernt, und das ist
+// der Kern dieses Releases.
 //
-// Alle Titel hier sind im Probeflug gesetzt und im Bild gesehen worden
-// (../probe-msfs/ERGEBNIS.md).
-// Je Gattung MEHRERE Titel, in der Reihenfolge, in der sie versucht werden.
+// Warum sie weg musste, steht in PROTOKOLL.md Zeile eins:
 //
-// Warum eine Liste und nicht ein Name: Am 12.09.2026 scheiterte `fahrzeug` bei jedem Versuch
-// mit EXCEPTION_22, waehrend die vier anderen Gattungen liefen. Die Ursache stand nicht in
-// einer Doku, sondern auf der Platte -- `ASO_Ambulance_Japan` liegt unter
-// `Microsoft.FlightSimulator...` (MSFS 2020), aber NICHT unter `Microsoft.Limitless`
-// (MSFS 2024). Ein Titel aus dem 2020er Bestand, den 2024 nicht kennt.
+//     Die Bruegge ist dumm. Alle Klugheit bleibt auf dem Server.
 //
-// Mit einem einzigen Namen je Gattung faellt damit die ganze Gattung aus, sobald ein
-// Simulator ein Modell nicht mitbringt -- und das trifft absehbar oefter zu, denn die Bruegge
-// soll auf MSFS 2020 UND 2024 laufen. Mit einer Liste rueckt einfach der naechste nach.
+// Eine Tabelle im Client widerspricht dem doppelt:
 //
-// DIE TITEL SIND AUSGELESEN, NICHT GERATEN: aus den `sim.cfg` des 2020er Bestands
-// (`SimObjects/{Animals,Boats,GroundVehicles}/*/sim.cfg`, Feld `title=`) und aus den
-// Ordnernamen der 2024er Streamed Packages (`SimObjects/Animals/`, `SimObjects/Landmarks/`).
-// Eine Websuche brachte dafuer nichts Brauchbares -- die Doku nennt keine Titel.
+//   1. SIE KOSTET EIN RELEASE. Eine neue Art brauchte einen Windows-Build und eine
+//      Verteilung an 61 Piloten. Zweimal bezahlt am 13.09.2026: FRS61s aeltere Bruegge
+//      kannte `robbe` und `tier_wild` nicht und meldete GATTUNG_UNBEKANNT.
+//   2. SIE HAT KEIN GEDAECHTNIS. Drei ihrer Titel -- `PolarBear`, `Bear_U_Maritimus`,
+//      `deer_o_hemionus` -- scheitern seit dem 12.09.2026 nachweislich mit EXCEPTION_22.
+//      Die Bruegge probierte sie bei jedem Fehlversuch durch. Der Server weiss es besser:
+//      Sein Katalog fuehrt 2935 Titel, davon 1693 EINZELN im laufenden Simulator gesetzt.
+//      Er kannte sogar einen Baeren, den diese Tabelle nicht kannte (`SyrianBear`).
 //
-// Die Reihenfolge ist Absicht: erst das im Flug BELEGTE Modell, dann Geschwister aus
-// demselben Bestand, dann die 2024-eigenen Namen (anderes Schema: `Bear_U_Maritimus` statt
-// `BlackBear`).
-struct Gattung { const char* art; const char* titel[6]; };
+// Was hier stand, ist nicht verloren -- es steht jetzt in `bruegge_katalog` auf dem Server,
+// mit Pruefergebnis je Titel. Die Fundgeschichten (warum `ASO_Ambulance_Japan` in MSFS 2024
+// fehlt, warum die Reihenfolge Absicht ist) stehen in `app/bruegge_arten.py` und OBJEKTE.md.
+//
+// Geblieben ist genau das Verhalten, das sich bewaehrt hat: mehrere Titel je Art, der Reihe
+// nach probiert. Nur die Liste kommt jetzt von woanders.
 
-static const Gattung g_gattungen[] = {
-    // BlackBear ist im Flug belegt (12.09.2026). Die 2024er Tiere tragen wissenschaftliche
-    // Namen und liegen in eigenen Streamed Packages.
-    { "tier_gross",  { "BlackBear", "GrizzlyBear", "PolarBear", "Bear_U_Maritimus",
-                       "deer_o_hemionus", nullptr } },
-    // Windmill ist belegt. `windmill` (klein) ist der 2024er Landmark -- Titel sind
-    // GROSS-/KLEINSCHREIBUNGSEMPFINDLICH, deshalb steht beides drin.
-    { "bauwerk",     { "Windmill", "windmill", "Windsock_05", nullptr } },
-    // NEU SORTIERT am 12.09.2026 (nachts), nach einer Einzelpruefung ALLER 37 Fahrzeugtitel
-    // im laufenden MSFS 2024 (`probe-msfs/titel_schau.py`). Dort fehlen genau sechs:
-    // ASO_Ambulance_Japan, ASO_Firetruck01, ASO_FuelTruck01_Black/_White,
-    // ASO_FuelTruck02_Black/_White, ASO_Ground_Power_Unit -- und zwei davon standen hier
-    // vorn. Die Nachrueck-Mechanik faengt das ab, kostet aber je Fehlschlag einen Takt und
-    // eine Ausnahme, und im Admin stuende als erster Eindruck ein rotes EXCEPTION_22.
-    //
-    // Ab hier also nur noch Titel, die EINZELN im Simulator gesetzt wurden.
-    { "fahrzeug",    { "ASO_CarUtility01", "ASO_Pushback_White", "ASO_Firetruck02",
-                       "ASO_TruckUtility01", "ASO_Tug01_White", nullptr } },
-    { "boot_klein",  { "Boat01", "Boat02", "FishingBoat", "Yacht01", nullptr } },
-    { "boot_gross",  { "CruiseShip01", "CruiseShip02", "CargoShip01", nullptr } },
-    // ROBBE: die einzige Gattung, die NICHT aus dem Bordbestand kommt -- weder MSFS 2020 noch
-    // 2024 bringt eine Robbe mit (s. OBJEKTE.md). Diese drei Titel stammen aus dem
-    // Community-Paket `human-library-animated` (Superspud, Freeware), ausgelesen aus
-    // `SimObjects/Animals/*/sim.cfg` -- dasselbe Paket, das `counting seals` als Szenerie
-    // benutzt, nur eben seine SimObject-Seite.
-    //
-    // KEIN RUECKFALL AUF EINE ANDERE ART, und das ist Absicht: Die Nachrueck-Mechanik soll
-    // verhindern, dass eine Gattung an einem fehlenden Titel stirbt -- artfremd waere sie
-    // hier schaedlich. Fiele `robbe` still auf `BlackBear` zurueck, lieferte der Kieker eine
-    // Zahl, waehrend am Strand Baeren liegen. Fehlt jede Robbe, MUSS das als EXCEPTION_22 im
-    // `fehler`-Feld sichtbar werden.
-    //
-    // Eine WEITERE ROBBE darf dagegen jederzeit dazu: Sobald ein eigenes Modellpaket steht,
-    // gehoert sein Titel hinter Superspuds -- dann nimmt die Bruegge das Addon, wo es
-    // installiert ist, und das eigene Modell bei allen anderen.
-    //
-    // ✅ BELEGT am 12.09.2026: `ahqa seal moving` wurde gesetzt und gezeichnet (Screenshot,
-    // Messliste 8). AICreateSimulatedObject findet also auch Community-Titel, nicht nur
-    // Asobos Bordbestand -- damit ist auch ein eigenes Paket gangbar. Gesetzt hat es
-    // allerdings ein EXTERNER SimConnect-Client; dass das WASM-Modul denselben Titel
-    // aufloest, ist noch nicht gemessen.
-    { "robbe",       { "ahqa seal moving", "ahqa sea lion moving", "ahqa walrus moving",
-                       nullptr } },
-
-    // ===================================================================================
-    // Alles ab hier am 12.09.2026 mit `probe-msfs/titel_schau.py` EINZELN im laufenden
-    // MSFS 2024 gesetzt und gezeichnet -- 127 Bordmittel-Titel und eine Auswahl aus 1417
-    // Addon-Titeln. Was hier steht, hat gestanden; was nicht ging, steht nicht hier.
-    //
-    // Die Ordnung ist dieselbe wie bei `robbe`: erst das schoenere oder passendere Modell,
-    // dahinter der Rueckfall. Ein Addon-Titel darf vorn stehen -- fehlt das Paket, rueckt
-    // der naechste nach, und nur wer es hat, sieht das bessere Modell.
-    // ===================================================================================
-
-    // Kleines Getier -- fuer einen Zaehl-Event naeher an der Sache als ein Baer, und aus der
-    // Luft ueberhaupt erst in Schwaermen erkennbar.
-    { "tier_klein",  { "ahqa puffin walking", "Seagull", "Goose", "Flamingo", nullptr } },
-    // Vieh. Alles aus `human-library-animated` und damit BEWEGT; ohne das Paket bleibt nur
-    // das Pferd aus dem Bordbestand -- das gibt es in MSFS 2024 aber nicht mehr, deshalb
-    // endet die Liste hier ehrlich statt mit einem Titel, der ohnehin scheitert.
-    { "tier_vieh",   { "ahqa cow walking", "ahqa sheep walking", "ahqa goat walking",
-                       "ahqa donkey walking", nullptr } },
-    // Wild.
-    { "tier_wild",   { "ahqa Deer Running", "ahqa stag walking", "ahqa moose bull walking",
-                       "ahqa fox walking", "ahqa boar walking", nullptr } },
-    // ⚠⚠ `HumpbackWhale` IST DRAUSSEN -- er wird ueberhaupt nicht gezeichnet.
-    //
-    // Am 13.09.2026 an DREI Orten geprueft, jedes Mal mit einem `boot_klein` daneben als
-    // Gegenprobe:
-    //
-    //   Land,     3 m Abstand, 1386,5 ft   kein Wal   (Boote dort mehrfach gesehen)
-    //   Bodensee, 5 m Abstand, 1297,8 ft   kein Wal   Boot sichtbar
-    //   Nordsee,  5 m Abstand,   -0,6 ft   kein Wal   Boot sichtbar
-    //
-    // Der Simulator legt das Objekt an und meldet eine korrekte Hoehe zurueck -- und zeichnet
-    // nichts. Weder Untergrund noch Entfernung erklaeren das; das Boot beweist jedes Mal, dass
-    // Ort, Hoehe und Verfahren stimmen.
-    //
-    // ⚠ DAS IST DAS LEHRSTUECK ZUM KATALOG: "setzbar" heisst nicht "sichtbar". Der Katalog
-    // misst, ob der Simulator ein Objekt ANLEGT -- ob man es SIEHT, sagt allein der Blick aus
-    // dem Cockpit. Die 1693 gruenen Haken bedeuten also weniger, als sie aussehen, und
-    // `HumpbackWhale` ist ihr erster Beleg dafuer.
-    //
-    // Die Gattung bleibt, aber mit brauchbaren Modellen: Walross und Seeloewe aus
-    // `human-library-animated` sind Wassertiere, animiert und nachweislich sichtbar (dasselbe
-    // Paket wie `robbe`). Ohne dieses Addon gibt es kein `tier_wasser` -- und das ist
-    // ehrlicher als ein Titel, der zwar durchgeht, aber unsichtbar bleibt.
-    { "tier_wasser", { "ahqa walrus moving", "ahqa sea lion moving", nullptr } },
-
-    // Eine Marke, die nicht wegrollt und aus der Luft auffaellt. Zwoelf Flaggenfarben sind
-    // geprueft; vier genuegen, um Stationen zu unterscheiden, ohne Text lesen zu muessen.
-    { "marke",       { "Flag_Checker", "Flag_Orange", "Flag_Yellow", "Flag_RWB", nullptr } },
-    // Landepunkte aus der SayIntentions-Bibliothek, vier Farben. Flach am Boden, deshalb
-    // erst aus der Naehe zu sehen -- als Ziel gut, als Wegweiser nicht.
-    { "punkt",       { "SI_SimObject_Fly-In_Landing_Green_Dot",
-                       "SI_SimObject_Fly-In_Landing_Red_Dot",
-                       "SI_SimObject_Fly-In_Landing_Blue_Dot",
-                       "SI_SimObject_Fly-In_Landing_Yellow_Dot", nullptr } },
-    { "kegel",       { "SI_SimObejct_Cone", nullptr } },
-
-    // ⭐ RAUCH loest ein gemessenes Problem: Ein `Boat01` ist erst ab rund 1 km eingeblendet
-    // (11.09.2026), ein `CruiseShip01` ab 22 km. Eine Rauchsaeule sieht man kilometerweit --
-    // damit findet ein Pilot eine Station, ohne dass die Koordinate auf zehn Meter stimmen
-    // muss. Fuer jedes Event, bei dem jemand etwas FINDEN soll, ist das wertvoller als jedes
-    // Tiermodell.
-    { "rauch",       { "SIAI_VFX_Smoke_Red", "SIAI_VFX_Smoke_Orange", "SIAI_SmokeCanister",
-                       "item_flare_red", nullptr } },
-
-    // ⭐ DIE FARBGATTUNGEN -- dieselben Namen wie in der X-Plane-Bruegge, andere Modelle.
-    //
-    // Stehende Regel seit dem 13.09.2026 (PROTOKOLL.md, Abschnitt 3): Eine Gattung fasst
-    // zusammen, was sich ueber die SIMULATOREN verteilt -- nicht, was sich innerhalb eines
-    // Simulators unterscheidet. Der Server fordert `rauch_signalrot` an und muss sich darauf
-    // verlassen koennen, dass JEDER Pilot rote Saeulen sieht, gleich in welchem Simulator.
-    //
-    // ⚠ DAS WAR TEUER ERKAUFT, SOLANGE ES NUR FREMDTITEL GAB: SayIntentions installiert
-    // seine SimObjects nur mit dem Premium-Abo, Campout muss der Pilot herunterladen. Wer
-    // keines von beiden hatte, bekam EXCEPTION_22 -- und Navy und Orange gab es in MSFS
-    // ueberhaupt nicht, weil kein verfuegbares Paket ein Dunkelblau oder ein reines Orange
-    // mitbrachte.
-    //
-    // Seit dem 13.09.2026 ist das erledigt: Die Saeulen liegen IM PAKET, in MSFS wie in
-    // X-Plane (`msfs-rauch/`, `xplane/objekte/`, je sechs Farben, eigenes Werk). Dass das
-    // ohne den DevMode-Klickeditor geht, war der Fund des Tages -- die Partikelquelle ist
-    // lesbares XML, das SDK-Beispiel SimpleFX zeigt es.
-    // ⚠ NACH DEM AUGENSCHEIN GEORDNET (13.09.2026, alle sechs Titel im Bild gesehen):
-    //
-    //   SIAI_VFX_Smoke_Red      eine WAND ueber mehrere hundert Meter. Als Rauch richtig,
-    //                           als Marke unbrauchbar -- und braucht das SayIntentions-Abo.
-    //   Smoke_Volcano           weisse Halbkugel, rund 100 m. Kuppel statt Saeule.
-    //   VfxSpawner              wird angenommen (Objekt-ID kommt), zeichnet aber NICHTS.
-    //                           Vermutlich braucht er einen Parameter, welchen Effekt er
-    //                           anwerfen soll -- und den kann AICreateSimulatedObject nicht
-    //                           mitgeben.
-    //   item_flare_*            ✅ kompakte Farbwolken am Boden, vier Farben, aus Campout.
-    //                           Keine Saeulen, aber das Brauchbarste, was MSFS hergibt.
-    //
-    // Deshalb stehen die Campout-Fackeln jetzt VORN und die SayIntentions-Titel dahinter:
-    // klein und farbig schlaegt gross und unbezahlbar.
-    //
-    // ⭐ SEIT DEM 13.09.2026 STEHT VORN UNSER EIGENES PAKET (`devprops-friesenrauch`).
-    //
-    // Sechs echte Saeulen in den FriesenFlieger-Farben, aus demselben Entwurf wie die
-    // X-Plane-Fassung: schmal an der Quelle, steigend, oben verwehend und sich aufloesend.
-    // Damit fallen alle Nachteile der Fremdtitel weg -- kein Abo, keine Fremdinstallation,
-    // und endlich auch Navy und Orange, die es in MSFS sonst nirgends gibt.
-    //
-    // Die Fremdtitel bleiben als ZWEITE Wahl dahinter: Wer unser Paket nicht installiert
-    // hat, bekommt wenigstens eine Farbwolke statt eines Fehlers.
-    { "rauch_signalrot",    { "FrsRauch_Signalrot", "item_flare_red",
-                              "SIAI_VFX_Smoke_Red", nullptr } },
-    { "rauch_signalorange", { "FrsRauch_Signalorange", "SIAI_VFX_Smoke_Orange", nullptr } },
-    { "rauch_rot",          { "FrsRauch_Rot", "item_flare_red",
-                              "SIAI_VFX_Smoke_Red", nullptr } },
-    { "rauch_orange",       { "FrsRauch_Orange", nullptr } },
-    { "rauch_navy",         { "FrsRauch_Navy", nullptr } },
-    { "rauch_hellblau",     { "FrsRauch_Hellblau", "item_flare_blue", nullptr } },
-    // Gruen und Gelb gibt es NUR in MSFS (Campout) und nicht in X-Plane -- die
-    // FriesenFlieger-Palette kennt beides nicht. Sie stehen hier trotzdem: Was ein Simulator
-    // mehr kann, darf er melden; der Server fordert es dann nur bei ihm an.
-    { "rauch_gruen",        { "item_flare_green", nullptr } },
-    { "rauch_gelb",         { "item_flare_yellow", nullptr } },
-
-    // ⭐ LEUCHTRAKETE -- eigene Gattung, weil es etwas anderes IST als Rauch.
-    //
-    // `si_flare_l_red` steht als heller Punkt hoch am Himmel (13.09.2026 im Bild gesehen),
-    // nicht als Saeule am Boden. Fuer ein Suchspiel ist das ein eigener Zweck: Rauch sagt
-    // „hier ist die Station", eine Leuchtrakete sagt „schaut hierher" -- sie ist weiter zu
-    // sehen und verschwindet wieder.
-    //
-    // X-Plane hat dafuer kein Gegenstueck; die dortige Bruegge meldet die Gattung nicht in
-    // `kann`, und der Server fordert sie bei X-Plane-Piloten gar nicht erst an.
-    { "leuchtrakete",       { "si_flare_l_red", nullptr } },
-    { "feuer",       { "SIAI_SignalFire", "SIAI_VFX_Fire", "SIAI_VFX_WildFire", nullptr } },
-
-    // Und was sonst noch auffaellt: ein Fallschirm und ein Polarlicht. Beides eher Spielerei,
-    // aber geprueft -- und wer ein Event baut, weiss es lieber, als es zu vermissen.
-    { "himmel",      { "southoakco_aurora1", "Parachute", nullptr } },
-};
-
-// Den n-ten Titel einer Gattung. Gibt nullptr, wenn die Gattung unbekannt ist ODER die Liste
-// erschoepft -- der Aufrufer unterscheidet beides ueber `titel_anzahl`.
+// Den n-ten Titel einer Art -- aus der letzten Antwort des Servers. Gibt nullptr, wenn die
+// Art unbekannt ist ODER die Liste erschoepft; der Aufrufer unterscheidet beides ueber
+// `art_bekannt`.
 static const char* titel_fuer(const char* art, int n) {
-    for (unsigned g = 0; g < sizeof(g_gattungen)/sizeof(g_gattungen[0]); ++g) {
-        if (std::strcmp(art, g_gattungen[g].art) != 0) continue;
-        if (n < 0 || n >= 6) return nullptr;
-        return g_gattungen[g].titel[n];
-    }
-    return nullptr;   // unbekannte Gattung: nicht raten, sondern melden
+    static char puffer[128];   // X-Plane-Pfade sind lang; MSFS-Titel kurz
+    if (!json_titel_fuer(g_antwort, art, n, puffer, sizeof(puffer))) return nullptr;
+    return puffer;
 }
 
-static bool gattung_bekannt(const char* art) {
-    for (unsigned g = 0; g < sizeof(g_gattungen)/sizeof(g_gattungen[0]); ++g) {
-        if (std::strcmp(art, g_gattungen[g].art) == 0) return true;
-    }
-    return false;
+// Kennt der Server diese Art ueberhaupt? Eine LEERE Titelliste zaehlt als bekannt -- das ist
+// ein anderer Befund (der Server kennt die Art, hat aber fuer diesen Simulator nichts) als
+// eine Art, die er gar nicht fuehrt.
+static bool art_bekannt(const char* art) {
+    return json_art_bekannt(g_antwort, art);
 }
 
 
@@ -550,7 +381,7 @@ static bool gattung_bekannt(const char* art) {
 static void meldung_bauen(char* puffer, size_t groesse) {
     JsonSchreiber j(puffer, groesse);
     j.roh("{");
-    j.feld("protokoll");       j.ganzzahl(1);                 j.komma();
+    j.feld("protokoll");       j.ganzzahl(2);                 j.komma();
     j.feld("simulator");       j.text(SIMULATOR_NAME);        j.komma();
     j.feld("bruegge_version"); j.text(BRUEGGE_VERSION);       j.komma();
 
@@ -564,23 +395,16 @@ static void meldung_bauen(char* puffer, size_t groesse) {
     }
     j.feld("kennung");         j.text(g_kennung);             j.komma();
 
-    // `kann` geht bei JEDER Anfrage mit, nicht nur beim ersten Mal: Der Server hält keine
-    // Sitzung, und eine zustandslose Meldung übersteht jeden Neustart auf beiden Seiten.
+    // ⚠ HIER STAND `kann` -- entfernt mit Protokollfassung 2 (14.09.2026).
     //
-    // AUS `g_gattungen` ERZEUGT, nicht abgeschrieben. Hier stand eine feste Zeichenkette mit
-    // denselben fünf Namen -- also dieselbe Tatsache zweimal. Beim Eintragen der Gattung
-    // `robbe` (Fassung 1.4.0) fiel genau das auf: Das Modul konnte sie setzen und meldete
-    // gleichzeitig, es könne sie nicht. Der Server wirft `kann` derzeit weg, aber das
-    // Protokoll (Abschnitt 3) sieht vor, dass er ausweicht, wenn eine Gattung fehlt -- die
-    // Lüge wäre also erst dann aufgefallen, wenn sie Folgen hat.
-    j.feld("kann");
-    j.roh("[");
-    for (unsigned g = 0; g < sizeof(g_gattungen)/sizeof(g_gattungen[0]); ++g) {
-        if (g) j.komma();
-        j.text(g_gattungen[g].art);
-    }
-    j.roh("]");
-    j.komma();
+    // Es zaehlte auf, welche Arten die Bruegge beherrscht, und wurde aus `g_gattungen[]`
+    // erzeugt. Ohne diese Tabelle KANN SIE NICHTS MEHR BEHAUPTEN -- und das ist der Punkt:
+    // Der Server schickt fuer den gemeldeten Simulator, was er hat, und erfaehrt aus `steht`,
+    // was tatsaechlich stand. Belegt statt behauptet.
+    //
+    // Es kostet nichts: Ausgewertet hat der Server `kann` ohnehin nie. Und es beendet eine
+    // Luege, die schon einmal auffiel -- bei Fassung 1.4.0 meldete das Modul, es koenne
+    // `robbe` nicht, waehrend es sie setzen konnte.
 
     j.feld("lage");
     j.roh("{");
@@ -702,18 +526,26 @@ static double gelaendehoehe() {
 
 static void objekt_erzeugen(int i) {
     SollObjekt& o = g_soll[i];
-    if (!gattung_bekannt(o.art)) {
-        // Unbekannte Gattung: nicht raten. Der Server erfaehrt es ueber `steht` und kann
-        // etwas anderes anfordern -- oder die Stelle auslassen.
+    if (!art_bekannt(o.art)) {
+        // Der Server hat zu dieser Art keine Titel mitgeschickt: nicht raten. Er erfaehrt es
+        // ueber `steht` und kann etwas anderes anfordern -- oder die Stelle auslassen.
+        //
+        // Seit Protokollfassung 2 heisst das etwas anderes als vorher: Frueher hiess es "die
+        // Bruegge kennt die Art nicht" (ein Fall fuer ein Client-Release), jetzt "der Server
+        // hat sie nicht mitgeliefert" (ein Fall fuer den Admin). Der FEHLERCODE bleibt
+        // trotzdem wortgleich -- ein aelterer Server soll ihn wiedererkennen.
         std::snprintf(o.fehler, sizeof(o.fehler), "GATTUNG_UNBEKANNT");
         o.erzeugt_gerufen = true;
         return;
     }
     const char* titel = titel_fuer(o.art, o.titel_nr);
     if (!titel) {
-        // Die Gattung gibt es, aber KEIN Titel daraus liess sich setzen. Das ist ein anderer
-        // Befund als eine unbekannte Gattung, und der Server soll ihn unterscheiden koennen:
-        // hier fehlen die Modelle im Simulator, dort war die Anforderung falsch.
+        // Die Art gibt es, aber KEIN Titel daraus liess sich setzen. Das ist ein anderer
+        // Befund als eine unbekannte Art, und der Server soll ihn unterscheiden koennen:
+        // hier fehlen die Modelle beim Piloten, dort war die Anforderung falsch.
+        //
+        // Der Server kann daraus lernen -- die Titel stehen in seinem Katalog, und er darf
+        // sie auf `aus` setzen, statt sie weiter auszuliefern.
         std::snprintf(o.fehler, sizeof(o.fehler), "KEIN_TITEL_GING");
         o.erzeugt_gerufen = true;
         return;
@@ -997,9 +829,11 @@ static void anfrage_fertig(FsNetworkRequestId id, int status, void*) {
     // Das Abschneiden war dabei voellig lautlos: Das JSON bricht mitten im Satz ab,
     // `json_array` findet die vorderen Eintraege, der Rest fehlt. Von aussen sieht es aus wie
     // Objekte, die der Simulator nicht setzen wollte.
-    static char kopie[ANTWORT_PUFFER];
-    bool abgeschnitten = (n > sizeof(kopie) - 1);
-    unsigned long m = abgeschnitten ? sizeof(kopie) - 1 : n;
+    // `g_antwort` statt einer lokalen Kopie: Die Titel darin werden spaeter noch
+    // gebraucht, wenn eine Exception das Nachruecken ausloest (s. dort).
+    char* kopie = g_antwort;
+    bool abgeschnitten = (n > sizeof(g_antwort) - 1);
+    unsigned long m = abgeschnitten ? sizeof(g_antwort) - 1 : n;
     std::memcpy(kopie, daten, m);
     kopie[m] = '\0';
 
@@ -1194,7 +1028,9 @@ void CALLBACK dispatch(SIMCONNECT_RECV* pData, DWORD, void*) {
             // Den NAECHSTEN Titel der Gattung versuchen, statt sofort aufzugeben. Ein Titel,
             // den dieser Simulator nicht kennt, ist kein Grund, die ganze Gattung fallen zu
             // lassen -- und genau das geschah mit `fahrzeug`, dessen einziger Name aus dem
-            // 2020er Bestand stammte (s. titel_fuer).
+            // 2020er Bestand stammte. Seit Fassung 2 kommt die Liste vom Server, und er
+            // hat bereits aussortiert, was nachweislich scheitert -- das Nachruecken bleibt
+            // trotzdem: Was beim einen Piloten fehlt (ein Community-Paket), hat der andere.
             if (titel_fuer(g_soll[i].art, g_soll[i].titel_nr + 1) != nullptr) {
                 g_soll[i].titel_nr += 1;
                 g_soll[i].erzeugt_gerufen = false;   // beim naechsten Abgleich neu versuchen
