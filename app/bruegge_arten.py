@@ -313,8 +313,13 @@ ARTEN: dict[str, tuple[str, dict[str, list]]] = {
     }),
     "boot_klein": ("Ein kleines Boot -- Segler, Motorboot, Kajuetboot bis rund 20 m", {
         "msfs2020": ["Boat01", "Boat02", "FishingBoat", "Yacht01"],
+        # ⚠ Die beiden Cruiser sind KAJUETBOOTE, keine Kreuzer: X-Plane schreibt die Laenge
+        # in ZENTIMETERN in den Dateinamen, `Cruiser_1900` ist also 19 m lang. Sie standen
+        # bis zum 15.09.2026 unter `boot_gross` und lieferten dort Faktor 15 zu wenig.
         "xplane12": [XP + "dynamic/SailBoat.obj", XP + "ships/Sail_1000_01.obj",
                      XP + "ships/Runabout_750_01.obj",
+                     XP + "ships/Cruiser_1900_01.obj",      # 19 m
+                     XP + "ships/Cruiser_1200_01.obj",      # 12 m
                      # "Dinghy Deaktivieren" -- ein Schlauchboot ist aus der Luft nichts.
                      (XP + "ships/Dinghy_400_01.obj", AUS)],
     }),
@@ -341,16 +346,73 @@ ARTEN: dict[str, tuple[str, dict[str, list]]] = {
     # offene Frage wie beim Autogen (Windrad, Leuchtturm). DESHALB BLEIBEN DIE CRUISER ALS
     # RUECKFALL auf Rang 5/6: Laedt ein Baustein nicht, meldet X-Plane einen Fehlschlag, die
     # Bruegge rueckt nach, und es steht wie bisher ein Kajuetboot da statt gar nichts.
-    "boot_gross": ("Ein Schiff -- Kreuzfahrer oder Frachter, ueber 150 m", {
+    # ⭐⭐ AM 15.09.2026 IM FLUG GEMESSEN UND IM BILD BELEGT: `XPLMLoadObject` LAEDT EIN
+    # OBJEKT AUS `ships/parts/`, UND X-PLANE ZEICHNET ES VOLLSTAENDIG.
+    #
+    # Das war die letzte offene Frage vor fuenf neuen Arten. `BulkCarrier_342A_StaticOnly`
+    # stand in niederbayerischen Feldern -- mit Rumpf, roten Aufbauten, allen Lukendeckeln,
+    # den Ladekraenen und der Beschriftung am Rumpf. `ContainerCarrier_399A_BaseModel`
+    # daneben ebenso. Beide meldeten `steht`, und der Nutzer sah beide.
+    #
+    # ⚠ Das war NICHT selbstverstaendlich: Unter `parts/` liegen Bausteine der
+    # Szeneriebibliothek, aus denen X-Plane ein Schiff sonst zusammensetzt
+    # (`_BaseModel` + `_Static_Add` + `_Flags` + `_ContainersA/B`). Dass ein Baustein allein
+    # laedt UND aussieht wie ein Schiff, musste gemessen werden -- "erzeugt" und "gezeichnet"
+    # sind zwei verschiedene Dinge, das hat der Rauch teuer genug gelehrt.
+    #
+    # `_StaticOnly` steht trotzdem vorn, wo es sie gibt: Sie traegt das ganze Schiff in EINER
+    # Datei. Es gibt genau zwei davon (342A und 190B).
+    #
+    # ⚠ `boot_gross` BLEIBT als Sammelbegriff und behaelt die Frachter, die keine eigene Art
+    # tragen. Ohne das haette es nach der Aufteilung in X-Plane nichts mehr -- und ein
+    # Kajuetboot als "Schiff" auszugeben war genau der Fehler, der die Sache ausloeste
+    # ("Warum habe ich lauter Kreuzfahrtschiffe in MSFS und nicht in xplane"). Die beiden
+    # Cruiser stehen jetzt bei `boot_klein`, wo sie mit 19 m und 12 m hingehoeren.
+    "boot_gross": ("Ein grosses Schiff (Sammelbegriff)", {
         "msfs2020": ["CruiseShip01", "CruiseShip02", "CargoShip01"],
         # "Dynamic Perry wuerde ich schon direkt deaktivieren. Das ist ein Kriegsschiff."
-        "xplane12": [XP + "ships/parts/BulkCarrier_342A_StaticOnly.obj",      # 342 m
-                     XP + "ships/parts/BulkCarrier_190B_StaticOnly.obj",      # 190 m
-                     XP + "ships/parts/ContainerCarrier_399A_BaseModel.obj",  # 399 m
-                     XP + "ships/parts/BulkCarrier_155A_BaseModel.obj",       # 155 m
-                     XP + "ships/Cruiser_1900_01.obj",                        # 19 m, Rueckfall
-                     XP + "ships/Cruiser_1200_01.obj",                        # 12 m, Rueckfall
+        "xplane12": [XP + "ships/parts/BulkCarrier_155B_BaseModel.obj",
+                     XP + "ships/parts/BulkCarrier_190C_BaseModel.obj",
+                     XP + "ships/parts/ContainerCarrier_155A_BaseModel.obj",
                      (XP + "dynamic/Perry.obj", AUS)],
+    }),
+    "schiff_massengut": ("Ein Massengutfrachter", {
+        "msfs2024": ["Microsoft_Ships_BulkItaly_1", "Microsoft_Ships_Nikos_1",
+                     "Microsoft_Ships_OreShenzhen_1"],
+        "xplane12": [XP + "ships/parts/BulkCarrier_342A_StaticOnly.obj",   # im Bild belegt
+                     XP + "ships/parts/BulkCarrier_190B_StaticOnly.obj",
+                     XP + "ships/parts/BulkCarrier_342B_BaseModel.obj",
+                     XP + "ships/parts/BulkCarrier_190A_BaseModel.obj",
+                     XP + "ships/parts/BulkCarrier_155A_BaseModel.obj"],
+    }),
+    "schiff_container": ("Ein Containerschiff", {
+        "msfs2024": ["Microsoft_Ships_MscBremen_1", "Microsoft_Ships_Belgorod_1",
+                     "Microsoft_Ships_CMACGMExupery_1", "Microsoft_Ships_LucyBorchard_1"],
+        "xplane12": [XP + "ships/parts/ContainerCarrier_399A_BaseModel.obj",  # im Bild belegt
+                     XP + "ships/parts/ContainerCarrier_399B_BaseModel.obj"],
+    }),
+    "schiff_tanker": ("Ein Oeltanker", {
+        "msfs2024": ["Microsoft_Ships_TIAsiaULCC_1", "Microsoft_Ships_GoldenState_1",
+                     "Microsoft_Ships_Ivyan_1"],
+        # Gross zuerst -- 250 m vor 190 m vor 183 m.
+        "xplane12": [XP + "ships/parts/OilTanker_250A_BaseModel.obj",
+                     XP + "ships/parts/OilTanker_250B_BaseModel.obj",
+                     XP + "ships/parts/OilTanker_190A_BaseModel.obj",
+                     XP + "ships/parts/OilTanker_183A_BaseModel.obj",
+                     XP + "ships/parts/OilTanker_183B_BaseModel.obj"],
+    }),
+    "schiff_gastanker": ("Ein Gastanker", {
+        "msfs2024": ["Microsoft_Ships_Taitar4CG_1"],
+        "xplane12": [XP + "ships/parts/LNGCarrier_190A_BaseModel.obj",
+                     XP + "ships/parts/LNGCarrier_190B_BaseModel.obj",
+                     XP + "ships/parts/LNGCarrier_190C_BaseModel.obj",
+                     XP + "ships/parts/LNGCarrier_190D_BaseModel.obj"],
+    }),
+    "schnellboot": ("Ein schnelles Motorboot", {
+        "msfs2024": ["Microsoft_Ships_BHLExpress5_1"],
+        "xplane12": [XP + "ships/parts/SpeedBoat_1300_01_BaseModel.obj",
+                     XP + "ships/parts/SpeedBoat_1300_02_BaseModel.obj",
+                     XP + "ships/parts/SpeedBoat_1300_03_BaseModel.obj"],
     }),
 
     # --- Marken: aus einer Art sind drei geworden -----------------------------------
