@@ -123,10 +123,35 @@ Aus der Rauch-Messung derselben Sitzung (14.09.2026): **Eine Rauchsäule trägt 
 (3,5 NM), und dort ist eine harte Grenze.** `MaxDistanceEmission` 15000 und 50000 geben
 beide denselben Wert; nur die Vorgabe 2000 wirkt 1:1. Die SDK-Doku nennt kein Maximum.
 
-**Für den Seehund heißt das: Er ist nur aus der Nähe zu finden.** Ein 1,6-m-Tier hat keine
-Chance auf Reichweiten, an denen schon eine 90-m-Säule scheitert. Wer weiter sehen will,
-braucht Geometrie (ein `CruiseShip01` war aus 22 km sichtbar) oder ein Licht — am
-Partikeleffekt ist Ende.
+⚠ **Und für den Seehund gilt sie NICHT — das war mein Fehlschluss, hier steht er
+korrigiert.** Die 6480 m sind die Grenze des **Partikelsystems**. Ein Seehund hat keine
+Partikel; bei ihm entscheidet allein die **Geometrie**, und die trägt nachweislich weiter
+(ein `CruiseShip01` war aus 22 km zu sehen).
+
+Was zur Geometrie belegt ist, sind genau zwei Punkte — beide aus der Rauch-Messreihe:
+
+| Bounding Box | sichtbar ab | Anmerkung |
+|---|---|---|
+| 2 m | 100 m | **mit `minSize="0"` bereits gesetzt** |
+| 90 m | ≥ 1830 m | wie viel mehr, verdeckt die Partikelgrenze |
+
+Die erste Zeile ist die wichtigere: `minSize="0"` kam einen Commit **vor** der 90-m-Säule
+(`f7673a6`), der Nutzer ist dazwischen geflogen und sah keine Änderung. **Die Größe der
+Bounding Box schlägt `minSize` glatt** — es gibt im Simulator eine zweite
+Entfernungsprüfung, die an `minSize` vorbeigeht. Welche, ist unbekannt; dass es sie gibt,
+ist gemessen.
+
+Ein 1,6-m-Tier liegt damit am unteren Ende einer Skala, deren Verlauf wir nicht kennen.
+**Der Weg ist ein unsichtbarer Träger**, wie ihn der Rauch schon hat: ein Quader mit
+`ASOBO_material_invisible` (`paket_bauen.py`, 24 Ecken — jede Fläche braucht ihre eigene
+Normale), der Seehund als sichtbares Teil darin. Zwei Dinge dabei beachten:
+
+- **Der Quader steht auf dem Ursprung, nicht um ihn herum** (`min[1] = 0.0`). `auf_boden`
+  setzt den Ursprung auf Geländehöhe; ein zentrierter Quader steckt zur Hälfte im Watt.
+- **Ungeprüft ist, ob MSFS unsichtbare Geometrie überhaupt mitmisst.** Beim Rauch war der
+  Träger immer unsichtbar, ein Gegenversuch fehlt. Bringt ein großer unsichtbarer Träger
+  nichts, ist das die erste Stelle zum Nachsehen — ein Durchgang mit sichtbarem Material
+  trennt die beiden Fälle.
 
 Das ist keine Schwäche des Modells, sondern eine Vorgabe für den **Kieker**: Eine Kolonie
 findet man nicht durch Suchen am Horizont. Entweder der Server nennt das Gebiet (Karte im
@@ -209,39 +234,74 @@ Neustart ihres Simulators.
 ⚠ **Beide nebeneinander anschauen, wenn es geht.** Der Sinn der Übung ist, dass sie sich
 gleichen; jede für sich betrachtet sagt darüber nichts.
 
-## ⭐ ZUERST: Ab welcher Entfernung ist die Rauchsäule zu sehen?
+## ✅ SICHTWEITE DER RAUCHSÄULE — GELÖST (14.09.2026)
 
-**Offener Befund vom 14.09.2026:** *„die säulen kommen erst 100m vorher"* — und das blieb
-so, nachdem zwei Vermutungen widerlegt waren. Die dritte liegt jetzt im Paket.
+**Von 100 m auf 3,5 NM**, und dort ist eine harte Grenze. Der Befund war *„die säulen
+kommen erst 100m vorher"*; gebraucht hat es zwei Schritte — und drei, die nichts brachten.
 
-### Was schon widerlegt ist — nicht noch einmal probieren
-
-| Versuch | Begründung damals | im Flug |
+| Schritt | sichtbar ab | was tatsächlich wirkte |
 |---|---|---|
-| `minSize="0"` im LOD | Asobos Szenerie-Beispiel setzt es | **keine Änderung** |
-| `DistanceToNotAnimate=15000` | Aerosofts Wangerooge-Paket setzt es überall | **keine Änderung** |
+| Ausgangslage, 2-m-Träger | 100 m | das **Objekt** war zu klein und wurde ausgeblendet |
+| Träger auf 12 × 90 × 12 m | 1830 m | Objekt groß genug — jetzt greift die Partikelschranke |
+| Träger auf 40 × 300 × 40 m | 1830 m | **nichts** — siehe Warnung unten |
+| **`MaxDistanceEmission` 15000** | **6480 m = 3,5 NM** | das eigentliche Feld |
+| `MaxDistanceEmission` 50000 | 6480 m | **harte Schranke**, die Doku nennt keine |
 
-Beide bleiben drin (sie schaden nicht, und Asobo selbst nutzt `15000` in
-`wENLK_lightdummy`), aber sie waren nicht die Ursache.
+Gesetzt bleibt **15000**: Alles darüber ist Rechenlast ohne Sicht.
 
-### Was jetzt drin ist: ein Träger so groß wie die Säule
+### ⭐ `MaxDistanceEmission` — das Feld, das die Suche beendet hat
 
-Der Trägerwürfel war **2 m** groß. MSFS zeichnet ein SimObject nicht, dessen Bildschirmgröße
-verschwindet — und mit dem Träger verschwindet der Emitter, der an ihm hängt. Die Säule ist
-90 m hoch und trotzdem fort, weil der Simulator den **Träger** misst.
+Die SDK-Doku nennt genau eines für die Sichtweite eines Partikeleffekts:
 
-Jetzt **12 × 90 × 12 m**, und zwar nur nach oben: `auf_boden` setzt den Ursprung auf
-Geländehöhe, ein Würfel nach unten steckte zur Hälfte im Boden. Die Bounding Box im glTF
-ist mitgezogen — sie ist das, was der Simulator liest.
+> *„Once the camera exceeds this distance from the emitter, particles will stop being
+> created."* — **Standardwert: 2000 Meter.**
 
-⚠ **Der Nutzer hatte das von Anfang an vorgeschlagen** (*„kann man das modell nicht
-unsichtbar vergrößern, dass es früher sichtbar wird?"*). Ich hatte es mit einem Umweg
-abgetan, der nichts brachte, und zwei Anläufe gebraucht, um dorthin zurückzukommen.
+Wir hatten es nie gesetzt, also galt die Vorgabe. Der gemessene Abriss bei **1830 m** passt
+dazu, und **eine Seemeile sind 1852 m** — die Zahl war die ganze Zeit ein Fingerzeig.
 
-### Wenn auch das nicht reicht: ein Licht
+⚠ **Gefunden hat es eine Web-Recherche, auf Verlangen des Nutzers.** Davor drei Anläufe
+geraten, alle im Flug widerlegt:
 
-Positionsleuchten sieht man kilometerweit, wenn das Flugzeug längst ein Punkt ist — sie sind
-kein Geometrie-, sondern ein Licht-Sprite mit eigener Reichweite.
+| Versuch | warum er nichts brachte |
+|---|---|
+| `minSize="0"` im LOD | regelt die Bildschirmgröße des **Modells** |
+| `DistanceToNotAnimate=15000` | regelt die **Animation**, nicht das Spawnen |
+| Träger 90 → 300 m | siehe die Warnung gleich darunter |
+
+`minSize` und `DistanceToNotAnimate` bleiben trotzdem gesetzt — sie schaden nicht, und
+Asobo selbst nutzt `DistanceToNotAnimate=15000` in `wENLK_lightdummy`.
+
+### ⚠⚠ Die 300-m-Messung war VERDECKT — wer sie zitiert, zitiert einen Messfehler
+
+„Träger 300 m brachte nichts" steht oben in der Tabelle und stimmt als Beobachtung. Als
+Aussage über Geometrie ist es **falsch**, und der Unterschied entscheidet alles, was ohne
+Partikel gebaut wird.
+
+Während der ganzen Träger-Reihe stand `MaxDistanceEmission` noch auf der Vorgabe 2000. Ab
+90 m war deshalb nicht mehr die Geometrie der Engpass, sondern der Effekt. Die 300-m-Zeile
+misst die Partikelgrenze ein zweites Mal — über Geometrie sagt sie nichts.
+
+**Belegt sind über Geometrie genau zwei Punkte:** 2 m → 100 m (mit `minSize="0"`!) und
+90 m → mindestens 1830 m. Dazwischen und darüber ist nichts gemessen. Für Seehunde, Tiere
+und Fahrzeuge gilt allein diese Skala — dort fällt die Partikelgrenze weg.
+
+### ⚠ Hin- und Wegflug sind verschieden, und das ist kein Fehler
+
+Der Nutzer sieht die Säule beim **Hinflug erst bei 3,5 NM**; beim Wegflug hört sie von
+unten her auf und wirkt dadurch länger da, als sie emittiert. Beides ist dieselbe Grenze.
+
+Der Emitter beginnt in beiden Richtungen bei 6480 m. Beim Hinflug braucht die Säule aber
+ihre **30 Sekunden Lebensdauer**, um von unten aufzuwachsen — der Nutzer beschrieb es
+genau so: *„Sie steigt langsam vom Boden auf."*
+
+**Für eine Baake ist das die ungünstigere Richtung** — man soll sie beim *Hin*flug finden.
+Wer das verbessern will, setzt an der Aufbauzeit an (kürzere Lebensdauer bei höherer Rate
+ergäbe dieselbe Säule, schneller aufgebaut), nicht an der Reichweite.
+
+### Was weiter reicht als Partikel: ein Licht
+
+Positionsleuchten sieht man kilometerweit, wenn das Flugzeug längst ein Punkt ist — sie
+sind kein Geometrie-, sondern ein Licht-Sprite mit eigener Reichweite.
 
 **Ein SimObject kann aus nichts als Licht bestehen**, belegt am 14.09.2026:
 `fs24-microsoft-airport-enlk-leknes` enthält `wENLK_lightdummy` mit genau diesem Zweck.
@@ -253,15 +313,18 @@ category=Human ;StaticObject
 DistanceToNotAnimate=15000
 ```
 
-Zwei Dinge daran sind bemerkenswert: `DistanceToNotAnimate=15000` ist derselbe Wert, den
-wir gewählt haben — und die Kategorie ist **`Human`**, nicht `StaticObject`, mit der
-Alternative als Kommentar daneben. Die Kategorie beeinflusst das Verhalten also.
+Die Kategorie ist **`Human`**, nicht `StaticObject`, mit der Alternative als Kommentar
+daneben — die Kategorie beeinflusst das Verhalten also.
 
 **Woran es fehlt:** Die Lichtdefinition steckt im Modell (glTF-Erweiterung
 `ASOBO_macro_light`), und das liegt im verschlüsselten Archivteil. Nachbaubar, aber ein
-eigener Umbau. Für eine Baake wäre es ohnehin die bessere Lösung als ein großes
-unsichtbares Objekt: eine rote Blitzleuchte auf der Säulenspitze, die man sieht, **bevor**
-man den Rauch sieht.
+eigener Umbau. Für eine Baake wäre es die bessere Lösung: eine rote Blitzleuchte auf der
+Säulenspitze, die man sieht, **bevor** man den Rauch sieht.
+
+### Was ungemessen bleibt
+
+**Was ein Emitter kostet, der aus 6,5 km spawnt.** Bei einer Fackel egal; bei zwanzig
+Kolonien mit je einer Säule gehört es gemessen, bevor der Kieker so etwas setzt.
 
 ---
 

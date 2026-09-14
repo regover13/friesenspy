@@ -147,21 +147,37 @@ def wuerfel_gltf(knoten: str, bin_datei: str) -> tuple[str, bytes]:
     #
     # Der Nutzer will 10 km; gemessen sind fuer ein grosses Objekt 22 km (CruiseShip01,
     # 11.09.2026), es gibt also keine harte Schranke bei 1 km.
-    # ⚠ 300 m BRACHTEN NICHTS -- die Messreihe ist damit zu Ende:
+    # ⚠⚠ 300 m BRACHTEN NICHTS -- ABER DIE MESSUNG WAR VERDECKT, UND DAS IST DER PUNKT.
     #
     #      2 m ->  100 m     das Objekt selbst war zu klein
     #     90 m -> 1830 m     Objekt gross genug; ab hier greift etwas anderes
     #    300 m -> 1830 m     unveraendert
     #
-    # 1830 m sind fast genau EINE SEEMEILE (1852 m). Das ist keine Groessenfrage mehr,
-    # sondern eine feste Schranke -- und zwar des PARTIKELSYSTEMS, nicht des Objekts: Der
-    # Traeger ist unsichtbar (ASOBO_material_invisible), gezeichnet wird allein der Effekt.
-    # Zum Vergleich: Ein CruiseShip01 war am 11.09.2026 aus 22 km zu sehen -- das ist
-    # Geometrie.
+    # Ich habe daraus zuerst gelesen: "ueber 90 m bringt Geometrie nichts". Das ist FALSCH,
+    # und der Fehler ist eine Verwechslung von zwei Schranken, die zufaellig hintereinander
+    # liegen. Waehrend dieser ganzen Reihe stand `MaxDistanceEmission` noch auf der Vorgabe
+    # 2000 -- die Partikel hoerten also bei rund 1830 m von sich aus auf zu entstehen. Ab
+    # 90 m Traeger war NICHT mehr die Geometrie der Engpass, sondern der Effekt. Die
+    # 300-m-Zeile misst deshalb gar nicht die Geometrie; sie misst dieselbe Partikelgrenze
+    # ein zweites Mal.
     #
-    # Deshalb zurueck auf die Saeulenhoehe: 90 m reichen, um das Objekt selbst nicht
-    # ausblenden zu lassen, und mehr bringt nachweislich nichts. Wer weiter sehen will,
-    # braucht GEOMETRIE oder ein LICHT statt eines groesseren Nichts (s. MESSLISTE).
+    # WAS TATSAECHLICH BELEGT IST, sind genau zwei Punkte:
+    #
+    #      2 m ->  100 m         mit `minSize="0"` bereits gesetzt (Commit f7673a6, einen
+    #                            Commit VOR der 90-m-Saeule -- der Nutzer ist dazwischen
+    #                            geflogen und sah keine Aenderung)
+    #     90 m -> MINDESTENS 1830 m   wie viel mehr, verdeckt die Partikelgrenze
+    #
+    # Dazwischen und darueber ist nichts gemessen. Zum Vergleich von aussen: Ein
+    # CruiseShip01 war am 11.09.2026 aus 22 km zu sehen -- Geometrie traegt also weit.
+    #
+    # ⭐ WICHTIG FUER ALLES OHNE PARTIKEL (Seehunde, Tiere, Fahrzeuge): Dort faellt die
+    # Partikelgrenze weg, und die Geometriegrenze ist die EINZIGE. Wer von hier "90 m
+    # reichen, mehr bringt nichts" uebernimmt, uebernimmt einen Messfehler.
+    #
+    # Fuer den Rauch selbst bleiben die 90 m trotzdem richtig: Sie genuegen, damit das
+    # Objekt nicht ausgeblendet wird, und weiter als der Effekt reicht, muss der Traeger
+    # nicht (s. MAX_SICHT_M in rauch_bauen.py).
     B, H = 6.0, 90.0
     flaechen = [
         ((0.0, 0.0, -1.0), [(-B, 0, -B), (-B, H, -B), (B, H, -B), (B, 0, -B)]),

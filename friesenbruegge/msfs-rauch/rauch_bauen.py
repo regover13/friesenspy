@@ -87,8 +87,11 @@ FARBEN = {
 #
 #     minSize="0" im LOD                 regelt die Bildschirmgroesse des MODELLS
 #     DistanceToNotAnimate=15000         regelt die Animation, nicht das Spawnen
-#     Traeger 2 m -> 90 m -> 300 m       half nur von 100 m auf 1830 m (das Objekt selbst
-#                                        war zu klein), darueber nichts
+#     Traeger 2 m -> 90 m -> 300 m       half von 100 m auf 1830 m (das Objekt selbst war
+#                                        zu klein). ⚠ Die 300-m-Zeile beweist NICHT, dass
+#                                        Geometrie darueber nichts bringt -- sie lief schon
+#                                        gegen DIESE Schranke hier. Naeheres bei der
+#                                        Traegergroesse in paket_bauen.py.
 #
 # Die 90 m Traegerhoehe bleiben noetig (bei 2 m verschwand das OBJEKT), aber die Schranke
 # lag danach im Partikelsystem.
