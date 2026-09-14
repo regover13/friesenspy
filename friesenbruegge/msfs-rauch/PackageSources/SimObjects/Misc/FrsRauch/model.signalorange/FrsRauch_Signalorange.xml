@@ -1,6 +1,6 @@
 <ModelInfo>
 	<LODS>
-		<LOD ModelFile="FrsRauch_Signalorange.gltf"/>
+		<LOD minSize="0" ModelFile="FrsRauch_Signalorange.gltf"/>
 	</LODS>
 	<CompileBehaviors version="2">
 		<IncludeBase RelativeFile="FrsRauch_Signalorange.behavior.xml"/>

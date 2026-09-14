@@ -1,6 +1,6 @@
 <ModelInfo>
 	<LODS>
-		<LOD ModelFile="FrsRauch_Rot.gltf"/>
+		<LOD minSize="0" ModelFile="FrsRauch_Rot.gltf"/>
 	</LODS>
 	<CompileBehaviors version="2">
 		<IncludeBase RelativeFile="FrsRauch_Rot.behavior.xml"/>

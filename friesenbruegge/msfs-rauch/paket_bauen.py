@@ -55,6 +55,17 @@ HERSTELLER = "devprops"
 
 # --------------------------------------------------------------------------- Trägermodell
 
+# ⚠ WARUM DER WUERFEL KLEIN BLEIBT, obwohl die Sichtweite an der Groesse haengt.
+#
+# Die naheliegende Idee waere, ihn aufzublasen: Ein 100-m-Wuerfel hat aus 10 km eine
+# messbare Bildschirmgroesse und wuerde nicht ausgeblendet. Das ist aber der Umweg --
+# `minSize="0"` im LOD-Eintrag (s. unten) schaltet die Groessenpruefung direkt ab, und
+# genau so macht es Asobo in seinem eigenen Szenerie-Beispiel.
+#
+# Ein grosser unsichtbarer Wuerfel haette ausserdem Nebenwirkungen, die keiner will: Die
+# Geometrie wandert in jede Entfernungsrechnung des Simulators, und `auf_boden` setzt den
+# URSPRUNG auf die Gelaendehoehe -- ein Wuerfel, der 50 m nach unten reicht, steckt dann zur
+# Haelfte im Boden. Klein und ohne Groessenpruefung ist beides zusammen.
 def wuerfel_gltf(knoten: str, bin_datei: str) -> tuple[str, bytes]:
     """Ein unsichtbarer Einheitswürfel als glTF. Gibt (JSON-Text, Rohpuffer) zurück.
 
@@ -287,7 +298,22 @@ def simobjects_schreiben() -> None:
         # Compiled-Attribute -- der Builder kompiliert sie erst beim Bauen.
         (wurzel / modell / f"{kennung}.xml").write_text(
             "<ModelInfo>\n\t<LODS>\n"
-            f'\t\t<LOD ModelFile="{kennung}.gltf"/>\n'
+            # ⚠ `minSize="0"` -- OHNE DAS ERSCHEINT DER RAUCH ERST KURZ VORHER.
+            #
+            # MSFS blendet ein Modell aus, sobald seine BILDSCHIRMGROESSE unter `minSize`
+            # faellt (Vorgabe > 0). Unser Traeger ist ein 2-m-Wuerfel; aus 10 km ist der ein
+            # Subpixel, und mit ihm verschwindet der Emitter, der an ihm haengt -- die
+            # Saeule ist 90 m hoch und trotzdem fort, weil der SIMULATOR den WUERFEL misst,
+            # nicht den Rauch.
+            #
+            # Das war der Befund vom 14.09.2026: „der rauch erscheint sehr spaet bei
+            # annaeherung!! viel zu spaet." Das Vorbild steht in Asobos eigenem
+            # Szenerie-Beispiel (`kalo-projectedmesh-jetway_00.xml`): `<LOD minSize="0" …>`.
+            #
+            # 0 heisst: nie wegen Groesse ausblenden. Bei einer Handvoll Baaken ist das
+            # richtig -- eine Rauchsaeule, die man erst sieht, wenn man daneben steht, ist
+            # als Marke wertlos.
+            f'\t\t<LOD minSize="0" ModelFile="{kennung}.gltf"/>\n'
             '\t</LODS>\n\t<CompileBehaviors version="2">\n'
             f'\t\t<IncludeBase RelativeFile="{kennung}.behavior.xml"/>\n'
             "\t</CompileBehaviors>\n</ModelInfo>\n", encoding="utf-8", newline="\r\n")
