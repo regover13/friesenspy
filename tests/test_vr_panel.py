@@ -1226,13 +1226,25 @@ def test_ziehen_schaltet_moving_map_ab_zoomen_nicht():
 def test_fortrechnung_faelscht_die_tracks_nicht():
     """Die aufgezeichneten Wege duerfen NUR echte VATSIM-Punkte enthalten. Fortgerechnete
     Positionen sind Schaetzungen -- landeten sie im Track, waere die Aufzeichnung erfunden.
-    Deshalb bewegt der Takt ausschliesslich Marker."""
-    m = re.search(r"function _naviTakt\(sofort\) \{(.*?)\n\}", INDEX, re.S)
-    assert m, "_naviTakt nicht gefunden"
-    rumpf = m.group(1)
-    assert "liveTrackPoints" not in rumpf, "der Takt fasst die Track-Punkte an"
-    assert "_drawLiveTrackLine" not in rumpf, "der Takt zeichnet Track-Linien neu"
-    assert "setLatLng" in rumpf, "der Takt bewegt gar keine Marker"
+    Deshalb bewegen die Takte ausschliesslich Marker.
+
+    Geprueft werden BEIDE: Seit dem 14.09.2026 bewegt der feine Takt (`_markerGleiten`,
+    zehnmal je Sekunde) die Symbole, waehrend `_naviTakt` Kurs, Drehung und Nachfuehrung
+    behalten hat. Ein Test, der nur noch den Sekundentakt ansieht, wuerde die Zusicherung
+    still verlieren -- und ausgerechnet der schnellere Takt darf hier am wenigsten
+    danebengreifen.
+    """
+    rumpf_sek = re.search(r"function _naviTakt\(sofort\) \{(.*?)\n\}", INDEX, re.S)
+    rumpf_fein = re.search(r"function _markerGleiten\(\) \{(.*?)\n\}", INDEX, re.S)
+    assert rumpf_sek, "_naviTakt nicht gefunden"
+    assert rumpf_fein, "_markerGleiten nicht gefunden"
+
+    for name, m in (("_naviTakt", rumpf_sek), ("_markerGleiten", rumpf_fein)):
+        rumpf = m.group(1)
+        assert "liveTrackPoints" not in rumpf, "%s fasst die Track-Punkte an" % name
+        assert "_drawLiveTrackLine" not in rumpf, "%s zeichnet Track-Linien neu" % name
+
+    assert "setLatLng" in rumpf_fein.group(1), "der feine Takt bewegt gar keine Marker"
 
 
 def test_schaetzung_baut_nicht_auf_schaetzung_auf():

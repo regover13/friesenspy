@@ -6,6 +6,33 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-14 — Karte: die Symbole gleiten, statt im Sekundenraster zu springen
+
+**Wer:** Server-Session (VPS), Zweig `karte-gleitende-marker`.
+
+**Was:** Die Fortrechnung (`_jetztGerechnet`) gab es längst, ausgewertet hat sie aber nur
+`_naviTakt` — und der läuft einmal pro Sekunde. Das Symbol stand also eine Sekunde still und
+sprang dann um den ganzen Weg. Neu ist ein zweiter, feiner Zeitgeber `_markerGleiten`
+(`_GLEIT_TAKT_MS = 100`), der **ausschliesslich** `setLatLng` auf vorhandene Marker schreibt.
+Kein `setIcon`, kein Schild, kein `setView` — bewusst NICHT `requestAnimationFrame`
+(Flackersuche v12.5.2, Coherent GT).
+
+**Zwei Dinge, die man beim Weiterbauen wissen muss:**
+- **Moving Map bleibt im Sekundentakt.** `setView` setzt alle Ebenen neu und feuert `moveend`
+  — daran hängen Kacheln, Verkehrsabruf und der gemerkte Ausschnitt. Deshalb gleitet das
+  eigene Flugzeug im feinen Takt **nur bei ausgeschalteter Moving Map**: Ist sie an, ist es
+  der Fixpunkt in der Kartenmitte und darf nicht daraus herauskriechen.
+- **Der Sekundentakt hat die Positionsarbeit abgegeben, nicht die Symbolarbeit.** Kurs, Farbe
+  und Schild bleiben in `_naviTakt`. Wer etwas in `_markerGleiten` ergänzt, prüft zuerst, ob
+  es wirklich zehnmal je Sekunde geschehen muss.
+
+**Berührte Dateien:** `app/static/index.html` (`_naviTakt`, neu `_markerGleiten`/`_simPosJetzt`,
+`_eigenePosition`, `_eigenesFlugzeugZeichnen`), `tests/test_karte_gleiten.py` (neu),
+`tests/test_vr_panel.py` (`test_fortrechnung_faelscht_die_tracks_nicht` prüft jetzt beide
+Takte), `README.md`, `app/CHANGELOG.json` (14.38.0).
+
+---
+
 ## 2026-09-13 (nachmittags) — Website-Karte: Friesen mit Brügge im Sekundentakt
 
 **Wer:** Server-Session (VPS), Zweig `karte-bruegge-1hz`.

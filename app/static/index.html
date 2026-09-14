@@ -4354,7 +4354,7 @@
               <li><strong>bis zu 15 s</strong>, bis wir diesen Datenstand abrufen — VATSIM baut ihn alle 15 Sekunden neu, wir fragen im selben Takt, aber nicht im Gleichschritt</li>
               <li><strong>bis zu 15 s</strong>, bis die Karte den Stand von uns holt</li>
             </ul>
-            Zwischen zwei Meldungen wird die Position aus Kurs und Fahrt fortgerechnet — die Symbole gleiten deshalb, statt alle 15 Sekunden zu springen. Der eingezeichnete Track bleibt davon unberührt, dort stehen nur echte Messpunkte.</span>
+            Zwischen zwei Meldungen wird die Position aus Kurs und Fahrt fortgerechnet, und das Bild fortlaufend nachgezogen — die Symbole gleiten deshalb, statt zu springen, auch stark hineingezoomt. Der eingezeichnete Track bleibt davon unberührt, dort stehen nur echte Messpunkte.</span>
         </li>
         <li class="karten-legende-bruegge">
           <span class="aircraft-marker aircraft-marker-bruegge karten-legende-flz"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.25 2.2c0-.5.34-.9.75-.9s.75.4.75.9v6.05h8.4c.45 0 .8.36.8.8v1.1c0 .44-.35.8-.8.8h-8.4v5.3l3.1 1.5c.3.15.5.45.5.8v.95l-4.35-1.1-4.35 1.1v-.95c0-.35.2-.65.5-.8l3.1-1.5v-5.3H2.85c-.45 0-.8-.36-.8-.8v-1.1c0-.44.35-.8.8-.8h8.4z"/></svg></span>
@@ -6044,6 +6044,7 @@ const _VERKEHR_MAX_KM   = 250;     // serverseitige Obergrenze, hier gespiegelt
 const _VERKEHR_DROSSEL_MS = 3000;  // gegen Dauerziehen an der Karte
 
 const _verkehrRoh    = {};   // callsign -> {lat, lon, hdg, gs, ts} -- gemeldete Rohwerte
+                             // Bewegt werden die Marker daraus im feinen Takt, s. _markerGleiten.
 const _verkehrMarker = {};   // callsign -> L.Marker
 const _verkehrFehlt  = {};   // callsign -> wie oft in Folge nicht gemeldet (Hysterese)
 let _verkehrGruppe   = null;
@@ -10456,7 +10457,10 @@ const _SIM_POS_MAX_ALTER_MS = 10000;
  *   3. gar nichts -- dann bleiben Moving Map und Track-up wirkungslos
  */
 function _eigenePosition() {
-  if (_simPos && (Date.now() - _simPos.ts) < _SIM_POS_MAX_ALTER_MS) return _simPos;
+  // Fortgerechnet, nicht roh: Sonst zentrierte Moving Map auf eine andere Stelle, als das
+  // eigene Symbol steht (s. _simPosJetzt) -- und der Flieger saesse neben der Kartenmitte.
+  const sim = _simPosJetzt();
+  if (sim) return sim;
   if (_meineCid != null) {
     const liste = liveData || [];
     for (let i = 0; i < liste.length; i++) {
@@ -11981,11 +11985,91 @@ function _aipMarkenWache(map) {
 
 let _naviTimer = null;
 
+// --------------------------------------------------------------------------
+//  Der feine Takt: die Symbole GLEITEN, statt zu springen
+// --------------------------------------------------------------------------
+// Die Fortrechnung aus Kurs und Fahrt (`_jetztGerechnet`) gibt es lange -- ausgewertet hat
+// sie aber nur der Sekundentakt. Das Symbol stand dadurch eine Sekunde still und sprang dann
+// um den ganzen zurueckgelegten Weg: bei Zoom 14 und 120 kt rund 11 Pixel, weiter
+// hineingezoomt ein Vielfaches davon. Die FriesenBruegge hat daran nichts geaendert -- sie
+// liefert den echten Punkt sekundengenau, gezeichnet wurde er trotzdem nur einmal je Sekunde.
+// Die Rechnung war also nie das Problem, ihr Raster war es.
+//
+// ZEHN Bilder je Sekunde, und ausdruecklich NICHT requestAnimationFrame. Das ist der Kern
+// der Abwaegung und keine beliebige Zahl:
+//
+//   * Die Lehre aus der Flackersuche (v12.5.2) gilt weiter: Eine Schleife, die in JEDEM
+//     Einzelbild etwas anfasst, haelt in Coherent GT die Zeichenlast dauerhaft hoch. 100 ms
+//     sind ein Sechstel davon und lassen dem Renderer zwischen zwei Laeufen Luft.
+//   * Was hier laeuft, ist das Billigste, was Leaflet kennt: `setLatLng` schreibt ein
+//     `transform` auf ein vorhandenes Element. Kein `setIcon` (das baut das DOM-Element des
+//     Markers neu auf), kein Schild, kein Anfassen der Karte selbst. All das bleibt im
+//     Sekundentakt, wo es hingehoert -- Kurs und Farbe aendern sich ohnehin nicht schneller.
+//
+// Die Karte selbst wird hier bewusst NICHT nachgefuehrt. `setView` setzt die Lagen aller
+// Ebenen neu und feuert `moveend`; daran haengen das Kachel-Nachladen, der Verkehrsabruf
+// (s. map.on('moveend')) und der gemerkte Ausschnitt. Zehnmal je Sekunde waere genau die
+// Dauerlast, die dieser Takt vermeiden soll. Moving Map bleibt deshalb im Sekundentakt.
+const _GLEIT_TAKT_MS = 100;
+let _gleitTimer = null;
+
+// Vom Sekundentakt gesetzt, hier nur gelesen. `_istSichtbar` liest `offsetParent` und
+// erzwingt damit ein Layout -- zehnmal je Sekunde waere das genau die Sorte stiller Arbeit,
+// gegen die dieser Takt so sparsam gebaut ist.
+let _kartenSichtbar = false;
+
+/**
+ * Alle Flugzeugsymbole auf den Stand dieses Augenblicks bringen. Sonst nichts.
+ *
+ * Wer hier etwas ergaenzt, pruefe zuerst, ob es wirklich zehnmal je Sekunde geschehen muss.
+ * In aller Regel lautet die Antwort nein, und die Stelle dafuer ist `_naviTakt`.
+ */
+function _markerGleiten() {
+  if (!liveMap || !_kartenSichtbar) return;
+
+  // Friesen. Das eigene Flugzeug bleibt aussen vor -- es kommt aus dem Simulator und nicht
+  // aus `_positionsRoh`, und es hat weiter unten seinen eigenen Weg.
+  for (const cs in mapMarkers) {
+    if (!Object.prototype.hasOwnProperty.call(mapMarkers, cs)) continue;
+    if (_istEigenesFlugzeug(cs)) continue;
+    const roh = _positionsRoh[cs];
+    if (!roh) continue;
+    const p = _jetztGerechnet(roh);
+    mapMarkers[cs].setLatLng([p.lat, p.lon]);
+  }
+
+  // Fremdverkehr -- gleiche Rechnung, eigene Datenquelle. Auch hier gilt: Steht der Rohwert
+  // nicht (mehr) da, bleibt der Marker stehen, statt auf eine geratene Position zu springen.
+  for (const cs in _verkehrMarker) {
+    const roh = _verkehrRoh[cs];
+    if (!roh) continue;
+    const p = _jetztGerechnet(roh);
+    _verkehrMarker[cs].setLatLng([p.lat, p.lon]);
+  }
+
+  // Das eigene Flugzeug -- aber NUR ohne Moving Map. Ist sie an, ist dieses Symbol der
+  // Fixpunkt in der Kartenmitte, und die Karte zieht erst im Sekundentakt nach. Ein Symbol,
+  // das dazwischen weitergleitet, kroeche aus der Mitte heraus und spraenge jede Sekunde
+  // dorthin zurueck -- das waere schlechter als der alte Sprung, nicht besser.
+  if (!_movingMap) {
+    const eigen = _simPosJetzt();
+    if (eigen) {
+      const meinCs = (_meineCid != null) ? _meinCallsign() : null;
+      const marker = _eigenerSimMarker || (meinCs ? mapMarkers[meinCs] : null);
+      if (marker) marker.setLatLng([eigen.lat, eigen.lon]);
+    }
+  }
+}
+
 function _naviTakt(sofort) {
   if (!liveMap) return;
   // Auf einer verdeckten Karte ist jede Bewegung Arbeit ohne Wirkung (dieselbe Ueberlegung
   // wie in updateMap). `sofort` kommt vom Knopfdruck und geht auch dann durch.
-  if (!sofort && !_istSichtbar(liveMap.getContainer())) return;
+  //
+  // Gemerkt wird die Antwort, weil der feine Takt sie zehnmal je Sekunde braucht und sie
+  // dort nicht selbst holen soll (s. _kartenSichtbar).
+  _kartenSichtbar = _istSichtbar(liveMap.getContainer());
+  if (!sofort && !_kartenSichtbar) return;
 
   const eigen = _eigenePosition();
 
@@ -12012,9 +12096,15 @@ function _naviTakt(sofort) {
     }
   }
 
-  // 2. Alle anderen fortrechnen -- den eigenen Flieger ausdruecklich NICHT, solange der
-  //    Simulator meldet. Ihn erst auf den geschaetzten VATSIM-Punkt zu setzen und gleich
-  //    darauf zu korrigieren, waere genau das Zucken, das behoben werden soll.
+  // 2. Die Positionen -- im feinen Takt, nicht hier (s. _markerGleiten). Der Sekundentakt
+  //    stoesst ihn einmal mit an, damit ein Knopfdruck sofort wirkt und nicht bis zu
+  //    hundert Millisekunden auf den naechsten Durchgang wartet.
+  _markerGleiten();
+
+  // 2a. Kurs und Farbe der Symbole. Das bleibt ausdruecklich hier, einmal je Sekunde:
+  //     `setIcon` ersetzt das DOM-Element des Markers vollstaendig -- zehnmal je Sekunde
+  //     waere das die Dauerlast, gegen die der feine Takt so sparsam gebaut ist. Kurs und
+  //     Quelle aendern sich ohnehin nicht schneller als ein Sekundenraster.
   for (const cs in mapMarkers) {
     if (!Object.prototype.hasOwnProperty.call(mapMarkers, cs)) continue;
     // NUR das eigene Flugzeug ueberspringen -- es wird gleich aus _simPos gesetzt. Friesen
@@ -12023,8 +12113,6 @@ function _naviTakt(sofort) {
     if (_istEigenesFlugzeug(cs)) continue;
     const roh = _positionsRoh[cs];
     if (!roh) continue;
-    const p = _jetztGerechnet(roh);
-    mapMarkers[cs].setLatLng([p.lat, p.lon]);
     // Wer bewegt, muss auch drehen. Fuer einen Friesen mit Sim-Werten ruehrt updateMap
     // den Kurs bewusst nicht mehr an (VATSIM waere 29 Sekunden alt) -- und der Takt tat
     // es bisher auch nicht. Das Symbol behielt dadurch die Richtung, die es beim Anlegen
@@ -12044,16 +12132,6 @@ function _naviTakt(sofort) {
       mapMarkers[cs]._fsHeading = kurs;
       mapMarkers[cs]._fsBruegge = brueggeJetzt;
     }
-  }
-
-  // 2b. Fremdverkehr -- gleiche Rechnung, eigene Datenquelle. Auch hier gilt: Bewegt wird
-  //     NUR hier. Steht der Rohwert nicht (mehr) da, bleibt der Marker stehen, statt auf
-  //     eine geratene Position zu springen.
-  for (const cs in _verkehrMarker) {
-    const roh = _verkehrRoh[cs];
-    if (!roh) continue;
-    const p = _jetztGerechnet(roh);
-    _verkehrMarker[cs].setLatLng([p.lat, p.lon]);
   }
 
   // 3. Das eigene Flugzeug aus der Sim-Position -- die einzige Stelle, die es setzt.
@@ -12149,6 +12227,10 @@ function _eigenesFlugzeugZeichnen() {
     return;
   }
 
+  // Fortgerechnet, nicht roh -- dieselbe Behandlung wie fuer jedes andere Symbol
+  // (s. _simPosJetzt). Ohne das spraenge ausgerechnet der eigene Flieger im Meldetakt der
+  // EFB-Shell, waehrend alle anderen um ihn herum gleiten.
+  const pos = _simPosJetzt() || _simPos;
   const hdg = Math.round(Number(_simPos.hdg) || 0);
   const meinCs = _meineCid != null ? _meinCallsign() : null;
   const vatsimMarker = meinCs ? mapMarkers[meinCs] : null;
@@ -12156,7 +12238,7 @@ function _eigenesFlugzeugZeichnen() {
   if (vatsimMarker) {
     // Online: den vorhandenen Marker fuehren, den Eigenbau abraeumen.
     if (_eigenerSimMarker) { liveMap.removeLayer(_eigenerSimMarker); _eigenerSimMarker = null; }
-    vatsimMarker.setLatLng([_simPos.lat, _simPos.lon]);
+    vatsimMarker.setLatLng([pos.lat, pos.lon]);
     // Auch der Kurs kommt aus dem Sim: Sonst zeigt das Symbol in die Richtung von vor bis
     // zu 15 Sekunden, waehrend es an der richtigen Stelle steht.
     if (vatsimMarker._fsHeading !== hdg) {
@@ -12187,7 +12269,7 @@ function _eigenesFlugzeugZeichnen() {
   // Offline (oder noch nicht im VATSIM-Strom): eigener Marker.
   const beschriftung = _eigenLabel();
   if (!_eigenerSimMarker) {
-    _eigenerSimMarker = L.marker([_simPos.lat, _simPos.lon],
+    _eigenerSimMarker = L.marker([pos.lat, pos.lon],
                                  { icon: makeAircraftIcon(hdg), rotateWithView: true })
       .bindPopup('<div class="popup-callsign">DEIN FLUGZEUG</div>'
                + '<div class="popup-row">Quelle: <span>Simulator</span></div>', { maxWidth: 240 })
@@ -12199,7 +12281,7 @@ function _eigenesFlugzeugZeichnen() {
     _eigenerSimMarker._fsLabel = beschriftung;
     return;
   }
-  _eigenerSimMarker.setLatLng([_simPos.lat, _simPos.lon]);
+  _eigenerSimMarker.setLatLng([pos.lat, pos.lon]);
   if (_eigenerSimMarker._fsHeading !== hdg) {
     _eigenerSimMarker.setIcon(makeAircraftIcon(hdg));
     _eigenerSimMarker._fsHeading = hdg;
@@ -12330,6 +12412,27 @@ function _simPosFrisch() {
 }
 
 /**
+ * Die eigene Sim-Position, auf jetzt fortgerechnet -- oder null, wenn keine frische da ist.
+ *
+ * Bis zum 14.09.2026 wurde ausgerechnet das eigene Flugzeug als einziges NICHT fortgerechnet:
+ * `_simPos` galt als die genaue Wahrheit, und das stimmt auch -- fuer den Augenblick, in dem
+ * die Meldung ankam. Die EFB-Shell meldet aber hoechstens im Sekundentakt (ihr Herzschlag
+ * laeuft alle 2 Sekunden), und dazwischen stand das Symbol still. Im Kniebrett war damit das
+ * wichtigste Symbol auf der Karte das einzige, das sprang.
+ *
+ * Gerechnet wird nur die Position. Kurs, Hoehe und Fahrt bleiben, wie der Simulator sie
+ * gemeldet hat -- sie zu schaetzen gaebe es keinen Grund.
+ */
+function _simPosJetzt() {
+  if (!_simPosFrisch()) return null;
+  const g = _jetztGerechnet(_simPos);
+  const p = Object.assign({}, _simPos);
+  p.lat = g.lat;
+  p.lon = g.lon;
+  return p;
+}
+
+/**
  * Gehoert dieser Marker MIR -- und gilt fuer ihn die Sim-Position?
  *
  * Das ist die eine Stelle, an der entschieden wird, wem der eigene Marker gehoert. Sie ist
@@ -12413,6 +12516,12 @@ function _naviStarten() {
   // Zustand da -- ausgerechnet in dem Moment, in dem man sie zum ersten Mal sieht.
   _naviTakt(true);
   _naviTimer = setInterval(_naviTakt, 1000);
+  // Der zweite Zeitgeber bewegt nur die Symbole (s. _markerGleiten). Zwei Zeitgeber sind hier
+  // kein Widerspruch zum "EIN Zeitgeber fuer alles Bewegte" darueber: Der Sekundentakt bleibt
+  // die einzige Stelle, die die KARTE anfasst -- Drehung, Nachfuehrung, Symbole, Knoepfe.
+  // Dieser hier schreibt ausschliesslich Koordinaten auf vorhandene Marker und kann sich
+  // deshalb mit niemandem ins Gehege kommen.
+  _gleitTimer = setInterval(_markerGleiten, _GLEIT_TAKT_MS);
 }
 
 /**

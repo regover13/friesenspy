@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.38.0",
+    "date": "2026-09-14",
+    "highlight": false,
+    "title": "Die Flugzeuge gleiten jetzt wirklich über die Karte",
+    "items": [
+      "✈️ Die Symbole laufen flüssig, statt einmal pro Sekunde einen Satz nach vorn zu machen. Die Position wurde schon immer aus Kurs und Fahrt weitergerechnet — gezeichnet wurde sie aber nur im Sekundenraster, und genau das war der sichtbare Ruck. Je weiter du hineinzoomst, desto größer war der Sprung.",
+      "🛩️ Dein eigenes Flugzeug gleitet im Kniebrett jetzt mit. Es kam direkt aus dem Simulator und galt deshalb als genau — gemeldet wird aber höchstens im Sekundentakt, und dazwischen stand ausgerechnet das wichtigste Symbol auf der Karte still, während alle anderen um es herum liefen.",
+      "🌊 Türkise Flugzeuge mit FriesenBrügge profitieren am meisten: Ihre Position ist sekundengenau, und jetzt sieht man das auch — vorher kam die bessere Zahl an, wurde aber im selben groben Raster gezeichnet wie jede andere."
+    ]
+  },
+  {
     "version": "14.37.1",
     "date": "2026-09-13",
     "highlight": false,
