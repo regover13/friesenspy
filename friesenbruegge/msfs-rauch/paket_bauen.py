@@ -411,7 +411,9 @@ def main() -> None:
     simobjects_schreiben()
     definitionen_schreiben()
     print("\nJetzt bauen:")
-    print(r'  & "C:\MSFS 2024 SDK\Tools\bin\fspackagetool.exe" FriesenRauch.xml')
+    print(r"  .\bauen.ps1")
+    print("  ⚠ startet MSFS SICHTBAR im Baumodus und beendet es danach selbst.")
+    print("    Nicht aufrufen, waehrend jemand fliegt -- erst ansagen.")
 
 
 if __name__ == "__main__":
