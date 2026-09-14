@@ -1188,6 +1188,32 @@ def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
         partner = next((k for k in kandidaten if k.cid == cid), None)
         if partner is not None and bruegge.bleibt_plausibel(lat, lon, alt_ft, gs_kt, partner,
                                                             vs_wirksam):
+            # ⚠ ABER: Passt ein ANDERER deutlich besser? Dann meldet offensichtlich der.
+            #
+            # Am 14.09.2026 live vorgefuehrt: Zwei Piloten auf Wangerooge, 130 m
+            # auseinander, beide MSFS -- und beide Brueggen melden unter DERSELBEN Kennung
+            # `9e3711c100000000`, weil die MSFS-Fassung sie aus der Modul-Adresse und
+            # `rand()` ohne `srand()` baut. In WASM ist beides auf jedem Rechner gleich.
+            #
+            # `bleibt_plausibel` sagte brav ja: 130 m liegen unter der 400-m-Toleranz fuer
+            # ein stehendes Flugzeug. Der Server schrieb damit FRS49s Position unter FRS123s
+            # CID, mit null Verstoessen, und FRS123 verschwand von der Karte.
+            #
+            # Die Vorsprungsregel loest es: 1 m gegen 130 m ist eindeutig. Der Client-Fehler
+            # bleibt (die Kennung wird weiter geteilt), aber jede Meldung landet bei dem, der
+            # sie geschickt hat -- und das ohne ein einziges Client-Update.
+            anderer = bruegge.deutlich_besser(lat, lon, alt_ft, gs_kt, kandidaten, cid,
+                                              vs_wirksam)
+            if anderer is not None and cid_ist_authentifiziert(conn, anderer.cid):
+                _logger.info(
+                    "Bruegge: Kennung %s haengt um, %d -> %d (%.0f m gegen %.0f m)",
+                    kennung, cid, anderer.cid, anderer.abstand,
+                    bruegge.abstand_m(lat, lon, partner.lat, partner.lon))
+                bruegge_position_loeschen(conn, cid)
+                bruegge_zuordnung_setzen(conn, kennung, anderer.cid, simulator)
+                bruegge_zuordnung_bestaetigen(conn, kennung, lat, lon)
+                bruegge_vs_spitze_merken(conn, kennung, vs_ft_min)
+                return anderer.cid, True
             bruegge_zuordnung_bestaetigen(conn, kennung, lat, lon)
             bruegge_vs_spitze_merken(conn, kennung, vs_ft_min)
             return cid, True

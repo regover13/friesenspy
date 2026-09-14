@@ -1,5 +1,17 @@
 [
   {
+    "version": "14.39.1",
+    "date": "2026-09-14",
+    "highlight": false,
+    "title": "Zwei Piloten, eine Kennung — die FriesenBrügge verwechselte, wer meldet",
+    "items": [
+      "🐛 Behoben: Stehen zwei Piloten mit MSFS dicht beieinander, konnte die Meldung des einen unter der Kennung des anderen verbucht werden. Auf der Karte stand dann der eine exakt auf der Position des anderen.",
+      "🔍 Die Ursache liegt in der FriesenBrügge für MSFS: Sie baut ihre Kennung aus einer Speicheradresse und einem Zufallswert, und in einem WASM-Modul sind beide auf jedem Rechner gleich. Jede Installation erzeugt damit dieselbe Zeichenfolge.",
+      "🛡️ Der Server verlässt sich deshalb nicht mehr auf die Kennung allein: Passt ein anderer Pilot deutlich besser zur gemeldeten Position, hängt er die Meldung dorthin um. Das wirkt sofort für alle, auch ohne neue FriesenBrügge.",
+      "📍 Am 14.09.2026 auf Wangerooge gemessen: zwei Piloten, 130 m auseinander — das lag innerhalb der 400-Meter-Toleranz für stehende Flugzeuge, deshalb schlug die bisherige Prüfung nie an."
+    ]
+  },
+  {
     "version": "14.39.0",
     "date": "2026-09-14",
     "highlight": false,

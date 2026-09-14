@@ -219,6 +219,63 @@ def bleibt_plausibel(lat: float, lon: float, alt_ft: float, gs_kt: float,
     return abs(kandidat.alt_ft - (alt_ft or 0.0)) <= schranke_ft(vs_ft_min, PAARUNG_LOESEN_FAKTOR)
 
 
+def deutlich_besser(lat: float, lon: float, alt_ft: float, gs_kt: float,
+                    kandidaten: list[Kandidat], gemerkte_cid: int,
+                    vs_ft_min: float = 0.0) -> Kandidat | None:
+    """Passt ein ANDERER Kandidat deutlich besser als der gemerkte? Dann der, sonst ``None``.
+
+    ⚠ **DIE GEMERKTE KENNUNG IST KEIN BEWEIS, UND AM 14.09.2026 WAR SIE EINER ZU VIEL.**
+
+    `bleibt_plausibel` fragt nur: „Passt der Gemerkte noch?" Das genuegt, solange eine
+    Kennung einem Rechner gehoert. Sie tut es nicht, wenn sich zwei Brueggen dieselbe
+    teilen -- und genau das ist in MSFS der Fall: Dort erzeugt jede Installation dieselbe
+    Zeichenfolge `9e3711c100000000` (Adresse plus `rand()` ohne `srand()`, in WASM auf jedem
+    Rechner gleich). Gemessen an zwei Piloten auf Wangerooge:
+
+        Zuordnung  9e3711c100000000 -> 1642160 (FRS123)
+        gemeldet   53.787559/7.909491  <- das ist FRS49s Position, 130 m entfernt
+        Verstoesse 0
+
+    Die Toleranz fuer ein stehendes Flugzeug ist `PAARUNG_MIN_M` = 400 m. Wer naeher als das
+    beieinander steht, ist fuer den jeweils anderen plausibel -- und auf einem Flugplatz
+    stehen alle naeher beieinander. Bei einem Kieker-Event ist das der Normalfall, nicht die
+    Ausnahme.
+
+    **Deshalb wird auch bei gemerkter Kennung die Vorsprungsregel gefragt**, dieselbe wie bei
+    der Erstzuordnung: Ist ein anderer Kandidat mindestens um den Faktor `PAARUNG_VORSPRUNG`
+    naeher, meldet offensichtlich er. Im Fall oben 1 m gegen 130 m -- eindeutig.
+
+    Das behebt die geteilte Kennung nicht (das kann nur der Client), aber es sorgt dafuer,
+    dass JEDE Meldung dem zugeordnet wird, der sie tatsaechlich geschickt hat. Und es wirkt
+    fuer jede Bruegge da draussen, ohne dass jemand etwas installieren muss.
+    """
+    max_m = schranke_m(gs_kt, PAARUNG_FAKTOR)
+    max_ft = schranke_ft(vs_ft_min, PAARUNG_FAKTOR)
+
+    gemerkt_m = None
+    beste: Kandidat | None = None
+    for k in kandidaten:
+        if abs(k.alt_ft - (alt_ft or 0.0)) > max_ft:
+            continue
+        m = abstand_m(lat, lon, k.lat, k.lon)
+        if k.cid == gemerkte_cid:
+            gemerkt_m = m
+            continue
+        if m > max_m:
+            continue
+        if beste is None or m < beste.abstand:
+            k.abstand = m
+            beste = k
+
+    if beste is None:
+        return None
+    # Der Gemerkte ist gar nicht mehr in der Liste (ausgeloggt): Das regelt der Aufrufer
+    # ueber `partner is None`, nicht diese Funktion -- hier wird nur VERGLICHEN.
+    if gemerkt_m is None:
+        return None
+    return beste if beste.abstand <= gemerkt_m * PAARUNG_VORSPRUNG else None
+
+
 def ist_sprung(lat: float, lon: float, vor_lat: float | None, vor_lon: float | None,
                sekunden: float = 1.0, gs_kt: float = 0.0) -> bool:
     """Ist die Position gegenüber der vorigen gesprungen?
