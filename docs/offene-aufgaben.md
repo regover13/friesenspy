@@ -74,100 +74,73 @@ EDLA, EDQA, EDNG, EDQC, EDRB, EDLP, dazu EDDN/EDDS) wurden beim maschinellen Pas
 die Längenmessung verfälschten (EDDV: 2784 m für eine 2340-m-Bahn). Von Hand ist das kein
 Hindernis — man klickt die Schwellen, statt sie zu messen.
 
-## Robben für den Kieker: Anfrage an Superspud — ✉ VERSCHICKT (13.09.2026)
+## ✅ Robben für den Kieker — eigenes Modell, erledigt am 14.09.2026
 
-> **Der Nutzer hat die Anfrage abgeschickt.** Was jetzt zu tun ist: **auf die Antwort warten**
-> — nichts vorbereiten, nichts bauen, nichts entscheiden. Der Text unten bleibt stehen, damit
-> nachvollziehbar ist, was genau gefragt wurde.
->
-> **Und es eilt nicht:** Der Weg über die Abhängigkeit funktioniert bereits. Die Brügge nennt
-> nur den Titel `ahqa seal moving`; wer Superspuds Paket installiert hat, bekommt die Robbe,
-> wer nicht, bekommt einen sauberen Fehler statt eines falschen Tieres. **Einen Titel zu
-> nennen ist keine Weitergabe** — eine Erlaubnis wird erst gebraucht, wenn ein Modell
-> mitgeliefert werden soll.
->
-> ⚠ **Dasselbe gilt für alle anderen Addon-Objekte** (SayIntentions-Rauch, p42-Fackeln,
-> Campout-Zubehör): Sie im Katalog zu führen und ihre Titel zu nennen ist unbedenklich; sie in
-> ein eigenes Paket zu kopieren wäre es nicht. Bei SayIntentions wiegt das besonders schwer —
-> das ist ein Abo-Dienst, und die README erlaubt nichts dergleichen.
+**Es gibt in KEINEM der beiden Simulatoren eine Robbe.** Das ist keine Vermutung mehr,
+sondern das Ergebnis von vier Durchgängen:
 
-## Die ursprüngliche Vormerkung (12.09.2026)
+| durchsucht | Ergebnis |
+|---|---|
+| MSFS 2020/2024 — 45 Tiertitel und 41 Tierpakete | nichts |
+| MSFS — 2642 Titel aus den gestreamten `.fsarchive` | nichts |
+| X-Plane 12 — alle 1146 Bordobjekte | nichts |
+| X-Plane — die Szeneriebibliothek | nichts |
 
-**Der Nutzer verschickt die Anfrage, nicht Claude.** Kontaktformular auf
-https://flightsim.to/addon/33166/animated-humans-library (Autor: *Superspud*). Der fertige
-Text steht unten.
+Damit ist auch die Reihenfolge hinfällig, die hier bis zum 14.09.2026 stand
+(*„Abhängigkeit jetzt, fragen parallel, eigenes Modell nur wenn nötig"*). Sie ging von
+einer Annahme aus, die sich als falsch erwies: **Superspuds `human-library-animated` ist
+ein MSFS-Paket.** Für das Drittel der Gruppe, das X-Plane fliegt, hätte es nie etwas
+gelöst — und genau dieses Drittel ist der Grund, warum die Brügge überhaupt zwei
+Simulatoren spricht.
 
-**Ausgangslage:** Weder MSFS 2020 noch 2024 bringt eine Robbe mit. Superspuds Community-Paket
-`human-library-animated` hat sie als SimObject (`ahqa seal moving` u. a.), und dass sich ein
-Community-Titel zur Laufzeit setzen lässt, ist seit dem 12.09.2026 belegt (Screenshot,
-`friesenbruegge/MESSLISTE.md` Abschnitt 8). Gattung `robbe` ist ab Brügge 1.4.0 eingebaut,
-Server und Admin nehmen sie seit v14.31.0.
+**Die Anfrage an ihn ist ins Leere gelaufen:** Der Autor war zuletzt vor rund einem Jahr
+online (die Addon-Seite nennt Version 1.4 vom Oktober 2025, und der Nutzer hat es am
+14.09.2026 selbst nachgesehen). Auf eine Antwort zu warten, war kein Weg.
 
-**Die beschlossene Reihenfolge — sie verschwendet keine Arbeit:**
+### Was stattdessen entstanden ist
 
-1. **Jetzt: Abhängigkeit.** Die Brügge nennt nur den Titel; das ist keine Weitergabe und
-   braucht keine Erlaubnis. Damit lässt sich der Kieker vollständig bauen und testen. Preis:
-   556 MB Fremdpaket, von Hand installiert, bei rund 200 Mitgliedern. Wer es nicht hat,
-   erzeugt `EXCEPTION_22` — sichtbar in `bruegge_steht` und im Admin, also vorher prüfbar.
-2. **Parallel: fragen.** Sagt er ja, schrumpft der Download auf unter ein Megabyte (drei
-   SimObjects à ~320 KB), mit seinem Namen im Paket.
-3. **Eigenes Modell nur, wenn nötig** — also wenn er nein sagt UND die 556 MB nachweislich
-   Leute abhalten. Es käme als **zweiter Titel hinter seinen**, nicht an seine Stelle: Wer sein
-   Addon hat, bekommt die animierte Robbe, alle anderen unsere. Ein Rückfall auf eine andere
-   **Art** (Bär, Schaf) bleibt ausgeschlossen — gezählt wird eine bestimmte Art.
+Ein eigener Seehund, aus **„Walrus" von Poly by Google** ([poly.pizza/m/5T7nIjx9ekP](https://poly.pizza/m/5T7nIjx9ekP)),
+Lizenz **CC BY 3.0** — Änderung und Weitergabe ausdrücklich erlaubt, Bedingung ist allein
+die Namensnennung. Von vier freien Modellen ausgewählt, weil es als einziges **flach
+liegt**; die beiden „Sea lion" sitzen aufrecht wie im Zoo. Die Pose entscheidet, nicht der
+Dateiname — und von oben wird gezählt.
 
-⚠ **Ein eigenes Modell gehört NICHT ins Git-Repo** — es ist öffentlich. Der Weg wäre der des
-Kniebrett-ZIP: Datei auf dem VPS, nicht in git. Und technisch schützen lässt sich ein
-Community-Paket nicht (jedes `.gltf`/`.dds` ist lesbar); was hilft, ist ein Fingerabdruck im
-Modell (unbenutzter Knoten, Copyright im `asset`-Block) plus `creator: devprops` im Manifest —
-damit ist ein Diebstahl beweisbar, nicht verhindert.
+Drei Größen nach den Angaben der Seehundstation Norddeich und des Deutschen Jagdverbands:
+Bulle 1,80 m, Kuh 1,60 m, Heuler 0,85 m. Eine Liegegruppe besteht aus allen dreien; zwanzig
+gleich große Tiere sähen von oben nach Tapete aus.
 
-### Der Anfragetext (fertig zum Kopieren)
+Alles Weitere — Bauskripte, Fallen, Maße — steht in
+[`friesenbruegge/seehund/LIESMICH.md`](../friesenbruegge/seehund/LIESMICH.md).
 
-> **Subject:** Permission request — using 3 SimObjects from Animated Humans Library in a small
-> non-commercial group package
->
-> Hi Superspud,
->
-> first of all: thank you for Animated Humans Library. We have been using it for a while — our
-> little scenery addon "Counting Seals" places your animals as library objects along the East
-> Frisian Islands, and your package is listed as its dependency.
->
-> I am writing because of a new, non-commercial project for our virtual flying group
-> (FriesenFlieger, around 200 members). We are building an event in which pilots fly along the
-> Wadden Sea coast and count seal colonies from the air. Unlike the scenery addon, this one
-> places the animals **at runtime** via SimConnect (`AICreateSimulatedObject`), because the
-> colonies differ from event to event.
->
-> That is where we hit a wall: **MSFS simply has no seals.** We went through the entire stock
-> inventory of both MSFS 2020 (45 animal titles) and MSFS 2024 (41 animal packages) — there is
-> no seal, sea lion or walrus anywhere. Your library is the only source we could find, and your
-> `ahqa seal moving` works beautifully as a SimObject: we set one yesterday and it looked
-> exactly right.
->
-> **My question:** would you allow us to include three of your SimObjects — `ahqa seal moving`,
-> `ahqa sea lion moving`, `ahqa walrus moving` (model, texture and sim.cfg, roughly 320 KB
-> each) — in a small package of our own, handed out to the members of our group?
->
-> What we would do in return, or differently, entirely as you prefer:
->
-> - full credit with your name and a link to this page, in the package manifest, in our
->   changelog and on the download page
-> - no public upload anywhere — the file would go to our members only, not onto flightsim.to or
->   any other site
-> - any condition you want to attach, and we remove it immediately if you ever change your mind
->
-> And if you would rather not, that is completely fine — no hard feelings. In that case we will
-> keep referring to your titles and simply ask our members to install your library themselves.
-> It works, it just means a 556 MB download for people who only need one animal, so we thought
-> it was worth asking first.
->
-> Thanks either way, and thanks for making animals that actually move.
->
-> Best regards,
-> Tobias (devprops) — FriesenFlieger
+### ⚠ Was noch offen ist
 
----
+**Im Simulator gesehen hat das Modell niemand.** Weder in MSFS noch in X-Plane. Drei Dinge
+können stumm schiefgehen, und keines davon lässt sich ohne Simulator prüfen:
+
+- die Textur greift nicht → grauer oder schwarzer Seehund
+- die Achsen stimmen nicht → liegt auf der Seite oder steckt im Boden
+- `minSize="0"` und `DistanceToNotAnimate` wirken nicht → aus 200 ft unsichtbar
+
+⚠ **`DistanceToNotAnimate=2000` ist gesetzt, aber der Mechanismus ist beim Seehund
+ungeprüft.** Beim Rauch gibt es einen nachvollziehbaren Zusammenhang — ein Partikel-Emitter
+läuft ohne Animation nicht. Ein Seehund ist starre Geometrie; es gibt daran nichts zu
+animieren. Der Wert steht dort, weil Aerosofts Wangerooge-Paket ihn bei **allen** SimObjects
+setzt, nicht weil seine Wirkung belegt wäre.
+
+⚠ **Und was ein animiertes Objekt über große Entfernung kostet, ist ungemessen.** Bei einer
+Handvoll Baaken egal — bei hundert Seehunden gehört es gemessen, bevor der Kieker Kolonien
+setzt.
+
+### Was von der alten Fassung gilt
+
+⚠ **Für alle übrigen Addon-Objekte bleibt es dabei** (SayIntentions-Rauch, p42-Fackeln,
+Campout-Zubehör, und weiterhin Superspuds Tiere): Sie im Katalog zu führen und ihre Titel zu
+nennen ist unbedenklich; sie in ein eigenes Paket zu kopieren wäre es nicht. **Einen Titel zu
+nennen ist keine Weitergabe.** Bei SayIntentions wiegt das besonders schwer — das ist ein
+Abo-Dienst, und die README erlaubt nichts dergleichen.
+
+Superspuds Titel stehen weiterhin in der Art `robbe`, aber **hinter** unseren: Wer sein
+Addon hat, bekommt als Zugabe die animierte Robbe; alle anderen brauchen nichts weiter.
 
 ## X-Plane mitdenken (vorgemerkt 11.09.2026)
 

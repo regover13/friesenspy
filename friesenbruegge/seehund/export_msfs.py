@@ -130,7 +130,20 @@ def schreiben() -> None:
         dateien = sorted(p.name for p in modell.iterdir())
         print(f"  {kennung:22} {masse[1]:.2f} m   {', '.join(dateien)}")
 
-    teile += ["[General]", "category=StaticObject", ""]
+    # ⚠ `DistanceToNotAnimate` -- gefunden am 14.09.2026 am Rauch, uebernommen.
+    # Das Vorbild liegt auf demselben Rechner und fuer denselben Flugplatz: Aerosofts
+    # Wangerooge-Paket setzt in JEDEM SimObject `DistanceToNotAnimate=2000`, auch bei den
+    # Windsaecken und der Objektbibliothek. Unsere sim.cfg hatte nur `category`.
+    #
+    # ⚠ ABER DER MECHANISMUS IST BEIM SEEHUND UNGEPRUEFT, und das gehoert dazugesagt: Am
+    # Rauch ging es um einen Partikel-EMITTER, der ohne Animation nicht laeuft. Ein
+    # Seehund ist starre Geometrie -- es gibt daran nichts zu animieren. Ob der Wert hier
+    # ueberhaupt etwas bewirkt, zeigt erst der Simulator.
+    #
+    # 2000 m, nicht 15000 wie beim Rauch: Eine Rauchsaeule ist eine Baake und soll von
+    # weitem zum Hinfliegen einladen. Eine Robbe wird GEZAEHLT, nicht gesucht -- aus 200 ft
+    # sieht man ohnehin keine 15 km weit, und was nichts bringt, soll auch nichts kosten.
+    teile += ["[General]", "category=StaticObject", "DistanceToNotAnimate=2000", ""]
     schreib(QUELLE / "sim.cfg", "\n".join(teile))
     print(f"  sim.cfg mit {len(bauen.GROESSEN)} Eintraegen, category=StaticObject")
 

@@ -165,8 +165,11 @@ find "$P" -path "*SimObjects/Animals/*" -name "sim.cfg" \
 ⚠ **Keine Robben, keine Seehunde** — nicht im Bordbestand. Für den FriesenKieker ist das der
 wichtigste Eintrag dieser Liste: Was gezählt werden soll, bringt der Simulator nicht mit.
 `devprops-counting-seals-frisian-islands` löst das über **Szenerie**-Objekte (BGL), nicht über
-SimObjects — und Szenerie lässt sich nicht zur Laufzeit setzen. **Aber es gibt sie als
-SimObject in einem Community-Paket — s. Abschnitt „Robben" unten.**
+SimObjects — und Szenerie lässt sich nicht zur Laufzeit setzen.
+
+⭐ **Seit dem 14.09.2026 bringt die Brügge einen eigenen Seehund mit** — s. Abschnitt
+„Robben" unten. Der Befund gilt inzwischen breiter als diese Liste: Auch in den **2642
+gestreamten Titeln** (`fsarchive.py`) und in X-Planes gesamtem Bestand gibt es keine.
 
 **Boote (14):** `Boat01`, `Boat02`, `CargoContainer01`, `CargoGas01`, `CargoOil01`,
 `CargoShip01`, **`CruiseShip01`**, `CruiseShip02`, `FishingBoat`, `FishingShip02`,
@@ -223,7 +226,30 @@ Ausnahme der nächste Titel nach.
 
 ---
 
-## Robben — ✅ gesetzt und gesehen (12.09.2026), aus dem Community-Ordner
+## Robben — ⭐ seit dem 14.09.2026 EIGENES MODELL
+
+> ### Die Lage hat sich gedreht, und zwar aus einem Grund, der lange übersehen wurde
+>
+> Bis zum 14.09.2026 hing die Art `robbe` vollständig an Superspuds Community-Paket. Der
+> Plan war: Abhängigkeit jetzt, ihn um Erlaubnis fragen, eigenes Modell nur im Notfall.
+>
+> **Sein Paket ist ein MSFS-Paket.** Für das Drittel der Gruppe, das X-Plane fliegt, hätte
+> es nie etwas gelöst — und dieses Drittel ist der Grund, warum die Brügge überhaupt zwei
+> Simulatoren spricht. Die Frage war also nie „eigenes Modell oder seins", sondern nur
+> „wann".
+>
+> Dazu kam: **Es gibt in keinem der beiden Simulatoren eine Robbe.** Vier Durchgänge —
+> MSFS' 45 Tiertitel und 41 Tierpakete, die 2642 Titel aus den gestreamten `.fsarchive`,
+> X-Planes 1146 Bordobjekte, dessen Szeneriebibliothek. Und die Anfrage an Superspud lief
+> ins Leere; er war zuletzt vor rund einem Jahr online.
+>
+> **Seit dem 14.09.2026 gibt es einen eigenen Seehund** in drei Größen, für beide
+> Simulatoren, aus „Walrus" von Poly by Google unter CC BY 3.0. Einzelheiten in
+> [`seehund/LIESMICH.md`](seehund/LIESMICH.md).
+>
+> Superspuds Titel stehen weiterhin in der Art — aber **hinter** unseren: Wer sein Addon
+> hat, bekommt als Zugabe die animierte Robbe. Alles darunter gilt unverändert und bleibt
+> stehen, weil es die Ausgangslage erklärt.
 
 Beide Simulatoren bringen keine mit. **Ein Community-Paket schon**, und zwar in genau der Form,
 die `AICreateSimulatedObject` braucht — nicht als Szenerie:

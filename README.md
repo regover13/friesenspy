@@ -592,6 +592,22 @@ Prüfergebnis**, weiß also, was tatsächlich funktioniert, und schickt gar nich
 nachweislich scheitert. Im Flug belegt: Ein Windrad steht im Simulator, obwohl keine einzige
 Brügge weiß, was ein Windrad ist. Ältere Brüggen laufen unverändert weiter.
 
+#### Zwei Modelle bringt sie selbst mit
+
+Fast alles, was die Brügge setzt, liegt im Simulator schon — sie nennt nur den Titel. Zwei
+Dinge gab es nirgends, und die entstanden deshalb hier:
+
+**Die Rauchsäulen** (sechs Farben, 90 m hoch). Es gibt keine Freeware-Rauchsäule, die man
+mitliefern dürfte — alle sind als Abhängigkeit gedacht, und der Nutzer wollte ausdrücklich,
+dass niemand ein Fremdpaket braucht.
+
+**Der Seehund** in drei Größen (Bulle 1,80 m, Kuh 1,60 m, Heuler 0,85 m). **Es gibt in
+keinem der beiden Simulatoren eine Robbe** — durchsucht sind MSFS' 45 Tiertitel und 41
+Tierpakete, die 2642 Titel aus den gestreamten `.fsarchive`, X-Planes 1146 Bordobjekte und
+dessen Szeneriebibliothek. Grundlage ist „Walrus" von **Poly by Google** unter **CC BY 3.0**,
+bearbeitet; die Namensnennung liegt im Paket. Einzelheiten in
+[`friesenbruegge/seehund/LIESMICH.md`](friesenbruegge/seehund/LIESMICH.md).
+
 Die Unterlagen liegen im Ordner selbst: [`PROTOKOLL.md`](friesenbruegge/PROTOKOLL.md) (der
 Vertrag), [`MESSLISTE.md`](friesenbruegge/MESSLISTE.md) (was im Simulator gemessen ist und was
 nicht), [`OBJEKTE.md`](friesenbruegge/OBJEKTE.md) (welche Modelle es je Simulator überhaupt

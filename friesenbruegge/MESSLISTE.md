@@ -91,6 +91,43 @@ läuft FRS61 weiter, ohne etwas herunterzuladen.
 
 ---
 
+## ⭐ NEU UND UNGEPRÜFT: der eigene Seehund (14.09.2026)
+
+**In keinem Simulator gesehen.** Das Modell ist gebaut, in beide Pakete eingebaut und auf
+dem Server der Art `robbe` zugeordnet — für MSFS **und** X-Plane. Was es leistet, weiß
+niemand.
+
+Anfordern lässt es sich über den Admin, Art `robbe`. In MSFS heißen die Titel
+`FrsSeehund_Kuh` / `_Bulle` / `_Heuler`, in X-Plane liegen sie unter
+`Resources/plugins/FriesenBruegge/objekte/seehund_*.obj`.
+
+**Drei Dinge können stumm schiefgehen** — das Modell erscheint dann nicht, wie es soll,
+ohne eine einzige Fehlermeldung:
+
+| Frage | woran man es erkennt |
+|---|---|
+| Greift die Textur? | grauer oder schwarzer Seehund statt graubraun |
+| Stimmen die Achsen? | liegt auf der Seite oder steckt im Boden |
+| Wirken `minSize="0"` und `DistanceToNotAnimate`? | aus 200 ft nicht zu sehen |
+
+⚠ **`DistanceToNotAnimate=2000` ist gesetzt, aber ungeprüft — und zwar anders ungeprüft als
+beim Rauch.** Dort gibt es einen nachvollziehbaren Zusammenhang: Ein Partikel-Emitter läuft
+ohne Animation nicht. Ein Seehund ist starre Geometrie; es gibt daran nichts zu animieren.
+Der Wert steht dort, weil Aerosofts Wangerooge-Paket ihn bei **allen** SimObjects setzt,
+nicht weil seine Wirkung belegt wäre. Bleibt der Seehund aus der Luft unsichtbar, ist er
+**nicht** die Ursache — dann liegt es am LOD oder am Modell selbst.
+
+### Und zwei Dinge, die nur im Flug zu beantworten sind
+
+1. **Aus welcher Entfernung ist ein Seehund erkennbar?** Gerechnet sind es aus 200 ft rund
+   30 Pixel schräg voraus und 55 senkrecht darunter — gemessen ist nichts. Davon hängt ab,
+   wie eng der Kieker seine Kolonien setzen darf.
+2. **Was kosten viele?** Ein Objekt mit `DistanceToNotAnimate=2000` wird auch dann
+   mitgeführt, wenn niemand hinsieht. Bei einer Handvoll egal — eine Kolonie sind zwanzig,
+   und ein Event mehrere Kolonien. Vor dem ersten Kieker gehört das gemessen.
+
+---
+
 ## ✅ 30 s SIND ABGENOMMEN — und X-Plane ist es ganz (14.09.2026)
 
 Beide Simulatoren im Flug gesehen, bei **10 kt** Wind. Sein Urteil:
