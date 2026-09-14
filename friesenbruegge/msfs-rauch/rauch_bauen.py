@@ -98,7 +98,16 @@ FARBEN = {
 # hundert gesetzten Objekten gehoert es gemessen (s. MESSLISTE).
 #
 # Der Nutzer wollte 10 km. 15000 laesst Luft.
-MAX_SICHT_M = 15000.0
+# ⚠ MESSREIHE, NOCH NICHT ABGESCHLOSSEN (14.09.2026):
+#
+#     eingestellt   wirksam
+#      2000 (Vorgabe)  1830 m   passt 1:1
+#     15000            6480 m   nur 43 %  <- unerklaert
+#     50000            ?        <- dieser Versuch
+#
+# Bleibt es bei 6480 m, gibt es eine harte Schranke, die die Doku nicht nennt. Waechst es
+# mit, wirkt der Wert -- nur nicht linear, und dann laesst sich der Faktor ausrechnen.
+MAX_SICHT_M = 50000.0
 
 LEBENSDAUER_S = 30.0
 # Am 14.09.2026 von 22 auf 30 gesetzt -- Nutzerentscheidung im Flug, nachdem er beide

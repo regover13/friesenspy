@@ -23,7 +23,11 @@ $werkzeug = "C:\MSFS 2024 SDK\Tools\bin\fspackagetool.exe"
 if (-not (Test-Path $werkzeug)) { throw "fspackagetool nicht gefunden: $werkzeug" }
 
 function Raeum-Auf {
-    Get-Process fspackagetool, FlightSimulator2024, gamelaunchhelper -ErrorAction SilentlyContinue |
+    # ⚠ VIER PROZESSE, NICHT DREI. gamingservicesui fehlte bis zum 14.09.2026 -- das ist
+    # der Xbox-Startbildschirm, der als Fenster "Microsoft Flight Simulator 2024" stehen
+    # bleibt, nachdem alles andere weg ist. Der Nutzer musste ihn jedes Mal von Hand
+    # schliessen ("er ist immer noch da!!").
+    Get-Process fspackagetool, FlightSimulator2024, gamelaunchhelper, gamingservicesui -ErrorAction SilentlyContinue |
         Stop-Process -Force -ErrorAction SilentlyContinue
 }
 
