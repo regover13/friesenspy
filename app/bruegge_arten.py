@@ -185,18 +185,45 @@ ARTEN: dict[str, tuple[str, dict[str, list]]] = {
                      XP_APT + "Dynamic_Vehicles/TUG_MA30.obj",
                      XP_APT + "Dynamic_Vehicles/crew_car.obj"],
     }),
-    "boot_klein": ("Ein kleines Boot", {
+    "boot_klein": ("Ein kleines Boot -- Segler, Motorboot, Kajuetboot bis rund 20 m", {
         "msfs2020": ["Boat01", "Boat02", "FishingBoat", "Yacht01"],
         "xplane12": [XP + "dynamic/SailBoat.obj", XP + "ships/Sail_1000_01.obj",
                      XP + "ships/Runabout_750_01.obj",
                      # "Dinghy Deaktivieren" -- ein Schlauchboot ist aus der Luft nichts.
                      (XP + "ships/Dinghy_400_01.obj", AUS)],
     }),
-    "boot_gross": ("Ein Schiff", {
+    # ⚠⚠ HIER VERSPRACH DIE ART IN BEIDEN SIMULATOREN DASSELBE UND LIEFERTE ZWEIERLEI --
+    # Faktor 15 in der Laenge. Der Nutzer sah es im Flug: "Warum habe ich lauter
+    # Kreuzfahrtschiffe in MSFS und nicht in xplane" (14.09.2026).
+    #
+    # Die Ursache ist eine Namensverwechslung. X-PLANE SCHREIBT DIE LAENGE IN ZENTIMETERN
+    # IN DEN DATEINAMEN: `Sail_1000` ist ein 10-m-Segler, `Runabout_750` ein 7,5-m-Motorboot
+    # und `Cruiser_1900` ein 19-m-KAJUETBOOT. "Cruiser" heisst dort Kabinenkreuzer, nicht
+    # Kreuzer -- waehrend MSFS' `CruiseShip01` ein echtes Kreuzfahrtschiff von rund 290 m ist.
+    #
+    # Grosse Schiffe hat X-Plane sehr wohl, und bei DENEN ist die Zahl die Laenge in METERN.
+    # Sie liegen nur woanders, und das ist der eigentliche Grund, warum sie niemand fand:
+    #
+    #     ships/Cruiser_1900_01.obj           <- fertiges Objekt, eine Datei
+    #     ships/parts/BulkCarrier_342A_*.obj  <- BAUSTEINE der Szeneriebibliothek
+    #
+    # Ein Frachter entsteht dort aus `_BaseModel` + `_Static_Add` + `_Flags` + `_Dynamic_Add`,
+    # zusammengesetzt ueber die library.txt. Fuer uns zaehlt die Ausnahme: `_StaticOnly`
+    # traegt das GANZE Schiff in einer Datei -- davon gibt es genau zwei (190B und 342A).
+    #
+    # ⚠ UNGEMESSEN, ob `XPLMLoadObject` ein Objekt aus `parts/` ueberhaupt laedt -- dieselbe
+    # offene Frage wie beim Autogen (Windrad, Leuchtturm). DESHALB BLEIBEN DIE CRUISER ALS
+    # RUECKFALL auf Rang 5/6: Laedt ein Baustein nicht, meldet X-Plane einen Fehlschlag, die
+    # Bruegge rueckt nach, und es steht wie bisher ein Kajuetboot da statt gar nichts.
+    "boot_gross": ("Ein Schiff -- Kreuzfahrer oder Frachter, ueber 150 m", {
         "msfs2020": ["CruiseShip01", "CruiseShip02", "CargoShip01"],
         # "Dynamic Perry wuerde ich schon direkt deaktivieren. Das ist ein Kriegsschiff."
-        # Die beiden Cruiser sind Kajuetboote (19 m), keine Kreuzer.
-        "xplane12": [XP + "ships/Cruiser_1900_01.obj", XP + "ships/Cruiser_1200_01.obj",
+        "xplane12": [XP + "ships/parts/BulkCarrier_342A_StaticOnly.obj",      # 342 m
+                     XP + "ships/parts/BulkCarrier_190B_StaticOnly.obj",      # 190 m
+                     XP + "ships/parts/ContainerCarrier_399A_BaseModel.obj",  # 399 m
+                     XP + "ships/parts/BulkCarrier_155A_BaseModel.obj",       # 155 m
+                     XP + "ships/Cruiser_1900_01.obj",                        # 19 m, Rueckfall
+                     XP + "ships/Cruiser_1200_01.obj",                        # 12 m, Rueckfall
                      (XP + "dynamic/Perry.obj", AUS)],
     }),
 
