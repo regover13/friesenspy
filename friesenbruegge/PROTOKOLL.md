@@ -3,16 +3,20 @@
 **Der Vertrag zwischen dem FriesenSpy-Server und einer Brügge im Simulator.**
 Verbindlich für alle Umsetzungen — MSFS 2020, MSFS 2024, X-Plane 12.
 
-> Stand 14.09.2026 · Protokollfassung **2** · ✅ **im Flug abgenommen** — Server und MSFS-Brügge umgesetzt
+> Stand 14.09.2026 · Protokollfassung **2** · ✅ **im Flug abgenommen** — Server, MSFS **1.8.0** und X-Plane **1.2.0**
 >
 > **Fassung 2 (14.09.2026):** Der Server schickt die Titel mit (`arten`), die Brügge führt
 > keine eigene Tabelle mehr — und `kann` fällt weg. Fassung 1 wird weiter bedient; die
 > Änderung ist von beiden Seiten aus rückwärtsverträglich (Abschnitt 9).
 >
-> ⭐ **Im Flug belegt** (Wangerooge, MSFS 2024, Brügge 1.8.0): Ein **`windrad`** steht
-> sichtbar im Simulator — eine Art, die es in **keiner** Brügge-Fassung gibt. Sie entstand am
-> selben Tag auf dem Server, und die Brügge hat sie hingestellt, ohne zu wissen, was ein
-> Windrad ist. **Eine neue Art kostet damit kein Client-Release mehr.**
+> ⭐ **In beiden Simulatoren im Flug belegt** (14.09.2026): Ein **`windrad`** steht sichtbar
+> da — eine Art, die es in **keiner** Brügge-Fassung gibt. Sie entstand am selben Tag auf dem
+> Server, und die Brügge hat sie hingestellt, ohne zu wissen, was ein Windrad ist.
+> **Eine neue Art kostet damit kein Client-Release mehr.**
+>
+> Die Gegenprobe gleich mit: Dieselbe Anforderung an eine **alte** X-Plane-Brügge (1.1.0, ihre
+> eigene Tabelle) ergab `GATTUNG_UNBEKANNT`, während `tier_gross` dort weiter stand. Beide
+> Richtungen der Abwärtsverträglichkeit sind damit gemessen, nicht behauptet.
 > Grundlage: GitHub-Issue [#25](https://github.com/regover13/friesenspy/issues/25) und die
 > Probeflüge in [`probe-msfs/ERGEBNIS.md`](probe-msfs/ERGEBNIS.md) und
 > [`probe-xplane/ERGEBNIS.md`](probe-xplane/ERGEBNIS.md).

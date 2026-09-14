@@ -53,6 +53,37 @@ die Tabelle nennt das Alter.
 Arbeitsordner, während im Simulator 1.1.0 lief — der Probeflug hätte getestet, was sich
 nicht geändert hat. Behoben: Installieren ist jetzt die Vorgabe, `-NurBauen` die Ausnahme.
 
+### ✅ X-Plane 1.2.0 gleich mit — und der Autogen-Befund
+
+Dieselben drei Anforderungen, zweimal gestellt: einmal an die alte **1.1.0** mit ihrer
+eigenen Tabelle, dann an die neue **1.2.0**, die keine mehr hat.
+
+| Art | alte 1.1.0 | neue 1.2.0 | gesehen |
+|---|---|---|---|
+| `tier_gross` | steht, 1335,8 ft | steht, 1324,3 ft | ✅ **„hirsch ist da"** |
+| `windrad` | **GATTUNG_UNBEKANNT** | steht, 1327,2 ft | ✅ **„windrad ist da"** |
+| `leuchtturm` | **GATTUNG_UNBEKANNT** | steht, 1320,0 ft | ✅ **„leuchtturm ist da"** |
+
+**Die linke Spalte ist der Beweis in die andere Richtung:** Eine Fassung-1-Brügge läuft am
+neuen Server unverändert weiter (`tier_gross` steht) — aber alles, was nicht in ihrer
+Tabelle steht, bleibt ihr verschlossen. Genau das war der Grund für den Umbau, und genau so
+läuft FRS61 weiter, ohne etwas herunterzuladen.
+
+> ### ⭐ AUTOGEN-OBJEKTE LASSEN SICH LADEN UND WERDEN GEZEICHNET
+>
+> **Das war vorher völlig offen** und ist der wertvollste Befund des Abends. Windrad und
+> Leuchtturm liegen beide unter `Resources/default scenery/1000 autogen/US/industrial/` —
+> einem Zweig, den `katalog_sammeln.py` bewusst ausspart („Autogen-Bausteine — die gehören
+> in eine Szenerie, nicht an eine Kieker-Station").
+>
+> Die Begründung stimmt für Bänke und Gartentische. Für **64 Leuchttürme**
+> (`lighthouse_13` bis `lighthouse_64` — die Zahl ist die Höhe in Metern), Windräder, Tanks,
+> Masten und Schornsteine stimmt sie nicht.
+>
+> **Damit lohnt sich der Sammellauf**, der bisher nur eine Vermutung war: `airport scenery/`
+> (333 Fahrzeuge, darunter `fire_truck_small_1.obj`) und `1000 autogen/US/industrial/`.
+> Beides steht in `docs/offene-aufgaben.md`.
+
 ### Offen geblieben
 
 - **X-Plane 1.2.0 ist ungemessen.** Sie war beim Probeflug nicht installiert; die Datei ist

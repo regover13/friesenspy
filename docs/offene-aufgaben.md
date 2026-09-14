@@ -81,9 +81,13 @@ Kategorie `Airplanes` sind Sitze (`SEAT_*`), keine Flugzeuge.
 - **X-Plane `airport scenery/`** — 333 Fahrzeuge, darunter `fire_truck_small_1.obj`.
   `katalog_sammeln.py` lässt den Zweig bewusst aus („gehören in eine Szenerie"); das war eine
   Geschmacksentscheidung, keine technische Schranke.
-- **X-Plane `1000 autogen/US/industrial/`** — Windräder (schon zugeordnet), **64 Leuchttürme**,
-  Tanks, Masten, Schornsteine. ⚠ Ob `XPLMLoadObject` ein Autogen-Objekt lädt, ist ungemessen —
-  der Pfad existiert, und mehr braucht die Schnittstelle nicht.
+- **X-Plane `1000 autogen/US/industrial/`** — Windräder (schon zugeordnet), **64 Leuchttürme**
+  (`lighthouse_13` bis `lighthouse_64`, die Zahl ist die Höhe in Metern), Tanks, Masten,
+  Schornsteine.
+
+  ✅ **`XPLMLoadObject` LÄDT AUTOGEN-OBJEKTE — im Flug belegt** (14.09.2026, Niederbayern):
+  Windrad und Leuchtturm standen und waren beide **sichtbar**. Die Frage war der einzige
+  Grund, den Zweig auszusparen; sie ist beantwortet. Der Sammellauf lohnt sich.
 
 ---
 
