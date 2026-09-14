@@ -1,144 +1,126 @@
 # Mehr Arten für die FriesenBrügge
 
-> Stand 15.09.2026 · Bestandsaufnahme und Vorschlag · **noch nichts davon umgesetzt**
+> Stand 15.09.2026 · **umgesetzt** — aus 17 anforderbaren Arten sind **32** geworden
 
-Anlass ist ein Satz des Nutzers: *„16 Arten waren viel zu wenig für so viele Objekte!"*
-Er hat recht — und die Zahl ist inzwischen sogar gesunken. Dieses Papier sagt, was der
-Bestand hergibt, was davon sofort geht, und wo der eigentliche Hebel liegt.
+Anlass war ein Satz des Nutzers: *„16 Arten waren viel zu wenig für so viele Objekte!"*
+Er hatte recht, und die Zahl war zwischenzeitlich sogar gesunken.
 
 **Der Maßstab ist die stehende Regel vom 14.09.2026:** Eine Art geht nur hinaus, wenn
 **beide** Simulatoren etwas aus ihr zeigen können, und sie darf **kein Fremdpaket**
-brauchen. Alles unten ist daran gemessen.
+brauchen. Alles unten ist daran gemessen — und beide Brücken bekommen heute exakt dieselben
+32 Arten.
 
 ---
 
-## Wo wir stehen
+## ⭐ Der Hebel lag im Sammellauf, nicht im Bestand
 
-| | Zahl |
+Der Katalog kannte von X-Plane **2327 der 7995 `.obj`** unter `default scenery` — nicht
+einmal ein Drittel. `Common_Elements` stand pauschal auf der Ausschlussliste („was nur im
+Verbund funktioniert"), und für Zäune, Lampen und Absperrungen stimmt das.
+
+**Nicht aber für den Krankenwagen, das Zelt, die Flughafenfeuerwehr, den Leitkegel und den
+Fahnenmast.** An genau denen scheiterten fünf Artenpaare, obwohl beide Simulatoren sie
+hatten. Elf Zweige sind dazugekommen, **596 Objekte**:
+
+| Zweig | Objekte | was daraus wurde |
+|---|---|---|
+| `Common_Elements/Vehicles` | 126 | `krankenwagen` |
+| `Common_Elements/fire_department` | 18 | `feuerwehr` |
+| `Common_Elements/camping` | 27 | `zelt` |
+| `Common_Elements/Miscellaneous` | 39 | `flagge` (Fahnenmast), `leitkegel` |
+| `Common_Elements/radars`, `antennas`, `Water_Towers`, `Fuel` | 118 | noch unzugeordnet |
+| `Euro_Airports` | 189 | `gabelstapler` |
+| `1000 roads/objects/cars/static` + `cars_EU/static` | 79 | `auto`, `bus` |
+
+Nebenbei beseitigt: Das zweite Tupelfeld in `_XP_ZWEIGE` war ein ungenutztes `True` und
+trägt jetzt die Kategorie — nötig, weil zwei der neuen Zweige beide auf `static` enden.
+
+---
+
+## `fahrzeug` ist zerfallen — in sechs Arten
+
+Sie warf Tankwagen, Pushback, Bus, Feuerwehr und Crew-Car in einen Topf. Wer ein
+Feuerwehrauto anfordern wollte, bekam mit gleicher Wahrscheinlichkeit einen
+Gepäckschlepper. Die Titel lagen alle schon da, es fehlte nur die Trennung:
+
+`flugplatzfahrzeug` · `tankwagen` · `feuerwehr` · `krankenwagen` · `bus` · `auto`
+
+Die Art selbst steht auf `aus` statt gelöscht — wer die alte Einteilung zurückwill, hat sie
+mit einem Klick.
+
+---
+
+## Die 32 Arten
+
+| | |
 |---|---|
-| Arten in der Tabelle | 29 |
-| davon **anforderbar** | **17** (nach dem Robben-Umbau; `test_tank` fällt durch die neue Regel) |
-| Titel im Katalog | 6786 |
-| davon **einer Art zugeordnet** | **rund 100** |
+| **Tiere** | `seehund_kuh` · `seehund_bulle` · `seehund_heuler` · `tier_gross` · `tier_klein` |
+| **Schiffe** | `boot_gross` · `boot_klein` · `schiff_segel` |
+| **Fahrzeuge** | `auto` · `bus` · `tankwagen` · `feuerwehr` · `krankenwagen` · `flugplatzfahrzeug` |
+| **Gerät** | `gabelstapler` · `baufahrzeug` · `kran` · `jetway` · `leitkegel` · `seecontainer` |
+| **Marken** | `windrad` · `windsack` · `flagge` · `mast` · `tank` · `zelt` |
+| **Rauch** | die sechs Farben |
 
-Rund 100 von 6786. Das ist das Missverhältnis, das der Nutzer meint.
-
----
-
-## ⭐ Der eigentliche Befund: Der Katalog kennt X-Plane nur zu einem Viertel
-
-X-Plane 12 hat **7995 `.obj` unter `default scenery`** (10 016 mit dem xPilot-Plugin, das
-nicht zählt — Fremdpaket). Der Katalog führt **2327**.
-
-Die fehlenden Zweige sind kein Versehen, sondern eine Auswahl vom 14.09.2026 („was nur im
-Verbund funktioniert, bleibt draußen"). Vier davon halten dieser Begründung aber nicht
-stand — dort stehen Dinge, die als einzelnes Objekt sehr wohl Sinn ergeben:
-
-| Zweig | Objekte | was drinsteht |
-|---|---|---|
-| `1000 roads/objects/cars` + `cars_EU` | 167 | **PKW, Busse, Polizeiwagen** — statisch und dynamisch, EU und US |
-| `airport scenery/Euro_Airports` | 189 | **24 Gabelstapler**, 3 Silos, europäische Flugplatzgebäude |
-| `airport scenery/Common_Elements` | 1247 | **16 Zelte**, der **Flaggenmast**, eine **Boje**, Fahrzeuge |
-| `900 roads/trains` | 187 | Güterwagen, Containerwagen — **MSFS hat nichts davon**, fällt aus |
-
-Ein erweiterter Sammellauf über die ersten drei ist die billigste Maßnahme auf dieser
-Liste: Er kostet einen Durchlauf von `katalog_sammeln.py` und bringt drei neue Artenpaare
-mit, die heute an fehlenden X-Plane-Titeln scheitern (`flagge`, `zelt`, und eine echte
-Auswahl bei `auto`/`bus`).
+**Drei Arten für die Robben, nicht eine** — *„unsere robben sollen schon trennbar sein"*.
+Das ist technisch zwingend: Ein Soll-Eintrag trägt genau **eine** Art, und die Brügge nimmt
+daraus **immer Rang 1**. Mit einer Sammelart stünde an jeder Station dieselbe Kuh; eine
+Kolonie aus sechs Kühen, zwei Bullen und zwei Heulern gibt es nur über getrennte Arten.
+Zusammenfalten ließe sich das erst, wenn der Server unter den Titeln einer Art würfelt — so
+wie er den Kurs schon würfelt.
 
 ---
 
-## Was sofort geht — 13 neue Arten aus dem vorhandenen Katalog
+## Was noch offen ist
 
-### Schiffe (6) — der größte Block, und für die Nordsee der passendste
+### Die eine Messung, die fünf weitere Arten freigibt
 
-MSFS bringt **58 echte Schiffe** mit (je 12 Varianten und eine `_Sink`-Fassung, daher die
-1392 Zeilen). X-Plane hält unter `ships/parts/` die großen Frachter bereit.
+`schiff_container` · `schiff_massengut` · `schiff_tanker` · `schiff_gastanker` ·
+`schnellboot` sind vorbereitet, aber **nicht angelegt**. Ihre X-Plane-Seite liegt
+vollständig in `ships/parts/` — dort setzt X-Plane ein Schiff aus Bausteinen zusammen
+(`_BaseModel` + `_Static_Add` + `_Flags`), und ob `XPLMLoadObject` daraus lädt, ist
+ungemessen.
 
-| Art | MSFS | X-Plane |
-|---|---|---|
-| `schiff_container` | MscBremen, Belgorod, CMACGMExupery | ContainerCarrier_399A/399B/155A |
-| `schiff_massengut` | BulkItaly, Nikos, OreShenzhen | BulkCarrier_342A/190B `_StaticOnly` |
-| `schiff_tanker` | TIAsiaULCC, GoldenState, Ivyan | OilTanker_183A |
-| `schiff_gastanker` | Taitar4CG | LNGCarrier_190A |
-| `schiff_segel` | Elcano, LillaDan | Sail_1500_01–04 |
-| `schnellboot` | BHLExpress5 | SpeedBoat_1300_01/02 |
+**Die Messung ist vorbereitet:** `boot_gross` steht in X-Plane auf
+`BulkCarrier_342A_StaticOnly` (Rang 1, 342 m), mit den Kajütbooten als Rückfall auf Rang 5/6.
+Ein gesetztes `boot_gross` beantwortet die Frage für alle fünf auf einmal.
 
-⚠ **Fünf davon hängen an einer einzigen ungemessenen Frage:** Lädt `XPLMLoadObject` ein
-Objekt aus `ships/parts/`? Die großen Schiffe liegen dort als Bausteine der
-Szeneriebibliothek, aus denen X-Plane ein Schiff zusammensetzt. Nur `schiff_segel` ist
-davon frei (`Sail_1500_*` liegt direkt unter `ships/`).
+### Was nur ein Simulator hat — und deshalb gesperrt bleibt
 
-**Die Messung ist bereits vorbereitet:** `boot_gross` steht in X-Plane seit heute auf
-`BulkCarrier_342A_StaticOnly` (Rang 1), mit den Kajütbooten als Rückfall auf Rang 5/6. Ein
-gesetztes `boot_gross` beantwortet die Frage für alle fünf Arten auf einmal.
+**Nur MSFS:** Fischkutter (9, darunter `SGGreetsiel` aus Greetsiel) · Seenotretter (4,
+darunter die `HermannMarwede` und die `PeterHabig`, beide DGzRS) · Fähre (7) ·
+Kreuzfahrtschiff (4) · Lotsenboot · Binnenschiff · **Startwinde (40 Segelflugwinden)** ·
+Pferd, Schaf, Ziege, Kuh · Menschen (190)
 
-### Flugplatz und Gerät (4)
+**Nur X-Plane:** Leuchtturm (63) · **Segelflugzeug (28 ASK 21 und Ventus 3, vier mit
+deutschen Kennzeichen)** · Boje · Silo (111) · Radar (45) · Antennen (33) · Wasserturm ·
+Flugplatzfeuer · NAVAIDS · Zug (187)
 
-| Art | MSFS | X-Plane |
-|---|---|---|
-| `jetway` | EDDF_Jetway_01, EHAM_Jetway_01, EGLL_Jetway_01 | Ang_Jetway_250cm, JetWayExt_10m |
-| `gabelstapler` | Forklift_Large, Forklift_Medium | wheel_loader_1, cargo_loader_ch70w |
-| `bus` | Microsoft_Bus_EUR_Vintage, Bus_Modern | pax_bus_1, pax_bus_2 |
-| `treppe` | *(noch zu suchen)* | pax_stairs_1, Stair_Maint_1 |
+Ausgerechnet Krabbenkutter und Seenotkreuzer — das Passendste für die Nordsee — fehlen
+X-Plane. **Der erprobte Ausweg ist derselbe wie beim Rauch und beim Seehund: ein eigenes
+Modell.** Ein Krabbenkutter für X-Plane wäre der dritte Fall, und der erste, bei dem MSFS
+die Vorlage liefert statt umgekehrt. Ein Leuchtturm für MSFS hätte an der Nordsee mehr
+Berechtigung als fast alles andere auf diesen Listen.
 
-### Bau und Hafen (3)
+### Noch unzugeordnet im neuen Bestand
 
-| Art | MSFS | X-Plane |
-|---|---|---|
-| `baufahrzeug` | Microsoft_Bulldozer | bulldozer_1, excavator_1 |
-| `seecontainer` | Drop_Container, Truck_Container | container_20f_01a … (57 Stück) |
-| `lastwagen` | Microsoft_EUR_Truck, Truck_Container | Fuel_Truck_Large, Fuel_Truck_Small |
-
-⚠ `lastwagen` überschneidet sich mit der bestehenden Art `fahrzeug`, die heute Tankwagen
-**und** Pushback **und** Crew-Car in einen Topf wirft. Wer `lastwagen`, `bus` und `auto`
-trennt, sollte `fahrzeug` gleichzeitig auflösen — sonst gehört ein Titel zu zwei Arten,
-und das ist ausgeschlossen.
+Radar (45), Antennen und Satellitenschüsseln (33), Wassertürme (6), Avgas-Fässer und
+Hydranten (34) — alles X-Plane-eigen, alles ohne MSFS-Gegenstück. Sie stehen im Katalog und
+warten auf den Tag, an dem MSFS etwas Vergleichbares bekommt oder wir es bauen.
 
 ---
 
-## Was an der Regel scheitert — und warum es weh tut
+## Die Grenze, die das Wachstum irgendwann stoppt
 
-Diese Themen hat **nur ein** Simulator. Nach der Regel bleiben sie gesperrt.
+Die Titelliste geht als Wörterbuch **einmal je Antwort** hinaus und muss in
+`ANTWORT_PUFFER` passen — **49152 Bytes**, in beiden Brügge-Fassungen. Bei 32 Arten braucht
+X-Plane rund 6 kB, MSFS 2 kB.
 
-### Nur MSFS (X-Plane hat nichts davon — im ganzen Dateibaum gesucht)
+**X-Plane ist der teure Fall, um das Dreifache:** Dort ist der Bezeichner ein Dateipfad, und
+`Resources/default scenery/` allein wiederholt sich in jeder Zeile — bei 73 Titeln sind das
+1,6 kB reine Wiederholung. 200 Bytes je Art gegen 66 bei MSFS.
 
-**Fischkutter** (9 Schiffe, darunter `SGGreetsiel` — ein Krabbenkutter aus Greetsiel) ·
-**Seenotretter** (4, darunter die `HermannMarwede` und die `PeterHabig`, beide DGzRS) ·
-**Fähre** (7, u. a. `HSeawaysDFDS`) · **Kreuzfahrtschiff** (4) · **Lotsenboot** (2) ·
-**Binnenschiff** (3) · **Startwinde** (40 Segelflugwinden!) · **Pferd, Schaf, Ziege, Kuh** ·
-**Menschen** (190)
-
-Das ist die bittere Liste: Ausgerechnet Krabbenkutter und Seenotkreuzer — die beiden
-Dinge, die an der Nordsee am meisten Sinn ergäben — fehlen X-Plane vollständig.
-
-**Es gibt einen erprobten Ausweg, und wir sind ihn schon zweimal gegangen:** ein eigenes
-Modell. Beim Rauch und beim Seehund war die Lage dieselbe, und beide laufen heute in
-beiden Simulatoren. Ein Krabbenkutter für X-Plane wäre der dritte Fall — und der erste,
-bei dem MSFS die Vorlage liefert statt umgekehrt.
-
-### Nur X-Plane (MSFS hat nichts davon)
-
-**Boje** · **Silo** (111) · **Radar** · **Flugplatzfeuer** (5) · **Navigationsanlagen**
-(ILS, NDB, Marker) · **Segelflugzeug** (28 ASK 21 und Ventus 3, mit echten Kennzeichen,
-darunter vier deutsche) · **Zug** (187) · **Leuchtturm** (63)
-
-Auch hier ist der Ausweg bekannt: Ein Leuchtturm für MSFS wäre ein eigenes Modell — und
-hätte an der Nordsee mehr Berechtigung als fast alles andere auf dieser Seite.
-
----
-
-## Vorschlag in der Reihenfolge des Nutzens
-
-1. **`boot_gross` im Flug setzen** (X-Plane). Eine Minute, und sie entscheidet über fünf
-   der dreizehn neuen Arten. Steht der Frachter, sind die Schiffsarten frei.
-2. **Sammellauf um drei Zweige erweitern** (`cars`, `cars_EU`, `Euro_Airports`,
-   `Common_Elements`) und neu einlesen. Bringt `flagge`, `zelt` und eine echte Auswahl bei
-   `auto`/`bus`.
-3. **Die 13 Arten anlegen**, nach dem Ausgang von 1. gestaffelt.
-4. **`fahrzeug` auflösen** in `auto`, `bus`, `lastwagen`, `baufahrzeug` — die Art ist
-   heute eine Restekiste, und die Titel liegen alle schon da.
-5. **Eigenes Modell erwägen**, wo es thematisch am meisten trägt: ein **Krabbenkutter**
-   für X-Plane, ein **Leuchtturm** für MSFS.
-
-Aus 17 anforderbaren Arten werden damit rund 30 — ohne ein einziges Fremdpaket.
+`tests/test_bruegge_arten.py` wacht darüber und **liest die Zahl aus `bruegge.cpp` und
+`netz.h`**, statt sie abzuschreiben — der alte Test band 16384, eine Grenze, die es seit
+einer Verdreifachung nicht mehr gab. Reißt er, ist die nächste Maßnahme **nicht**, ihn
+hochzusetzen, sondern den gemeinsamen Pfadstamm einmal statt 73-mal zu schicken. Das spart
+auf einen Schlag ein Viertel.
