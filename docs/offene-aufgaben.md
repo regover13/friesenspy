@@ -8,6 +8,37 @@ und prüfen, ob eine andere die Aufgabe schon erledigt hat.
 
 ---
 
+## Kann die Brügge ein FLUGZEUG hinstellen? (vorgemerkt 14.09.2026)
+
+**Eine Messung, fünf Arten.** In MSFS ist ein Flugzeug ein SimObject vom Typ *Airplane*, und
+dafür gibt es einen **eigenen** SimConnect-Aufruf (`AICreateNonATCAircraft`). Ob
+`AICreateSimulatedObject` — den die Brügge benutzt — einen Flugzeugtitel überhaupt annimmt,
+hat noch niemand gemessen.
+
+Daran hängen:
+
+| Art | Stand |
+|---|---|
+| `ballon` | **MSFS 2024 hat einen Heißluftballon im Standard** (Nutzer, 14.09.2026) — als Flugzeug, deshalb nicht im Katalog |
+| `flugzeug_echo`, `flugzeug_ga`, `flugzeug_airliner` | bisher nur X-Plane (dort sind die `*_static.obj` gewöhnliche Objekte) |
+| `flugzeug_klassik` | leer — kein Simulator bringt einen statischen Oldtimer mit |
+
+**Der Ballon ist der günstigste Kandidat:** Ein Versuch beantwortet die Frage für alle fünf.
+Fällt er positiv aus, ist zusätzlich `katalog_sammeln.py` zu erweitern — es durchsucht in MSFS
+nur `SimObjects/{Animals,Boats,GroundVehicles,Landmarks,Misc}`, und die 14 Treffer der
+Kategorie `Airplanes` sind Sitze (`SEAT_*`), keine Flugzeuge.
+
+**Zwei weitere Sammellücken** stehen daneben und kosten je einen Lauf:
+
+- **X-Plane `airport scenery/`** — 333 Fahrzeuge, darunter `fire_truck_small_1.obj`.
+  `katalog_sammeln.py` lässt den Zweig bewusst aus („gehören in eine Szenerie"); das war eine
+  Geschmacksentscheidung, keine technische Schranke.
+- **X-Plane `1000 autogen/US/industrial/`** — Windräder (schon zugeordnet), **64 Leuchttürme**,
+  Tanks, Masten, Schornsteine. ⚠ Ob `XPLMLoadObject` ein Autogen-Objekt lädt, ist ungemessen —
+  der Pfad existiert, und mehr braucht die Schnittstelle nicht.
+
+---
+
 ## ⭐ NÄCHSTES STÜCK: Die Brügge soll ihre Objektliste vom Server bekommen
 
 **Vom Nutzer entschieden am 14.09.2026.** Gemeinsam erarbeitet, nachdem der eigene Rauch

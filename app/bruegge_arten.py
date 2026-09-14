@@ -207,10 +207,14 @@ ARTEN: dict[str, tuple[str, dict[str, list]]] = {
         "msfs2020": ["Flag_Orange", "Flag_Yellow", "Flag_Checker", "Flag_RWB",
                      "Flag_White", "Flag_Green", "flag_DE"],
     }),
-    # "Xplane kann aber einen Heissluftballon." -- MSFS 2024 hat einen, aber als FLUGZEUG
-    # (fliegbar, gestreamt), nicht als SimObject; im Bestand dieser Maschine ist er nicht
-    # installiert und steht folglich in keinem der 1789 MSFS-Titel. Vom Nutzer abgehakt
-    # (14.09.2026). Bleibt X-Plane-eigen, bis jemand den Flugzeugtitel zur Hand hat.
+    # ⚠ MSFS 2024 HAT EINEN HEISSLUFTBALLON IM STANDARD (Nutzer, 14.09.2026) -- er steht
+    # nur nicht im Katalog, weil er ein FLUGZEUG ist und `katalog_sammeln.py` in MSFS keine
+    # Flugzeugordner durchsucht (die 14 Treffer der Kategorie `Airplanes` sind Sitze).
+    #
+    # Damit haengt er an derselben offenen Frage wie `flugzeug_echo` und Geschwister:
+    # Nimmt `AICreateSimulatedObject` einen Flugzeugtitel an, oder braucht es
+    # `AICreateNonATCAircraft`? EIN Versuch mit dem Ballon beantwortet beides -- und das
+    # macht ihn zum guenstigsten Messkandidaten von allen: ein Objekt, fuenf Arten.
     #
     # Ein Ballon steht in der LUFT und ist kilometerweit zu sehen; fuer ein Suchspiel ist das
     # mehr wert als jedes Bodenmodell -- am 13.09.2026 fand ein Pilot auf EDMV drei Hirsche
