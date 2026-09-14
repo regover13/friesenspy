@@ -117,6 +117,22 @@ Der Wert steht dort, weil Aerosofts Wangerooge-Paket ihn bei **allen** SimObject
 nicht weil seine Wirkung belegt wäre. Bleibt der Seehund aus der Luft unsichtbar, ist er
 **nicht** die Ursache — dann liegt es am LOD oder am Modell selbst.
 
+### ⚠ Und eine Schranke, die schon feststeht: die Reichweite
+
+Aus der Rauch-Messung derselben Sitzung (14.09.2026): **Eine Rauchsäule trägt 6480 m
+(3,5 NM), und dort ist eine harte Grenze.** `MaxDistanceEmission` 15000 und 50000 geben
+beide denselben Wert; nur die Vorgabe 2000 wirkt 1:1. Die SDK-Doku nennt kein Maximum.
+
+**Für den Seehund heißt das: Er ist nur aus der Nähe zu finden.** Ein 1,6-m-Tier hat keine
+Chance auf Reichweiten, an denen schon eine 90-m-Säule scheitert. Wer weiter sehen will,
+braucht Geometrie (ein `CruiseShip01` war aus 22 km sichtbar) oder ein Licht — am
+Partikeleffekt ist Ende.
+
+Das ist keine Schwäche des Modells, sondern eine Vorgabe für den **Kieker**: Eine Kolonie
+findet man nicht durch Suchen am Horizont. Entweder der Server nennt das Gebiet (Karte im
+Kniebrett), oder die Aufgabe gibt eine Route vor, die daran vorbeiführt. Beides ist
+ohnehin näher an dem, was echte Seehundzähler tun.
+
 ### Und zwei Dinge, die nur im Flug zu beantworten sind
 
 1. **Aus welcher Entfernung ist ein Seehund erkennbar?** Gerechnet sind es aus 200 ft rund
