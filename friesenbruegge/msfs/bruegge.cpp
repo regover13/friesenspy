@@ -329,14 +329,37 @@ static void kennung_gelesen(FsIOFile datei, char* puffer, int, int bytes, void*)
 }
 #endif
 
+#ifdef KENNUNG_HAELT
+// ⚠⚠ GESCHLOSSEN WIRD ERST IM CALLBACK -- SONST BLEIBT DIE DATEI LEER.
+//
+// `fsIOWrite` ist ASYNCHRON (es nimmt einen `FsIOFileWriteCallback`, s. MSFS_IO.h Zeile 62).
+// Hier stand `fsIOWrite(...); fsIOClose(w);` unmittelbar hintereinander -- das Schliessen
+// ueberholte das Schreiben, und zurueck blieb eine Datei mit NULL BYTES.
+//
+// Am 14.09.2026 gemessen, nachdem die Kennung bei jedem Simulator-Start eine andere war:
+//
+//     -rw-r--r-- 1 Tobias 0  17:12:09  friesenbruegge.kennung
+//
+// Damit war der ganze Zweck der Speicherung dahin: Die Bruegge meldete bei jedem Start ohne
+// Kennung, bekam eine neue vom Server, und in `bruegge_zuordnung` sammelten sich Karteileichen.
+//
+// Es ist DIESELBE Falle, die weiter unten schon einmal beschrieben ist (das Schreiben
+// ueberholte dort das asynchrone LESEN). Ich hatte sie gelesen, verstanden -- und beim
+// Schreiben nicht wiedererkannt.
+static void kennung_geschrieben(FsIOFile datei, const char*, int, int, void*) {
+    fsIOClose(datei);
+}
+#endif
+
 static void kennung_schreiben() {
 #ifdef KENNUNG_HAELT
     FsIOFile w = fsIOOpen(KENNUNG_DATEI,
                           FsIOOpenFlag_WRONLY | FsIOOpenFlag_CREAT | FsIOOpenFlag_TRUNC,
                           nullptr, nullptr);
     if (w != FS_IO_ERROR_FILE) {
-        fsIOWrite(w, g_kennung, 0, (int)std::strlen(g_kennung), nullptr, nullptr);
-        fsIOClose(w);
+        // `g_kennung` ist global und bleibt gueltig, bis der Callback kommt -- ein Puffer
+        // auf dem Stapel waere hier ein Fehler.
+        fsIOWrite(w, g_kennung, 0, (int)std::strlen(g_kennung), kennung_geschrieben, nullptr);
     }
 #endif
 }
@@ -1220,7 +1243,11 @@ extern "C" MSFS_CALLBACK void module_init(void) {
     // ⚠ `nullptr` ALS EINHEIT UND EIN AUSDRUECKLICHER DATENTYP: Ein String hat keine
     // Einheit, und ohne `SIMCONNECT_DATATYPE_STRING256` nimmt SimConnect `FLOAT64` an --
     // dann kommen acht Bytes Zeichen als Zahl zurueck.
-    SimConnect_AddToDataDefinition(g_sim, DEF_FLUGZEUG, "TITLE", nullptr,
+    // ⚠ "Title", NICHT "TITLE". Das SDK-Beispiel `RequestData.cpp` schreibt es genau so
+    // (Zeile 121), und am 14.09.2026 kam mit der Grossschreibung KEIN Wert an -- der
+    // Callback feuerte nie, die Meldung blieb ohne `flugzeug`. Bei anderen SimVars ist die
+    // Schreibweise gleichgueltig; bei dieser offenbar nicht.
+    SimConnect_AddToDataDefinition(g_sim, DEF_FLUGZEUG, "Title", nullptr,
                                    SIMCONNECT_DATATYPE_STRING256);
     // SIMCONNECT_PERIOD_SECOND und nicht ONCE: Ein Flugwechsel aendert den Titel, und eine
     // einmalige Anfrage vor dem Laden liefert den des Menue-Flugzeugs. Die Meldung nach

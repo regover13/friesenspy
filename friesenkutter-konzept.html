@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FriesenKutter — Konzept</title>
+<style>
+  :root{
+    --sand:#f6f2e9;--paper:#fffdf8;--ink:#1f2d3a;--ink-soft:#4a5a68;--line:#e3dccb;
+    --petrol:#0f6e78;--petrol-dark:#0b535b;--buoy:#c9502e;--gold:#c8933a;
+    --fisch:#2f8f8f;--tee:#c8933a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--sand);color:var(--ink);
+    font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;
+    line-height:1.6;font-size:16.5px}
+  .wrap{max-width:860px;margin:0 auto;padding:0 22px 90px}
+  header{background:radial-gradient(1200px 380px at 80% -140px, rgba(15,110,120,.18), transparent 60%),
+      linear-gradient(160deg,#12303a 0%, #0f6e78 120%);
+    color:#fdfaf2;padding:54px 0 46px;border-bottom:5px solid var(--gold)}
+  .header-inner{max-width:860px;margin:0 auto;padding:0 22px}
+  .eyebrow{font-size:.78rem;letter-spacing:.22em;text-transform:uppercase;color:#a9e0e2;font-weight:600;margin:0 0 12px}
+  h1{font-family:Georgia,"Iowan Old Style","Times New Roman",serif;font-weight:700;font-size:2.75rem;
+    line-height:1.08;margin:0 0 14px;letter-spacing:-.01em}
+  h1 .light{color:#ffe6c2;font-style:italic;font-weight:400}
+  .lede{font-size:1.12rem;max-width:56ch;color:#eaf6f4;margin:0}
+  .tagline{margin-top:22px;display:inline-flex;gap:10px;align-items:center;background:rgba(255,255,255,.10);
+    border:1px solid rgba(255,255,255,.22);padding:8px 15px;border-radius:999px;font-size:.9rem}
+  section{margin-top:46px}
+  h2{font-family:Georgia,serif;font-size:1.62rem;margin:0 0 6px;letter-spacing:-.01em;
+    display:flex;align-items:baseline;gap:.55rem}
+  h2 .num{font-size:1rem;color:var(--petrol);font-weight:700;border:1.5px solid var(--petrol);
+    border-radius:50%;width:1.9rem;height:1.9rem;display:inline-flex;align-items:center;justify-content:center;
+    flex:none;font-style:normal}
+  .sub{color:var(--ink-soft);margin:.15rem 0 1.1rem;font-size:1rem}
+  p{margin:0 0 1rem}
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:22px 24px}
+  .quote{border-left:4px solid var(--gold);background:#fbf4e6;padding:14px 20px;border-radius:0 10px 10px 0;
+    margin:0 0 18px;color:#5a4a2c;font-style:italic}
+  table.decisions{border-collapse:collapse;width:100%;background:var(--paper);border:1px solid var(--line);
+    border-radius:14px;overflow:hidden}
+  table.decisions th,table.decisions td{padding:13px 16px;text-align:left;vertical-align:top;
+    border-bottom:1px solid var(--line);font-size:.98rem}
+  table.decisions th{width:34%;background:#f2ede1;color:var(--petrol-dark);font-weight:700}
+  table.decisions tr:last-child td,table.decisions tr:last-child th{border-bottom:none}
+  table.decisions td b{color:var(--buoy)}
+  .mock{background:#10333c;color:#eaf6f4;border-radius:16px;padding:24px 24px 12px;
+    box-shadow:0 18px 40px -22px rgba(16,51,60,.7);border:1px solid #0c2830}
+  .mock .m-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+  .mock h3{margin:0;font-size:1.25rem;font-family:Georgia,serif;color:#fff}
+  .mock .route{color:#9fd6d8;font-size:.9rem}
+  .bar-row{margin:16px 0 6px;display:flex;justify-content:space-between;font-size:.92rem;color:#cfeaea}
+  /* Segmentierter Manifest-Balken */
+  .seg{display:flex;gap:4px;height:20px}
+  .seg .segment{position:relative;background:rgba(255,255,255,.10);border-radius:6px;overflow:hidden}
+  .seg .segment > i{position:absolute;left:0;top:0;bottom:0;border-radius:6px}
+  .legend{display:flex;gap:20px;margin-top:12px;flex-wrap:wrap;font-size:.86rem;color:#cfeaea}
+  .legend .dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:7px;vertical-align:middle}
+  table.feed{width:100%;border-collapse:collapse;margin-top:16px;font-size:.9rem;font-variant-numeric:tabular-nums}
+  table.feed th{color:#8fc4c6;text-align:left;font-weight:600;padding:8px 8px;
+    border-bottom:1px solid rgba(255,255,255,.14);font-size:.74rem;letter-spacing:.04em;text-transform:uppercase}
+  table.feed td{padding:9px 8px;border-bottom:1px solid rgba(255,255,255,.07)}
+  table.feed .cs{color:#ffe6c2;font-weight:600}
+  table.feed .kg{text-align:right;color:#8ee6bd;font-weight:600}
+  table.feed .cargo{color:#cfeaea}
+  table.feed tr:last-child td{border-bottom:none}
+  .mock-cap{font-size:.82rem;color:var(--ink-soft);margin-top:10px;text-align:center}
+  ol.steps{list-style:none;counter-reset:s;padding:0;margin:0}
+  ol.steps li{counter-increment:s;position:relative;padding:0 0 20px 52px;margin:0}
+  ol.steps li::before{content:counter(s);position:absolute;left:0;top:-2px;width:34px;height:34px;
+    background:var(--petrol);color:#fff;border-radius:10px;display:flex;align-items:center;justify-content:center;
+    font-weight:700}
+  ol.steps li:not(:last-child)::after{content:"";position:absolute;left:16px;top:36px;bottom:2px;width:2px;background:var(--line)}
+  ol.steps b{color:var(--petrol-dark)}
+  .later{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .later .card{padding:18px 20px}
+  .later h4{margin:0 0 6px;font-size:1.05rem;color:var(--buoy)}
+  .later p{margin:0;font-size:.95rem;color:var(--ink-soft)}
+  .pill{display:inline-block;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;background:#f2ede1;
+    color:var(--petrol-dark);padding:3px 9px;border-radius:999px;font-weight:700;margin-bottom:8px}
+  footer{margin-top:56px;padding-top:22px;border-top:1px solid var(--line);color:var(--ink-soft);
+    font-size:.86rem;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+  @media(max-width:620px){h1{font-size:2.1rem}.later{grid-template-columns:1fr}
+    table.decisions th{width:42%}table.feed .ac,table.feed .rt{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <div class="header-inner">
+    <p class="eyebrow">FriesenSpy · Event-Konzept</p>
+    <h1>FriesenKutter <span class="light">— was schippern wir nach Helgoland?</span></h1>
+    <p class="lede">Ein kleines „FSE für Friesen": Transportflüge fliegen, Fracht laden, und am Ende steht schwarz auf weiß, wie viele Tonnen Fischbrötchen &amp; Friesen Tee wir an einem Abend bewegt haben — ganz ohne Vorbereitung.</p>
+    <span class="tagline">🦐 aus Benjamins Helgoland-Idee · für die FriesenFlieger</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <section>
+    <h2><span class="num">1</span> Die Idee</h2>
+    <p class="sub">Woher das kommt und was es lösen soll.</p>
+    <div class="quote">„Wir haben an einem Abend versucht, so oft wie möglich von Wangerooge nach Helgoland zu fliegen. Die Flüge grob gezählt — aber wir wussten nie, wie viele Tonnen wir bewegt haben. Alle fanden's super und wollten mehr. Nur zum Loggen hatten wir nichts."</p>
+    <p>Genau da setzt <strong>FriesenKutter</strong> an. FriesenSpy verfolgt ohnehin jeden FRS-Flug und kennt Start, Ziel, Flugzeugtyp, Strecke und Zeit. Wir müssen <strong>nichts vorbereiten</strong> (kein Sprit bereitstellen, keine Flieger parken wie bei echtem FSE) — das System „holt alle Friesen automatisch ab" und lädt die Fracht Flug für Flug ein.</p>
+  </section>
+
+  <section>
+    <h2><span class="num">2</span> Was entschieden wurde</h2>
+    <p class="sub">Die Eckpunkte, auf die wir uns geeinigt haben.</p>
+    <table class="decisions">
+      <tr><th>Wie heißt es?</th><td><b>FriesenKutter</b> — zugleich das Stichwort im Kalender und der öffentliche Name.</td></tr>
+      <tr><th>Wie wird ein Event angelegt?</th><td>Wie beim Bummel: per <b>Stichwort „FriesenKutter" im Kalendertitel</b> — ODER manuell im Admin. Beide erscheinen gemischt.</td></tr>
+      <tr><th>Welche Flüge zählen?</th><td>Das Event hat eine <b>Streckenmenge</b> und ein <b>Ziel</b> (z.B. Helgoland EDXH). Fracht zählt nur auf dem Weg <b>zum Ziel</b> — der Rückflug ist leer und erscheint im Feed als „leer".</td></tr>
+      <tr><th>Was wird transportiert?</th><td>Eine <b>Frachtliste</b> je Event (z.B. 1 t Fischbrötchen + 500 kg Friesen Tee) = das Ziel. Die Flüge füllen sie der Reihe nach; jeder Flug bekommt seine Frachtart. Im Admin pflegbar.</td></tr>
+      <tr><th>Wie viel lädt ein Flug?</th><td>Zuladung <b>pro Flugzeugtyp</b> (MTOW − Leergewicht − Tank, alles im Admin einstellbar). Unbekannte Muster meldet die KI auf Knopfdruck.</td></tr>
+      <tr><th>Wie wird es gezeigt?</th><td><b>Segmentierter Ziel-Balken</b> je Frachtart + <b>Flug-Feed</b> nach Abflugzeit. Keine Piloten-Rangliste — gemeinsam, kein Wettbewerb.</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2><span class="num">3</span> So sieht es aus</h2>
+    <p class="sub">Beispiel für einen laufenden FriesenKutter-Abend.</p>
+    <div class="mock">
+      <div class="m-head">
+        <h3>Helgoland-Nachschub</h3>
+        <span class="route">EDWG → EDXH (Ziel) · 5 Flüge, 3 mit Fracht</span>
+      </div>
+      <div class="bar-row"><span>Fracht bewegt</span><span><strong>1,00 t</strong> / 1,30 t &nbsp;· 77 %</span></div>
+      <div class="seg">
+        <!-- Fischbrötchen: 800/1300 der Breite, 100% gefüllt -->
+        <div class="segment" style="width:61.5%"><i style="width:100%;background:var(--fisch)"></i></div>
+        <!-- Friesen Tee: 500/1300 der Breite, 40% gefüllt -->
+        <div class="segment" style="width:38.5%"><i style="width:40%;background:var(--tee)"></i></div>
+      </div>
+      <div class="legend">
+        <span><span class="dot" style="background:var(--fisch)"></span>Fischbrötchen 800 / 800 kg ✓</span>
+        <span><span class="dot" style="background:var(--tee)"></span>Friesen Tee 200 / 500 kg</span>
+      </div>
+
+      <table class="feed">
+        <thead><tr><th>Zeit</th><th>Pilot</th><th class="ac">Muster</th><th class="rt">Strecke</th><th class="kg">Fracht</th><th class="cargo">Ladung</th></tr></thead>
+        <tbody>
+          <tr><td>19:38</td><td class="cs">FRS07</td><td class="ac">C208</td><td class="rt">EDXH→EDWG</td><td class="kg">—</td><td class="cargo">leer (zurück)</td></tr>
+          <tr><td>19:24</td><td class="cs">FRS03</td><td class="ac">PA28</td><td class="rt">EDWG→EDXH</td><td class="kg">200 kg</td><td class="cargo">Friesen Tee</td></tr>
+          <tr><td>19:10</td><td class="cs">FRS12</td><td class="ac">C172</td><td class="rt">EDXH→EDWG</td><td class="kg">—</td><td class="cargo">leer (zurück)</td></tr>
+          <tr><td>18:55</td><td class="cs">FRS07</td><td class="ac">C208</td><td class="rt">EDWG→EDXH</td><td class="kg">550 kg</td><td class="cargo">Fischbrötchen</td></tr>
+          <tr><td>18:42</td><td class="cs">FRS12</td><td class="ac">C172</td><td class="rt">EDWG→EDXH</td><td class="kg">250 kg</td><td class="cargo">Fischbrötchen</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="mock-cap">Balken, Frachtart-Zuordnung und Feed aktualisieren sich live, während geflogen wird.</p>
+  </section>
+
+  <section>
+    <h2><span class="num">4</span> Wie es funktioniert</h2>
+    <p class="sub">Von der Startfreigabe bis Feierabend — ohne Handarbeit.</p>
+    <ol class="steps">
+      <li><b>Event entsteht</b> — entweder ein Kalendertermin mit „FriesenKutter" im Titel, oder manuell im Admin. Strecke + Frachtliste festlegen, fertig.</li>
+      <li><b>Friesen fliegen los.</b> Jeder FRS-Flug auf der Strecke erscheint automatisch im Feed — Reconnects &amp; Test-Verbindungen werden herausgefiltert.</li>
+      <li><b>Fracht wird eingeladen.</b> Flüge zum Ziel bekommen die Zuladung ihres Musters; die Frachtliste füllt sich der Reihe nach (erst die Fischbrötchen, dann der Tee). Rückflüge fliegen leer.</li>
+      <li><b>Neues Muster? Kein Problem.</b> Unbekannte Typen listet der Admin-Bereich auf — ein Klick holt einen KI-Vorschlag (Muster, MTOW, Leergewicht, Tank), frei anpassbar.</li>
+      <li><b>Push hält alle auf dem Laufenden</b> — „FriesenKutter läuft", „🎯 Fracht komplett!" und zum Schluss „✅ Feierabend: X Flüge, Y Tonnen bewegt".</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2><span class="num">5</span> Was später noch kommen kann</h2>
+    <p class="sub">Bewusst für einen zweiten Schritt geparkt, damit die Zählung zuerst sauber steht.</p>
+    <div class="later">
+      <div class="card"><span class="pill">Phase 2</span><h4>Lustige Flug-Kommentare</h4>
+        <p>Pro Flug oder zum Tagesende ein Einzeiler im Friesen-Humor — „550 kg Fischbrötchen wohlbehalten auf Helgoland 🦐".</p></div>
+      <div class="card"><span class="pill">Phase 2</span><h4>Frachtart-Katalog &amp; Forum-Badge</h4>
+        <p>Wiederverwendbare Frachtarten und ein hübsches Abschluss-Badge fürs Forum: „Wir haben heute X Tonnen bewegt".</p></div>
+    </div>
+  </section>
+
+  <footer>
+    <span>FriesenKutter · Konzeptentwurf für FriesenSpy</span>
+    <span>Stand: 1. Juli 2026</span>
+  </footer>
+</div>
+</body>
+</html>

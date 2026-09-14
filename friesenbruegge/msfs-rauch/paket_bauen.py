@@ -113,13 +113,35 @@ def wuerfel_gltf(knoten: str, bin_datei: str) -> tuple[str, bytes]:
     im Paket liegt.
     """
     # Je Fläche: Normale und vier Ecken gegen den Uhrzeigersinn.
+    # ⚠ DER TRAEGER IST SO GROSS WIE DIE SAEULE -- und das ist der dritte Anlauf.
+    #
+    # Er war ein 2-m-Wuerfel (+-1 m). Aus 10 km ist das ein Subpixel, und MSFS zeichnet ein
+    # SimObject nicht, dessen Bildschirmgroesse verschwindet -- mit ihm verschwindet der
+    # Emitter, der an ihm haengt. Die Saeule ist 90 m hoch und trotzdem fort, weil der
+    # Simulator den TRAEGER misst.
+    #
+    # Zwei Versuche davor gingen daneben, beide am 14.09.2026 im Flug widerlegt:
+    #   * `minSize="0"` im LOD -- stammt aus einem SZENERIE-Beispiel und greift bei
+    #     SimObjects offenbar nicht.
+    #   * `DistanceToNotAnimate=15000` in der sim.cfg -- regelt die Animation, nicht das
+    #     Zeichnen.
+    # Der Nutzer hatte von Anfang an die richtige Vermutung ("kann man das modell nicht
+    # unsichtbar vergroessern"); ich hatte sie mit einem Umweg abgetan, der nichts brachte.
+    #
+    # ⚠ NUR NACH OBEN, NICHT IN ALLE RICHTUNGEN. `auf_boden` setzt den URSPRUNG auf die
+    # Gelaendehoehe -- ein Wuerfel, der 45 m nach unten reicht, steckt zur Haelfte im Boden
+    # und zieht seine Bildschirmgroesse aus etwas, das niemand sieht. Deshalb 0 bis 90 m in
+    # der Hoehe (genau die Saeulenhoehe) und +-6 m in der Breite (die Krone misst 12 m).
+    #
+    # In glTF ist Y oben.
+    B, H = 6.0, 90.0
     flaechen = [
-        ((0.0, 0.0, -1.0), [(-1, -1, -1), (-1, 1, -1), (1, 1, -1), (1, -1, -1)]),
-        ((0.0, 0.0, 1.0), [(1, -1, 1), (1, 1, 1), (-1, 1, 1), (-1, -1, 1)]),
-        ((0.0, -1.0, 0.0), [(-1, -1, -1), (1, -1, -1), (1, -1, 1), (-1, -1, 1)]),
-        ((0.0, 1.0, 0.0), [(-1, 1, 1), (1, 1, 1), (1, 1, -1), (-1, 1, -1)]),
-        ((-1.0, 0.0, 0.0), [(-1, -1, 1), (-1, 1, 1), (-1, 1, -1), (-1, -1, -1)]),
-        ((1.0, 0.0, 0.0), [(1, -1, -1), (1, 1, -1), (1, 1, 1), (1, -1, 1)]),
+        ((0.0, 0.0, -1.0), [(-B, 0, -B), (-B, H, -B), (B, H, -B), (B, 0, -B)]),
+        ((0.0, 0.0, 1.0), [(B, 0, B), (B, H, B), (-B, H, B), (-B, 0, B)]),
+        ((0.0, -1.0, 0.0), [(-B, 0, -B), (B, 0, -B), (B, 0, B), (-B, 0, B)]),
+        ((0.0, 1.0, 0.0), [(-B, H, B), (B, H, B), (B, H, -B), (-B, H, -B)]),
+        ((-1.0, 0.0, 0.0), [(-B, 0, B), (-B, H, B), (-B, H, -B), (-B, 0, -B)]),
+        ((1.0, 0.0, 0.0), [(B, 0, -B), (B, H, -B), (B, H, B), (B, 0, B)]),
     ]
 
     ecken_roh = b""
@@ -151,8 +173,10 @@ def wuerfel_gltf(knoten: str, bin_datei: str) -> tuple[str, bytes]:
                                     "indices": 2, "material": 0, "mode": 4}]}],
         "materials": [{"name": "Invisible", "extensions": {"ASOBO_material_invisible": {}}}],
         "accessors": [
+            # ⚠ DIE BOUNDING BOX MUSS ZUR GEOMETRIE PASSEN -- sie ist das, was der
+            # Simulator fuer die Groessenpruefung liest, nicht die Eckpunkte.
             {"bufferView": 0, "componentType": 5126, "count": 24, "type": "VEC3",
-             "min": [-1.0, -1.0, -1.0], "max": [1.0, 1.0, 1.0]},
+             "min": [-B, 0.0, -B], "max": [B, H, B]},
             {"bufferView": 1, "componentType": 5126, "count": 24, "type": "VEC3",
              "min": [-1.0, -1.0, -1.0], "max": [1.0, 1.0, 1.0]},
             {"bufferView": 2, "componentType": 5123, "count": len(indizes), "type": "SCALAR"},
@@ -358,7 +382,30 @@ def simobjects_schreiben() -> None:
     #
     # `StaticObject` ist derselbe Wert, den Emerald für seinen Schornsteinrauch benutzt —
     # nachgesehen in dessen `SimObjects/Misc/ESD_Env/sim.cfg`.
-    teile += ["[General]", "category=StaticObject", ""]
+    # ⚠⚠ `DistanceToNotAnimate` -- OHNE DAS ERSCHEINT DER RAUCH ERST KURZ VORHER.
+    #
+    # Der Name sagt es woertlich: die Entfernung, ab der NICHT MEHR ANIMIERT wird. Bei einem
+    # Partikeleffekt IST die Animation der Effekt -- faellt sie aus, ist die Saeule fort,
+    # egal wie gross das Modell ist und egal was im LOD steht.
+    #
+    # Befund vom 14.09.2026: Der Nutzer sah die Saeulen erst ab rund 100 m. `minSize="0"` im
+    # LOD half nicht -- das regelt die Bildschirmgroesse, nicht die Animation.
+    #
+    # DAS VORBILD LIEGT AUF SEINEM RECHNER, und zwar fuer denselben Flugplatz: Aerosofts
+    # Wangerooge-Paket setzt es in JEDEM SimObject, und die Windsaecke dort sind von weitem
+    # zu sehen:
+    #
+    #     EDWG_SimObjects     category=StaticObject   DistanceToNotAnimate=2000
+    #     Windsock_05/_08     category=StaticObject   DistanceToNotAnimate=2000
+    #     Library_SimObjects  category=StaticObject   DistanceToNotAnimate=2000
+    #
+    # 2000 m genuegen fuer einen Windsack. Eine Rauchsaeule ist eine BAAKE -- sie soll von
+    # weitem zum Hinfliegen einladen, und der Nutzer hat 10 km gefordert. 15000 laesst Luft.
+    #
+    # ⚠ UNGEMESSEN ist, was das kostet: Ein Effekt, der ueber 15 km animiert wird, laeuft
+    # auch dann, wenn ihn niemand ansieht. Bei einer Handvoll Baaken ist das vertretbar; bei
+    # hundert gesetzten Objekten gehoert es in die Messliste.
+    teile += ["[General]", "category=StaticObject", "DistanceToNotAnimate=15000", ""]
 
     (wurzel / "sim.cfg").write_text("\n".join(teile), encoding="utf-8", newline="\r\n")
     print(f"  {len(FARBEN)} SimObjects mit Traegermodell")

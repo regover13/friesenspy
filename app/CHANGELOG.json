@@ -1,5 +1,20 @@
 [
   {
+    "version": "14.42.0",
+    "date": "2026-09-14",
+    "highlight": false,
+    "title": "Ein eigener Seehund, aufgeräumte Objektarten und eine Rauchsäule, die man von weitem sehen soll",
+    "items": [
+      "🦭 Die FriesenBrügge bringt jetzt einen eigenen Seehund mit, in drei Größen — Bulle, Kuh und Heuler. Nötig wurde er, weil es in keinem der beiden Simulatoren eine Robbe gibt: Auch unter den 2642 Objekttiteln, die MSFS im Standard mitliefert, ist keine einzige.",
+      "📜 Grundlage ist „Walrus\" von Poly by Google unter CC BY 3.0, bearbeitet; die Namensnennung liegt dem Paket als CREDITS.txt bei. ⚠️ In keinem Simulator gesehen — wer ihn setzt, testet mit.",
+      "🧹 Die Artenliste hält jetzt eine Regel ein: Jede anforderbare Art gibt es in BEIDEN Simulatoren, und keine braucht ein Fremdpaket. Neun Arten sind deshalb vorerst abgeschaltet — darunter Leuchtturm (den hat nur X-Plane) und Nutzvieh (das kam aus einem fremden Addon).",
+      "🦌 Repariert: Die Art „großes Landtier\" verwies in MSFS auf Namen, die es gar nicht gibt. Jetzt stehen dort Wapiti, Elch und Bären — echte Titel, aus den Paketdaten gelesen statt geraten.",
+      "📦 Der Objektkatalog ist von 2953 auf 6778 Einträge gewachsen: 2642 Titel aus MSFS' gestreamten Paketen (darunter 1397 Schiffe und 425 Masten) und 1171 aus X-Plane.",
+      "🔧 Die FriesenBrügge kann jetzt 200 Objekte gleichzeitig halten statt 32.",
+      "📡 Neue Fassung 1.10.0 für MSFS. Sie behält ihre Kennung über Simulator-Neustarts und meldet, welches Flugzeug du fliegst — so wächst der Objektbestand aus den Simulatoren der Gruppe."
+    ]
+  },
+  {
     "version": "14.41.0",
     "date": "2026-09-14",
     "highlight": false,

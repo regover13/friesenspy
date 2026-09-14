@@ -206,13 +206,45 @@ $groesse = ($dateien | Measure-Object -Property Length -Sum).Sum
   "package_order_hint": "MISC",
   "release_notes": {
     "neutral": {
-      "LastUpdate": "",
+      "LastUpdate": "Seehund-Modelle aus \"Walrus\" von Poly by Google (poly.pizza/m/5T7nIjx9ekP), CC BY 3.0, bearbeitet. Rauchsaeulen: eigenes Werk devprops.",
       "OlderHistory": ""
     }
   },
   "total_package_size": "$groesse"
 }
 "@ | ForEach-Object { Schreib-OhneBom "$paket\manifest.json" $_ }
+
+# ⚠⚠ NAMENSNENNUNG -- DIE EINZIGE BEDINGUNG DER LIZENZ, UND SIE FEHLTE BEINAHE.
+#
+# Das Seehund-Modell stammt aus "Walrus" von Poly by Google unter CC BY 3.0. Diese Lizenz
+# erlaubt Aenderung und Weitergabe ausdruecklich -- Bedingung ist allein die Nennung des
+# Urhebers UND der Hinweis, dass bearbeitet wurde.
+#
+# Solange das Paket nur auf einem Rechner lag, war das gegenstandslos. Am 14.09.2026 stand
+# es unmittelbar vor dem Hochladen an die Gruppe, ohne eine einzige Zeile dazu -- aufgefallen
+# ist es der Nebensitzung, nicht mir, und zwar Minuten vorher.
+#
+# Der Hinweis steht an ZWEI Stellen, weil beide verschiedene Leute erreichen:
+#   * CREDITS.txt im Paketordner -- lesbar ohne Simulator, ueberlebt das Auspacken
+#   * release_notes im manifest.json -- das zeigt MSFS im Content Manager an
+$credits = @"
+Die FriesenBruegge -- Herkunft der mitgelieferten Modelle
+
+Seehund (FrsSeehund_Bulle / _Kuh / _Heuler)
+    aus "Walrus" von Poly by Google
+    https://poly.pizza/m/5T7nIjx9ekP
+    Lizenz: CC BY 3.0 -- https://creativecommons.org/licenses/by/3.0/
+    BEARBEITET: Stosszaehne entfernt, Proportionen und Kopf auf Phoca vitulina
+    geaendert, neu texturiert.
+
+Rauchsaeulen (FrsRauch_*)
+    Eigenes Werk, devprops. Textur und Partikelsystem von Hand erzeugt
+    (msfs-rauch/rauch_bauen.py, msfs-rauch/paket_bauen.py).
+
+Alles Uebrige verweist nur auf Titel, die im Simulator bereits vorhanden sind --
+mitgeliefert wird davon nichts.
+"@
+Schreib-OhneBom "$paket\CREDITS.txt" $credits
 
 Schreib-OhneBom "$paket\layout.json" (@"
 {

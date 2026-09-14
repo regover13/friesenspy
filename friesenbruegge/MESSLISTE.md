@@ -193,6 +193,93 @@ Neustart ihres Simulators.
 ⚠ **Beide nebeneinander anschauen, wenn es geht.** Der Sinn der Übung ist, dass sie sich
 gleichen; jede für sich betrachtet sagt darüber nichts.
 
+## ⭐ ZUERST: Ab welcher Entfernung ist die Rauchsäule zu sehen?
+
+**Offener Befund vom 14.09.2026:** *„die säulen kommen erst 100m vorher"* — und das blieb
+so, nachdem zwei Vermutungen widerlegt waren. Die dritte liegt jetzt im Paket.
+
+### Was schon widerlegt ist — nicht noch einmal probieren
+
+| Versuch | Begründung damals | im Flug |
+|---|---|---|
+| `minSize="0"` im LOD | Asobos Szenerie-Beispiel setzt es | **keine Änderung** |
+| `DistanceToNotAnimate=15000` | Aerosofts Wangerooge-Paket setzt es überall | **keine Änderung** |
+
+Beide bleiben drin (sie schaden nicht, und Asobo selbst nutzt `15000` in
+`wENLK_lightdummy`), aber sie waren nicht die Ursache.
+
+### Was jetzt drin ist: ein Träger so groß wie die Säule
+
+Der Trägerwürfel war **2 m** groß. MSFS zeichnet ein SimObject nicht, dessen Bildschirmgröße
+verschwindet — und mit dem Träger verschwindet der Emitter, der an ihm hängt. Die Säule ist
+90 m hoch und trotzdem fort, weil der Simulator den **Träger** misst.
+
+Jetzt **12 × 90 × 12 m**, und zwar nur nach oben: `auf_boden` setzt den Ursprung auf
+Geländehöhe, ein Würfel nach unten steckte zur Hälfte im Boden. Die Bounding Box im glTF
+ist mitgezogen — sie ist das, was der Simulator liest.
+
+⚠ **Der Nutzer hatte das von Anfang an vorgeschlagen** (*„kann man das modell nicht
+unsichtbar vergrößern, dass es früher sichtbar wird?"*). Ich hatte es mit einem Umweg
+abgetan, der nichts brachte, und zwei Anläufe gebraucht, um dorthin zurückzukommen.
+
+### Wenn auch das nicht reicht: ein Licht
+
+Positionsleuchten sieht man kilometerweit, wenn das Flugzeug längst ein Punkt ist — sie sind
+kein Geometrie-, sondern ein Licht-Sprite mit eigener Reichweite.
+
+**Ein SimObject kann aus nichts als Licht bestehen**, belegt am 14.09.2026:
+`fs24-microsoft-airport-enlk-leknes` enthält `wENLK_lightdummy` mit genau diesem Zweck.
+Seine `sim.cfg`:
+
+```ini
+[General]
+category=Human ;StaticObject
+DistanceToNotAnimate=15000
+```
+
+Zwei Dinge daran sind bemerkenswert: `DistanceToNotAnimate=15000` ist derselbe Wert, den
+wir gewählt haben — und die Kategorie ist **`Human`**, nicht `StaticObject`, mit der
+Alternative als Kommentar daneben. Die Kategorie beeinflusst das Verhalten also.
+
+**Woran es fehlt:** Die Lichtdefinition steckt im Modell (glTF-Erweiterung
+`ASOBO_macro_light`), und das liegt im verschlüsselten Archivteil. Nachbaubar, aber ein
+eigener Umbau. Für eine Baake wäre es ohnehin die bessere Lösung als ein großes
+unsichtbares Objekt: eine rote Blitzleuchte auf der Säulenspitze, die man sieht, **bevor**
+man den Rauch sieht.
+
+---
+
+## ⭐ ZWEI CLIENT-FEHLER, BEHOBEN UND UNGEPRÜFT (14.09.2026)
+
+### Die Kennung überlebte keinen Neustart
+
+Gemessen, nachdem sie dreimal hintereinander wechselte:
+
+```
+-rw-r--r-- 1 Tobias 0  17:12:09  friesenbruegge.kennung
+```
+
+**Null Bytes.** `fsIOWrite` ist asynchron (es nimmt einen `FsIOFileWriteCallback`,
+MSFS_IO.h Zeile 62) — das `fsIOClose` direkt danach überholte das Schreiben. Jetzt wird im
+Callback geschlossen.
+
+⚠ **Dieselbe Falle stand zwanzig Zeilen tiefer schon beschrieben** (dort überholte das
+Schreiben das asynchrone *Lesen*). Ich hatte den Kommentar gelesen, verstanden — und beim
+Schreiben nicht wiedererkannt.
+
+### Der Flugzeugtitel kam nie an
+
+`SimConnect_AddToDataDefinition(..., "TITLE", ...)` — Asobos eigenes SDK-Beispiel
+(`RequestData.cpp`, Zeile 121) schreibt **`"Title"`**. Mit der Großschreibung feuerte der
+Callback nie. Bei anderen SimVars ist die Schreibweise gleichgültig, bei dieser offenbar
+nicht.
+
+**Zu prüfen ist beides am selben Start:** Bleibt die Kennung nach einem Neustart dieselbe
+(sichtbar in `bruegge_zuordnung`), und steht der Flugzeugtitel danach im Katalog
+(`quelle='gemeldet'`)?
+
+---
+
 ## Vorbereitung (einmal, vor dem Start)
 
 **Der Stand ist schon abgelegt** — Paket `friesenbruegge` liegt im Community-Ordner, Fassung
