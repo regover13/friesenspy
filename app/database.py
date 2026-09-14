@@ -3284,10 +3284,19 @@ def bruegge_steht_alle(conn: sqlite3.Connection, hoechstalter_s: int = 60) -> li
     return [_row_to_dict(r) for r in rows]
 
 
-def bruegge_uebersicht(conn: sqlite3.Connection) -> list[dict]:
+def bruegge_uebersicht(conn: sqlite3.Connection, frisch_s: int = 120) -> list[dict]:
     """Wer meldet gerade? Fuer den Admin.
 
     Zeigt auch Doppelmeldungen: Zwei Kennungen auf derselben CID stehen als zwei Zeilen da.
+
+    **Jede Zeile traegt `frisch`** -- ob die letzte Meldung juenger als `frisch_s` ist.
+    Dieselbe Ueberlegung wie `hoechstalter_s` in `bruegge_steht_alle`: *Das Fehlen einer
+    Meldung ist kein Zustand.* Ohne das Feld stand FRS61s Position von sieben Stunden zuvor
+    gleichwertig neben einer aktuellen, und die Karte rahmte beide ein (14.09.2026 gemeldet:
+    "auch der von FRS61 stoert").
+
+    Geloescht wird deshalb NICHT -- wer zuletzt gemeldet hat, ist eine gueltige Frage. Nur
+    behaupten darf die Zeile nicht mehr, es sei jetzt so.
     """
     rows = conn.execute(
         "SELECT z.kennung, z.cid, z.simulator, z.zugeordnet_am, z.gesehen_am, z.verstoesse, "
@@ -3298,7 +3307,22 @@ def bruegge_uebersicht(conn: sqlite3.Connection) -> list[dict]:
         "LEFT JOIN bruegge_positions p ON p.cid = z.cid "
         "ORDER BY COALESCE(z.gesehen_am, z.zugeordnet_am) DESC"
     ).fetchall()
-    return [_row_to_dict(r) for r in rows]
+    jetzt = datetime.now(timezone.utc)
+    raus = []
+    for r in rows:
+        d = _row_to_dict(r)
+        d["alter_s"] = None
+        d["frisch"] = False
+        stempel = d.get("gemeldet_am") or d.get("gesehen_am")
+        if stempel:
+            try:
+                t = datetime.fromisoformat(str(stempel).replace("Z", "+00:00"))
+                d["alter_s"] = max(0, int((jetzt - t).total_seconds()))
+                d["frisch"] = d["alter_s"] <= frisch_s
+            except ValueError:
+                pass
+        raus.append(d)
+    return raus
 
 
 def get_stats(

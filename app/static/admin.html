@@ -2196,9 +2196,17 @@
                   ? m.lat.toFixed(4) + ' / ' + m.lon.toFixed(4) +
                     (m.gs_kt != null ? '  ' + Math.round(m.gs_kt) + ' kt' : '')
                   : '—';
-                return '<tr><td>' + (m.callsign || m.name || m.cid) + '</td><td>' +
+                // Alte Zeilen bleiben stehen, sagen aber, dass sie alt sind — und werden
+                // auf der Karte nicht mehr gezeichnet.
+                const alt_s = m.alter_s;
+                const wieAlt = (alt_s == null) ? ''
+                  : alt_s < 120 ? ''
+                  : alt_s < 3600 ? ' (vor ' + Math.round(alt_s / 60) + ' min)'
+                  : ' (vor ' + Math.round(alt_s / 3600) + ' h)';
+                const blass = (m.frisch === false) ? ' style="opacity:.5;"' : '';
+                return '<tr' + blass + '><td>' + (m.callsign || m.name || m.cid) + '</td><td>' +
                        (m.simulator || '—') + '</td><td class="mono">' + pos +
-                       '</td><td>' + (m.gesehen_am || '—') + '</td></tr>';
+                       '</td><td>' + (m.gesehen_am || '—') + wieAlt + '</td></tr>';
               }).join('')
             : '<tr><td colspan="4" class="empty-hint">Niemand meldet gerade.</td></tr>';
         }
@@ -2795,6 +2803,14 @@
       const ziel = bgZielPilot();
       (_bgStand.melder || []).forEach(function (m) {
         if (m.lat == null) return;
+        // ⚠ NUR FRISCHE PUNKTE. Ohne das stand FRS61s Position von sieben Stunden zuvor
+        // gleichwertig neben einer aktuellen, und „alles zeigen" rahmte Wangerooge UND
+        // Heide-Büsum ein (14.09.2026 gemeldet). Dieselbe Überlegung wie `hoechstalter_s`
+        // in `bruegge_steht_alle`: Das Fehlen einer Meldung ist kein Zustand.
+        //
+        // In der TABELLE bleibt die Zeile — wer zuletzt gemeldet hat, ist eine gültige
+        // Frage. Nur behaupten darf sie nicht mehr, es sei jetzt so.
+        if (m.frisch === false) return;
         const ist_ziel = ziel && ziel.cid === m.cid;
         const punkt_m = L.circleMarker([m.lat, m.lon], {
           radius: ist_ziel ? 8 : 6, color: '#2d9cdb', weight: ist_ziel ? 3 : 2,
