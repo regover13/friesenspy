@@ -255,3 +255,106 @@ def test_die_suche_findet_auch_ueber_die_art(conn):
     assert all(z["art"] == "windsack" for z in treffer["zeilen"])
     # ... und die Titelsuche bleibt, wie sie war.
     assert db.bruegge_katalog_seite(conn, suche="Windsock", je_seite=50)["gesamt"] > 0
+
+
+# ---------------------------------------------------------------------------------------
+# Beide Simulatoren muessen liefern koennen -- stehende Regel (Nutzer, 14.09.2026)
+# ---------------------------------------------------------------------------------------
+#
+# "sollten innerhalb einer Art alle Entsprechungen eines Simulators nicht gesetzt werden
+# koennen, wird die Art deaktiviert. Ich muss sichergehen koennen, dass beide SIM immer
+# irgendwas aus der Art anzeigen koennen!"
+
+
+def test_einseitige_art_geht_an_KEINE_bruegge(conn):
+    """Der Kern der Regel -- und der Grund, warum sie nicht im Admin allein stehen darf.
+
+    Eine Art, deren X-Plane-Titel alle ausfallen, darf auch die MSFS-Bruegge nicht mehr
+    bekommen. Sonst zeigt eine Station zwei Dritteln der Gruppe etwas und dem letzten
+    Drittel nichts -- und eine Zaehlaufgabe, bei der nicht alle dasselbe sehen, ist keine.
+    """
+    db.bruegge_arten_erstbefuellen(conn)
+    assert "robbe" in db.bruegge_titel_fuer(conn, "msfs2024")
+    assert "robbe" in db.bruegge_titel_fuer(conn, "xplane12")
+
+    # Alle X-Plane-Robben fallen aus -- die MSFS-Seite bleibt vollstaendig.
+    conn.execute("UPDATE bruegge_katalog SET status = 'aus' "
+                 "WHERE art = 'robbe' AND simulator = 'xplane12'")
+    conn.commit()
+
+    assert "robbe" not in db.bruegge_titel_fuer(conn, "xplane12")
+    assert "robbe" not in db.bruegge_titel_fuer(conn, "msfs2024"), \
+        "einseitige Art darf auch der Simulator nicht bekommen, der sie noch koennte"
+
+
+def test_ein_einziger_titel_je_seite_genuegt(conn):
+    """Die Regel verlangt EINEN Titel je Simulator, nicht Gleichstand.
+
+    Ohne das waere sie unbrauchbar: MSFS bringt zu `tier_gross` sechs Titel mit, X-Plane
+    zwei. Gefordert ist, dass beide etwas zeigen koennen -- nicht, dass sie gleich viel
+    mitbringen.
+
+    ⚠ Dieser Test wird ohne den Fix NICHT rot, und das ist Absicht -- er bindet die
+    GEGENRICHTUNG. Rot wird er, wenn jemand die Regel verschaerft und Gleichstand verlangt.
+    Die beiden Nachbarn darueber und darunter sind die eigentlichen Regressionstests.
+    """
+    db.bruegge_arten_erstbefuellen(conn)
+    conn.execute("UPDATE bruegge_katalog SET status = 'aus' "
+                 "WHERE art = 'robbe' AND simulator = 'xplane12' "
+                 "AND titel NOT LIKE '%seehund_kuh.obj'")
+    conn.commit()
+    xp = db.bruegge_titel_fuer(conn, "xplane12")
+    assert len(xp["robbe"]) == 1
+    assert "robbe" in db.bruegge_titel_fuer(conn, "msfs2024")
+
+
+def test_die_regel_heilt_sich_selbst(conn):
+    """Kommt ein Titel zurueck, ist die Art sofort wieder da -- ohne Handgriff.
+
+    Das ist der Grund, warum die Regel BERECHNET wird und nicht in `bruegge_art.status`
+    gepflegt. Eine gepflegte Liste wuesste vom Ausfall nichts und von der Rueckkehr erst
+    recht nicht.
+    """
+    db.bruegge_arten_erstbefuellen(conn)
+    conn.execute("UPDATE bruegge_katalog SET status = 'aus' "
+                 "WHERE art = 'robbe' AND simulator = 'xplane12'")
+    conn.commit()
+    assert "robbe" not in db.bruegge_titel_fuer(conn, "msfs2024")
+
+    conn.execute("UPDATE bruegge_katalog SET status = 'aktiv' "
+                 "WHERE art = 'robbe' AND simulator = 'xplane12' "
+                 "AND titel LIKE '%seehund_kuh.obj'")
+    conn.commit()
+    assert "robbe" in db.bruegge_titel_fuer(conn, "msfs2024")
+    assert "robbe" in db.bruegge_titel_fuer(conn, "xplane12")
+
+
+def test_admin_sagt_WARUM_eine_art_gesperrt_ist(conn):
+    """Ohne Begruendung sucht jemand den Fehler bei sich.
+
+    Der Admin zeigt drei verschiedene Gruende -- abgeschaltet, kein Titel, einseitig -- und
+    sie sind nicht dasselbe: Der erste ist eine Entscheidung, der zweite eine Luecke, der
+    dritte ein Ausfall im Betrieb.
+    """
+    db.bruegge_arten_erstbefuellen(conn)
+    conn.execute("UPDATE bruegge_katalog SET status = 'aus' "
+                 "WHERE art = 'robbe' AND simulator = 'xplane12'")
+    conn.commit()
+    u = {d["art"]: d for d in db.bruegge_arten_uebersicht(conn)}
+    assert u["robbe"]["anforderbar"] is False
+    assert u["robbe"]["beidseitig"] is False
+    assert "X-Plane" in u["robbe"]["gesperrt_weil"]
+    # Eine gesunde Art traegt keine Begruendung.
+    assert u["windsack"]["anforderbar"] is True
+    assert u["windsack"]["gesperrt_weil"] is None
+
+
+def test_die_regel_gibt_nichts_frei_was_der_nutzer_abgeschaltet_hat(conn):
+    """Sie kann sperren, nie freigeben -- `bruegge_art.status` bleibt das letzte Wort."""
+    db.bruegge_arten_erstbefuellen(conn)
+    db.bruegge_art_setzen(conn, "robbe", status="aus")
+    conn.commit()
+    u = {d["art"]: d for d in db.bruegge_arten_uebersicht(conn)}
+    assert u["robbe"]["beidseitig"] is True       # die Titel stehen ja
+    assert u["robbe"]["anforderbar"] is False     # trotzdem gesperrt
+    assert u["robbe"]["gesperrt_weil"] == "vom Nutzer abgeschaltet"

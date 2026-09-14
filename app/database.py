@@ -3069,6 +3069,48 @@ def bruegge_arten_erstbefuellen(conn: sqlite3.Connection) -> dict:
             "wegen_fehlschlag_aus": abgeschaltet}
 
 
+#: Die beiden Toepfe, aus denen je eine Bruegge bedient wird. MSFS 2020 und 2024 bilden
+#: EINEN -- s. `bruegge_titel_fuer`.
+_BRUEGGE_TOPF = {
+    "xplane12": "simulator = 'xplane12'",
+    "msfs": "simulator IN ('msfs2020', 'msfs2024')",
+}
+
+
+def bruegge_arten_beidseitig(conn: sqlite3.Connection) -> set[str]:
+    """Die Arten, die JEDER Simulator darstellen kann -- die einzigen, die hinausgehen.
+
+    ⚠⚠ **STEHENDE REGEL (Nutzer, 14.09.2026):** *"sollten innerhalb einer Art alle
+    Entsprechungen eines Simulators nicht gesetzt werden koennen, wird die Art deaktiviert.
+    Ich muss sichergehen koennen, dass beide SIM immer irgendwas aus der Art anzeigen
+    koennen!"*
+
+    Der Grund ist die Zaehlaufgabe: Eine Station, die bei MSFS-Piloten eine Robbe zeigt und
+    bei X-Plane-Piloten nichts, ist kein Nachteil fuer den einen -- sie macht das ganze
+    Event ungueltig. Ein Drittel der Gruppe fliegt X-Plane.
+
+    **Berechnet, nicht gepflegt.** Das ist der Punkt: Titel fallen im Betrieb aus
+    (`ergebnis = 'fehlgeschlagen'` setzt `status = 'aus'`, s. `bruegge_arten_zuordnen`), und
+    eine von Hand gefuehrte Liste wuesste davon nichts. Wer die Regel hier herausnimmt und
+    in `bruegge_art.status` pflegt, baut genau die Luecke wieder ein, durch die eine Art
+    einseitig hinausgeht -- lautlos, denn im Admin sieht sie weiter vollstaendig aus.
+
+    Umgekehrt heilt sie sich selbst: Kommt ein Titel dazu oder wird einer wieder `aktiv`,
+    ist die Art sofort wieder da, ohne dass jemand einen Haken setzt.
+
+    ⚠ `bruegge_art.status` bleibt daneben bestehen und bedeutet etwas anderes: die
+    ausdrueckliche Abschaltung durch den Nutzer. Beides muss stimmen, damit eine Art
+    hinausgeht -- die Regel kann eine Art nur sperren, nie freigeben.
+    """
+    je_art: dict[str, set[str]] = {}
+    for topf, wo in _BRUEGGE_TOPF.items():
+        for (art,) in conn.execute(
+                f"SELECT DISTINCT art FROM bruegge_katalog "
+                f"WHERE art IS NOT NULL AND status = 'aktiv' AND {wo}"):
+            je_art.setdefault(art, set()).add(topf)
+    return {a for a, t in je_art.items() if len(t) == len(_BRUEGGE_TOPF)}
+
+
 def bruegge_titel_fuer(conn: sqlite3.Connection, simulator: str) -> dict[str, list[str]]:
     """Art -> Titel in der Reihenfolge, in der diese Bruegge sie probieren soll.
 
@@ -3081,17 +3123,22 @@ def bruegge_titel_fuer(conn: sqlite3.Connection, simulator: str) -> dict[str, li
 
     X-Plane bleibt getrennt: Dort ist der Bezeichner ein Dateipfad, ein MSFS-Titel waere
     dort sinnlos.
+
+    ⚠ **Einseitige Arten gehen an KEINE Bruegge** -- auch nicht an die, die sie darstellen
+    koennte. Das ist die Regel aus `bruegge_arten_beidseitig`, und sie greift hier, weil das
+    die Stelle ist, an der eine Art den Server verlaesst. Haette sie nur im Admin gegriffen,
+    bliebe der Weg ueber eine alte Soll-Zeile offen.
     """
-    if simulator == "xplane12":
-        wo = "simulator = 'xplane12'"
-    else:
-        wo = "simulator IN ('msfs2020', 'msfs2024')"
+    wo = _BRUEGGE_TOPF["xplane12" if simulator == "xplane12" else "msfs"]
+    beidseitig = bruegge_arten_beidseitig(conn)
     rows = conn.execute(
         f"SELECT art, titel FROM bruegge_katalog "
         f"WHERE art IS NOT NULL AND status = 'aktiv' AND {wo} "
         f"ORDER BY art, rang, titel").fetchall()
     raus: dict[str, list[str]] = {}
     for art, titel in rows:
+        if art not in beidseitig:
+            continue
         raus.setdefault(art, []).append(titel)
     return raus
 
@@ -3127,11 +3174,28 @@ def bruegge_arten_uebersicht(conn: sqlite3.Connection) -> list[dict]:
         "LEFT JOIN bruegge_katalog k ON k.art = g.art "
         "GROUP BY g.art, g.bedeutung, g.status ORDER BY g.art"
     ).fetchall()
+    beidseitig = bruegge_arten_beidseitig(conn)
     raus = []
     for r in rows:
         d = _row_to_dict(r)
         aktiv = d.get("aktiv") or 0
-        d["anforderbar"] = bool(aktiv) and d.get("art_status") == "aktiv"
+        # ⚠ `beidseitig` ist die STEHENDE REGEL (s. `bruegge_arten_beidseitig`), nicht bloss
+        # eine Anzeige: Eine Art, die ein Simulator nicht darstellen kann, ist nirgends
+        # anforderbar. Dieselbe Menge entscheidet in `bruegge_titel_fuer` -- EINE Quelle,
+        # damit Admin und Auslieferung nicht auseinanderlaufen koennen.
+        d["beidseitig"] = d["art"] in beidseitig
+        d["anforderbar"] = (bool(aktiv) and d.get("art_status") == "aktiv"
+                            and d["beidseitig"])
+        # Warum nicht? Das MUSS im Admin stehen -- sonst sucht jemand den Fehler bei sich.
+        if d["anforderbar"]:
+            d["gesperrt_weil"] = None
+        elif d.get("art_status") != "aktiv":
+            d["gesperrt_weil"] = "vom Nutzer abgeschaltet"
+        elif not aktiv:
+            d["gesperrt_weil"] = "kein aktiver Titel"
+        else:
+            fehlt = "X-Plane" if not (d.get("xplane") or 0) else "MSFS"
+            d["gesperrt_weil"] = f"{fehlt} kann nichts aus dieser Art setzen"
         d["addon"] = bool(aktiv) and (d.get("aus_addon") or 0) == aktiv
         d["beispiele"] = [z[0] for z in conn.execute(
             "SELECT titel FROM bruegge_katalog WHERE art = ? AND status = 'aktiv' "

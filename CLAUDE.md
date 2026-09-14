@@ -288,6 +288,35 @@ belassen es bei einer einfachen Hash-Aktualitätsprüfung.").
   durch — gemessen 28 Anfragen je Sekunde auf aip.dfs.de. In `_hole()` gebunden ist jeder
   Weg zur DFS gebremst, auch ein künftiger.
 
+## Die FriesenBrügge: Arten (stehende Regeln — IMMER einhalten)
+
+- **Eine Art geht nur hinaus, wenn BEIDE Simulatoren etwas aus ihr zeigen können.** Fallen
+  in einem Simulator alle Titel aus, ist die Art in **keinem** mehr anforderbar — auch nicht
+  in dem, der sie noch könnte. Nutzerregel vom 14.09.2026: *„Ich muss sichergehen können,
+  dass beide SIM immer irgendwas aus der Art anzeigen können!"* Der Grund ist die
+  Zähl­aufgabe: Eine Station, die MSFS-Piloten eine Robbe zeigt und X-Plane-Piloten nichts,
+  benachteiligt nicht einen — sie macht das ganze Event ungültig, und ein Drittel der Gruppe
+  fliegt X-Plane.
+  **Die Regel wird berechnet, nicht gepflegt** (`bruegge_arten_beidseitig`, greift in
+  `bruegge_titel_fuer` **und** `bruegge_arten_uebersicht` aus derselben Quelle). Titel fallen
+  im Betrieb aus — `ergebnis='fehlgeschlagen'` setzt `status='aus'` —, und eine von Hand
+  geführte Liste wüsste davon nichts. Wer sie nach `bruegge_art.status` verlegt, baut die
+  Lücke wieder ein, durch die eine Art einseitig hinausgeht; im Admin sieht sie dabei weiter
+  vollständig aus. Umgekehrt heilt sie sich selbst: Kommt ein Titel zurück, ist die Art
+  sofort wieder da.
+  `bruegge_art.status` bleibt daneben die **ausdrückliche Abschaltung durch den Nutzer** —
+  die Regel kann nur sperren, nie freigeben.
+- **Ein Titel gehört zu höchstens einer Art**, und die Brügge nimmt aus einer Art **immer
+  Rang 1** — sie rückt nur nach, wenn ein Titel scheitert. Wer gemischte Gruppen will (drei
+  Kühe, ein Bulle), bekommt sie deshalb *nicht* über mehrere Titel in einer Art, sondern
+  braucht ein Würfeln auf dem Server, wie es `kurs_zufall` für die Richtung schon tut.
+- **Eine Verneinung ist nur so gut wie das Suchmuster.** „X-Plane hat kein …" war schon
+  dreimal falsch: bei den Windrädern (`WindTbn2m5_100.obj` — weder `turbine` noch `windmill`
+  trifft), bei den Fahrzeugen (300 Stück, nur in einem ungesuchten Zweig) und bei den großen
+  Schiffen (in `ships/parts/`, weil X-Plane sie aus Bausteinen zusammensetzt). **Vor jedem
+  „gibt es nicht" im ganzen Dateibaum suchen**, nicht nur im Katalog — der kennt 2327 von
+  10 016 `.obj`.
+
 ## Datenbank (stehende Regeln — IMMER einhalten)
 
 - **Keine Datenbank-Transaktion darf einen Netzabruf umspannen.** Die Regel steht auch bei den
