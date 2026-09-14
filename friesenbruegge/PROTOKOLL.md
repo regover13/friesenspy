@@ -3,7 +3,11 @@
 **Der Vertrag zwischen dem FriesenSpy-Server und einer Brügge im Simulator.**
 Verbindlich für alle Umsetzungen — MSFS 2020, MSFS 2024, X-Plane 12.
 
-> Stand 11.09.2026 · Protokollfassung **1** · ✅ **vom Nutzer abgenommen** — noch nicht umgesetzt
+> Stand 14.09.2026 · Protokollfassung **2** · ✅ **vom Nutzer abgenommen** — Server umgesetzt
+>
+> **Fassung 2 (14.09.2026):** Der Server schickt die Titel mit (`arten`), die Brügge führt
+> keine eigene Tabelle mehr — und `kann` fällt weg. Fassung 1 wird weiter bedient; die
+> Änderung ist von beiden Seiten aus rückwärtsverträglich (Abschnitt 9).
 > Grundlage: GitHub-Issue [#25](https://github.com/regover13/friesenspy/issues/25) und die
 > Probeflüge in [`probe-msfs/ERGEBNIS.md`](probe-msfs/ERGEBNIS.md) und
 > [`probe-xplane/ERGEBNIS.md`](probe-xplane/ERGEBNIS.md).
@@ -502,34 +506,110 @@ MSFS 2024 vergab achtstellige IDs, MSFS 2020 dreistellige, das WASM-Modul in 202
 
 ---
 
-## 3. Der Server spricht in Gattungen, nie in Dateinamen
+## 3. Der Server spricht in Arten — und liefert die Titel gleich mit
 
 MSFS kennt Container-Titel, X-Plane kennt `.obj`-Pfade. Sagt der Server `"Boat01"`, ist
-X-Plane raus.
+X-Plane raus. Deshalb fordert er eine **Art** an (`"art": "boot_klein"`) und legt daneben,
+welche Titel dazugehören.
 
-**Die Zuordnungstabelle gehört zur Brügge.** Sie kennt ihren Simulator; der Server kennt ihn
-nicht. Meldet eine Brügge eine Gattung nicht in `kann`, weicht der Server aus oder lässt die
-Stelle aus — er sendet nie ins Leere.
+> ### ⚠ Umgekehrt seit Fassung 2 (14.09.2026)
+>
+> Bis dahin stand hier: *„Die Zuordnungstabelle gehört zur Brügge. Sie kennt ihren Simulator;
+> der Server kennt ihn nicht."* **Beides war falsch.**
+>
+> Der Server kennt den Simulator sehr wohl — die Brügge meldet ihn in **jeder** Meldung
+> (`simulator`). Und die Tabelle im Client widersprach dem Leitbild dieses Dokuments:
+>
+> | | Client-Tabelle | Server-Tabelle |
+> |---|---|---|
+> | eine neue Art kostet | Windows-Build + Verteilung an 61 Piloten | eine Datenbankzeile |
+> | weiß, was tatsächlich funktioniert | nein | ja — 1693 Titel einzeln im Sim geprüft |
+>
+> Zweimal bezahlt am 13.09.2026: FRS61s ältere Brügge kannte `robbe` und `tier_wild` nicht
+> und meldete `GATTUNG_UNBEKANNT`. Und dreimal still: `PolarBear`, `Bear_U_Maritimus` und
+> `deer_o_hemionus` standen in der Client-Tabelle, scheitern aber alle mit `EXCEPTION_22` —
+> die Brügge probierte sie bei jedem Fehlversuch durch, weil eine Tabelle kein Gedächtnis hat.
+>
+> **Die Brügge wurde damit dümmer, nicht klüger.** Genau das war das Ziel.
 
-### Der Katalog der Fassung 1
+### `arten` — das Wörterbuch neben `soll`
 
-| Gattung | MSFS 2020 + 2024 | X-Plane 12 | Grund |
-|---|---|---|---|
-| `tier_gross` | `BlackBear` ✅ | `deer_buck.obj` ⚠ | Gelände |
-| `bauwerk` | `Windmill` ✅ | `OilPlatform.obj` ⚠ | Gelände |
-| `fahrzeug` | `ASO_Ambulance_Japan` ✅ | **gibt es nicht** — s. u. | Gelände |
-| `boot_klein` | `Boat01` ✅ | `SailBoat.obj` ✅ | Gelände — **außer MSFS 2020: Meereshöhe** |
-| `boot_gross` | `CruiseShip01` ✅ | `Perry.obj` ⚠ | Gelände — **außer MSFS 2020: Meereshöhe** |
-| `robbe` (ab 1.4.0) | `ahqa seal moving` ✅ **Community** | — | Gelände |
+Die Antwort trägt neben `soll` ein Wörterbuch **Art → Titel**, in der Reihenfolge, in der
+die Brügge probieren soll:
 
-⚠ **`fahrzeug` stand hier als `lib/airport/vehicles/…` — das war eine Annahme, und sie trägt
-nicht.** X-Plane 12 bringt kein Bodenfahrzeug als eigenständige `.obj` mit; was am Flughafen
-fährt, liegt in der Szenerie-Bibliothek und ist nur über `XPLMLookupObjects` erreichbar, nicht
-über `XPLMLoadObject`. Die X-Plane-Brügge meldet die Gattung deshalb nicht in `kann`. Die
-vollständige Tabelle steht in [`OBJEKTE.md`](OBJEKTE.md); dort auch, welche acht Gattungen sie
-stattdessen beherrscht.
+```jsonc
+{
+  "soll": [
+    { "id": "k7-3-a", "art": "rauch_signalrot", "lat": 53.66, "lon": 6.98 },
+    { "id": "k7-3-b", "art": "rauch_signalrot", "lat": 53.67, "lon": 6.99 }
+  ],
+  "arten": {
+    "rauch_signalrot": ["FrsRauch_Signalrot"]
+  }
+}
+```
 
-✅ = gesetzt und im Bild gesehen · ⚠ = Datei auf der Platte nachgewiesen, aber nie gesetzt
+**Einmal je Antwort, nicht je Objekt** — und das ist gemessen, nicht gemutmaßt. Der erste
+Entwurf legte die Titel in jeden `soll`-Eintrag; bei 32 Objekten (`SOLL_MAX`) und
+X-Plane-Pfaden von rund 45 Zeichen wären das **+9,6 kB** gewesen, bei einem `ANTWORT_PUFFER`
+von 16384 in `bruegge.cpp`. Ein Überlauf ist dort **lautlos**: Die Brügge behält ihren letzten
+Stand und meldet nur `antwort_zu_gross`.
+
+Als Wörterbuch kostet *alles* zusammen **914 Bytes** (MSFS) bzw. **1643** (X-Plane), gemessen
+an der Produktionsdatenbank. Zwanzig rote Säulen kosten damit eine Titelliste statt zwanzig.
+
+**Geschickt wird nur, was angefordert ist.** Die Brügge kann mit Titeln zu Arten, die sie
+nicht setzen soll, nichts anfangen. Und ohne `soll` geht gar kein `arten` hinaus — eine
+abgelehnte Meldung gibt keinen Zustand preis.
+
+### Was die Brügge damit tut
+
+Sie probiert die Liste **von vorn nach hinten**. Genau das tat sie vorher auch, nur mit ihrer
+eigenen Tabelle. Scheitert Titel 1, rückt Titel 2 nach; ist die Liste erschöpft, meldet sie
+`KEIN_TITEL_GING` in `steht`. Fehlt die Art im Wörterbuch ganz, meldet sie
+`GATTUNG_UNBEKANNT` — dieser Fehlercode bleibt wortgleich, damit ältere Server ihn
+wiedererkennen.
+
+### ⚠ `kann` fällt weg (Fassung 2)
+
+Ohne eigene Tabelle **kann die Brügge nichts mehr behaupten**. Sie meldet nicht länger, welche
+Arten sie beherrscht — der Server schickt für den gemeldeten Simulator, was er hat, und
+erfährt aus `steht`, was tatsächlich stand. **Belegt statt behauptet.**
+
+Das kostet nichts: Der Server hat `kann` ohnehin nie ausgewertet. Und es beendet eine Lüge,
+die schon einmal auffiel — bei Fassung 1.4.0 meldete das Modul, es könne `robbe` nicht,
+während es sie setzen konnte.
+
+Eine Brügge der Fassung 1 darf `kann` weiter mitschicken; es wird übergangen.
+
+### Wo der Katalog steht (Fassung 2)
+
+**Nicht mehr hier.** Bis Fassung 1 stand an dieser Stelle eine Tabelle mit je einem Titel je
+Art — sechs Zeilen, von Hand gepflegt, und schon beim Schreiben unvollständig. Jetzt steht
+der Bestand in `bruegge_katalog` auf dem Server: **2935 Titel**, davon **1693 einzeln im
+laufenden Simulator gesetzt und gezeichnet**, jeder mit `simulator`, `quelle`, `paket`,
+`ergebnis` — und seit dem 14.09.2026 mit `art`, `rang` und `status`.
+
+Ein Dokument kann das nicht führen, und es soll es auch nicht: Was hier steht, wird beim
+Lesen geglaubt; was dort steht, wurde gemessen.
+
+**22 Arten sind zugeordnet** (Stand 14.09.2026), 87 Titel. Gepflegt wird im Admin; die Liste
+zu ändern kostet weder ein Client-Release noch einen Deploy.
+
+⚠ **Zwei Verneinungen aus Fassung 1 waren falsch**, und beide fielen nur auf, weil der Nutzer
+widersprach:
+
+*„X-Plane bringt kein Bodenfahrzeug als eigenständige `.obj` mit."* — Es bringt **333** mit,
+darunter `airport scenery/Common_Elements/fire_department/fire_truck_small_1.obj`. Sie stehen
+nur nicht im Katalog: `katalog_sammeln.py` durchsucht bewusst allein `sim objects/`.
+
+*„X-Plane hat kein Windrad — null Treffer in über 7000 `.obj`."* — Es hat **drei**:
+`WindTbn2m5_100.obj` im Autogen. Das Suchmuster kannte die Abkürzung nicht. **Eine Verneinung
+ist nur so gut wie das Muster, mit dem gesucht wurde.**
+
+Im selben Zweig liegen 64 Leuchttürme (`lighthouse_13` bis `lighthouse_64` — die Zahl ist die
+Höhe in Metern) und 298 statische Flugzeuge. Ob `XPLMLoadObject` ein Autogen-Objekt lädt, ist
+**ungemessen**; der Pfad existiert, und mehr braucht die Schnittstelle nicht.
 
 ### ⚠ `robbe` ist die erste Gattung ohne Bordmodell
 
@@ -1110,6 +1190,32 @@ Hinweisadresse — nie eine halb verstandene Antwort.
 
 **Die Regel für Änderungen:** Felder hinzufügen erhöht die Fassung nicht (unbekannte Felder
 werden auf beiden Seiten übergangen). Bedeutungen ändern oder Felder entfernen erhöht sie.
+
+**Geantwortet wird in der Fassung, in der gefragt wurde** — höchstens der eigenen. Eine
+Brügge, die 1 spricht, bekäme sonst eine 2 zurück und müsste daraus schließen, dass sie etwas
+nicht versteht, obwohl der Server ihr genau das schickt, was Fassung 1 vorsieht. Die Zahl
+steht in *beiden* Richtungen; dann muss sie auch beide Seiten meinen.
+
+### Fassung 2 (14.09.2026) — die Titel kommen vom Server
+
+| | |
+|---|---|
+| **neu** | `arten` in der Antwort: Art → Titelliste (Abschnitt 3) |
+| **weg** | `kann` in der Meldung — die Brügge hat keine Tabelle mehr, also nichts zu behaupten |
+| **unverändert** | alles andere. `art`, `id`, `steht`, `lage`, `spur`, die Fehlercodes |
+
+Ein Feld **hinzuzufügen** hätte die Fassung nicht erhöht; ein Feld **zu entfernen** erhöht
+sie. Deshalb 2.
+
+**Warum das trotzdem niemanden bricht:** Eine Brügge der Fassung 1 schickt `kann` weiter
+(der Server wirft es weg, wie seit jeher) und übergeht `arten` als unbekanntes Feld — sie
+nimmt ihre eigene Tabelle und läuft wie zuvor. Eine Brügge der Fassung 2 schickt kein `kann`
+und bekommt die Titel. **Beide Richtungen der Abwärtsverträglichkeit fallen hier aus derselben
+Regel** („unbekannte Felder werden auf beiden Seiten übergangen"), und genau dafür steht sie
+seit Fassung 1 im Vertrag.
+
+Das ist nicht nur Theorie: FRS61 fliegt mit einer älteren Brügge, und die soll weiterlaufen,
+ohne dass jemand etwas herunterlädt.
 
 **Die X-Plane-Brügge steht seit dem 13.09.2026 auf 1.1.0** — dieselbe *Protokoll*fassung 1,
 nur läuft sie jetzt auf Windows, macOS und Linux aus einem Quelltext. Am Vertrag ändert sich

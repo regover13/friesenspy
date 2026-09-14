@@ -868,7 +868,15 @@ async def panel_diag(request: Request):
 # ---------------------------------------------------------------------------------------
 
 _BRUEGGE_MAX_BYTES = 64 * 1024       # eine Meldung mit voller spur liegt weit darunter
-_BRUEGGE_PROTOKOLL = 1               # was dieser Server spricht
+# Fassung 2 seit dem 14.09.2026: `kann` faellt weg (die Bruegge fuehrt keine Artentabelle
+# mehr und kann deshalb nichts mehr behaupten), `arten` kommt hinzu. Ein Feld ZU ENTFERNEN
+# erhoeht die Fassung -- so steht es in Abschnitt 9 des Protokolls.
+#
+# Fassung 1 wird weiter bedient, und zwar ohne Zutun: Eine alte Bruegge schickt `kann`
+# (der Server wirft es weg, wie immer) und uebergeht `arten` als unbekanntes Feld -- sie
+# nimmt ihre eigene Tabelle. Genau dafuer ist die Regel "unbekannte Felder werden auf
+# beiden Seiten uebergangen" da.
+_BRUEGGE_PROTOKOLL = 2               # was dieser Server spricht
 _BRUEGGE_GILT_BIS_S = 300            # so lange gilt "soll" ohne neue Auskunft
 # Wer nicht auf VATSIM ist, fragt selten -- aber nicht SO selten, dass er eine Minute lang
 # nicht merkt, dass er sich gerade verbunden hat.
@@ -927,13 +935,36 @@ def _bruegge_takt(conn) -> int:
     return max(1, min(900, takt))
 
 
-def _bruegge_antwort(takt: int, soll=None, gilt_bis: int | None = None) -> dict:
-    return {
-        "protokoll": _BRUEGGE_PROTOKOLL,
+def _bruegge_antwort(takt: int, soll=None, gilt_bis: int | None = None,
+                     arten=None, fassung: int | None = None) -> dict:
+    """Die Antwort an die Bruegge.
+
+    ⚠ `arten` GEHT EINMAL JE ANTWORT HINAUS, NICHT JE OBJEKT -- und das ist gemessen, nicht
+    gemutmasst. Der erste Entwurf legte die Titel in jeden `soll`-Eintrag; bei 32 Objekten
+    (SOLL_MAX) und X-Plane-Pfaden von rund 45 Zeichen waeren das ~9,6 kB zusaetzlich gewesen,
+    bei einem ANTWORT_PUFFER von 16384 in bruegge.cpp. Ein Ueberlauf ist dort LAUTLOS -- die
+    Bruegge behaelt ihren letzten Stand und meldet nur `antwort_zu_gross`.
+
+    Als Woerterbuch kostet ALLES zusammen 914 Bytes (MSFS) bzw. 1643 (X-Plane), gemessen an
+    der Produktionsdatenbank. Zwanzig rote Saeulen kosten damit eine Titelliste statt zwanzig.
+
+    Es geht nur mit, wenn auch `soll` etwas enthaelt: Eine abgelehnte Meldung soll keinen
+    Zustand preisgeben, und ohne Objekte braucht niemand Titel.
+    """
+    # GEANTWORTET WIRD IN DER FASSUNG, IN DER GEFRAGT WURDE (hoechstens der eigenen).
+    # Eine Bruegge, die Fassung 1 spricht, bekaeme sonst eine 2 zurueck und muesste daraus
+    # schliessen, dass sie etwas nicht versteht -- obwohl der Server ihr genau das schickt,
+    # was Fassung 1 vorsieht. Das Protokoll verlangt die Zahl ausdruecklich in BEIDEN
+    # Richtungen (Abschnitt 9); dann muss sie auch beide Seiten meinen.
+    antwort = {
+        "protokoll": min(fassung or _BRUEGGE_PROTOKOLL, _BRUEGGE_PROTOKOLL),
         "naechste_frage_in_s": takt,
         "gilt_bis_s": _BRUEGGE_GILT_BIS_S if gilt_bis is None else gilt_bis,
         "soll": soll or [],
     }
+    if soll and arten:
+        antwort["arten"] = arten
+    return antwort
 
 
 def _bruegge_vs_spitze(gemerkt) -> float:
@@ -1062,7 +1093,7 @@ async def bruegge_melden(request: Request):
             conn.commit()
             return _bruegge_antwort(
                 _BRUEGGE_TAKT_UNERKANNT_S if kandidaten_da else _BRUEGGE_TAKT_OHNE_VATSIM_S,
-                gilt_bis=0)
+                gilt_bis=0, fassung=fassung if isinstance(fassung, int) else None)
 
         bruegge_position_schreiben(conn, cid, lage, simulator, kennung or None)
 
@@ -1088,6 +1119,14 @@ async def bruegge_melden(request: Request):
             bruegge_steht_melden(conn, kennung, cid, body.get("steht") or [])
 
         soll = bruegge_soll_fuer(conn, cid)
+        # Die Titel zu den angeforderten Arten -- fuer DIESEN Simulator, und nur zu dem, was
+        # wirklich angefordert ist. Alles mitzuschicken waere bequemer und kostete 914 Bytes
+        # statt ~200; der Puffer traegt das, aber die Bruegge kann mit Titeln zu Arten, die
+        # sie nicht setzen soll, nichts anfangen.
+        arten = {}
+        if soll:
+            alle = bruegge_titel_fuer(conn, simulator)
+            arten = {o["art"]: alle[o["art"]] for o in soll if o.get("art") in alle}
         # Gelegentlich aufraeumen -- kein eigener Job fuer eine Handvoll Zeilen. Ein Prozent
         # der Meldungen genuegt: Bei Sekundentakt ist das rund alle anderthalb Minuten je
         # fliegendem Piloten, und wenn niemand fliegt, gibt es auch nichts aufzuraeumen.
@@ -1104,7 +1143,11 @@ async def bruegge_melden(request: Request):
     # Was drinsteht, entscheidet der Server allein. Die Bruegge weiss nicht, ob gerade
     # gezaehlt, gesucht oder geraetselt wird -- ein neuer Eventtyp braucht deshalb keine
     # Aenderung an ihr und kein neues Paket beim Piloten.
-    return _bruegge_antwort(takt, soll=soll)
+    #
+    # Seit dem 14.09.2026 gilt das auch fuer eine neue ART: Die Titel gehen in `arten` mit,
+    # und die Bruegge probiert sie der Reihe nach. Sie fuehrt keine eigene Tabelle mehr.
+    return _bruegge_antwort(takt, soll=soll, arten=arten,
+                            fassung=fassung if isinstance(fassung, int) else None)
 
 
 def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,

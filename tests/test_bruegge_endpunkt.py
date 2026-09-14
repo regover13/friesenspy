@@ -237,9 +237,30 @@ def test_zu_grosse_meldung_wird_abgewiesen(klient):
 
 def test_neuere_protokollfassung_bekommt_426(klient):
     """Damit eine neuere Brügge aufräumt und anhält, statt in einem Vertrag zu reden,
-    den niemand liest."""
-    r = klient.post("/api/bruegge/melden", json=_meldung(protokoll=2))
+    den niemand liest.
+
+    Die Zahl wandert mit: Seit dem 14.09.2026 spricht der Server Fassung 2, also ist erst 3
+    zu neu. Wer sie hier hochzieht, ohne `_BRUEGGE_PROTOKOLL` anzufassen, hebelt den Test aus.
+    """
+    import app.main as main
+    r = klient.post("/api/bruegge/melden",
+                    json=_meldung(protokoll=main._BRUEGGE_PROTOKOLL + 1))
     assert r.status_code == 426
+
+
+def test_eine_alte_bruegge_bekommt_ihre_eigene_fassung_zurueck(klient, tmp_path):
+    """Geantwortet wird in der Fassung, in der gefragt wurde — höchstens der eigenen.
+
+    Eine Brügge, die Fassung 1 spricht, bekäme sonst eine 2 zurück und müsste daraus
+    schließen, dass sie etwas nicht versteht — obwohl der Server ihr genau das schickt, was
+    Fassung 1 vorsieht. Die Zahl steht laut Abschnitt 9 in BEIDEN Richtungen; dann muss sie
+    auch beide Seiten meinen.
+    """
+    _friese_anlegen(str(tmp_path / "t.db"))
+    assert klient.post("/api/bruegge/melden",
+                       json=_meldung(protokoll=1)).json()["protokoll"] == 1
+    assert klient.post("/api/bruegge/melden",
+                       json=_meldung(protokoll=2)).json()["protokoll"] == 2
 
 
 # ---------------------------------------------------------------------------------------
@@ -918,3 +939,66 @@ def test_der_admin_setzt_objekte_standardmaessig_auf_den_boden(klient, tmp_path)
     c.close()
     assert werte["ohne-angabe"] == 1, "ohne Angabe muss auf_boden gelten"
     assert werte["ausdruecklich-aus"] == 0, "ausdrueckliches False muss durchkommen"
+
+
+# ---------------------------------------------------------------------------------------
+# Protokollfassung 2: Die Titel kommen vom Server (14.09.2026)
+# ---------------------------------------------------------------------------------------
+
+def test_die_titel_kommen_mit_der_antwort(klient, tmp_path):
+    """DAS IST DER GANZE UMBAU, in einem Test.
+
+    Die Brügge führte bis zum 14.09.2026 eine eigene Tabelle `g_gattungen[]` — eine neue Art
+    kostete damit einen Windows-Build und eine Verteilung an 61 Piloten. Jetzt schickt der
+    Server die Titel mit, und die Brügge probiert sie der Reihe nach durch.
+    """
+    _friese_anlegen(str(tmp_path / "t.db"))
+    klient.post("/api/admin/bruegge/soll", cookies=_admin_kekse(),
+                json={"art": "tier_gross", "lat": 53.78, "lon": 7.92, "id": "prueflauf"})
+
+    antwort = klient.post("/api/bruegge/melden", json=_meldung(protokoll=2)).json()
+    assert antwort["soll"] and antwort["soll"][0]["art"] == "tier_gross"
+    assert "BlackBear" in antwort["arten"]["tier_gross"]
+    # ... und was nachweislich scheitert, geht gar nicht erst hinaus (`PolarBear`,
+    # EXCEPTION_22 am 12.09.2026). Das kann eine Tabelle im Client grundsätzlich nicht.
+    assert "PolarBear" not in antwort["arten"]["tier_gross"]
+
+
+def test_eine_x_plane_bruegge_bekommt_pfade_keine_titel(klient, tmp_path):
+    """X-Plane kennt keine Container-Titel — dort ist der Dateipfad der Bezeichner.
+
+    Die Trennung passiert auf dem Server, an `simulator` aus der Meldung. Eine Brügge, die
+    beide Bänder bekäme, müsste selbst entscheiden — genau das soll sie nicht mehr.
+    """
+    _friese_anlegen(str(tmp_path / "t.db"))
+    klient.post("/api/admin/bruegge/soll", cookies=_admin_kekse(),
+                json={"art": "tier_gross", "lat": 53.78, "lon": 7.92, "id": "xp"})
+
+    m = _meldung(protokoll=2)
+    m["simulator"] = "xplane12"
+    titel = klient.post("/api/bruegge/melden", json=m).json()["arten"]["tier_gross"]
+    assert titel and all(t.startswith("Resources/") for t in titel)
+
+
+def test_ohne_soll_gehen_auch_keine_titel_hinaus(klient, tmp_path):
+    """Eine abgelehnte Meldung gibt keinen Zustand preis — auch keine Artenliste.
+
+    Sonst verriete der Server einem Fremden, was er überhaupt zu bieten hat. Und wo nichts
+    hinzustellen ist, braucht niemand Titel.
+    """
+    antwort = klient.post("/api/bruegge/melden", json=_meldung(protokoll=2)).json()
+    assert antwort["soll"] == []
+    assert "arten" not in antwort
+
+
+def test_nur_die_angeforderten_arten_gehen_hinaus(klient, tmp_path):
+    """Alles mitzuschicken wäre bequemer und kostete 914 Bytes statt ~200.
+
+    Der Puffer (16384 in bruegge.cpp) trüge das — aber die Brügge kann mit Titeln zu Arten,
+    die sie nicht setzen soll, nichts anfangen.
+    """
+    _friese_anlegen(str(tmp_path / "t.db"))
+    klient.post("/api/admin/bruegge/soll", cookies=_admin_kekse(),
+                json={"art": "tier_gross", "lat": 53.78, "lon": 7.92, "id": "nur-eins"})
+    arten = klient.post("/api/bruegge/melden", json=_meldung(protokoll=2)).json()["arten"]
+    assert list(arten) == ["tier_gross"]
