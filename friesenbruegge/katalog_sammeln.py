@@ -35,7 +35,12 @@ import json
 import os
 import re
 import sys
+import sys
 from pathlib import Path
+
+# `fsarchive` liegt daneben -- der Aufrufer startet dieses Skript aber oft aus einem anderen
+# Verzeichnis, und dann findet Python es nicht von allein.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 # `title=` in einer sim.cfg. Anführungszeichen sind optional, Kommentare hinter `;` möglich.
 TITEL = re.compile(r'^\s*title\s*=\s*"?([^";\r\n]+)', re.IGNORECASE | re.MULTILINE)
@@ -125,44 +130,44 @@ def sammle_msfs(wurzel: Path, simulator: str) -> list[dict]:
 
 
 def sammle_gestreamt(wurzel: Path) -> list[dict]:
-    """Pakete, die NUR als Platzhalter dastehen -- ihr Inhalt kommt aus der Cloud.
+    """Die gestreamten Pakete -- ihre Titel werden GELESEN, nicht geraten.
 
-    **Ihre Titel sind unbekannt**, denn die `sim.cfg` steckt im `minimal.fsarchive`. Der
-    Ordnername ist NICHT der Titel (12.09.2026 geprüft: `Bear_U_Maritimus` wird abgelehnt,
-    auch mit `_EX1`). Sie kommen trotzdem in den Katalog — mit dem Ordnernamen als Platzhalter
-    und `quelle='streamed'`, damit sichtbar bleibt, **wie viel Bestand hier unerreichbar ist**.
+    ⭐ **HIER WURDE BIS ZUM 14.09.2026 GERATEN, UND DAS WAR FALSCH.**
+
+    Die Funktion nahm den Paketnamen als Titel und schrieb „Titel unbekannt (Paket
+    gestreamt, kein entpackter Ordner)" dazu. Zwei dieser Rateversuche standen als
+    gescheitert im Katalog:
+
+        deer_o_hemionus                     EXCEPTION_22 -- CREATE_OBJECT_FAILED
+        reindeer_r_tarandus_groenlandicus   EXCEPTION_22 -- CREATE_OBJECT_FAILED
+
+    Der Nutzer hat den Befund nicht geglaubt (*„MSFS muss auch einen Hirsch haben!"*) und
+    hatte recht: MSFS hat zwei. Sie heissen `CElaphusCanadensisMale` (Wapiti) und
+    `AAlcesMale` (Elch). Die geratenen Namen waren **Paket**namen.
+
+    **Jetzt wird gelesen** (s. `fsarchive.py`): Das `minimal.fsarchive` jedes Pakets ist
+    unverschluesselt (`"scheme":"notEncrypted"`) und enthaelt die `sim.cfg` im Klartext.
+    2642 Titel aus 1528 Archiven, ohne Simulator.
+
+    ⚠ **FLUGZEUGE BLEIBEN AUSSEN VOR, und das ist keine Nachlaessigkeit:** Deren
+    `aircraft.cfg` liegt im VERSCHLUESSELTEN Teil (`RASA 02 00 03 00`); das `minimal` eines
+    Flugzeugpakets enthaelt nur Anhaenge. Fuer Flugzeugtitel gibt es genau einen Weg -- die
+    Bruegge liest `TITLE` im laufenden Simulator und meldet ihn (s. `flugzeug` in
+    PROTOKOLL.md). Zwei Faelle, zwei Wege, keine Doppelung.
     """
+    import fsarchive                                    # noqa: E402  (nur hier gebraucht)
+
     raus = []
     sp = wurzel / "StreamedPackages"
     if not sp.is_dir():
         return raus
-    for paket in sp.iterdir():
-        if not paket.is_dir():
-            continue
-        # Nur SimObject-Pakete interessieren; Flugzeuge, Szenerien und Liveries nicht.
-        if "simobjects" not in paket.name.lower():
-            continue
-        # Der Ordner unter SimObjects/ ist der beste verfuegbare Hinweis auf den Titel.
-        namen = [d.name for d in paket.rglob("SimObjects/*/*") if d.is_dir()]
-        kategorie = None
-        for d in paket.rglob("SimObjects/*"):
-            if d.is_dir():
-                kategorie = d.name
-                break
-        # Kein entpackter Ordner? Dann ist der Titel schlicht UNBEKANNT. Der Paketname ist
-        # ein Notbehelf, damit die Luecke im Katalog sichtbar bleibt -- aber er wird als
-        # solcher gekennzeichnet, sonst misst ein Pruefwerkzeug einen Fehlschlag, den es
-        # selbst verursacht hat (12.09.2026: 49 "gescheiterte" Titel, die nie welche waren).
-        geraten = not namen
-        if geraten:
-            namen = [paket.name.replace("fs24-microsoft-simobjects-", "")
-                                .replace("fs24-asobo-simobjects-", "")]
-        for n in namen:
-            e = {"simulator": "msfs2024", "titel": n, "paket": paket.name,
-                 "quelle": "streamed", "kategorie": kategorie}
-            if geraten:
-                e["bemerkung"] = "Titel unbekannt (Paket gestreamt, kein entpackter Ordner)"
-            raus.append(e)
+
+    for e in fsarchive.sammeln(sp):
+        # Die Kategorie steckt im Paketnamen: `fs24-microsoft-ships-fishing-1` -> `ships`.
+        teile = e["paket"].split("-")
+        kategorie = teile[2] if len(teile) > 2 else None
+        raus.append({"simulator": "msfs2024", "titel": e["titel"], "paket": e["paket"],
+                     "quelle": "streamed", "kategorie": kategorie})
     return raus
 
 
