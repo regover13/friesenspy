@@ -75,7 +75,7 @@ FARBEN = {
 # Wie hoch die Säule steht: Aufstiegsgeschwindigkeit × Lebensdauer, gebremst durch DRAG
 # und getragen vom Auftrieb (negativer GRAVITY-Wert).
 #
-# 3 m/s über 45 s ergibt rechnerisch 135 m; mit der Bremsung bleiben rund 100 m. Das ist die
+# 3 m/s über 30 s ergibt rechnerisch 90 m; mit der Bremsung bleiben rund 65 m. Das ist die
 # Größenordnung, die eine Säule über Bäume, Hügel und Dunst hebt -- und genau darum geht es:
 # Am 13.09.2026 hat der Nutzer sechs gesetzte Objekte auf einem Flugplatz gesucht und drei
 # nicht gefunden. Ein Modell am Boden verschwindet hinter allem; eine Säule steht darüber.
@@ -85,23 +85,42 @@ FARBEN = {
 # 1,5 m groß -- das ergibt eine Perlenschnur, keine Säule. Echter Signalrauch quillt mit 2-3
 # m/s; die Dichte unten kommt daher, dass die Partikel eng beieinander bleiben.
 AUFSTIEG_MS = 3.0
-LEBENSDAUER_S = 45.0      # ⚠ SOLL AUF 30 -- s. unten
-# ⚠ ENTSCHIEDEN AM 14.09.2026, NOCH NICHT GEBAUT: 30 s fuer BEIDE Simulatoren.
+LEBENSDAUER_S = 30.0
+# Am 14.09.2026 von 45 auf 30 gesetzt -- dieselbe Nutzerentscheidung, die MSFS von 22 herauf
+# gebracht hat: "ich finde xplane zu gross und msfs zu klein". Beide Fassungen waren
+# abgenommen, keine war die Referenz, beide bewegten sich zur Mitte.
 #
-# Im Flug gesehen und vom Nutzer eingeordnet: "xplane zu gross und msfs zu klein"
-# (MSFS steht bei 22 s). Beide Fassungen sind abgenommen, beide bewegen sich.
+# ⚠ UND DIE WERTE DARUNTER WERDEN JETZT GERECHNET, NICHT EINGETRAGEN.
 #
-# ⚠ IM VERHAELTNIS RECHNEN, nicht die Zahlen setzen -- ausdrueckliche Nutzervorgabe.
-# Die Saeulenhoehe ist `Auftrieb x Lebensdauer` (135 -> 90 m); daran haengen
-# Endgroesse (0,133 x Hoehe = 12,0 m, also SIZE_CURVE-Endwert 18,0 -> 12,0) und
-# MAX_PARTICLES (220/s x 30 s = 6600, also 12000 -> 9000). Die EMIT_RATE bleibt: Die
-# Dichte je Meter ist `Rate x Lebensdauer / Hoehe`, und beide wachsen proportional.
+# Das war die zweite Haelfte der Vorgabe ("und rechnen das im Verhaeltnis!!"), und sie war
+# hier nicht erfuellbar: Endgroesse und Kapazitaet standen als feste Zahlen da, obwohl beide
+# an der Lebensdauer haengen. Genau so laufen zwei Fassungen auseinander -- in MSFS kostete
+# der Wechsel eine Zeile, hier waere er Handarbeit an drei Stellen gewesen, von denen man
+# zwei vergisst. Die Ableitungen sind dieselben wie in msfs-rauch/rauch_bauen.py:
 #
-# Das Vorgehen steht in docs/offene-aufgaben.md. Besser waere, die Werte hier ebenso
-# ABZULEITEN wie in msfs-rauch/rauch_bauen.py -- dann kann es nicht wieder
-# auseinanderlaufen, und genau das ist es ja.
+#   Saeulenhoehe = Aufstieg x Lebensdauer             135 m -> 90 m
+#   Endgroesse   = 0,133 x Hoehe                      18,0 m -> 12,0 m
+#   Kapazitaet   = Rate x Lebensdauer x 1,25          12000 -> 8250
+#
+# Die EMIT_RATE bleibt, und das faellt aus der Rechnung: Die Dichte je Meter ist
+# `Rate x Lebensdauer / Hoehe`, und Hoehe und Lebensdauer wachsen proportional.
+_HOEHE_M = AUFSTIEG_MS * LEBENSDAUER_S    # 90 m
+
 EMIT_RATE = 220.0         # Partikel je Sekunde -- s. ALPHA_CURVE zur Überlappung
-MAX_PARTICLES = 12000     # 220/s × 45 s = 9900, mit Luft nach oben
+MAX_PARTICLES = int(EMIT_RATE * LEBENSDAUER_S * 1.25)   # 8250, mit Luft nach oben
+
+# Die Groessenkurve: unten die Rauchpatrone, oben die sich aufloesende Krone.
+#
+# ⚠ DER FUSS IST FEST, DAS ENDE IST ABGELEITET -- wie in MSFS (GROESSE_START_M dort). Die
+# Quelle ist eine Patrone und wird nicht groesser, nur weil der Rauch laenger lebt; die
+# Krone dagegen steht am oberen Ende der Saeule und waechst mit ihr.
+GROESSE_START_M = 1.2     # an der Quelle -- ⚠ am Fuss KLEIN halten, sonst verwaescht sie
+GROESSE_ENDE_M = 0.133 * _HOEHE_M         # oben, wo sich die Krone aufloesen soll
+
+# Stuetzstellen als (Alter 0..1, Anteil an der Spanne 0..1) -- dieselbe Bauart wie MSFS'
+# _GROESSE_STUETZEN. Die Zahlen selbst sind die abgenommenen: 1,2 / 2,6 / 6,5 / 18,0 auf
+# 135 m Saeule, hier als Anteile ausgedrueckt, damit sie jede Hoehe mitgehen.
+_GROESSE_STUETZEN = ((0.00, 0.000), (0.20, 0.083), (0.45, 0.315), (1.00, 1.000))
 
 TEXTUR = "rauch.png"
 
@@ -192,6 +211,12 @@ def textur_schreiben(pfad: Path) -> None:
     bild.save(pfad, "PNG")
 
 
+def groessen_stuetzen() -> list[tuple[float, float]]:
+    """Die Größenkurve aus Fuß, Ende und den Anteilen -- nie von Hand eingetragen."""
+    spanne = GROESSE_ENDE_M - GROESSE_START_M
+    return [(t, GROESSE_START_M + anteil * spanne) for t, anteil in _GROESSE_STUETZEN]
+
+
 def _kurve(name: str, punkte: list[tuple[float, ...]], modus: str = "LINEAR",
            slot: int | None = None) -> str:
     zeilen = [name]
@@ -236,11 +261,11 @@ def pss_schreiben(pfad: Path, farbe: tuple[int, int, int]) -> None:
         # (13.09.2026, im Bild gesehen): Bei 5 m/s und 22 s steigt ein Partikel gut 100 m --
         # ist er dabei 30 m breit, überlappen die Nachbarn vollständig. Laminars eigener
         # `tire_smoke` geht auf 10 m, `engine_smoke_piston` auf 5 m.
-        # Unten schmal, oben weit: 1,5 m am Fuß, 6 m auf einem Viertel der Höhe, 28 m
-        # ganz oben. Der schmale Fuß macht die Quelle ortbar, die breite Krone macht die
-        # Säule von weitem sichtbar -- und der Übergang dazwischen ist das, was sie wie
-        # aufsteigenden Rauch aussehen lässt statt wie eine Wolke auf einem Stiel.
-        # ⚠ Am Fuß KLEIN halten, sonst verwäscht die Quelle.
+        #
+        # Unten schmal, oben weit -- der schmale Fuß macht die Quelle ortbar, die breite
+        # Krone macht die Säule von weitem sichtbar, und der Übergang dazwischen ist das,
+        # was sie wie aufsteigenden Rauch aussehen lässt statt wie eine Wolke auf einem
+        # Stiel. Die Zahlen stehen oben bei _GROESSE_STUETZEN und werden gerechnet.
         #
         # Die Lücken am Fuß (13.09.2026, einzelne Kügelchen mit Luft dazwischen) kamen NICHT
         # von zu kleinen Partikeln, sondern von zu wenigen: 23 Stück im untersten Meter,
@@ -249,8 +274,7 @@ def pss_schreiben(pfad: Path, farbe: tuple[int, int, int]) -> None:
         #
         # Ein Zwischenstand hatte hier 3,0 m stehen. Das war doppelt gemoppelt und zog gegen
         # die eben erst verengte Kegelöffnung: Der Fuß wäre breiter geworden als die Säule.
-        _kurve("SIZE_CURVE", [(0.0, 1.2), (0.20, 2.6), (0.45, 6.5), (1.0, 18.0)],
-               "CUBIC_AVG"),
+        _kurve("SIZE_CURVE", groessen_stuetzen(), "CUBIC_AVG"),
         # Kurz aufblenden, lange halten, weich verschwinden.
         #
         # ⚠ DIE WICHTIGSTE ZAHL DER GANZEN DATEI, und hier stand sie dreifach zu hoch (0,85).
@@ -338,8 +362,8 @@ def pss_schreiben(pfad: Path, farbe: tuple[int, int, int]) -> None:
         # genau deshalb blieb die Säule eine geschlossene Wurst statt zu zerfasern
         # (13.09.2026, dreimal im Bild gesehen).
         #
-        # 1,5 bis 5,5 m/s heißt: Die schnellsten sind nach 45 s dreimal so hoch wie die
-        # langsamsten. Das allein franst die Fahne auf.
+        # 1,5 bis 5,4 m/s heißt: Die schnellsten sind am Ende ihrer Lebenszeit dreimal so
+        # hoch wie die langsamsten. Das allein franst die Fahne auf.
         _kurve("INITIAL_SPEED", [(0.0, AUFSTIEG_MS * 0.5, AUFSTIEG_MS * 1.8),
                                  (1.0, AUFSTIEG_MS * 0.5, AUFSTIEG_MS * 1.8)], "LINEAR"),
         _kurve("ROTATION_SPEED", [(0.0, 0.5, 1.0), (1.0, 0.5, 1.0)], "CUBIC_AVG"),
@@ -350,8 +374,8 @@ def pss_schreiben(pfad: Path, farbe: tuple[int, int, int]) -> None:
         # egal wie stark die Turbulenz wackelte. Eine echte Rauchsäule wird nach oben breiter,
         # weil sie aus einem KEGEL austritt.
         #
-        # ±12° ergibt bei 10 m Höhe gut 2 m Breite (die Quelle bleibt also ortbar) und bei
-        # 100 m rund 21 m -- genau der Trichter, den die Fotos zeigen. Der Effekt ist reine
+        # ±11° ergibt bei 10 m Höhe rund 2 m Breite (die Quelle bleibt also ortbar) und bei
+        # 90 m gut 17 m -- genau der Trichter, den die Fotos zeigen. Der Effekt ist reine
         # Geometrie und damit sicher, während TURBULENCE bei Laminar nie über 0,25 geht und
         # unser Wert von 1,6 ungemessen ist.
         # ±11° statt ±20°: Der weite Kegel hat die wenigen Partikel am Fuß über zu viel

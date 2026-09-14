@@ -86,11 +86,40 @@ läuft FRS61 weiter, ohne etwas herunterzuladen.
 
 ### Offen geblieben
 
-- **X-Plane 1.2.0 ist ungemessen.** Sie war beim Probeflug nicht installiert; die Datei ist
-  gesperrt, solange X-Plane läuft.
-- **Sichtbarkeit der übrigen Arten** — nur das Windrad wurde im Bild bestätigt.
-- **Autogen-Objekte** (Leuchttürme, Windräder in X-Plane): Ob `XPLMLoadObject` sie lädt, ist
-  weiterhin ungemessen.
+- **Sichtbarkeit der übrigen Arten** — im Bild bestätigt sind Windrad, Hirsch und
+  Leuchtturm; die restlichen 19 Arten sind nur als `steht` zurückgemeldet.
+
+---
+
+## ⭐ ZUERST BEIM NÄCHSTEN TERMIN: Trägt der Rauch 30 Sekunden?
+
+**Am 14.09.2026 gebaut, in keinem Simulator gesehen.** Deine Entscheidung im Flug
+(*„ich finde xplane zu groß und msfs zu klein"*) ist umgesetzt: X-Plane von 45 s herunter,
+MSFS von 22 s herauf, beide bei **30 s**. Die Säule steht jetzt in beiden 90 m hoch und
+endet bei 11,97 m Wolkenbreite — dieselbe Zahl, weil beide Fassungen sie jetzt aus
+derselben Formel rechnen.
+
+| | vorher | jetzt |
+|---|---|---|
+| MSFS Lebensdauer | 22 s | **30 s** |
+| X-Plane Lebensdauer | 45 s | **30 s** |
+| Säulenhöhe (beide) | 66 / 135 m | **90 m** |
+| Endgröße (beide) | 8,8 / 18,0 m | **11,97 m** |
+| MSFS Kapazität | 907 | 1238 |
+| X-Plane MAX_PARTICLES | 12000 | 8250 |
+
+**Zu messen sind zwei verschiedene Dinge — nicht dasselbe zweimal:**
+
+1. **MSFS: trägt es die Leistung?** Die 22 s waren seinerzeit eine Leistungsentscheidung.
+   30 s heißen **36 % mehr gleichzeitige Partikel**, und MSFS-Partikel sind teurer als
+   X-Plane-Partikel. Zu beobachten sind die Bildrate neben der Säule und ob mehrere Säulen
+   nebeneinander noch tragen (der Kieker setzt nicht eine).
+2. **X-Plane: stimmt das Bild noch?** Dort ist es keine Leistungs-, sondern eine
+   Geschmacksfrage — die Säule ist um ein Drittel kürzer und die Krone entsprechend
+   schmaler. Genau das war der Wunsch; ob die Mitte getroffen ist, siehst nur du.
+
+⚠ **Und beide nebeneinander anschauen, wenn es geht.** Der Sinn der Übung war, dass sie
+sich gleichen — jede für sich betrachtet sagt darüber nichts.
 
 ---
 

@@ -73,6 +73,11 @@ XP_EIGEN = "Resources/plugins/FriesenBruegge/objekte/"
 # Sammellauf ueber diesen Zweig ist vorgemerkt.
 XP_AUTOGEN = "Resources/default scenery/1000 autogen/"
 
+# Und der Flugplatz-Zweig -- Tankwagen, Schlepper, Busse, Kraene. Beide Zweige kamen
+# erst am 14.09.2026 in den Katalog, nachdem im Flug belegt war, dass X-Plane auch
+# Autogen- und Szenerieobjekte laedt und zeichnet (Windrad und Leuchtturm, Niederbayern).
+XP_APT = "Resources/default scenery/airport scenery/"
+
 # `aus` statt Loeschen: Der Titel bleibt sichtbar und ist mit einem Klick wieder da.
 AUS = "aus"
 
@@ -131,9 +136,20 @@ ARTEN: dict[str, tuple[str, dict[str, list]]] = {
     # ⚠ Alle fuenf stehen im MSFS-2020-Bestand und funktionieren in MSFS 2024 -- in der
     # Bruegge-Tabelle sahen sie wie 2024er Titel aus. Genau diese Verwechslung meint die
     # Trennung `simulator` (wo gefunden) gegen `geprueft_in` (wo gesetzt) im Katalog.
+    # ⚠ HIER STAND X-PLANE GAR NICHT -- und das war kein Befund, sondern eine Luecke im
+    # Sammellauf: Der durchsuchte bis zum 14.09.2026 nur `sim objects/`, und die
+    # Flugplatzfahrzeuge liegen in `airport scenery/`. Zum Nutzer gesagt hatte ich damals
+    # trotzdem, X-Plane habe keine Fahrzeuge; seine Antwort ("das glaub ich nicht!") war
+    # richtig, es sind rund 300. Eine Verneinung ist nur so gut wie das Suchmuster.
     "fahrzeug": ("Ein Fahrzeug am Boden", {
         "msfs2020": ["ASO_CarUtility01", "ASO_Pushback_White", "ASO_Firetruck02",
                      "ASO_TruckUtility01", "ASO_Tug01_White"],
+        # Gross zuerst: Ein Tankwagen ist aus der Luft zu sehen, ein Gepaeckkarren nicht.
+        "xplane12": [XP_APT + "Dynamic_Vehicles/Fuel_Truck_Large.obj",
+                     XP_APT + "Dynamic_Vehicles/catering_truck.obj",
+                     XP_APT + "Ramp_Equipment/pax_bus_1.obj",
+                     XP_APT + "Dynamic_Vehicles/TUG_MA30.obj",
+                     XP_APT + "Dynamic_Vehicles/crew_car.obj"],
     }),
     "boot_klein": ("Ein kleines Boot", {
         "msfs2020": ["Boat01", "Boat02", "FishingBoat", "Yacht01"],

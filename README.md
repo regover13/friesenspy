@@ -587,7 +587,7 @@ in X-Plane ein Hirsch; welche Titel dazugehören, steht auf dem Server, und die 
 sie der Reihe nach.
 
 Vorher trug jede Brügge diese Zuordnung selbst — eine neue Art kostete damit ein Update für
-jeden Piloten. Der Server ist dafür auch besser gerüstet: Er führt **2953 Objekttitel mit
+jeden Piloten. Der Server ist dafür auch besser gerüstet: Er führt **4124 Objekttitel mit
 Prüfergebnis**, weiß also, was tatsächlich funktioniert, und schickt gar nicht erst, was
 nachweislich scheitert. Im Flug belegt: Ein Windrad steht im Simulator, obwohl keine einzige
 Brügge weiß, was ein Windrad ist. Ältere Brüggen laufen unverändert weiter.

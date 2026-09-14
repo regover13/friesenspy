@@ -55,7 +55,7 @@
 // Feste Größen
 // ---------------------------------------------------------------------------------------
 
-#define BRUEGGE_VERSION   "1.8.0"
+#define BRUEGGE_VERSION   "1.8.1"
 #define BRUEGGE_URL       "https://friesenspy.devprops.de/api/bruegge/melden"
 #define KENNUNG_DATEI     "\\work\\friesenbruegge.kennung"
 

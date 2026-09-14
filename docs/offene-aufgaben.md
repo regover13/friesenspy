@@ -8,54 +8,6 @@ und prüfen, ob eine andere die Aufgabe schon erledigt hat.
 
 ---
 
-## ⭐ Rauch: 30 s Lebensdauer für BEIDE — entschieden, noch nicht gebaut (14.09.2026)
-
-**Nutzerentscheidung im Flug.** Der Befund kam zuerst (*„rauch im xplane viel größer"*),
-dann die Einordnung (*„ich habe auch xplane abgenommen! ich finde xplane zu groß und msfs zu
-klein"*) und schließlich die Zahl: **`LEBENSDAUER_S = 30.0` in beiden Fassungen.**
-
-⚠ **Keine der beiden Fassungen ist die Referenz** — beide sind abgenommen, beide bewegen
-sich. X-Plane herunter (45 → 30 s), MSFS herauf (22 → 30 s). Wer die eine auf die andere
-zieht, hat die Vorgabe zur Hälfte verfehlt.
-
-### ⚠ Im VERHÄLTNIS rechnen, nicht die Zahlen setzen
-
-Ausdrückliche Nutzervorgabe, und die teuerste Lehre des MSFS-Rauchs: dreimal danebengelegen,
-jedes Mal erst im Bild aufgefallen (ein Fächer, ein Ball, eine Wand). Die Säulenhöhe ist
-`Auftrieb × Lebensdauer`; daran hängt alles Weitere.
-
-| | jetzt X-Plane | jetzt MSFS | **bei 30 s** |
-|---|---|---|---|
-| Lebensdauer | 45 s | 22 s | **30 s** |
-| Höhe = `Auftrieb × Lebensdauer` | 135 m | 66 m | **90 m** |
-| Endgröße = `0,133 × Höhe` | 14,4–21,6 m | 8,8 m | **12,0 m** |
-| Dichte je Meter = `Rate × Lebensdauer / Höhe` | 73,3 | 11,0 | **unverändert** |
-| Kegelbreite = `tan(11°) × Auftrieb` | — | — | **unverändert** (Auftrieb bleibt 3 m/s) |
-
-**Die Emissionsrate bleibt in beiden gleich** — das fällt aus der Rechnung, weil Höhe und
-Lebensdauer proportional wachsen. Was mitziehen muss, ist die **Kapazität**:
-
-- MSFS: `KAPAZITAET = RATE × LEBENSDAUER × 1,25` → 907 wird 1237
-- X-Plane: `MAX_PARTICLES` → 12000 kann auf 9000 (220/s × 30 s = 6600, mit Luft nach oben)
-
-### Was der Umbau je Fassung kostet
-
-**MSFS ist eine Zeile.** In `msfs-rauch/rauch_bauen.py` werden Höhe, Rate, Kapazität,
-Kegelbreite und Endgröße bereits aus `LEBENSDAUER_S` und `AUFTRIEB_MS` **gerechnet** — genau
-dafür wurden sie damals abgeleitet. Zahl ändern, neu bauen, fertig.
-
-**X-Plane ist Handarbeit.** Dort stehen sie als feste Kurven:
-`SIZE_CURVE [(0.0, 1.2), (0.20, 2.6), (0.45, 6.5), (1.0, 18.0)]` (der Endwert 18,0 wird
-12,0, die Zwischenpunkte im selben Verhältnis), `MAX_PARTICLES`, und die Kommentare nennen
-45 s an mehreren Stellen. **Besser wäre, sie dort ebenso abzuleiten** — dann kann das nicht
-wieder auseinanderlaufen, und genau das ist es ja.
-
-⚠ **MSFS-Partikel sind teurer** — die 22 s waren eine Leistungsentscheidung. 30 s heißen
-36 % mehr gleichzeitige Partikel. Ob das trägt, sagt nur der Simulator; das gehört in die
-Messliste des nächsten Termins.
-
----
-
 ## Kann die Brügge ein FLUGZEUG hinstellen? (vorgemerkt 14.09.2026)
 
 **Eine Messung, fünf Arten.** In MSFS ist ein Flugzeug ein SimObject vom Typ *Airplane*, und
@@ -76,18 +28,16 @@ Fällt er positiv aus, ist zusätzlich `katalog_sammeln.py` zu erweitern — es 
 nur `SimObjects/{Animals,Boats,GroundVehicles,Landmarks,Misc}`, und die 14 Treffer der
 Kategorie `Airplanes` sind Sitze (`SEAT_*`), keine Flugzeuge.
 
-**Zwei weitere Sammellücken** stehen daneben und kosten je einen Lauf:
+✅ **Die zwei Sammelläufe sind gelaufen** (14.09.2026) — der Katalog steht bei **4124**
+Zeilen statt 2953. Dazugekommen sind 63 Leuchttürme, 119 Tanks, 215 Container, 203
+Rollwegschilder, 280 Ramp-Equipment-Teile, Masten, Windräder und die Flugplatzfahrzeuge.
+Die Auswahl der Zweige steht in `_XP_ZWEIGE` in `katalog_sammeln.py`.
 
-- **X-Plane `airport scenery/`** — 333 Fahrzeuge, darunter `fire_truck_small_1.obj`.
-  `katalog_sammeln.py` lässt den Zweig bewusst aus („gehören in eine Szenerie"); das war eine
-  Geschmacksentscheidung, keine technische Schranke.
-- **X-Plane `1000 autogen/US/industrial/`** — Windräder (schon zugeordnet), **64 Leuchttürme**
-  (`lighthouse_13` bis `lighthouse_64`, die Zahl ist die Höhe in Metern), Tanks, Masten,
-  Schornsteine.
-
-  ✅ **`XPLMLoadObject` LÄDT AUTOGEN-OBJEKTE — im Flug belegt** (14.09.2026, Niederbayern):
-  Windrad und Leuchtturm standen und waren beide **sichtbar**. Die Frage war der einzige
-  Grund, den Zweig auszusparen; sie ist beantwortet. Der Sammellauf lohnt sich.
+**Was bewusst draußen blieb**, und zwar auf Nutzerentscheidung: `Common_Elements` (1247),
+`Hangars`, `Euro_/Modern_Airports`, alle Fassaden, Wände, Bodenflächen und Lampen. Darin
+liegt auch `fire_truck_small_1.obj` — in `Common_Elements/fire_department/`, nicht dort, wo
+die frühere Notiz es vermutete. Die Art `fahrzeug` deckt X-Plane jetzt über
+`Dynamic_Vehicles` und `Ramp_Equipment` ab (Tankwagen, Catering, Bus, Schlepper, Crew-Car).
 
 ---
 
@@ -435,7 +385,3 @@ Vier Entscheidungen des Nutzers vom 11.09.2026, die alles Weitere binden:
 | **Ab welcher Entfernung wird `hoehe_ft` unbrauchbar?** | Brauchbar bis 200 km gemessen und bei 45 km im Flug bestätigt (Wasserlinie über die ganze Strecke); falsch bei 691 km (2106,5 statt 1297,2 ft am selben Punkt). Die Grenze liegt dazwischen — und die Zahl entscheidet, wann der Server einer Höhenmeldung glauben darf. |
 | SmartScreen bei unsignierter EXE | betrifft nur den externen Weg |
 
-## Forum
-
-- Thema heißt noch **„V13 - Platzhirsch"**, live ist V14 „Zettelwirtschaft". Umbenennen hieße,
-  den **ersten Beitrag des Themas** zu ändern — dafür fehlt bislang die ausdrückliche Freigabe.

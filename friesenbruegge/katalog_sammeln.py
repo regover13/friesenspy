@@ -166,27 +166,71 @@ def sammle_gestreamt(wurzel: Path) -> list[dict]:
     return raus
 
 
+# ⭐ DREI ZWEIGE, NICHT EINER -- UND DIE AUSWAHL IST EINE ENTSCHEIDUNG, KEINE TECHNIK.
+#
+# Bis zum 14.09.2026 stand hier nur `sim objects/` (1146 Objekte), mit der Begruendung, die
+# uebrigen rund 7000 `.obj` unter `Resources/` seien Autogen-Bausteine und gehoerten in eine
+# Szenerie. Die Begruendung stimmt fuer Hausfassaden und Strassenteile -- sie stimmte nicht
+# fuer 63 Leuchttuerme, 119 Tanks, Windraeder und 300 Flugplatzfahrzeuge.
+#
+# ⚠ DIE EIGENTLICHE SCHRANKE WAR EINE ANDERE UND IST GEFALLEN: Ob `XPLMLoadObject` ein
+# Autogen-Objekt ueberhaupt laedt und ZEICHNET, war ungemessen. Am 14.09.2026 im Flug belegt
+# (Niederbayern): Windrad und Leuchtturm standen und waren beide sichtbar. Erst danach
+# lohnte dieser Lauf.
+#
+# Aufgenommen wird, was ALS EINZELNES OBJEKT einen Sinn ergibt -- ein Leuchtturm, ein
+# Tankwagen, ein Seecontainer, ein Bodenschild. Draussen bleibt, was nur im Verbund
+# funktioniert: Fassaden, Waende, Daecher, Bodenflaechen, Lampen, Common_Elements. Die
+# Auswahl hat der Nutzer am 14.09.2026 getroffen (Container und Bodenschilder ausdruecklich
+# dazu); wer sie erweitert, erweitert hier -- und nicht mit einer zweiten Liste woanders.
+_XP_ZWEIGE = (
+    # (Pfad unter `Resources/default scenery/`, alles darunter mitnehmen?)
+    ("sim objects", True),                              # 1146 -- Tiere, Boote, Fahrzeuge
+    ("airport scenery/Ramp_Equipment", True),           #  280 -- Tankwagen, Treppen, Schlepper
+    ("airport scenery/Ground_Signs", True),             #  203 -- Rollwegschilder
+    ("airport scenery/construction", True),             #  102 -- Kraene, Bagger, Container
+    ("airport scenery/military", True),                 #   62
+    ("airport scenery/towers", True),                   #   47 -- Tower, Radarmasten
+    ("airport scenery/Aircraft", True),                 #   32 -- statische Flugzeuge
+    ("airport scenery/Dynamic_Vehicles", True),         #   22
+    ("1000 autogen/US/industrial/containers", True),    #  215 -- Seecontainer
+    ("1000 autogen/US/industrial/tanks", True),         #  119 -- Tanks, Silos
+    ("1000 autogen/US/industrial/lighthouses", True),   #   63 -- lighthouse_13 .. _64
+    ("1000 autogen/US/industrial/vehicles", True),      #   15
+    ("1000 autogen/US/industrial/obstacles", True),     #   12 -- Masten bis 630 m
+    ("1000 autogen/US/industrial/power", True),         #    5 -- Windraeder
+)
+
+
 def sammle_xplane(wurzel: Path) -> list[dict]:
-    """Die setzbaren `.obj` aus `Resources/default scenery/sim objects/`.
+    """Die setzbaren `.obj` aus den Zweigen in `_XP_ZWEIGE`.
 
     X-Plane kennt keine Titel -- `XPLMLoadObject` nimmt den **Pfad relativ zum
     X-System-Ordner** (s. probe-xplane/ERGEBNIS.md, dort im Flug belegt). Genau dieser Pfad
     steht deshalb als `titel` im Katalog.
 
-    Bewusst NUR `sim objects/`: Die uebrigen rund 7000 `.obj` unter `Resources/` sind
-    Autogen-Bausteine (Haeuser, Zaeune, Strassenteile) -- die gehoeren in eine Szenerie, nicht
-    an eine Kieker-Station.
+    Die `kategorie` ist der Ordner, in dem das Objekt liegt -- bei `sim objects/` wie bisher
+    die erste Ebene darunter (`dynamic`, `apt_vehicles` ...), bei den uebrigen Zweigen deren
+    letzter Pfadteil (`lighthouses`, `Ramp_Equipment` ...). Danach filtert die Admin-Liste.
     """
     raus = []
-    basis = wurzel / "Resources" / "default scenery" / "sim objects"
-    if not basis.is_dir():
-        return raus
-    for obj in basis.rglob("*.obj"):
-        rel = obj.relative_to(wurzel).as_posix()
-        teile = obj.relative_to(basis).parts
-        raus.append({"simulator": "xplane12", "titel": rel, "paket": None,
-                     "quelle": "bord",
-                     "kategorie": teile[0] if len(teile) > 1 else "dynamic"})
+    szenerie = wurzel / "Resources" / "default scenery"
+    gesehen: set[str] = set()
+    for zweig, _ in _XP_ZWEIGE:
+        basis = szenerie / zweig
+        if not basis.is_dir():
+            continue
+        vorgabe = zweig.rsplit("/", 1)[-1]
+        for obj in sorted(basis.rglob("*.obj")):
+            rel = obj.relative_to(wurzel).as_posix()
+            if rel in gesehen:          # Zweige koennen sich ueberlappen
+                continue
+            gesehen.add(rel)
+            teile = obj.relative_to(basis).parts
+            raus.append({"simulator": "xplane12", "titel": rel, "paket": None,
+                         "quelle": "bord",
+                         "kategorie": (teile[0] if len(teile) > 1 and zweig == "sim objects"
+                                       else vorgabe)})
     return raus
 
 

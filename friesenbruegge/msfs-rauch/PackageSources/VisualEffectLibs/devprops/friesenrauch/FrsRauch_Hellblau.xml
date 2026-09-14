@@ -11,7 +11,7 @@
         </VisualEffect.VisualEffect>
         <VisualEffect.Emitter InstanceId="{AE81A433-7B6F-5DD5-AB3A-E12E5B216591}">
             <ParticleRate>{00000000-0000-0000-0000-000000000000}, 33.000000</ParticleRate>
-            <Capacity>907.500</Capacity>
+            <Capacity>1237.500</Capacity>
             <TimeEmission>30.000000</TimeEmission>
             <ParticleInit>
                 <ObjectReference InstanceId="{7F1CF376-6D82-51DA-A811-136DB8291D9D}" id="BlockParticleInit"/>
@@ -22,7 +22,7 @@
                 <ObjectReference InstanceId="{79BE7240-0B7A-5101-84CA-992C9CA7518B}" id="BlockParticleUpdate"/>
             </ParticleUpdate>
             <ParticleLifetime>
-                <FloatIn>{C52B0000-1F28-5EC2-8176-81E9A21A9122}, 22.000000</FloatIn>
+                <FloatIn>{C52B0000-1F28-5EC2-8176-81E9A21A9122}, 30.000000</FloatIn>
             </ParticleLifetime>
             <ParticleSize>
                 <FloatIn>{2EBDAFBE-FA93-507E-AAAB-1F66D6779471}, 0.800000</FloatIn>
@@ -93,7 +93,7 @@
         <VisualEffect.GetBezierCurve InstanceId="{3A367DAC-3E27-5397-9C0F-4CD107EF3E1A}">
             <OutputValue>{99C55BC7-8422-5A36-90C2-70DCC89EE4B1}</OutputValue>
             <FXTime>{E85F33EF-B70A-55AF-9608-DE06076823A4}, 0.000000</FXTime>
-            <Curve>0.000,0.800,NAN,NAN,0.150,1.438,NAN,NAN,0.400,3.114,NAN,NAN,0.700,5.746,NAN,NAN,1.000,8.778,NAN,NAN</Curve>
+            <Curve>0.000,0.800,NAN,NAN,0.150,1.694,NAN,NAN,0.400,4.039,NAN,NAN,0.700,7.725,NAN,NAN,1.000,11.970,NAN,NAN</Curve>
         </VisualEffect.GetBezierCurve>
 
         <!-- Auftrieb: ein NEGATIVER Schwerkraftfaktor zieht nach oben. -->
@@ -224,8 +224,8 @@
         <!-- Lebensdauer: manche Wolken loesen sich frueher auf als andere. -->
         <VisualEffect.RandomValue InstanceId="{CFB9D70C-1E94-5702-B56F-2AB8A76C8D1B}">
             <OutputValue>{C52B0000-1F28-5EC2-8176-81E9A21A9122}</OutputValue>
-            <MinRandValue>{00000000-0000-0000-0000-000000000000}, 12.100000</MinRandValue>
-            <MaxRandValue>{00000000-0000-0000-0000-000000000000}, 22.000000</MaxRandValue>
+            <MinRandValue>{00000000-0000-0000-0000-000000000000}, 16.500000</MinRandValue>
+            <MaxRandValue>{00000000-0000-0000-0000-000000000000}, 30.000000</MaxRandValue>
             <RandSeed>{00000000-0000-0000-0000-000000000000}, 331.000000</RandSeed>
             <RandIndex>{30522F6F-4B6B-51E4-ACD1-758412818CA2}, 0.000000</RandIndex>
         </VisualEffect.RandomValue>

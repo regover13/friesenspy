@@ -1,5 +1,18 @@
 [
   {
+    "version": "14.39.0",
+    "date": "2026-09-14",
+    "highlight": false,
+    "title": "Rauch gleich lang in beiden Simulatoren, und dreimal so viele Objekte zur Auswahl",
+    "items": [
+      "🔥 Die Rauchsäulen der FriesenBrügge halten jetzt in MSFS und X-Plane gleich lange: 30 Sekunden. Vorher standen sie bei 22 und 45 — dieselbe Farbe sah in jedem Simulator anders aus.",
+      "📐 Die Säule ist damit in beiden 90 Meter hoch und löst sich oben in derselben Breite auf. Die X-Plane-Fassung rechnet diese Werte jetzt aus der Lebensdauer, statt sie als feste Zahlen zu führen — sonst laufen die beiden beim nächsten Mal wieder auseinander.",
+      "🚛 Neu im Katalog: 1171 Objekte aus X-Plane, die bisher niemand angeboten bekam — 63 Leuchttürme, Tanks, Masten, Container, Flugplatzfahrzeuge, Rollwegschilder. Möglich wurde das erst, seit im Flug belegt ist, dass X-Plane auch Autogen-Objekte lädt und zeichnet.",
+      "🚒 Die Art „Fahrzeug“ hatte in X-Plane bisher keinen einzigen Titel und war dort nicht anforderbar. Jetzt stehen Tankwagen, Catering, Bus, Schlepper und Crew-Car bereit.",
+      "📦 Neue Pakete: FriesenBrügge 1.8.1 für MSFS und 1.2.1 für X-Plane."
+    ]
+  },
+  {
     "version": "14.38.0",
     "date": "2026-09-14",
     "highlight": false,
