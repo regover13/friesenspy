@@ -85,7 +85,21 @@ FARBEN = {
 # 1,5 m groß -- das ergibt eine Perlenschnur, keine Säule. Echter Signalrauch quillt mit 2-3
 # m/s; die Dichte unten kommt daher, dass die Partikel eng beieinander bleiben.
 AUFSTIEG_MS = 3.0
-LEBENSDAUER_S = 45.0
+LEBENSDAUER_S = 45.0      # ⚠ SOLL AUF 30 -- s. unten
+# ⚠ ENTSCHIEDEN AM 14.09.2026, NOCH NICHT GEBAUT: 30 s fuer BEIDE Simulatoren.
+#
+# Im Flug gesehen und vom Nutzer eingeordnet: "xplane zu gross und msfs zu klein"
+# (MSFS steht bei 22 s). Beide Fassungen sind abgenommen, beide bewegen sich.
+#
+# ⚠ IM VERHAELTNIS RECHNEN, nicht die Zahlen setzen -- ausdrueckliche Nutzervorgabe.
+# Die Saeulenhoehe ist `Auftrieb x Lebensdauer` (135 -> 90 m); daran haengen
+# Endgroesse (0,133 x Hoehe = 12,0 m, also SIZE_CURVE-Endwert 18,0 -> 12,0) und
+# MAX_PARTICLES (220/s x 30 s = 6600, also 12000 -> 9000). Die EMIT_RATE bleibt: Die
+# Dichte je Meter ist `Rate x Lebensdauer / Hoehe`, und beide wachsen proportional.
+#
+# Das Vorgehen steht in docs/offene-aufgaben.md. Besser waere, die Werte hier ebenso
+# ABZULEITEN wie in msfs-rauch/rauch_bauen.py -- dann kann es nicht wieder
+# auseinanderlaufen, und genau das ist es ja.
 EMIT_RATE = 220.0         # Partikel je Sekunde -- s. ALPHA_CURVE zur Überlappung
 MAX_PARTICLES = 12000     # 220/s × 45 s = 9900, mit Luft nach oben
 

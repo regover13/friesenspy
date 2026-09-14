@@ -74,7 +74,21 @@ FARBEN = {
 
 # Die Werte stammen aus dem X-Plane-Durchgang vom 13.09.2026, bei dem zehn Anläufe nötig
 # waren. Übertragen, nicht neu erfunden:
-LEBENSDAUER_S = 22.0      # X-Plane: 45 s bei 3 m/s. MSFS-Partikel sind teurer, s. Kommentar
+LEBENSDAUER_S = 22.0      # ⚠ SOLL AUF 30 -- s. unten
+# ⚠ ENTSCHIEDEN AM 14.09.2026, NOCH NICHT GEBAUT: 30 s fuer BEIDE Simulatoren.
+#
+# "xplane zu gross und msfs zu klein" -- X-Plane steht bei 45 s, diese hier bei 22.
+# Beide Fassungen sind abgenommen, beide bewegen sich zur Mitte.
+#
+# HIER IST ES EINE ZEILE: Hoehe, Rate, Kapazitaet, Kegelbreite und Endgroesse werden
+# unten aus LEBENSDAUER_S und AUFTRIEB_MS GERECHNET -- genau dafuer wurden sie damals
+# abgeleitet. Die Saeule waechst damit von 66 auf 90 m, die Endgroesse von 8,8 auf
+# 12,0 m, die Kapazitaet von 907 auf 1237. Die Rate bleibt, weil Hoehe und
+# Lebensdauer proportional wachsen.
+#
+# ⚠ ABER: Die 22 s waren eine LEISTUNGSENTSCHEIDUNG (MSFS-Partikel sind teurer als
+# X-Plane-Partikel). 30 s heissen 36 % mehr gleichzeitige Partikel. Ob das traegt,
+# sagt nur der Simulator -- gehoert in die Messliste des naechsten Termins.
 # ⚠ DREI GRÖSSEN HÄNGEN AM AUFTRIEB -- SIE WERDEN DESHALB GERECHNET, NICHT EINGETRAGEN.
 #
 # Das war am 13.09.2026 dreimal hintereinander die Fehlerquelle: Der Auftrieb wurde auf
