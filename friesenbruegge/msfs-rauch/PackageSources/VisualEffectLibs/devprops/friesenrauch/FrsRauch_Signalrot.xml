@@ -151,7 +151,7 @@
         <VisualEffect.GetBezierCurve InstanceId="{1B1A1F9D-8CDB-5536-B41F-092E18711EB2}">
             <OutputValue>{D4F89353-8F0E-5857-B0CB-67F79B168435}</OutputValue>
             <FXTime>{7DB19D66-EAC0-5E8B-937E-EC47FBF987AF}, 0.000000</FXTime>
-            <Curve>0.000,0.000,NAN,NAN,0.200,0.050,NAN,NAN,0.400,0.350,NAN,NAN,0.600,0.750,NAN,NAN,1.000,1.000,NAN,NAN</Curve>
+            <Curve>0.000,0.000,NAN,NAN,0.100,0.250,NAN,NAN,0.250,0.650,NAN,NAN,0.500,0.900,NAN,NAN,1.000,1.000,NAN,NAN</Curve>
         </VisualEffect.GetBezierCurve>
         <VisualEffect.MultiplyOperation InstanceId="{C09B90A3-40AE-5CE8-88C6-246026CCA9F9}">
             <OutputValue>{7754EF2A-FA00-5236-AA2A-7839E5EE9E43}</OutputValue>
@@ -169,7 +169,7 @@
 
              Gerechnet wird mit dem QUADRAT der Entfernung: Die Wurzel bräuchte einen
              weiteren Knotentyp, und die Kurve kann das Quadrat ebenso gut abbilden
-             (x = (r/60 m)^2). -->
+             (x = (r/82 m)^2). -->
         <VisualEffect.GetParticleAttribute InstanceId="{FFB23D75-E918-5FD5-AE93-A9B23004588B}">
             <OutputValue>{43BF755E-5197-5072-A549-D6E5A97EFA86}</OutputValue>
             <ParticleAttributeType>Position</ParticleAttributeType>
@@ -198,7 +198,7 @@
         <VisualEffect.MultiplyOperation InstanceId="{F1935183-5F21-50F6-B7ED-900BEA898984}">
             <OutputValue>{F7277D6C-3A11-5585-B715-6F27797E1B9E}</OutputValue>
             <xVariant>{1CEE9B2F-C74A-5663-9B96-4EAFE47CB197}, 0.000000</xVariant>
-            <yVariant>{00000000-0000-0000-0000-000000000000}, 0.00027778</yVariant>
+            <yVariant>{00000000-0000-0000-0000-000000000000}, 0.00014941</yVariant>
         </VisualEffect.MultiplyOperation>
         <VisualEffect.GetBezierCurve InstanceId="{0FB6E833-DB75-585D-96C4-FE6E11608623}">
             <OutputValue>{A9F7481E-5E8A-5EFE-B350-48F14885295C}</OutputValue>

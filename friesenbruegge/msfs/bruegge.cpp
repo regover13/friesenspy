@@ -55,7 +55,7 @@
 // Feste Größen
 // ---------------------------------------------------------------------------------------
 
-#define BRUEGGE_VERSION   "1.9.0"
+#define BRUEGGE_VERSION   "1.10.0"
 #define BRUEGGE_URL       "https://friesenspy.devprops.de/api/bruegge/melden"
 #define KENNUNG_DATEI     "\\work\\friesenbruegge.kennung"
 
@@ -93,7 +93,12 @@ enum {
     EV_SIMSTART  = 2,
     EV_FLUGGELADEN = 3,
     DEF_LAGE     = 10,
+    // ⚠ EIGENE DEFINITION, NICHT IN DEF_LAGE MIT HINEIN. Die Lage-Struktur besteht aus
+    // lauter `double`; ein String daneben zwingt zu Ausrichtungsannahmen, die SimConnect
+    // nirgends zusichert. Zwei Definitionen kosten nichts und koennen nicht verrutschen.
+    DEF_FLUGZEUG = 11,
     REQ_LAGE     = 20,
+    REQ_FLUGZEUG = 21,
     // Je gesetztem Objekt eine eigene Anfrage-Nummer -- so bleibt zuzuordnen, welches Objekt
     // meldet. Der Abstand zu den uebrigen IDs ist Absicht: SIMCONNECT_DATA_DEFINITION_ID ist
     // ein gemeinsamer Nummernraum, und eine Kollision endet mit UNRECOGNIZED_ID an einer
@@ -155,6 +160,20 @@ static bool    g_welt_da = false;         // SimStart/FlightLoaded ist gekommen
 static DWORD   g_sekunden = 0;            // seit dem letzten Welt-Signal
 static Lage    g_lage = {};
 static bool    g_lage_gueltig = false;
+// Der Titel des eigenen Flugzeugs -- das, was `AICreateSimulatedObject` annaehme.
+//
+// ⭐ WOZU: Die Standardflugzeuge von MSFS 2024 sind GESTREAMT. Ihre Pakete liegen als
+// 256-kB-Platzhalter auf der Platte (`.fsarchive`), es gibt im ganzen Bestand KEINE einzige
+// `aircraft.cfg`, und auch vPilots Modellscan findet nur Community-Pakete (gemessen
+// 14.09.2026: 3823 Titel, davon 0 aus Official). Der Titel existiert nur im laufenden
+// Simulator.
+//
+// Hier IST der laufende Simulator. Wer fliegt, meldet seinen Titel mit, und der Katalog
+// fuellt sich aus den Simulatoren der Gruppe statt von einer Platte. Das ist zugleich die
+// einzige Quelle, die ZUVERLAESSIG sagt, was ein anderer tatsaechlich hat -- dreimal an
+// einem Tag wurde ein Objekt gesetzt, das nur auf einem Rechner existierte.
+static char    g_flugzeug[256] = {0};
+static bool    g_flugzeug_gemeldet = false;   // einmal je Titel genuegt
 static double  g_vor_lat = 0.0, g_vor_lon = 0.0;
 static bool    g_vor_gueltig = false;
 
@@ -427,6 +446,20 @@ static void meldung_bauen(char* puffer, size_t groesse) {
         j.feld("antwort_zu_gross"); j.ganzzahl((long)g_antwort_zu_gross); j.komma();
     }
     j.feld("kennung");         j.text(g_kennung);             j.komma();
+
+    // ⭐ DER TITEL DES EIGENEN FLUGZEUGS -- einmal je Titel, nicht bei jeder Meldung.
+    //
+    // Er ist das, was `AICreateSimulatedObject` annaehme, und damit unmittelbar
+    // verwertbar. Der Server traegt ihn in `bruegge_katalog` ein; so lernt der Bestand aus
+    // jedem Flug, statt dass jemand Titel von einer Platte liest -- die gestreamten
+    // Standardflugzeuge stehen dort naemlich gar nicht.
+    //
+    // Bei JEDER Meldung mitzuschicken waere Verschwendung: Ein Titel ist bis zu 256 Zeichen
+    // lang, und er aendert sich nur beim Flugwechsel.
+    if (!g_flugzeug_gemeldet && g_flugzeug[0] != '\0') {
+        j.feld("flugzeug");    j.text(g_flugzeug);            j.komma();
+        g_flugzeug_gemeldet = true;
+    }
 
     // ⚠ HIER STAND `kann` -- entfernt mit Protokollfassung 2 (14.09.2026).
     //
@@ -1032,6 +1065,15 @@ void CALLBACK dispatch(SIMCONNECT_RECV* pData, DWORD, void*) {
             g_lage_gueltig = true;
             break;
         }
+        if (d->dwRequestID == REQ_FLUGZEUG) {
+            const char* t = (const char*)&d->dwData;
+            // Nur wenn er sich geaendert hat -- sonst wuerde jede Sekunde neu gemeldet.
+            if (t[0] != '\0' && std::strncmp(t, g_flugzeug, sizeof(g_flugzeug) - 1) != 0) {
+                std::snprintf(g_flugzeug, sizeof(g_flugzeug), "%s", t);
+                g_flugzeug_gemeldet = false;
+            }
+            break;
+        }
         // Meldet eines der gesetzten Objekte? Festgehalten wird die SEKUNDE der letzten
         // Meldung -- der Abstand zu jetzt sagt, seit wann es schweigt, und das ist die
         // eigentliche Frage. Eine vergebene Objekt-ID ist nur die Bestaetigung, dass der
@@ -1140,6 +1182,19 @@ extern "C" MSFS_CALLBACK void module_init(void) {
     SimConnect_AddToDataDefinition(g_sim, DEF_LAGE, "VERTICAL SPEED", "feet per minute");
 
     SimConnect_RequestDataOnSimObject(g_sim, REQ_LAGE, DEF_LAGE,
+                                      SIMCONNECT_OBJECT_ID_USER, SIMCONNECT_PERIOD_SECOND);
+
+    // Der Titel des eigenen Flugzeugs -- eine eigene Definition, s. DEF_FLUGZEUG.
+    //
+    // ⚠ `nullptr` ALS EINHEIT UND EIN AUSDRUECKLICHER DATENTYP: Ein String hat keine
+    // Einheit, und ohne `SIMCONNECT_DATATYPE_STRING256` nimmt SimConnect `FLOAT64` an --
+    // dann kommen acht Bytes Zeichen als Zahl zurueck.
+    SimConnect_AddToDataDefinition(g_sim, DEF_FLUGZEUG, "TITLE", nullptr,
+                                   SIMCONNECT_DATATYPE_STRING256);
+    // SIMCONNECT_PERIOD_SECOND und nicht ONCE: Ein Flugwechsel aendert den Titel, und eine
+    // einmalige Anfrage vor dem Laden liefert den des Menue-Flugzeugs. Die Meldung nach
+    // aussen geht trotzdem nur einmal je Titel hinaus (`g_flugzeug_gemeldet`).
+    SimConnect_RequestDataOnSimObject(g_sim, REQ_FLUGZEUG, DEF_FLUGZEUG,
                                       SIMCONNECT_OBJECT_ID_USER, SIMCONNECT_PERIOD_SECOND);
 
     // "SimStart" feuert, sobald die Simulation läuft -- im Hauptmenü und während des Ladens

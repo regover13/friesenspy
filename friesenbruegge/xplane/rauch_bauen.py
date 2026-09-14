@@ -114,7 +114,11 @@ MAX_PARTICLES = int(EMIT_RATE * LEBENSDAUER_S * 1.25)   # 8250, mit Luft nach ob
 # ⚠ DER FUSS IST FEST, DAS ENDE IST ABGELEITET -- wie in MSFS (GROESSE_START_M dort). Die
 # Quelle ist eine Patrone und wird nicht groesser, nur weil der Rauch laenger lebt; die
 # Krone dagegen steht am oberen Ende der Saeule und waechst mit ihr.
-GROESSE_START_M = 1.2     # an der Quelle -- ⚠ am Fuss KLEIN halten, sonst verwaescht sie
+GROESSE_START_M = 0.8     # an der Quelle -- ⚠ am Fuss KLEIN halten, sonst verwaescht sie
+# Am 14.09.2026 von 1,2 auf 0,8 -- Nutzerentscheidung, nachdem beide Fassungen
+# nebeneinander standen. MSFS fuehrte den Fuss seit jeher mit 0,8, und mit gleicher
+# Krone (11,97 m) war der Fuss der letzte Wert, in dem sich die Simulatoren noch
+# unterschieden. Er hat die schmalere Quelle gewaehlt, nicht die breitere.
 GROESSE_ENDE_M = 0.133 * _HOEHE_M         # oben, wo sich die Krone aufloesen soll
 
 # Stuetzstellen als (Alter 0..1, Anteil an der Spanne 0..1) -- dieselbe Bauart wie MSFS'
@@ -155,7 +159,16 @@ def _rauschen(kante: int, keim: int):
     summe = [0.0] * (kante * kante)
     amplitude = 1.0
     gesamt = 0.0
-    for gitter in (2, 4, 8, 16, 32):
+    # ⚠ DIE OKTAVEN HAENGEN AN DER KANTE, sonst wird eine grosse Textur weich statt fransig.
+    # Hier stand fest (2, 4, 8, 16, 32). Auf einer 128er-Zelle ist die feinste Oktave damit
+    # 4 Pixel breit -- auf der 512er-Textur fuer MSFS aber 16, also viermal zu grob: Es kam
+    # ein weicher Klumpen heraus statt der ausgefransten Wolke (14.09.2026 im Bild gesehen).
+    # Die Fransen sind kein Beiwerk; an einer glatten Scheibe ist X-Plane am 13.09.2026
+    # schon einmal gescheitert ("Kette aus Kugeln").
+    gitterfolge = [2]
+    while gitterfolge[-1] < kante // 4:
+        gitterfolge.append(gitterfolge[-1] * 2)
+    for gitter in gitterfolge:
         klein = Image.new("L", (gitter, gitter))
         klein.putdata([rnd.randrange(256) for _ in range(gitter * gitter)])
         gross = klein.resize((kante, kante), Image.BICUBIC)
@@ -166,30 +179,49 @@ def _rauschen(kante: int, keim: int):
     return [w / gesamt for w in summe]
 
 
-def textur_schreiben(pfad: Path) -> None:
-    """Sechzehn wolkige Formen auf einem Blatt.
+def textur_schreiben(pfad: Path, atlas: int = ATLAS, zelle: int = ZELLE) -> None:
+    """Wolkige Formen auf einem Blatt -- `atlas` x `atlas` Stück.
 
     WEISS, nicht farbig: Die Farbe kommt aus `TINT` in der .pss. So tragen alle Säulen
     dieselbe Textur, und eine weitere Farbe kostet nur eine .pss.
+
+    ⚠ **MSFS RUFT DIESELBE FUNKTION MIT `atlas=1`**, und das ist kein Geschmack, sondern
+    der Unterschied zwischen den beiden Partikelsystemen:
+
+    * X-Plane kennt Zellen (`TEX_CELLS_X/Y`, `ANIM_CELL_RANDOM 1`) und zieht für jedes
+      Partikel **eine** der sechzehn Formen.
+    * MSFS kennt sie nicht. Sein Material bildet die Datei mit `UVScale 1.0` auf **jedes**
+      Partikel ab -- ein Partikel zeigte damit alle sechzehn Scheiben auf einmal, als
+      Raster. Hundert solcher Raster übereinander ergeben die glatte, strukturlose Fläche,
+      die am 14.09.2026 im Bild stand (Screenshot 11:53) -- eine einzelne Wolke war darin
+      nicht auszumachen, und konnte es rechnerisch auch nicht.
+
+    Asobos eigene Rauchtextur (`Samples/.../vfx_smoke.png`, 512x512) ist genau deshalb
+    **eine** grosse fransige Wolke über die volle Fläche, und sein Material steht ebenfalls
+    auf `UVScale 1.0`. Wir folgen dem Vorbild, das nachweislich funktioniert.
+
+    ⚠ **Eine glatte Scheibe darf daraus nicht werden** -- das war in X-Plane am 13.09.2026
+    schon einmal der Fehler ("Kette aus Kugeln"). Die Fransigkeit kommt hier aus dem
+    Schwellwert unten, nicht aus der Zellenvielfalt, und bleibt bei `atlas=1` erhalten.
     """
     from PIL import Image
 
-    kante = ATLAS * ZELLE
+    kante = atlas * zelle
     bild = Image.new("RGBA", (kante, kante), (255, 255, 255, 0))
     pixel = bild.load()
-    mitte = (ZELLE - 1) / 2.0
+    mitte = (zelle - 1) / 2.0
 
-    for zy in range(ATLAS):
-        for zx in range(ATLAS):
-            rausch = _rauschen(ZELLE, keim=1000 + zy * ATLAS + zx)
+    for zy in range(atlas):
+        for zx in range(atlas):
+            rausch = _rauschen(zelle, keim=1000 + zy * atlas + zx)
             # Das Rauschen auf den vollen Bereich 0..1 strecken. Ohne diesen Schritt liegen
             # die Werte um 0,5 herum, und nach Schwellwert und Randabfall bleibt ein blasses
             # Klümpchen in der Zellenmitte übrig -- gemessen am 13.09.2026: Spitzendeckkraft
             # 155 statt 255, und nur 9,7 % der Fläche überhaupt sichtbar.
             tief, hoch = min(rausch), max(rausch)
             spanne = (hoch - tief) or 1.0
-            for y in range(ZELLE):
-                for x in range(ZELLE):
+            for y in range(zelle):
+                for x in range(zelle):
                     d = math.hypot(x - mitte, y - mitte) / mitte
                     if d >= 1.0:
                         continue
@@ -197,7 +229,7 @@ def textur_schreiben(pfad: Path) -> None:
                     # cos²-Verlauf über die ganze Zelle -- der dämpft schon in der Mitte auf
                     # die Hälfte und lässt der Form keinen Platz.
                     rand = 1.0 if d < 0.62 else math.cos((d - 0.62) / 0.38 * math.pi / 2.0)
-                    roh = ((rausch[y * ZELLE + x] - tief) / spanne) * rand
+                    roh = ((rausch[y * zelle + x] - tief) / spanne) * rand
 
                     # Der Schwellwert ist das, was die Form FRANSIG macht: Alles darunter
                     # fällt weg, der Rest wird gespreizt. Ohne ihn bleibt eine weiche Scheibe
@@ -206,7 +238,7 @@ def textur_schreiben(pfad: Path) -> None:
                     a = (roh - 0.18) / 0.82
                     if a <= 0.0:
                         continue
-                    pixel[zx * ZELLE + x, zy * ZELLE + y] = (
+                    pixel[zx * zelle + x, zy * zelle + y] = (
                         255, 255, 255, int(round(min(1.0, a) * 255)))
     bild.save(pfad, "PNG")
 

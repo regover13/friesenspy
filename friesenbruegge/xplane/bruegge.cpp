@@ -92,7 +92,7 @@
 // Die Fassung gehört der UMSETZUNG, nicht dem Protokoll. Das WASM-Modul steht bei 1.6.0,
 // weil es sechs Runden im Simulator hinter sich hat; diese Brügge fängt bei 1.0.0 an. Was
 // beide verbindet, ist `protokoll: 1` -- und das steht in der Meldung daneben.
-#define BRUEGGE_VERSION   "1.2.1"
+#define BRUEGGE_VERSION   "1.2.2"
 #define SIMULATOR_NAME    "xplane12"
 
 

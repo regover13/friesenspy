@@ -1128,6 +1128,31 @@ async def bruegge_melden(request: Request):
         if kennung:
             bruegge_steht_melden(conn, kennung, cid, body.get("steht") or [])
 
+        # ⭐ DER TITEL DES EIGENEN FLUGZEUGS -- so faellt der Bestand von selbst an.
+        #
+        # ⚠ WARUM DAS DIE EINZIGE QUELLE IST, und das ist am 14.09.2026 gemessen: Die
+        # Standardflugzeuge von MSFS 2024 sind GESTREAMT. Im gesamten Paketbestand steht
+        # KEINE einzige `aircraft.cfg`; die Pakete sind 256-kB-Platzhalter (`.fsarchive`).
+        # Auch vPilots Modellscan half nicht -- 3823 Titel, davon 0 aus `Official`, alle aus
+        # Community-Paketen des jeweiligen Piloten.
+        #
+        # Genau das war an dem Tag dreimal das Problem: Objekte gesetzt, die nur auf EINEM
+        # Rechner existierten (Black Square Bonanza, Superspuds Vieh, Digital Aeronautics
+        # Mi-2), und der zweite Pilot bekam jedes Mal `EXCEPTION_22`. Was hier ankommt, hat
+        # jemand nachweislich installiert.
+        #
+        # Eingetragen wird als `quelle='gemeldet'` und OHNE Ergebnis: Dass jemand das
+        # Flugzeug fliegt, heisst nicht, dass es sich als Objekt setzen laesst -- die Mi-2
+        # scheiterte am selben Tag mit `EXCEPTION_22`, obwohl ihr Besitzer sie flog. Das
+        # Ergebnis entsteht erst beim ersten Setzversuch.
+        flugzeug = str(body.get("flugzeug") or "")[:200].strip()
+        if flugzeug and simulator:
+            katalog_eintragen(conn, [{
+                "simulator": simulator, "titel": flugzeug, "paket": None,
+                "quelle": "gemeldet", "kategorie": "Airplanes",
+                "bemerkung": f"von einer Bruegge gemeldet ({simulator})",
+            }])
+
         soll = bruegge_soll_fuer(conn, cid)
         # Die Titel zu den angeforderten Arten -- fuer DIESEN Simulator, und nur zu dem, was
         # wirklich angefordert ist. Alles mitzuschicken waere bequemer und kostete 914 Bytes

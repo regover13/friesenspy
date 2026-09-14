@@ -91,37 +91,70 @@ läuft FRS61 weiter, ohne etwas herunterzuladen.
 
 ---
 
-## ⭐ ZUERST BEIM NÄCHSTEN TERMIN: Trägt der Rauch 30 Sekunden?
+## ✅ 30 s SIND ABGENOMMEN — und X-Plane ist es ganz (14.09.2026)
 
-**Am 14.09.2026 gebaut, in keinem Simulator gesehen.** Deine Entscheidung im Flug
-(*„ich finde xplane zu groß und msfs zu klein"*) ist umgesetzt: X-Plane von 45 s herunter,
-MSFS von 22 s herauf, beide bei **30 s**. Die Säule steht jetzt in beiden 90 m hoch und
-endet bei 11,97 m Wolkenbreite — dieselbe Zahl, weil beide Fassungen sie jetzt aus
-derselben Formel rechnen.
+Beide Simulatoren im Flug gesehen, bei **10 kt** Wind. Sein Urteil:
 
-| | vorher | jetzt |
+> *„xplane ist jetzt OK. … xPlane ist schöner, weil sich kleine Wölkchen bilden und es
+> besser auf den Wind reagiert."*
+
+**X-Plane ist damit fertig** — die 30 s stimmen, die Fahne franst aus und weht sichtbar ab.
+**MSFS war es nicht**, und die beiden Mängel hatten zwei verschiedene Ursachen, die beide
+gefunden sind.
+
+### ⚠ Ursache 1: Jedes MSFS-Partikel zeigte SECHZEHN Wölkchen auf einmal
+
+Die Textur ist ein 4×4-Atlas. **X-Plane kennt Zellen** (`TEX_CELLS_X/Y`,
+`ANIM_CELL_RANDOM 1`) und zieht je Partikel **eine** der sechzehn Formen — daher die
+Wölkchen. **MSFS kennt sie nicht:** Sein Material bildet die Datei mit `UVScale 1.0` auf
+**jedes** Partikel ab. Ein MSFS-Partikel war also ein Raster aus sechzehn Scheiben, und
+hundert Raster übereinander ergeben zwangsläufig eine glatte Fläche. Eine einzelne Wolke
+konnte darin gar nicht entstehen.
+
+Asobos eigene Rauchtextur (`SDK/Samples/…/vfx_smoke.png`) ist genau deshalb **eine** große
+fransige Wolke über die volle Fläche — sein Material steht ebenfalls auf `UVScale 1.0`.
+MSFS bekommt jetzt eine eigene Textur nach diesem Vorbild (`msfs-rauch/rauch_msfs.png`,
+dieselbe Rauschfunktion mit `atlas=1`).
+
+### ⚠ Ursache 2: Meine eigene 30-s-Umstellung hat den Wind gedämpft
+
+MSFS hat eine **Streckendämpfung**, die X-Plane gar nicht kennt: Ein Partikel wird
+ausgeblendet, sobald es seitlich weit genug getragen wurde (gegen die kilometerlange Fahne
+vom 13.09.2026). Sie stand fest auf **60 m** — eingestellt bei 22 s und 66 m Säulenhöhe.
+
+Mit 30 s wuchs die Säule auf 90 m, die 60 m blieben stehen. Ein Partikel lebt länger, wird
+weiter getragen und trifft die feste Grenze **früher in seinem Leben**:
+
+| bei 10 kt, Alter 0,8 | seitlich | Dämpfung |
 |---|---|---|
-| MSFS Lebensdauer | 22 s | **30 s** |
-| X-Plane Lebensdauer | 45 s | **30 s** |
-| Säulenhöhe (beide) | 66 / 135 m | **90 m** |
-| Endgröße (beide) | 8,8 / 18,0 m | **11,97 m** |
-| MSFS Kapazität | 907 | 1238 |
-| X-Plane MAX_PARTICLES | 12000 | 8250 |
+| 22 s / 60 m (der Screenshot) | 36 m | 0,38 |
+| 30 s / 60 m (so gebaut) | 49 m | **0,10** |
+| 30 s / 82 m (jetzt) | 49 m | 0,39 |
 
-**Zu messen sind zwei verschiedene Dinge — nicht dasselbe zweimal:**
+**Der Mangel, den er benannt hat, war also zum Teil frisch von mir eingebaut.** Die
+Bezugsweite hängt jetzt an der Säulenhöhe (`0,909 × _HOEHE_M`), wie alles andere auch. Bei
+27 kt bleibt die Begrenzung wirksam (Dämpfung 0,12 schon bei Alter 0,6).
 
-1. **MSFS: trägt es die Leistung?** Die 22 s waren seinerzeit eine Leistungsentscheidung.
-   30 s heißen **36 % mehr gleichzeitige Partikel**, und MSFS-Partikel sind teurer als
-   X-Plane-Partikel. Zu beobachten sind die Bildrate neben der Säule und ob mehrere Säulen
-   nebeneinander noch tragen (der Kieker setzt nicht eine).
-2. **X-Plane: stimmt das Bild noch?** Dort ist es keine Leistungs-, sondern eine
-   Geschmacksfrage — die Säule ist um ein Drittel kürzer und die Krone entsprechend
-   schmaler. Genau das war der Wunsch; ob die Mitte getroffen ist, siehst nur du.
+### Und der Fuß ist jetzt in beiden gleich
 
-⚠ **Und beide nebeneinander anschauen, wenn es geht.** Der Sinn der Übung war, dass sie
-sich gleichen — jede für sich betrachtet sagt darüber nichts.
+Seine Entscheidung nach dem Vergleich: X-Plane von 1,20 m **herunter** auf 0,80 m, also auf
+den MSFS-Wert. Damit ist die Säule in beiden Simulatoren von unten bis oben gleich
+vermessen — 0,80 m am Fuß, 11,97 m an der Krone, 90 m hoch.
 
----
+### ⭐ Was beim nächsten Start zu sehen ist
+
+Neue Fassungen: **MSFS 1.8.2**, **X-Plane 1.2.2**. Beide installiert, beide brauchen einen
+Neustart ihres Simulators.
+
+| | was zu prüfen ist |
+|---|---|
+| **MSFS, Struktur** | Bilden sich jetzt einzelne Wölkchen statt einer glatten Fläche? Das ist die Hauptfrage — Ursache 1. |
+| **MSFS, Wind** | Weht die Fahne sichtbar ab? ⚠ Nicht erwarten, dass sie so weit trägt wie in X-Plane: Dort gibt es **keine** Begrenzung, hier endet sie bei 82 m. Ob die Zahl stimmt, sagt nur das Bild. |
+| **MSFS, Leistung** | Die 22 s waren eine Leistungsentscheidung. 30 s heißen 36 % mehr gleichzeitige Partikel — Bildrate neben der Säule, und ob mehrere Säulen nebeneinander tragen. |
+| **X-Plane, Fuß** | Nur der schmalere Fuß hat sich geändert. Verwäscht die Quelle jetzt, oder ist sie besser ortbar? |
+
+⚠ **Beide nebeneinander anschauen, wenn es geht.** Der Sinn der Übung ist, dass sie sich
+gleichen; jede für sich betrachtet sagt darüber nichts.
 
 ## Vorbereitung (einmal, vor dem Start)
 

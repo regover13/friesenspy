@@ -67,6 +67,7 @@ die natürliche Form.
   "bruegge_version": "1.0.0",
   "kennung": "a3f9c1e0…",        // vom Server vergeben, dauerhaft -- s. unten
                                  // leer bei der allerersten Meldung
+  "flugzeug": "Mi-2 [passenger]",// NUR wenn er sich geaendert hat -- s. unten
   "kann": ["tier_gross", "bauwerk", "fahrzeug", "boot_klein"],
 
   "lage": {                        // der Stand JETZT -- maßgeblich für "soll"
@@ -445,6 +446,39 @@ statt auf Kilometer (Zuordnungs-Spec vom 16.08.2026). Genau dann bekommt er sein
 **Abwärtskompatibel in beide Richtungen:** Eine Brügge der Fassung 1 schickt weiter ihre
 selbst erzeugte Kennung mit — der Server nimmt sie und vergibt keine. Und das Feld `kennung`
 in der Antwort ignoriert sie, wie jedes unbekannte Feld.
+
+#### ⭐ `flugzeug` — der Titel des eigenen Flugzeugs (seit 14.09.2026)
+
+**Was `TITLE` im Simulator sagt, ist genau das, was `AICreateSimulatedObject` annimmt.** Die
+Brügge sitzt im laufenden Simulator und kann es lesen; sie meldet es mit, **einmal je
+Titel** — nicht bei jeder Meldung, denn ein Titel ist bis zu 256 Zeichen lang und ändert
+sich nur beim Flugwechsel.
+
+**Warum es diesen Weg braucht, und zwar unbedingt:** Die Standardflugzeuge von MSFS 2024
+sind **gestreamt**. Im gesamten Paketbestand steht **keine einzige `aircraft.cfg`** — die
+Pakete liegen als 256-kB-Platzhalter (`.fsarchive`) auf der Platte. Auch vPilots Modellscan
+hilft nicht: 3823 Titel, davon **null** aus `Official`, alle aus Community-Paketen des
+jeweiligen Piloten (gemessen 14.09.2026).
+
+**Der Titel existiert nur im laufenden Simulator.** Es gibt keine zweite Quelle.
+
+⚠ **Und es ist die einzige Quelle, die ehrlich ist.** An einem einzigen Nachmittag wurden
+dreimal Objekte gesetzt, die nur auf einem Rechner existierten — Black Square Bonanza,
+Superspuds Vieh, Digital Aeronautics Mi-2 —, und der zweite Pilot bekam jedes Mal
+`EXCEPTION_22`. Dazu kam ein Titel, der aus der `aircraft.cfg` *gelesen* war und trotzdem
+nicht funktionierte: MSFS verlangt den **Livery**-Titel (`Mi-2 [passenger]`), nicht den
+Namen aus der Kopfzeile (`Digital Aeronautics Mi-2 Hoplite`). Was über diesen Weg
+hereinkommt, hat jemand nachweislich installiert **und** in der Schreibweise, die der
+Simulator selbst benutzt.
+
+**Der Server trägt ihn als `quelle='gemeldet'` ein — ohne Prüfergebnis.** Dass jemand ein
+Flugzeug *fliegt*, heißt nicht, dass es sich als Objekt *setzen* lässt: Die Mi-2 scheiterte
+am selben Tag mit `EXCEPTION_22`, obwohl ihr Besitzer sie flog. Das Ergebnis entsteht erst
+aus einem echten Setzversuch.
+
+**X-Plane hat kein Gegenstück** (Stand 14.09.2026). Es gibt `sim/aircraft/view/acf_relative_path`,
+aber eine `.acf` ist kein ladbares Objekt — `XPLMLoadObject` will eine `.obj`. Ob die `.obj`
+im Flugzeugordner einzeln ladbar sind, ist ungemessen.
 
 #### Die übrigen Felder
 

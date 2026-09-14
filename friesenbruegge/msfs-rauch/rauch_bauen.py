@@ -235,7 +235,26 @@ _ALPHA_STUETZEN = ((0.00, 0.000), (0.02, 0.580), (0.20, 0.420), (0.42, 0.060),
 #     r =  0 m → 1,00      r = 40 m → 0,25
 #     r = 20 m → 0,85      r = 50 m → 0,08
 #     r = 30 m → 0,55      r = 60 m → 0,00
-STRECKE_BEZUG_M = 60.0    # so weit trägt die Fahne, dann ist sie verschwunden
+# ⚠ DIESE WEITE HAENGT AN DER SAEULENHOEHE UND DARF NICHT FEST STEHEN.
+#
+# Sie stand auf 60 m, eingestellt bei 22 s Lebensdauer und 66 m Saeulenhoehe -- also auf
+# 0,91 x Hoehe. Als die Lebensdauer am 14.09.2026 auf 30 s ging, wuchs die Saeule auf 90 m,
+# die Bezugsweite blieb aber stehen. Ein Partikel lebt seither laenger und wird weiter
+# getragen, trifft die feste 60-m-Grenze also frueher in seinem Leben:
+#
+#   bei 10 kt, Alter 0,8      22 s / 60 m Bezug  ->  36 m seitlich, Daempfung 0,38
+#                             30 s / 60 m Bezug  ->  49 m seitlich, Daempfung 0,10   (!)
+#                             30 s / 82 m Bezug  ->  49 m seitlich, Daempfung 0,39
+#
+# Die 30-s-Umstellung haette die Windreaktion damit VERSCHLECHTERT -- genau das, was am
+# selben Tag als Mangel benannt wurde ("reagiert besser auf den Wind" ueber X-Plane). Das
+# war ein uebersehener Nebeneffekt, kein Befund ueber MSFS.
+#
+# Abgeleitet bleibt das Verhaeltnis erhalten: Die Fahne traegt ungefaehr so weit, wie die
+# Saeule hoch ist. Bei starkem Wind bleibt die Begrenzung wirksam (27 kt: Daempfung 0,12
+# schon bei Alter 0,6), und genau dafuer wurde sie am 13.09.2026 eingefuehrt -- die Fahne
+# war "4-5 Mal zu lang".
+STRECKE_BEZUG_M = 0.909 * _HOEHE_M    # so weit traegt die Fahne, dann ist sie verschwunden
 _STRECKE_STUETZEN = ((0.000, 1.00), (0.111, 0.85), (0.250, 0.55),
                      (0.444, 0.25), (0.694, 0.08), (1.000, 0.00))
 
@@ -244,7 +263,28 @@ def strecke_kurve() -> str:
     return _kurve(_STRECKE_STUETZEN)
 
 
-_WINDANTEIL_STUETZEN = ((0.00, 0.00), (0.20, 0.05), (0.40, 0.35), (0.60, 0.75),
+# ⚠ AM 14.09.2026 NACH VORN GEZOGEN -- die Kurve wirkte, wo niemand hinsieht.
+#
+# Sie stand auf ((0,00; 0,00), (0,20; 0,05), (0,40; 0,35), (0,60; 0,75), (1,00; 1,00)) und
+# arbeitete damit gegen die ALPHA_CURVE. Nebeneinandergelegt ist der Widerspruch eindeutig:
+#
+#   Alter 0,2   Alpha 0,42 (gut sichtbar)   Wind  5 %  ->   5 Grad Neigung bei 10 kt
+#   Alter 0,5   Alpha 0,05 (fast weg)       Wind 55 %  ->  43 Grad
+#
+# Der SICHTBARE Teil der Saeule war genau der, in dem der Wind noch nicht wirkte -- und der
+# Teil, der abwehte, war schon verblasst. Im Bild stand die Saeule deshalb senkrecht wie
+# gemalt (Screenshot 13:35, 10 kt), waehrend X-Plane sichtbar abwehte.
+#
+# X-Plane dosiert gar nicht: Dort nimmt der Simulator jedes Partikel sofort in den Wind.
+# Die Dosierung hier bleibt trotzdem richtig -- ohne sie lag die Saeule am 13.09.2026 bei
+# 30 kt platt am Boden. Sie war nur zu spaet angesetzt: Echter Rauch wird binnen weniger
+# Sekunden uebernommen, nicht erst nach der Haelfte seines Lebens.
+#
+# Jetzt bei 10 kt: 42 Grad statt 5 bei Alter 0,2, also im dichten Teil.
+# ⚠ OFFEN BEI STARKEM WIND: Bei 30 kt sind es dort 69 Grad statt 14. Das ist die Richtung,
+# in die der alte Fehler lag ("ein duenner Strahl"), und es ist UNGEMESSEN -- der Befund
+# vom 14.09. stammt von 10 kt. Steht in friesenbruegge/MESSLISTE.md.
+_WINDANTEIL_STUETZEN = ((0.00, 0.00), (0.10, 0.25), (0.25, 0.65), (0.50, 0.90),
                         (1.00, 1.00))
 
 

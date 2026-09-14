@@ -34,7 +34,19 @@ from pathlib import Path
 HIER = Path(__file__).resolve().parent
 QUELLEN = HIER / "PackageSources"
 DEFINITIONEN = HIER / "PackageDefinitions"
-ATLAS = HIER.parent / "xplane" / "objekte" / "rauch.png"
+# ⚠ EIGENE TEXTUR, NICHT DIE VON X-PLANE -- und der Unterschied ist das ganze Bild.
+#
+# Hier stand `xplane/objekte/rauch.png`: ein 4x4-Atlas mit sechzehn Wolkenformen. X-Plane
+# zieht daraus je Partikel EINE Zelle (`ANIM_CELL_RANDOM`). MSFS kann das nicht -- sein
+# Material bildet die Datei mit `UVScale 1.0` auf JEDES Partikel ab. Jedes MSFS-Partikel
+# zeigte damit alle sechzehn Scheiben gleichzeitig, als Raster; uebereinandergelegt ergab
+# das die glatte, strukturlose Saeule vom 14.09.2026 (Screenshot 11:53). Es konnte gar
+# keine Wolke werden.
+#
+# Asobos `vfx_smoke.png` aus dem SDK ist deshalb EINE grosse fransige Wolke ueber die volle
+# Flaeche. Genau die entsteht hier -- dieselbe Funktion, `atlas=1`.
+TEXTUR = HIER / "rauch_msfs.png"
+KANTE = 512
 
 from rauch_bauen import FARBEN, NAMENSRAUM, guid  # noqa: E402  (nach den Pfaden)
 
@@ -185,7 +197,22 @@ def behavior_xml(kennung: str, knoten: str, fx_guid: str) -> str:
 def material_schreiben() -> None:
     ziel = QUELLEN / "MaterialLibs" / "friesenrauch-mat"
     (ziel / "Textures").mkdir(parents=True, exist_ok=True)
-    shutil.copy(ATLAS, ziel / "Textures" / "frs_rauch.png")
+    if not TEXTUR.exists():
+        # Beim ersten Lauf (und nach jedem Aufraeumen) selbst erzeugen -- eine Wolke ueber
+        # die volle Flaeche, gebaut von derselben Rauschfunktion wie die X-Plane-Kacheln.
+        # ⚠ NICHT ueber sys.path importieren: Beide Fassungen haben eine Datei
+        # `rauch_bauen.py`, und die MSFS-eigene steckt beim Aufruf schon in sys.modules --
+        # ein `from rauch_bauen import ...` findet dann die falsche und scheitert mit
+        # ImportError (14.09.2026 passiert). Ueber die Dateispezifikation geladen, bekommt
+        # das X-Plane-Modul einen eigenen Namen und kollidiert nicht.
+        import importlib.util
+        quelle = HIER.parent / "xplane" / "rauch_bauen.py"
+        spec = importlib.util.spec_from_file_location("xplane_rauch_bauen", quelle)
+        xp = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(xp)
+        xp.textur_schreiben(TEXTUR, atlas=1, zelle=KANTE)
+        print(f"  Textur gebaut: {TEXTUR.name} ({KANTE}x{KANTE}, eine Wolke)")
+    shutil.copy(TEXTUR, ziel / "Textures" / "frs_rauch.png")
     # ⚠ NICHT LEER: Die .FLAGS sagt dem Paketwerkzeug, wie die Textur zu behandeln ist.
     # Ohne Inhalt bricht die TextureLib-Erzeugung mit "Failed to retrieve textures
     # informations" ab (13.09.2026 im Project Editor gesehen). Der Wert stammt aus dem
@@ -225,7 +252,7 @@ def material_schreiben() -> None:
             "\t</Attributes>\n</Material>\n", encoding="utf-8", newline="\r\n")
     (ziel / "Library.xml").write_text('<Library Version="1.1.0">\n</Library>\n',
                                       encoding="utf-8", newline="\r\n")
-    print(f"  Material + Atlas ({ATLAS.stat().st_size} Bytes)")
+    print(f"  Material + Textur ({TEXTUR.stat().st_size} Bytes)")
 
 
 def simobjects_schreiben() -> None:

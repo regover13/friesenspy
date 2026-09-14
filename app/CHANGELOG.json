@@ -1,5 +1,17 @@
 [
   {
+    "version": "14.41.0",
+    "date": "2026-09-14",
+    "highlight": false,
+    "title": "Die FriesenBrügge meldet, welches Flugzeug du fliegst — und der Bestand füllt sich von selbst",
+    "items": [
+      "✈️ Wer fliegt, meldet ab sofort den Titel seines Flugzeugs mit. Der Server nimmt ihn in seinen Objektkatalog auf, und damit wächst der Bestand aus den Simulatoren der Gruppe statt aus einem Ordner auf einem einzelnen Rechner.",
+      "🔍 Der Grund ist unbequem: Die Standardflugzeuge von MSFS 2024 sind gestreamt. Ihre Namen stehen nirgends auf der Festplatte — im ganzen Paketbestand findet sich keine einzige Flugzeug-Konfiguration. Der laufende Simulator ist die einzige Quelle.",
+      "⚠️ Ein gemeldeter Titel gilt als ungeprüft: Dass jemand ein Flugzeug fliegt, heißt nicht, dass es sich auch als Objekt hinstellen lässt. Das zeigt sich erst beim ersten Versuch.",
+      "📦 Dazu: FriesenBrügge 1.10.0 für MSFS."
+    ]
+  },
+  {
     "version": "14.40.0",
     "date": "2026-09-14",
     "highlight": false,

@@ -2259,6 +2259,12 @@ behaupten. Der Server schickt für den gemeldeten `simulator`, was er hat, und e
 `steht`, was tatsächlich stand: belegt statt behauptet. **Fassung 1 darf es weiter mitschicken**;
 es wird übergangen, wie schon immer.
 
+⭐ **`flugzeug`** (seit 14.09.2026) trägt den Titel des eigenen Flugzeugs — den, den
+`AICreateSimulatedObject` annähme. Er geht **nur mit, wenn er sich geändert hat**, und
+landet als `quelle='gemeldet'` im Katalog, **ohne** Prüfergebnis. Grund: Die
+Standardflugzeuge von MSFS 2024 sind gestreamt und stehen nirgends als Text auf der Platte;
+der laufende Simulator ist die einzige Quelle. Ohne Zuordnung wird nichts eingetragen.
+
 ⭐ **`kennung` darf leer sein** (seit 14.09.2026). Dann vergibt der Server eine und schickt
 sie in der Antwort mit; die Brügge speichert sie und liefert sie ab dann bei jeder Meldung
 mit. Grund: Die MSFS-Brügge erzeugte bis dahin auf **jedem** Rechner dieselbe
