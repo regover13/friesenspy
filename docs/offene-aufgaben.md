@@ -23,51 +23,114 @@ Beide Arten **haben** Titel — die Brügge hat alle durchprobiert und `KEIN_MOD
 gemeldet. Der Rückfall funktionierte also genau wie gebaut; es gab nur nichts, worauf er
 hätte fallen können.
 
-**Die Ursache liegt in der Natur des Streamings:** Ein Titel steht im Paketverzeichnis,
-also im Katalog. Ob MSFS das Paket **lokal vorliegen** hat, ist eine andere Frage — er lädt
-bei Bedarf nach, und `AICreateSimulatedObject` kann nur setzen, was da ist.
+### ⭐ BEIDE naheliegenden Erklärungen sind widerlegt (Archiv-Messung, 14.09.2026)
+
+Hier stand zuerst „die Ursache liegt in der Natur des Streamings" und daneben die
+Vermutung, `VO_Fire_R1_*` seien gar keine SimObjects. **Beides stimmt nicht** — nachgesehen
+mit [`fsarchive.py`](../friesenbruegge/fsarchive.py) in den Archiven selbst.
+
+**Verzeichnis: Es sind SimObjects, beide.**
+
+```
+fs24-microsoft-vertical-obstructions   450 Dateien, 6 sim.cfg
+    simobjects\landmarks\vo_r1_fire\model.r1_fire_100\model.cfg
+    simobjects\landmarks\vo_r1_fire\model.r1_fire_105\model.cfg   … je Höhe ein Modell
+
+fs24-microsoft-simobjects-vehicles     293 Dateien, 66 sim.cfg
+    simobjects\groundvehicles\microsoft_truck_crane_small\sim.cfg   ← eigene sim.cfg
+```
+
+Die Truck_Crane ist ein lupenreines SimObject mit eigener `sim.cfg` unter `groundvehicles`.
+Die VO_Fire liegen unter `simobjects\landmarks\` — auch dort richtig, nur anders gebaut:
+**ein** SimObject `vo_r1_fire` mit rund 70 Höhenvarianten als Modelle; die Titel stammen aus
+`[fltsim.N]`-Einträgen einer gemeinsamen `sim.cfg`.
+
+**Streaming: erklärt es auch nicht.** Der Gegenbeleg steht im eigenen Katalog:
+
+| Titel | Paket | quelle | lokal | Ergebnis |
+|---|---|---|---|---|
+| `windmill`, `windsock` | `fs24-asobo-simobjects-landmarks` | **streamed** | nur `minimal.fsarchive`, 0,6 MB | **steht** |
+| `Microsoft_Truck_Crane_Small` | `fs24-microsoft-simobjects-vehicles` | streamed | nur `minimal.fsarchive`, 0,4 MB | `KEIN_MODELL_MEHR` |
+
+Alle drei Pakete liegen ausschließlich unter `StreamedPackages` als Hüllarchiv von unter
+1 MB — inhaltlich ist nichts davon auf der Platte. **Ein gestreamtes Paket funktioniert,
+zwei nicht.** `quelle='streamed'` ist als Erklärung damit erledigt, und die gute Nachricht
+darin: Die 2642 Titel sind nicht pauschal gefährdet.
 
 ### Was daraus folgt
 
 - **Eine Art sollte nie nur gestreamte Titel haben.** Mindestens einer aus `bord` oder
-  `community` gehört ans Ende der Liste, sonst fällt die ganze Art aus.
+  `community` gehört ans Ende der Liste, sonst fällt die ganze Art aus. Das bleibt richtig,
+  auch wenn die Begründung eine andere ist als gedacht — es ist schlicht Vorsorge gegen
+  einen Ausfall, dessen Ursache wir noch nicht kennen.
 - **`mast` und `kran` sind derzeit X-Plane-eigen**, obwohl der Katalog MSFS-Titel zeigt.
   Entweder stilllegen oder setzbare Titel suchen.
-- ⚠ **Ungeklärt: Hängt es am Streaming oder an diesen Titeln?** Vielleicht sind
-  `VO_Fire_R1_*` gar keine SimObjects, sondern Szenerieobjekte — dann wäre nicht das
-  Streaming schuld, sondern die Herkunft aus dem falschen Verzeichnis. Ein Titel aus einem
-  nachweislich heruntergeladenen gestreamten Paket würde die Fälle trennen.
 
-## Kann die Brügge ein FLUGZEUG hinstellen? (vorgemerkt 14.09.2026)
+### ⭐ Die nächste Messung, und sie ist billig
 
-**Eine Messung, fünf Arten.** In MSFS ist ein Flugzeug ein SimObject vom Typ *Airplane*, und
-dafür gibt es einen **eigenen** SimConnect-Aufruf (`AICreateNonATCAircraft`). Ob
-`AICreateSimulatedObject` — den die Brügge benutzt — einen Flugzeugtitel überhaupt annimmt,
-hat noch niemand gemessen.
+**`Microsoft_Aerial_Tank` setzen** — oder irgendeinen der 66 Titel mit eigener `sim.cfg` aus
+`fs24-microsoft-simobjects-vehicles`, also demselben Paket wie die gescheiterte Truck_Crane.
 
-Daran hängen:
+| Ausgang | Schluss |
+|---|---|
+| steht | es liegt am einzelnen Titel, die Truck_Crane ist ein Sonderfall |
+| scheitert auch | es liegt am Paket — dann lohnt der Vergleich mit `fs24-asobo-simobjects-landmarks`, dem einzigen gestreamten Paket, aus dem nachweislich etwas steht |
+
+⚠ **Eine Spur, die noch niemand verfolgt hat:** `windmill`/`windsock` tragen im Katalog die
+Kategorie `Landmarks` (groß), die gescheiterten `vertical`/`simobjects` (klein). Groß heißt:
+aus `katalog_sammeln.py`, dem Verzeichnislauf. Klein heißt: aus `fsarchive.py`. **Die beiden
+Erfassungswege könnten unterschiedlich verlässliche Titel liefern** — bei den VO_Fire
+besonders, weil dort ein Titel aus `[fltsim.N]` stammt und nicht aus einem Verzeichnisnamen.
+
+## ✅ Die Brügge stellt Flugzeuge hin — beantwortet am 14.09.2026
+
+**`AICreateSimulatedObject` nimmt Flugzeugtitel an.** Die Frage, die hier stand, ist im Flug
+erledigt: Mi-2-Helikopter und Bonanzas standen sichtbar im Simulator. Ein eigener Aufruf
+(`AICreateNonATCAircraft`) wird dafür nicht gebraucht.
+
+**Was dabei schiefging, war etwas anderes** — `mi2-1 flugzeug_ga ✖ GATTUNG_UNBEKANNT`. Das
+ist kein Simulator-, sondern ein Artenproblem: Die Titel waren der Art noch nicht zugeordnet.
+Wer diesen Fehler sieht, schaut in `bruegge_katalog`, nicht in die SimConnect-Doku.
+
+⚠ **Und eine Falle, die dreimal zugeschlagen hat:** Gesetzt wurden Titel, die es nur auf dem
+Rechner des Nutzers gibt (Black Square Bonanza, Superspuds Vieh, Digital Aeronautics Mi-2).
+FRS123 bekam jedes Mal `EXCEPTION_22`. Die Information stand die ganze Zeit im Katalog
+(`quelle='community'`). **Vor jedem Setzen für andere: `quelle` prüfen.**
+
+### Was davon offen bleibt
 
 | Art | Stand |
 |---|---|
-| `ballon` | **MSFS 2024 hat einen Heißluftballon im Standard** (Nutzer, 14.09.2026) — als Flugzeug, deshalb nicht im Katalog |
-| `flugzeug_echo`, `flugzeug_ga`, `flugzeug_airliner` | bisher nur X-Plane (dort sind die `*_static.obj` gewöhnliche Objekte) |
 | `flugzeug_klassik` | leer — kein Simulator bringt einen statischen Oldtimer mit |
+| `ballon` | MSFS 2024 hat einen Heißluftballon, aber **als Flugzeug** — er steht deshalb nicht im Katalog |
 
-**Der Ballon ist der günstigste Kandidat:** Ein Versuch beantwortet die Frage für alle fünf.
-Fällt er positiv aus, ist zusätzlich `katalog_sammeln.py` zu erweitern — es durchsucht in MSFS
-nur `SimObjects/{Animals,Boats,GroundVehicles,Landmarks,Misc}`, und die 14 Treffer der
-Kategorie `Airplanes` sind Sitze (`SEAT_*`), keine Flugzeuge.
+**`katalog_sammeln.py` erfasst die Kategorie `Airplanes` weiterhin nicht** — es durchsucht in
+MSFS nur `SimObjects/{Animals,Boats,GroundVehicles,Landmarks,Misc}`, und die 14 Treffer unter
+`Airplanes` sind Sitze (`SEAT_*`). Jetzt, wo belegt ist, dass Flugzeuge sich setzen lassen,
+wäre die Erweiterung ein lohnender Lauf: Sie brächte die Standflugzeuge, die heute nur über
+den gemeldeten Titel des eigenen Flugzeugs in den Katalog finden.
 
-✅ **Die zwei Sammelläufe sind gelaufen** (14.09.2026) — der Katalog steht bei **4124**
-Zeilen statt 2953. Dazugekommen sind 63 Leuchttürme, 119 Tanks, 215 Container, 203
-Rollwegschilder, 280 Ramp-Equipment-Teile, Masten, Windräder und die Flugplatzfahrzeuge.
-Die Auswahl der Zweige steht in `_XP_ZWEIGE` in `katalog_sammeln.py`.
+---
 
-**Was bewusst draußen blieb**, und zwar auf Nutzerentscheidung: `Common_Elements` (1247),
-`Hangars`, `Euro_/Modern_Airports`, alle Fassaden, Wände, Bodenflächen und Lampen. Darin
-liegt auch `fire_truck_small_1.obj` — in `Common_Elements/fire_department/`, nicht dort, wo
-die frühere Notiz es vermutete. Die Art `fahrzeug` deckt X-Plane jetzt über
-`Dynamic_Vehicles` und `Ramp_Equipment` ab (Tankwagen, Catering, Bus, Schlepper, Crew-Car).
+## ⭐ Soll die FriesenBrügge auch OHNE VATSIM arbeiten? (offen, 14.09.2026)
+
+**Die Frage stellt sich seit heute Abend konkret** (s. den Zwei-Simulatoren-Fall in
+[`PROTOKOLL.md`](../friesenbruegge/PROTOKOLL.md)): Wer nicht auf VATSIM ist, bekommt keine
+Objekte — auch nicht mit gültiger Kennung, weil der Server bei jeder Meldung die Position
+gegen `live_positions` prüft.
+
+**Für den FriesenKieker ist das eine echte Lücke.** Wer das Zählen üben will, ohne online zu
+gehen, kann es heute nicht. Dasselbe trifft jeden, der einen zweiten Simulator daneben
+laufen hat.
+
+⚠ **Der Preis ist nicht klein:** Die Positionsprüfung ist der einzige Schutz davor, dass
+eine fremde Kennung fremde Objekte auslöst. Fällt sie weg, zählt die Kennung allein — und
+die ist ausdrücklich **kein Geheimnis** (s. PROTOKOLL, „kennung — dauerhaft, je
+Installation, kein Geheimnis"). Ein Weg wäre ein ausdrücklicher Übungsmodus, den der Pilot
+im Admin für seine eigene Kennung einschaltet; dann ist die Entscheidung bei ihm und nicht
+im Protokoll.
+
+**Nicht begonnen** — der Nutzer hat die Frage noch nicht entschieden.
 
 ---
 

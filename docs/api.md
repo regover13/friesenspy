@@ -2244,7 +2244,7 @@ Wiedererkennungszeichen, das den vollen Match je Meldung erspart.
 {
   "protokoll": 2,
   "simulator": "msfs2024",
-  "bruegge_version": "1.8.0",
+  "bruegge_version": "1.10.0",
   "kennung": "a3f9c1e0b2d48576",
   "lage": {"lat": 53.78227, "lon": 7.92593, "alt_msl_ft": 1200.0, "alt_agl_ft": 980.0,
            "gs_kt": 95.0, "kurs": 210.4, "am_boden": false, "vs_ft_min": 0.0},
@@ -2334,7 +2334,8 @@ Alle brauchen eine Admin-Sitzung.
 | Endpunkt | Zweck |
 |---|---|
 | `GET /api/admin/bruegge` | Melder, Takt, `soll` **und** `steht` in einer Antwort — der Vergleich ist der Punkt: Ein Objekt in `soll`, das in `steht` fehlt, ist der interessante Fall |
-| `POST /api/admin/bruegge/soll` | Objekt anfordern: `art`, `lat`, `lon`, optional `id`, `cid`, `kurs`, `erwartete_hoehe_ft`, `gilt_bis`, `auf_boden`. Gleiche `id` überschreibt. Unbekannte oder **leere** `art` → `400` |
+| `POST /api/admin/bruegge/soll` | Objekt anfordern: `art`, `lat`, `lon`, optional `id`, `cid`, `kurs`, **`kurs_zufall`**, `erwartete_hoehe_ft`, `gilt_bis`, `auf_boden`. Gleiche `id` überschreibt. Unbekannte oder **leere** `art` → `400` |
+| ⭐ `kurs_zufall` | **Würfelt die Richtung, und zwar im Server** (14.09.2026). Ohne ihn schickt der Server `kurs: null`, und beide Brügge-Fassungen machen daraus 0 — jedes Objekt zeigte exakt nach Norden. Bei einem einzelnen fällt das nicht auf, bei einer Robbenkolonie sofort. Gewürfelt wird hier und nicht im Browser, damit der künftige Kieker dieselbe Streuung bekommt, ohne durch die Admin-Oberfläche zu müssen. Jedes Hinstellen würfelt neu, auch beim Überschreiben derselben `id` |
 | `GET /api/admin/bruegge/arten` | Alle Arten mit Zahlen: Titel gesamt/aktiv, je Simulator, Beispiele, `anforderbar`, `addon`. **Die einzige Quelle der Artenliste** — bis zum 14.09.2026 stand dieselbe Aufzählung viermal (zwei C++-Quelltexte, `main.py`, `admin.html`) |
 | `POST /api/admin/bruegge/arten` | Art anlegen oder ändern: `art`, `bedeutung`, `status`. `loeschen: true` nimmt sie weg und **gibt ihre Titel frei** — die Katalogzeilen bleiben, sie verlieren nur die Zuordnung |
 | `GET /api/admin/bruegge/titel` | Eine Seite des Katalogs (2953 Zeilen): `art`, `simulator`, `quelle`, `ergebnis`, `status`, `suche`, `ohne_art`, `mit_art`, `sortieren`, `absteigend`, `seite`, `je_seite`. **Gefiltert und sortiert wird hier, nicht im Browser** — sonst zählt die Seitenzahl Titel, die niemand sieht |

@@ -284,6 +284,38 @@ ununterscheidbar und soll es auch sein: Sie erfährt nicht, ob sie unbekannt ist
 gerade niemand in der Nähe. **Eine Fehlermeldung wäre hier ein Werkzeug** — wer probieren
 wollte, welche erfundene Position durchgeht, bekäme vom Server die Rückmeldung dazu.
 
+#### ⚠⚠ ZWEI SIMULATOREN, EINER AUF VATSIM — der teuerste Fall, und er sieht aus wie ein Fehler
+
+**Gemessen am 14.09.2026.** Der Nutzer meldete *„ich bin ohne vatsim im flug"* und bekam
+keine Objekte. Die Vermutung lag nahe, dass die Kennung nicht trägt. Sie war falsch.
+
+Tatsächlich war er **sehr wohl auf VATSIM** — nur mit dem *anderen* Simulator:
+
+| | |
+|---|---|
+| `live_positions` | FRS49, seit 16:57 eingeloggt, 48.516 / 13.347, **Groundspeed 0** |
+| Brügge A (msfs2024) | dieselbe Position, zugeordnet, Verstöße 0 |
+| Brügge B | meldet, wo er wirklich fliegt — alle 3 s *„keine Zuordnung (1 Kandidaten)"* |
+
+MSFS stand am Boden und hielt über vPilot die VATSIM-Zeile; geflogen wurde in X-Plane, das
+nicht verbunden war. Für den Server sind das nicht zwei Simulatoren eines Piloten, sondern
+**eine Position und eine Meldung, die nicht dazu passt** — er lehnt korrekt ab.
+
+**Daran ändert auch eine gültige Kennung nichts**, und das ist der Punkt, an dem die
+naheliegende Abhilfe scheitert: Der Server prüft bei *jeder* Meldung die Position gegen
+VATSIM (s. `_bruegge_zuordnen`). Passt sie nicht, wird die Zuordnung nach
+`PAARUNG_LOESEN_TAKTE` gelöst — eine von Hand eingetragene Kennung überlebt keine Minute.
+Die Kennung erspart den vollen Match, sie ersetzt ihn nicht.
+
+**Woran man es erkennt**, ohne zu raten: Im Log stehen beide Bilder gleichzeitig — eine
+Kennung mit `verstoesse: 0` und aktuellem `gesehen_am`, daneben im Sekundentakt „keine
+Zuordnung (N Kandidaten)". Wer nur eines davon ansieht, kommt auf die falsche Fährte. Und
+ein Kandidat, der nicht passt, kann **man selbst** sein.
+
+**Der Ausweg ist kein Server-Eingriff, sondern eine Entscheidung am Simulator:** Entweder
+der fliegende Sim geht auf VATSIM, oder geprüft wird im Sim, der schon dort ist. Für reine
+Client-Prüfungen gibt es [`pruefserver.py`](pruefserver.py).
+
 ⚠ **Und es heißt, dass sich das Objektsetzen ohne VATSIM nicht prüfen lässt.** Am 13.09.2026
 hat das eine Stunde gekostet: Die X-Plane-Brügge lief nachweislich, meldete sauber, bekam aber
 immer ein leeres `soll` — weil der VATSIM-Client des Piloten seinen eigenen Simulator nicht

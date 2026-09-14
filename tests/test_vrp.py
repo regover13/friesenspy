@@ -151,10 +151,18 @@ def test_kaputte_ablage_ist_kein_fehler(tmp_path):
 
 def test_ablage_liegt_im_datenverzeichnis():
     """Neben der Datenbank, also im Volume — das überlebt den Container. NICHT im Repo: die
-    Quelle verlangt einen Schlüssel, den nur der Server hat."""
-    assert vrp.pfad_fuer("/opt/friesenspy/data/friesenspy.db") == Path(
-        "/opt/friesenspy/data/vrp_openaip.json"
-    )
+    Quelle verlangt einen Schlüssel, den nur der Server hat.
+
+    ⚠ Geprüft wird die BEZIEHUNG zur Datenbank, nicht eine ausgeschriebene Zeichenkette.
+    `pfad_fuer` ruft `.resolve()`, und das stellt unter Windows das aktuelle Laufwerk voran
+    (`D:/opt/friesenspy/...`). Der Vergleich gegen `Path("/opt/friesenspy/data/…")` war
+    deshalb auf dem Entwicklungsrechner dauerhaft rot und nur im Container grün — ein
+    Fehlschlag, der nichts über den Code sagt und echte verdeckt (14.09.2026).
+    """
+    db = "/opt/friesenspy/data/friesenspy.db"
+    ziel = vrp.pfad_fuer(db)
+    assert ziel.name == "vrp_openaip.json"
+    assert ziel.parent == Path(db).resolve().parent
 
 
 # ---------------------------------------------------------------------------

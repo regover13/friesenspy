@@ -597,9 +597,12 @@ Brügge weiß, was ein Windrad ist. Ältere Brüggen laufen unverändert weiter.
 Fast alles, was die Brügge setzt, liegt im Simulator schon — sie nennt nur den Titel. Zwei
 Dinge gab es nirgends, und die entstanden deshalb hier:
 
-**Die Rauchsäulen** (sechs Farben, 90 m hoch). Es gibt keine Freeware-Rauchsäule, die man
-mitliefern dürfte — alle sind als Abhängigkeit gedacht, und der Nutzer wollte ausdrücklich,
-dass niemand ein Fremdpaket braucht.
+**Die Rauchsäulen** (sechs Farben, 90 m hoch, 30 Sekunden). Es gibt keine
+Freeware-Rauchsäule, die man mitliefern dürfte — alle sind als Abhängigkeit gedacht, und der
+Nutzer wollte ausdrücklich, dass niemand ein Fremdpaket braucht. Zu sehen sind sie aus
+**3,5 NM**; das ist keine Einstellung, sondern eine Schranke des Partikelsystems (gemessen
+14.09.2026 — `MaxDistanceEmission` wirkt bis 6480 m und darüber nicht mehr). Einzelheiten in
+[`friesenbruegge/msfs-rauch/LIESMICH.md`](friesenbruegge/msfs-rauch/LIESMICH.md).
 
 **Der Seehund** in drei Größen (Bulle 1,80 m, Kuh 1,60 m, Heuler 0,85 m). **Es gibt in
 keinem der beiden Simulatoren eine Robbe** — durchsucht sind MSFS' 45 Tiertitel und 41
