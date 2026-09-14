@@ -6,6 +6,28 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-15 — Zuständigkeiten, vom Nutzer verteilt
+
+Damit niemand zweimal dasselbe anfängt:
+
+| Aufgabe | Wer |
+|---|---|
+| Die Art `robbe` mit eigenen Modellen (wandert die Kuh von `seehund_kuh` nach `robbe`?) | **eine andere Sitzung** |
+| `mast` und `kran` — in MSFS ohne brauchbaren Titel | **eine andere Sitzung** |
+| `boot_gross` — MSFS liefert 290 m, X-Plane 21 m | **eine andere Sitzung** |
+| Unsichtbarer Träger für die MSFS-Sichtweite | **gestrichen** (Befund bleibt in `docs/offene-aufgaben.md` stehen) |
+| Sichtweiten-Messreihe im Sim (`sw-0100` … `sw-1600`) | **erledigt** |
+| „Nimmt die Brügge ein Flugzeug?" | beantwortet; der Rest ist [Issue #34](https://github.com/regover13/friesenspy/issues/34) (Kategorie `Airplanes` im Sammellauf) |
+
+Weitere Issues aus derselben Durchsicht: **#35** (braucht die sekundengenaue Position einen
+eigenen Sichtbarkeitsgrad? — abgespalten aus #23, war nie entschieden, aber gebaut) und
+**#23** mit neuem Zuschnitt: Das Kniebrett soll nicht sich selbst melden, sondern **sein
+Gebiet**. Gemessen an `panel_diag`: Friesen in Reichweite werden zu 5 von 5 erkannt, bis
+92 km weit. ⚠ Wer daran arbeitet, muss `bruegge_belegte_cids` öffnen — die Sperre ist gegen
+verwechselte Identitäten gebaut, nicht gegen mehrere Quellen für dieselbe.
+
+---
+
 ## 2026-09-15 — Brügge-Zuordnung: `deutlich_besser` raus, `frei` rein (v14.44.0)
 
 **Wer:** Sitzung „Sim restart ⑂", Zweig `worktree-bruegge-zuordnung-haerten`, direkt nach

@@ -10,6 +10,10 @@ und prüfen, ob eine andere die Aufgabe schon erledigt hat.
 
 ## ⚠ Zwei Titel lassen sich nicht setzen — und es liegt NICHT am Streaming
 
+> **Zuständigkeit seit 15.09.2026: eine andere Sitzung** (Nutzerentscheidung *„mast und kran
+> regel ich mit einer anderen session"*). Der Befund unten bleibt als Grundlage stehen; wer
+> hier weiterarbeitet, stimmt sich vorher in [`COORDINATION.md`](../COORDINATION.md) ab.
+
 Gefunden beim Lasttest mit 200 gemischten Objekten: Von 402 Anforderungen scheiterten 25,
 ausschließlich in zwei Arten.
 
@@ -113,6 +117,10 @@ MSFS nur `SimObjects/{Animals,Boats,GroundVehicles,Landmarks,Misc}`, und die 14 
 `Airplanes` sind Sitze (`SEAT_*`). Jetzt, wo belegt ist, dass Flugzeuge sich setzen lassen,
 wäre die Erweiterung ein lohnender Lauf: Sie brächte die Standflugzeuge, die heute nur über
 den gemeldeten Titel des eigenen Flugzeugs in den Katalog finden.
+
+> **Steht seit dem 15.09.2026 als [GitHub-Issue #34](https://github.com/regover13/friesenspy/issues/34)**
+> und damit nicht mehr auf dieser Liste — dort mit der `quelle`-Falle zusammen, die für den
+> Ballon besonders zählt: Ein Heißluftballon aus einem Payware-Paket nützt der Gruppe nichts.
 
 ---
 
@@ -218,20 +226,18 @@ Zwischendurch 200 Seehunde in fünf Rudeln und 200 gemischte Objekte aus dreizeh
 
 ### ⚠ Was offen bleibt
 
-**Die Sichtweite in MSFS.** Der Seehund hat eine Bounding Sphere von 1,86 m, und MSFS
-entscheidet die Sichtbarkeit über genau diese Größe — `minSize="0"` wird überstimmt.
-Gemessen ist der Zusammenhang am Rauch: ein 2-m-Träger verschwand bei **100 m**, ein
-90-m-Träger trug **1830 m**. Dazwischen ist nichts ausgemessen.
+**Die Sichtweite in MSFS — als Aufgabe gestrichen** (Nutzerentscheidung 15.09.2026:
+*„Unsichtbarer Träger vorerst streichen"*). Der Befund bleibt trotzdem festgehalten, weil er
+jeden künftigen Entwurf betrifft:
 
-Der Weg ist bekannt und beim Rauch erprobt: ein **unsichtbarer Trägerquader**
-(`ASOBO_material_invisible`), der die Bounding Box vergrößert, ohne gezeichnet zu werden.
-Hochgerechnet braucht es rund 20 m für 1 km Sichtweite. ⚠ Er muss **auf** dem Ursprung
-stehen, nicht um ihn herum — `auf_boden` setzt den Ursprung auf Geländehöhe, ein zentrierter
-Quader steckte zur Hälfte im Watt.
-
-⚠ **Ungeprüft ist dabei, ob MSFS unsichtbare Geometrie überhaupt mitzählt.** Beim Rauch war
-der Träger immer unsichtbar, es fehlt der Gegenversuch. Bringt der Quader nichts, ist das
-die erste Stelle zum Nachsehen.
+> MSFS entscheidet die Sichtbarkeit über die **Bounding Sphere**, und `minSize="0"` wird dabei
+> **überstimmt** — der wirksame Wert ist das Maximum aus XML und Vertex-Kurve. Am Rauch
+> gemessen: ein 2-m-Träger verschwand bei **100 m**, ein 90-m-Träger trug **1830 m**. Der
+> Seehund hat 1,86 m. Wer Sichtweite braucht, braucht Geometrie — hochgerechnet rund 20 m für
+> 1 km. Ein unsichtbarer Trägerquader (`ASOBO_material_invisible`) wäre der erprobte Weg, muss
+> aber **auf** dem Ursprung stehen: `auf_boden` setzt den Ursprung auf Geländehöhe, ein
+> zentrierter Quader steckte zur Hälfte im Watt. Ob MSFS unsichtbare Geometrie überhaupt
+> mitzählt, ist dabei ungeprüft.
 
 **Und die Farbe.** Dass die Tiere stehen, ist belegt; ob die Palettentextur greift, hat
 niemand ausdrücklich bestätigt.
