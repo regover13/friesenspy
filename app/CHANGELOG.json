@@ -1,5 +1,19 @@
 [
   {
+    "version": "14.38.0",
+    "date": "2026-09-14",
+    "highlight": false,
+    "title": "Die FriesenBrügge bekommt ihre Objektliste vom Server",
+    "items": [
+      "Die FriesenBrügge trug bisher selbst eine Tabelle, welches Modell zu welcher Art gehört — eine neue Art kostete damit ein Update für jeden Piloten. Jetzt schickt der Server die Modelle mit, und die FriesenBrügge probiert sie der Reihe nach.",
+      "Im Flug belegt: Ein Windrad steht im Simulator, obwohl keine einzige FriesenBrügge weiß, was ein Windrad ist. Die Art entstand am selben Tag auf dem Server.",
+      "Der Server weiß dabei, was tatsächlich funktioniert: Er führt 2953 Objekttitel mit Prüfergebnis. Was nachweislich scheitert, schickt er gar nicht erst — die alte Tabelle probierte drei kaputte Modelle bei jedem Fehlversuch durch.",
+      "Neu im Admin: die vollständige Titelliste, nach Art, Simulator, Quelle und Prüfstand filterbar, mit Spaltensortierung und Seiten zu zwanzig.",
+      "Ältere FriesenBrüggen laufen unverändert weiter — gemessen, nicht angenommen.",
+      "Die Karte im Admin zeigt nur noch, wer wirklich gerade meldet; ältere Positionen stehen weiter in der Tabelle, aber mit Altersangabe."
+    ]
+  },
+  {
     "version": "14.37.1",
     "date": "2026-09-13",
     "highlight": false,

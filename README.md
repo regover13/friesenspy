@@ -581,11 +581,16 @@ X-Plane wählt beim Start den passenden Ordner. Geflogen ist bislang nur die Win
 die beiden anderen sind gebaut und ungetestet, und das steht so auch auf der Download-Seite.
 
 Gedacht ist das für den geplanten FriesenKieker, bei dem aus der Luft gezählt wird. Der Server
-fordert dabei **Gattungen** an (`tier_gross`, `robbe`, `boot_klein` …), nie Modellnamen —
-welches Modell daraus wird, entscheidet die Brügge, weil nur sie ihren Simulator kennt. In
-MSFS ist ein `tier_gross` ein Bär, in X-Plane ein Hirsch, und der Server merkt davon nichts.
-Was eine Brügge nicht kann, meldet sie nicht in `kann`; die X-Plane-Fassung beherrscht acht
-der sechzehn Gattungen.
+fordert dabei **Arten** an (`tier_gross`, `robbe`, `boot_klein` …), nie Modellnamen — und
+**liefert die Modelle seit dem 14.09.2026 gleich mit**. In MSFS ist ein `tier_gross` ein Bär,
+in X-Plane ein Hirsch; welche Titel dazugehören, steht auf dem Server, und die Brügge probiert
+sie der Reihe nach.
+
+Vorher trug jede Brügge diese Zuordnung selbst — eine neue Art kostete damit ein Update für
+jeden Piloten. Der Server ist dafür auch besser gerüstet: Er führt **2953 Objekttitel mit
+Prüfergebnis**, weiß also, was tatsächlich funktioniert, und schickt gar nicht erst, was
+nachweislich scheitert. Im Flug belegt: Ein Windrad steht im Simulator, obwohl keine einzige
+Brügge weiß, was ein Windrad ist. Ältere Brüggen laufen unverändert weiter.
 
 Die Unterlagen liegen im Ordner selbst: [`PROTOKOLL.md`](friesenbruegge/PROTOKOLL.md) (der
 Vertrag), [`MESSLISTE.md`](friesenbruegge/MESSLISTE.md) (was im Simulator gemessen ist und was

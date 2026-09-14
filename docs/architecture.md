@@ -705,13 +705,30 @@ MSFS/X-Plane (Pilot)              FastAPI                         SQLite
 1. **Keine Anmeldung.** Die Brügge schickt weder Schlüssel noch CID; der Server erkennt den
    Piloten an der Position und prüft die Berechtigung über `forum_callsign` (CID, nicht
    Callsign — das bricht beim N-Verlust). Ablehnungen sind für sie ununterscheidbar.
-2. **Der Server spricht in Gattungen, nie in Modellnamen.** `tier_gross`, `robbe`, `boot_klein`
-   … — welches Modell daraus wird, entscheidet allein die Brügge (`titel_fuer` in
-   `msfs/bruegge.cpp`, `pfad_fuer` in `xplane/bruegge.cpp`), weil nur sie ihren Simulator
-   kennt. Ein Modellname in der Antwort würde das Protokoll an MSFS ketten; X-Plane spricht
-   in `.obj`-Pfaden. **Was eine Brügge nicht kann, meldet sie nicht in `kann`** — die
-   X-Plane-Fassung beherrscht acht der sechzehn Gattungen, und der Server fordert die
-   übrigen bei ihr gar nicht erst an.
+2. **Der Server spricht in Arten — und liefert die Modelle mit** (Fassung 2, 14.09.2026).
+   `tier_gross`, `robbe`, `boot_klein` … sind Bedeutungen, keine Modellnamen; ein Modellname
+   im Vertrag würde ihn an MSFS ketten, denn X-Plane spricht in `.obj`-Pfaden. Welche Titel
+   zu einer Art gehören, steht neben `soll` im Wörterbuch `arten`, und die Brügge probiert
+   sie der Reihe nach.
+
+   > ### ⚠ Hier stand das Gegenteil, und es war zweimal falsch
+   >
+   > *„Welches Modell daraus wird, entscheidet allein die Brügge, weil nur sie ihren
+   > Simulator kennt."* — **Der Server kennt ihn sehr wohl:** Die Brügge meldet `simulator`
+   > in jeder Meldung. Und die Tabelle im Client widersprach dem Leitbild des Protokolls
+   > („Die Brügge ist dumm"):
+   >
+   > | | Client-Tabelle | Server-Tabelle |
+   > |---|---|---|
+   > | eine neue Art kostet | Windows-Build + Verteilung an 61 Piloten | eine Datenbankzeile |
+   > | weiß, was tatsächlich funktioniert | nein | ja — 1693 Titel einzeln im Sim geprüft |
+   >
+   > Zweimal bezahlt: FRS61s ältere Brügge meldete `GATTUNG_UNBEKANNT` für Arten, die es
+   > gab. Und dreimal still: Drei Titel ihrer eigenen Tabelle scheitern nachweislich mit
+   > `EXCEPTION_22`, sie probierte sie trotzdem bei jedem Fehlversuch durch.
+   >
+   > Mit `kann` ist zugleich die Behauptung weggefallen, die Brügge wisse, was sie kann.
+   > Belegt statt behauptet: Der Server erfährt aus `steht`, was tatsächlich stand.
 3. **`soll` ist ein Zustand, kein Befehlsstrom.** Geht eine Anfrage verloren, holt die nächste
    Antwort alles ein. Der Takt (`naechste_frage_in_s`) kommt aus `app_settings` und wirkt
    sofort für alle, ohne Deploy — ein Deploy risse jede offene Sitzung ab.

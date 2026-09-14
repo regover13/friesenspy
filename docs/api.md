@@ -2242,11 +2242,10 @@ Wiedererkennungszeichen, das den vollen Match je Meldung erspart.
 
 ```json
 {
-  "protokoll": 1,
+  "protokoll": 2,
   "simulator": "msfs2024",
-  "bruegge_version": "1.4.0",
+  "bruegge_version": "1.8.0",
   "kennung": "a3f9c1e0b2d48576",
-  "kann": ["tier_gross", "bauwerk", "fahrzeug", "boot_klein", "boot_gross", "robbe"],
   "lage": {"lat": 53.78227, "lon": 7.92593, "alt_msl_ft": 1200.0, "alt_agl_ft": 980.0,
            "gs_kt": 95.0, "kurs": 210.4, "am_boden": false, "vs_ft_min": 0.0},
   "spur": [],
@@ -2254,9 +2253,14 @@ Wiedererkennungszeichen, das den vollen Match je Meldung erspart.
 }
 ```
 
-`kann` erzeugt die Brügge aus ihrer Gattungstabelle; der Server wertet es derzeit **nicht**
-aus. `steht` ist die Gegenrichtung: was tatsächlich im Simulator steht — ohne diesen Block
-erführe der Server nie, ob ein angefordertes Objekt existiert (bis zum 12.09.2026 wurde er
+⚠ **`kann` gibt es seit Protokollfassung 2 nicht mehr** (14.09.2026). Es zählte auf, welche
+Arten die Brügge beherrscht — seit sie keine eigene Tabelle mehr führt, kann sie nichts mehr
+behaupten. Der Server schickt für den gemeldeten `simulator`, was er hat, und erfährt aus
+`steht`, was tatsächlich stand: belegt statt behauptet. **Fassung 1 darf es weiter mitschicken**;
+es wird übergangen, wie schon immer.
+
+`steht` ist die Gegenrichtung: was tatsächlich im Simulator steht — ohne diesen Block erführe
+der Server nie, ob ein angefordertes Objekt existiert (bis zum 12.09.2026 wurde er
 weggeworfen). `antwort_zu_gross` kommt nur mit, wenn unsere letzte Antwort nicht in ihren
 Puffer passte; sie wertet eine abgeschnittene Antwort bewusst nicht aus.
 
@@ -2264,23 +2268,39 @@ Puffer passte; sie wertet eine abgeschnittene Antwort bewusst nicht aus.
 
 ```json
 {
-  "protokoll": 1,
+  "protokoll": 2,
   "naechste_frage_in_s": 1,
   "gilt_bis_s": 300,
   "soll": [
     {"id": "kolonie-norderney-1", "art": "robbe", "lat": 53.7235, "lon": 7.2502,
      "kurs": null, "erwartete_hoehe_ft": null, "auf_boden": 1}
-  ]
+  ],
+  "arten": {
+    "robbe": ["ahqa seal moving", "ahqa sea lion moving", "ahqa walrus moving"]
+  }
 }
 ```
 
 `soll` ist die **vollständige Liste** dessen, was jetzt dastehen soll — kein Strom von
 Befehlen. Geht eine Anfrage verloren, holt die nächste Antwort den Zustand von allein ein.
 
-`art` ist eine **Gattung, kein Modellname**: `tier_gross`, `bauwerk`, `fahrzeug`, `boot_klein`,
-`boot_gross`, `robbe` (Positivliste `_BRUEGGE_GATTUNGEN`). Welches Modell daraus wird,
-entscheidet die Brügge — sie kennt ihren Simulator, der Server nicht. `auf_boden: 1` setzt das
-Objekt auf die Geländehöhe, ohne dass der Server sie kennen müsste.
+`art` ist eine **Art, kein Modellname**. ⭐ **Seit Fassung 2 liefert der Server die Modelle
+gleich mit** (`arten`): Art → Titelliste, in der Reihenfolge, in der die Brügge probieren
+soll. Scheitert Titel 1, rückt Titel 2 nach.
+
+Vorher trug jede Brügge die Zuordnung selbst — eine neue Art kostete damit einen
+Windows-Build und eine Verteilung an 61 Piloten. Jetzt steht sie in `bruegge_katalog` auf dem
+Server, zusammen mit dem Prüfergebnis je Titel; was nachweislich scheitert, geht gar nicht
+erst hinaus. Am 14.09.2026 im Flug belegt: ein `windrad`, das in **keiner** Brügge-Fassung
+existiert, stand sichtbar im Simulator.
+
+⚠ **`arten` steht NEBEN `soll`, nicht darin** — einmal je Antwort, nicht je Objekt. Bei 32
+Objekten und X-Plane-Pfaden von rund 45 Zeichen wären das +9,6 kB bei einem Client-Puffer von
+16 kB, und ein Überlauf ist dort **lautlos**. Als Wörterbuch kostet alles zusammen 914 Bytes
+(MSFS) bzw. 1643 (X-Plane). Es geht nur mit, wenn `soll` etwas enthält — und nur für die
+tatsächlich angeforderten Arten.
+
+`auf_boden: 1` setzt das Objekt auf die Geländehöhe, ohne dass der Server sie kennen müsste.
 
 **Ablehnungen sehen alle gleich aus:** „nicht auf VATSIM", „niemand passt" und „nicht
 authentifiziert" ergeben allesamt HTTP 200 mit leerem `soll` — nur der Takt unterscheidet sie
@@ -2292,12 +2312,16 @@ oder unplausibel), `426` (Protokollfassung neuer als dieser Server).
 
 ## Admin: Brügge
 
-Alle vier brauchen eine Admin-Sitzung.
+Alle brauchen eine Admin-Sitzung.
 
 | Endpunkt | Zweck |
 |---|---|
 | `GET /api/admin/bruegge` | Melder, Takt, `soll` **und** `steht` in einer Antwort — der Vergleich ist der Punkt: Ein Objekt in `soll`, das in `steht` fehlt, ist der interessante Fall |
-| `POST /api/admin/bruegge/soll` | Objekt anfordern: `art`, `lat`, `lon`, optional `id`, `cid`, `kurs`, `erwartete_hoehe_ft`, `gilt_bis`, `auf_boden`. Gleiche `id` überschreibt. Unbekannte `art` → `400` |
+| `POST /api/admin/bruegge/soll` | Objekt anfordern: `art`, `lat`, `lon`, optional `id`, `cid`, `kurs`, `erwartete_hoehe_ft`, `gilt_bis`, `auf_boden`. Gleiche `id` überschreibt. Unbekannte oder **leere** `art` → `400` |
+| `GET /api/admin/bruegge/arten` | Alle Arten mit Zahlen: Titel gesamt/aktiv, je Simulator, Beispiele, `anforderbar`, `addon`. **Die einzige Quelle der Artenliste** — bis zum 14.09.2026 stand dieselbe Aufzählung viermal (zwei C++-Quelltexte, `main.py`, `admin.html`) |
+| `POST /api/admin/bruegge/arten` | Art anlegen oder ändern: `art`, `bedeutung`, `status`. `loeschen: true` nimmt sie weg und **gibt ihre Titel frei** — die Katalogzeilen bleiben, sie verlieren nur die Zuordnung |
+| `GET /api/admin/bruegge/titel` | Eine Seite des Katalogs (2953 Zeilen): `art`, `simulator`, `quelle`, `ergebnis`, `status`, `suche`, `ohne_art`, `mit_art`, `sortieren`, `absteigend`, `seite`, `je_seite`. **Gefiltert und sortiert wird hier, nicht im Browser** — sonst zählt die Seitenzahl Titel, die niemand sieht |
+| `POST /api/admin/bruegge/titel` | Titel zuordnen: `simulator`, `titel`, dazu `art`, `rang`, `status`. `art: null` nimmt die Zuordnung weg (Rang und Status gehen mit) |
 | `DELETE /api/admin/bruegge/soll/{id}` | Anforderung zurücknehmen |
 | `POST /api/admin/bruegge/takt` | Die Drossel: `naechste_frage_in_s` für alle Brücken, ohne Deploy. „Aus" ist 900 s, nicht 0 — eine Brügge ohne Antwort könnte Abschaltung nicht von Netzausfall unterscheiden |
 
