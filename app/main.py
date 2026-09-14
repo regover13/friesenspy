@@ -91,6 +91,7 @@ from app.database import (
     list_panel_devices,
     friesen_in_der_luft,
     cid_ist_authentifiziert,
+    bruegge_belegte_cids,
     bruegge_zuordnung_holen,
     bruegge_zuordnung_setzen,
     bruegge_zuordnung_bestaetigen,
@@ -1242,32 +1243,13 @@ def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
         partner = next((k for k in kandidaten if k.cid == cid), None)
         if partner is not None and bruegge.bleibt_plausibel(lat, lon, alt_ft, gs_kt, partner,
                                                             vs_wirksam):
-            # ⚠ ABER: Passt ein ANDERER deutlich besser? Dann meldet offensichtlich der.
+            # ⚠ EINE GEMERKTE ZUORDNUNG WIRD GEPRUEFT, NICHT NEU AUSGEHANDELT.
             #
-            # Am 14.09.2026 live vorgefuehrt: Zwei Piloten auf Wangerooge, 130 m
-            # auseinander, beide MSFS -- und beide Brueggen melden unter DERSELBEN Kennung
-            # `9e3711c100000000`, weil die MSFS-Fassung sie aus der Modul-Adresse und
-            # `rand()` ohne `srand()` baut. In WASM ist beides auf jedem Rechner gleich.
-            #
-            # `bleibt_plausibel` sagte brav ja: 130 m liegen unter der 400-m-Toleranz fuer
-            # ein stehendes Flugzeug. Der Server schrieb damit FRS49s Position unter FRS123s
-            # CID, mit null Verstoessen, und FRS123 verschwand von der Karte.
-            #
-            # Die Vorsprungsregel loest es: 1 m gegen 130 m ist eindeutig. Der Client-Fehler
-            # bleibt (die Kennung wird weiter geteilt), aber jede Meldung landet bei dem, der
-            # sie geschickt hat -- und das ohne ein einziges Client-Update.
-            anderer = bruegge.deutlich_besser(lat, lon, alt_ft, gs_kt, kandidaten, cid,
-                                              vs_wirksam)
-            if anderer is not None and cid_ist_authentifiziert(conn, anderer.cid):
-                _logger.info(
-                    "Bruegge: Kennung %s haengt um, %d -> %d (%.0f m gegen %.0f m)",
-                    kennung, cid, anderer.cid, anderer.abstand,
-                    bruegge.abstand_m(lat, lon, partner.lat, partner.lon))
-                bruegge_position_loeschen(conn, cid)
-                bruegge_zuordnung_setzen(conn, kennung, anderer.cid, simulator)
-                bruegge_zuordnung_bestaetigen(conn, kennung, lat, lon)
-                bruegge_vs_spitze_merken(conn, kennung, vs_ft_min)
-                return anderer.cid, True, None
+            # Hier stand bis zum 15.09.2026 ein Aufruf von `deutlich_besser`, der sie bei
+            # jeder Meldung sofort umhaengen konnte (s. den Block an seiner Stelle in
+            # app/bruegge.py). Das ist bewusst entfernt: Die harte Bindung ist dieselbe, die
+            # das Kniebrett traegt -- geloest wird erst nach PAARUNG_LOESEN_TAKTE Verstoessen
+            # IN FOLGE, ein einzelner Ausreisser loest nichts.
             bruegge_zuordnung_bestaetigen(conn, kennung, lat, lon)
             bruegge_vs_spitze_merken(conn, kennung, vs_ft_min)
             return cid, True, None
@@ -1284,7 +1266,40 @@ def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
         return None, True, None
 
     # --- Erstzuordnung -----------------------------------------------------------------
-    treffer, grund = bruegge.zuordnen(lat, lon, alt_ft, gs_kt, kandidaten, vs_wirksam)
+    #
+    # Wer gerade von einer ANDEREN Bruegge gemeldet wird, faellt als Kandidat weg -- `frei`
+    # aus dem Kniebrett. Ohne diese Zeile stehen auf einem Vorfeld mehrere Friesen im selben
+    # Umkreis, keiner hat Vorsprung, und es wird gar nicht zugeordnet; am 14.09.2026
+    # anderthalb Minuten lang im Sekundentakt (76 m gegen 93 m).
+    #
+    # Die eigene Kennung ist ausgenommen: Sie SOLL ihre CID behalten duerfen. Beim
+    # Erstkontakt ist sie leer, dann sind alle gemeldeten CIDs belegt -- richtig so, denn
+    # eine Bruegge ohne Kennung kann niemand sein, der bereits meldet.
+    belegt = bruegge_belegte_cids(conn, kennung, bruegge.MELDUNG_FRIST_S)
+    treffer, grund = bruegge.zuordnen(lat, lon, alt_ft, gs_kt, kandidaten, vs_wirksam,
+                                      belegt=belegt)
+
+    # ⚠ UND WENN DANN NIEMAND UEBRIG BLEIBT, NOCH EINMAL OHNE DIE SPERRE.
+    #
+    # Sonst sperrt sich ein Pilot mit seiner EIGENEN vorigen Zeile aus, und das ist kein
+    # Sonderfall: In MSFS haelt die Kennung nicht ueber einen Simulator-Start (die Datei-API
+    # des WASM-Moduls, s. friesenbruegge/msfs/bruegge.cpp), also meldet derselbe Mensch nach
+    # dem Neustart unter einer NEUEN Kennung -- waehrend die alte in der Tabelle noch frisch
+    # steht. `bruegge_zuordnung_setzen` raeumt sie beim Zuordnen weg; dazu muss das Zuordnen
+    # aber erst einmal gelingen.
+    #
+    # Gebunden in tests/test_bruegge_endpunkt.py::
+    #   test_eine_neue_kennung_verdraengt_die_alte_derselben_cid
+    #
+    # Der Rueckfall kostet nichts, was die Sperre gewonnen hat: Wo sie hilft -- mehrere
+    # Friesen dicht beieinander, einer meldet schon -- bleibt nach ihrer Anwendung ja gerade
+    # jemand uebrig, und der zweite Durchlauf kommt nie zustande. Er greift nur, wenn OHNE
+    # die Belegten niemand passt, und dort ist die Lage wie bisher.
+    if treffer is None and belegt:
+        treffer, grund_offen = bruegge.zuordnen(lat, lon, alt_ft, gs_kt, kandidaten,
+                                                vs_wirksam)
+        if treffer is not None:
+            grund = f"{grund_offen} -- erst nach Ruecknahme der Sperre ({grund})"
     if treffer is None and kandidaten:
         # Nur wenn es ueberhaupt Friesen in der Luft gab -- sonst ist "niemand passt" der
         # Normalfall und faellt nicht auf. Mit Kandidaten ist es ein Hinweis, und ohne diese

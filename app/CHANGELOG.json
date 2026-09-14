@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.44.0",
+    "date": "2026-09-15",
+    "highlight": false,
+    "title": "Zwei Friesen nebeneinander verwechseln sich nicht mehr",
+    "items": [
+      "🎯 Stehen zwei Piloten mit FriesenBrügge dicht beieinander — auf demselben Vorfeld, in der Platzrunde, in Formation —, konnte der Server bisher nicht entscheiden, welche Meldung zu wem gehört, und ordnete dann lieber gar nichts zu. Am 14.09. waren das anderthalb Minuten, in denen ein Pilot von der Karte verschwand, obwohl seine FriesenBrügge durchgehend meldete.",
+      "🔒 Jetzt gilt: Wessen Position gerade schon von einer anderen FriesenBrügge kommt, der ist vergeben. Damit bleibt in solchen Lagen genau einer übrig, und die Zuordnung ist eindeutig statt unmöglich. Je mehr Piloten mit FriesenBrügge fliegen, desto besser wird die Erkennung — bisher war es umgekehrt.",
+      "⚓ Eine einmal gefundene Zuordnung bleibt außerdem wieder fest. Seit dem Vortag konnte sie im Sekundentakt zu einem anderen Piloten wechseln, sobald der rechnerisch etwas näher lag; einmal traf es einen Piloten aus 572 Metern zugunsten von jemandem 1,2 Kilometer entfernt. Gelöst wird die Bindung nun erst wieder nach vier Verstößen hintereinander — genauso, wie das Kniebrett es im Cockpit seit jeher hält."
+    ]
+  },
+  {
     "version": "14.43.0",
     "date": "2026-09-14",
     "highlight": false,

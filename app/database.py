@@ -2644,6 +2644,36 @@ def bruegge_zuordnung_holen(conn: sqlite3.Connection, kennung: str) -> dict | No
     return _row_to_dict(row) if row else None
 
 
+def bruegge_belegte_cids(conn: sqlite3.Connection, ausser_kennung: str,
+                         frist_s: float) -> set[int]:
+    """Welche CIDs meldet gerade eine ANDERE Brügge? (`frei` aus dem Kniebrett)
+
+    Eine Identität ist einmal vergeben, nicht zweimal: Wer hier steht, kommt für die Kennung
+    ``ausser_kennung`` als Kandidat nicht mehr in Frage. Das ist die Serverfassung von
+    ``frei[]`` in ``_verkehrZusammenfuehren`` (`app/static/index.html`) — dort entsteht die
+    Liste aus einem Durchlauf über alle Sim-Flugzeuge, hier aus dem Zustand in der Tabelle,
+    weil der Server jede Meldung einzeln und asynchron sieht.
+
+    ``frist_s`` ist der Unterschied zum Kniebrett und keine Feinheit: Dort verliert eine
+    Zuordnung ihren Gegenstand in dem Moment, in dem der Simulator das Flugzeug nicht mehr
+    meldet — die Abwesenheit ist beobachtbar. Hier ist sie es nicht: Wer den Simulator
+    schließt, hört einfach auf zu senden. Nur die Frist unterscheidet „meldet gerade" von
+    „hat vor drei Stunden mal gemeldet"; ohne sie bliebe jede CID bis zum Aufräumen nach 24
+    Stunden belegt, und in MSFS wäre das nach jedem Simulator-Start die eigene.
+
+    ``gesehen_am`` wird als Text verglichen. Das geht, weil das Format
+    ``%Y-%m-%dT%H:%M:%SZ`` feste Feldbreiten hat und damit lexikografisch wie chronologisch
+    sortiert — dasselbe tut ``bruegge_aufraeumen`` schon.
+    """
+    grenze = (datetime.now(timezone.utc)
+              - timedelta(seconds=float(frist_s))).strftime("%Y-%m-%dT%H:%M:%SZ")
+    rows = conn.execute(
+        "SELECT cid FROM bruegge_zuordnung WHERE kennung <> ? AND gesehen_am >= ?",
+        (str(ausser_kennung or ""), grenze),
+    ).fetchall()
+    return {int(r[0]) for r in rows}
+
+
 def bruegge_zuordnung_setzen(conn: sqlite3.Connection, kennung: str, cid: int,
                              simulator: str | None) -> None:
     """Eine neue Zuordnung merken (kein commit).

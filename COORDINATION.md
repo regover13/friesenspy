@@ -6,6 +6,58 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-15 — Brügge-Zuordnung: `deutlich_besser` raus, `frei` rein (v14.44.0)
+
+**Wer:** Sitzung „Sim restart ⑂", Zweig `worktree-bruegge-zuordnung-haerten`, direkt nach
+`main` gepusht.
+
+**Was und warum:** `bruegge.deutlich_besser` ist **entfernt**. Es hängte eine gemerkte
+Zuordnung bei jeder Meldung sofort um, sobald ein anderer Kandidat halb so weit weg lag —
+ohne den Verstoßzähler, den `PAARUNG_LOESEN_TAKTE` verlangt. Im Log vom 14.09.:
+
+    19:30:22  Kennung 9e3711c100000000 haengt um, 1642160 -> 1602713 (572 m gegen 1175 m)
+
+572/1175 = 0,486, also knapp „deutlich besser" — ein Pilot verlor seine Zuordnung bei 572 m
+an jemanden 1,2 km entfernt. Der Anlass (zwei MSFS-Brüggen mit derselben Kennung) war echt,
+das Mittel falsch: Das Problem war eine geteilte **Identität**, geschwächt wurde die
+**Bindung**. Die Identität sichert seit v14.40.0 der Server selbst.
+
+An seine Stelle tritt **`frei` aus dem Kniebrett**: `zuordnen()` nimmt jetzt `belegt` — die
+CIDs, die innerhalb von `MELDUNG_FRIST_S` (10 s) eine andere Brügge meldet. Das löst die
+Lage, an der der Server am 14.09. anderthalb Minuten lang scheiterte („2 Kandidaten ohne
+Vorsprung (76 m gegen 93 m)"). Der Ausschluss-Schritt des Kniebretts braucht dadurch keinen
+eigenen Zweig — er ist hier `len(passende) == 1` nach Abzug der Belegten.
+
+**Zwei Fallen, die dabei aufgefallen sind** (bitte nicht wieder einbauen):
+- Bleibt nach dem Abzug niemand übrig, wird die Sperre **einmal zurückgenommen**. Ohne das
+  sperrt sich ein Pilot nach dem Simulator-Neustart mit seiner eigenen alten Kennung aus —
+  gebunden in `test_eine_neue_kennung_verdraengt_die_alte_derselben_cid`.
+- Die Frist steht jetzt **einmal** in `app/bruegge.py`; `VatsimPoller.BRUEGGE_FRIST_S` holt
+  sie von dort. Nicht die 24 h aus `bruegge_aufraeumen` nehmen, das ist Müllabfuhr.
+
+**Berührte Dateien:** `app/bruegge.py`, `app/main.py` (`_bruegge_zuordnen`),
+`app/database.py` (neu: `bruegge_belegte_cids`), `app/poller.py` (nur die Fristkonstante),
+`tests/test_bruegge_geteilte_kennung.py` (neu geschrieben), `docs/api.md`.
+
+**Noch offen aus derselben Untersuchung** (nicht angefasst, Reihenfolge mit dem Nutzer
+abgestimmt):
+1. nginx: `/api/bruegge/melden` braucht eine **eigene** `limit_req`-Zone. Heute liegt es mit
+   allem unter `/api/` in einem Topf von 120 r/m je IP; eine Brügge im Regeltakt belegt davon
+   60. Gemessen: 67× HTTP 429 am 14.09.
+2. **288× HTTP 502** am 14.09. auf denselben Endpunkt, in Blöcken (14:21, 15:51, 17:46,
+   19:51 …). Der Endpunkt ist `async def` und macht rund zehn synchrone SQLite-Operationen
+   auf dem Event-Loop. ⚠ **Er ist heute atomar, WEIL er blockiert** — zwischen Lesen und
+   Commit liegt kein `await`. Wer ihn in den Threadpool legt, baut den Wettlauf ein, den
+   `belegt` gerade verhindert. Erst messen, dann entscheiden.
+3. Der Brügge-Strom soll aus dem Kniebrett heraus (Nutzerentscheidung): Dort trägt das
+   Sim-Matching, das den direkten Weg hat und alle Flugzeuge im Umkreis sieht.
+4. Verstoß-Fenster: `main.py` antwortet dort mit `soll=[]`, woraufhin die Brügge **alle
+   Objekte abräumt** und drei Takte später neu setzt. Im Kniebrett gilt die Zuordnung im
+   Verstoß-Fenster weiter — hier sollte sie es auch.
+5. 42× `/api/fse/zones` je Minute von einer IP (eigenständiger Befund, ohne Brügge).
+
+---
+
 ## 2026-09-13 (nachmittags) — Website-Karte: Friesen mit Brügge im Sekundentakt
 
 **Wer:** Server-Session (VPS), Zweig `karte-bruegge-1hz`.

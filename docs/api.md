@@ -2319,6 +2319,29 @@ sie vergeben wird — nämlich auf eine Meldung ohne Kennung, deren Positionsmat
 Wer eine mitbringt, bekommt keine neue; sonst flackerte die Zuordnung bei jeder Meldung.
 Ohne Zuordnung gibt es auch keine Kennung, sonst wäre die Vergabe ein offenes Tor.
 
+⭐ **Eine CID ist nur einmal vergeben** (seit 15.09.2026). Wessen CID gerade eine **andere**
+Brügge meldet (innerhalb von `bruegge.MELDUNG_FRIST_S` = 10 s, derselben Frist, nach der die
+Karte den türkisen Punkt wieder loslässt), fällt als Kandidat weg. Das ist `frei[]` aus dem
+Kniebrett, und es löst den Fall, an dem der Server am 14.09.2026 anderthalb Minuten lang
+scheiterte: zwei Friesen auf demselben Vorfeld, 76 m und 93 m entfernt — kein Vorsprung, also
+keine Zuordnung, im Sekundentakt. Meldet einer davon längst selbst, bleibt nur einer übrig.
+
+Damit erledigt sich zugleich der **Ausschluss-Schritt** des Kniebretts („bleibt genau einer
+übrig"): Hier ist er nichts anderes als „genau ein Kandidat in Reichweite" nach Abzug der
+Belegten, also kein eigener Zweig.
+
+⚠ **Bleibt nach dem Abzug niemand übrig, wird die Sperre einmal zurückgenommen.** Sonst
+sperrte sich ein Pilot mit seiner eigenen vorigen Zeile aus — in MSFS hält die Kennung
+keinen Simulator-Start durch, derselbe Mensch meldet danach also unter einer neuen, während
+die alte noch frisch dasteht. Der Rückfall kostet nichts: Wo die Sperre hilft, bleibt ja
+gerade jemand übrig, und dann kommt er nie zustande.
+
+**Eine gemerkte Zuordnung wird geprüft, nicht neu ausgehandelt.** Gelöst wird erst nach
+`PAARUNG_LOESEN_TAKTE` = 4 Verstößen **in Folge**. Zwischen dem 14. und 15.09.2026 gab es
+hier kurzzeitig eine Umhäng-Regel (`deutlich_besser`), die bei jeder Meldung sofort wechselte,
+sobald ein anderer Kandidat halb so weit weg war; sie hat einem Piloten seine Zuordnung bei
+572 m Abstand an jemanden 1,2 km entfernt abgegeben und ist wieder entfernt.
+
 **Ablehnungen sehen alle gleich aus:** „nicht auf VATSIM", „niemand passt" und „nicht
 authentifiziert" ergeben allesamt HTTP 200 mit leerem `soll` — nur der Takt unterscheidet sie
 intern. Eine Fehlermeldung wäre ein Werkzeug für den, der ausprobiert, welche erfundene

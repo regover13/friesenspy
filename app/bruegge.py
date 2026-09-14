@@ -48,6 +48,21 @@ PAARUNG_LOESEN_TAKTE = 4    # erst nach so vielen Verstößen IN FOLGE
 # Flug. Jeder dieser Werte sieht für sich vernünftig aus — nur der Sprung verrät sie.
 SPRUNG_M = 500
 
+# So lange gilt eine Brügge-Meldung als frisch — und so lange ist die zugeordnete CID für
+# jede ANDERE Brügge belegt (s. `belegt` in `zuordnen`).
+#
+# **Das ist bewusst dieselbe Zahl, mit der die Karte arbeitet**, und nicht eine zweite:
+# `VatsimPoller.BRUEGGE_FRIST_S` nimmt sie von hier, und `_BRUEGGE_FRIST_MS` in index.html
+# ist ihr Millisekunden-Zwilling (dort steht sie ein zweites Mal, weil der Browser den
+# Rückfall auf VATSIM selbst entscheiden muss — gebunden in tests/test_bruegge_karte.py).
+# Wer türkis auf der Karte sieht, sieht damit genau die Piloten, deren CID hier belegt ist.
+#
+# ⚠ NICHT die 24 Stunden aus `bruegge_aufraeumen` nehmen. Die sind Müllabfuhr für Zeilen,
+# die niemand mehr anfasst — als Belegtmarke wären sie eine Selbstaussperrung: In MSFS zieht
+# die Brügge nach jedem Simulator-Start eine neue Kennung, der Pilot stünde also bis zum
+# nächsten Tag als „von jemand anderem gemeldet" in seiner eigenen Liste.
+MELDUNG_FRIST_S = 10.0
+
 ERDRADIUS_M = 6371000.0
 
 
@@ -163,7 +178,8 @@ def kandidaten_bilden(friesen, jetzt_ts: float | None = None) -> list[Kandidat]:
 
 def zuordnen(lat: float, lon: float, alt_ft: float, gs_kt: float,
              kandidaten: list[Kandidat], vs_ft_min: float = 0.0,
-             faktor: float = PAARUNG_FAKTOR) -> tuple[Kandidat | None, str]:
+             faktor: float = PAARUNG_FAKTOR,
+             belegt: set[int] | None = None) -> tuple[Kandidat | None, str]:
     """Welcher Friese meldet hier? ``(Treffer, Begründung)`` — Treffer kann ``None`` sein.
 
     **Eindeutig heißt: Der beste Kandidat ist DEUTLICH näher als der zweitbeste.**
@@ -171,6 +187,25 @@ def zuordnen(lat: float, lon: float, alt_ft: float, gs_kt: float,
     ausführlich: Mit 400 m Untergrenze lagen auf dem Vorfeld mehrere Flugzeuge im selben
     Umkreis, mit 150 m fand mancher gar keinen Partner. Beide Male war die Zahl schuld.
     Ein Verhältnis hat diese Schwäche nicht.
+
+    ``belegt`` sind die CIDs, die gerade eine ANDERE Brügge meldet — sie fallen als Kandidat
+    weg. Das ist `frei` aus dem Kniebrett (`index.html:6237/6253/6274`), und es hat dort
+    dieselbe Aufgabe: Eine Identität ist einmal vergeben, nicht zweimal.
+
+    **Am 14.09.2026 hat genau diese fehlende Zeile anderthalb Minuten gekostet.** Zwei
+    Brüggen auf dem Vorfeld, 76 m und 93 m vom Melder entfernt — Verhältnis 0,82, also kein
+    Vorsprung, also keine Zuordnung, im Sekundentakt und minutenlang:
+
+        19:55:35  keine Zuordnung (2 Kandidaten) -- ohne Vorsprung (76 m gegen 93 m)
+        …         dieselbe Zeile bis 19:57:08
+
+    Einer der beiden meldete zu dem Zeitpunkt längst selbst. Mit ``belegt`` wäre er aus der
+    Liste gefallen, und der Rest wäre eindeutig gewesen.
+
+    Damit erledigt sich zugleich der AUSSCHLUSS-Schritt des Kniebretts (`index.html:6269`,
+    „bleibt genau einer übrig"): Er ist hier nichts anderes als ``len(passende) == 1`` nach
+    Abzug der Belegten. Kein eigener Zweig — im Kniebrett ist er nur deshalb einer, weil er
+    dort OHNE Entfernungsschranke greift.
 
     Die Begründung wandert nicht zur Brügge — sie ist für den Admin und fürs Log. Nach außen
     sind „niemand passt" und „nicht auf VATSIM" ununterscheidbar, und zwar mit Absicht
@@ -181,7 +216,11 @@ def zuordnen(lat: float, lon: float, alt_ft: float, gs_kt: float,
     max_ft = schranke_ft(vs_ft_min, faktor)
 
     passende: list[Kandidat] = []
+    uebergangen = 0
     for k in kandidaten:
+        if belegt and k.cid in belegt:
+            uebergangen += 1
+            continue
         if abs(k.alt_ft - (alt_ft or 0.0)) > max_ft:
             continue
         m = abstand_m(lat, lon, k.lat, k.lon)
@@ -190,21 +229,26 @@ def zuordnen(lat: float, lon: float, alt_ft: float, gs_kt: float,
         k.abstand = m
         passende.append(k)
 
+    # Wie viele wegen `belegt` wegfielen, gehört in JEDE Begründung -- sonst liest man im Log
+    # „kein Kandidat" und sucht den Fehler bei der Schranke, während in Wahrheit der richtige
+    # Pilot gerade von einer anderen Brügge gemeldet wird.
+    dazu = f", {uebergangen} belegt" if uebergangen else ""
+
     if not passende:
-        return None, f"kein Kandidat innerhalb {max_m:.0f} m / {max_ft:.0f} ft"
+        return None, f"kein Kandidat innerhalb {max_m:.0f} m / {max_ft:.0f} ft{dazu}"
 
     passende.sort(key=lambda k: k.abstand)
     if len(passende) == 1:
-        return passende[0], f"eindeutig, {passende[0].abstand:.0f} m"
+        return passende[0], f"eindeutig, {passende[0].abstand:.0f} m{dazu}"
 
     if passende[0].abstand <= passende[1].abstand * PAARUNG_VORSPRUNG:
         return passende[0], (f"Vorsprung: {passende[0].abstand:.0f} m gegen "
-                             f"{passende[1].abstand:.0f} m")
+                             f"{passende[1].abstand:.0f} m{dazu}")
 
     # Mehrere ohne klaren Vorsprung: nicht raten. Eine falsche Zuordnung ist schlimmer als
     # gar keine -- man sieht ihr nicht an, dass sie falsch ist.
     return None, (f"{len(passende)} Kandidaten ohne Vorsprung "
-                  f"({passende[0].abstand:.0f} m gegen {passende[1].abstand:.0f} m)")
+                  f"({passende[0].abstand:.0f} m gegen {passende[1].abstand:.0f} m){dazu}")
 
 
 def bleibt_plausibel(lat: float, lon: float, alt_ft: float, gs_kt: float,
@@ -219,61 +263,26 @@ def bleibt_plausibel(lat: float, lon: float, alt_ft: float, gs_kt: float,
     return abs(kandidat.alt_ft - (alt_ft or 0.0)) <= schranke_ft(vs_ft_min, PAARUNG_LOESEN_FAKTOR)
 
 
-def deutlich_besser(lat: float, lon: float, alt_ft: float, gs_kt: float,
-                    kandidaten: list[Kandidat], gemerkte_cid: int,
-                    vs_ft_min: float = 0.0) -> Kandidat | None:
-    """Passt ein ANDERER Kandidat deutlich besser als der gemerkte? Dann der, sonst ``None``.
-
-    ⚠ **DIE GEMERKTE KENNUNG IST KEIN BEWEIS, UND AM 14.09.2026 WAR SIE EINER ZU VIEL.**
-
-    `bleibt_plausibel` fragt nur: „Passt der Gemerkte noch?" Das genuegt, solange eine
-    Kennung einem Rechner gehoert. Sie tut es nicht, wenn sich zwei Brueggen dieselbe
-    teilen -- und genau das ist in MSFS der Fall: Dort erzeugt jede Installation dieselbe
-    Zeichenfolge `9e3711c100000000` (Adresse plus `rand()` ohne `srand()`, in WASM auf jedem
-    Rechner gleich). Gemessen an zwei Piloten auf Wangerooge:
-
-        Zuordnung  9e3711c100000000 -> 1642160 (FRS123)
-        gemeldet   53.787559/7.909491  <- das ist FRS49s Position, 130 m entfernt
-        Verstoesse 0
-
-    Die Toleranz fuer ein stehendes Flugzeug ist `PAARUNG_MIN_M` = 400 m. Wer naeher als das
-    beieinander steht, ist fuer den jeweils anderen plausibel -- und auf einem Flugplatz
-    stehen alle naeher beieinander. Bei einem Kieker-Event ist das der Normalfall, nicht die
-    Ausnahme.
-
-    **Deshalb wird auch bei gemerkter Kennung die Vorsprungsregel gefragt**, dieselbe wie bei
-    der Erstzuordnung: Ist ein anderer Kandidat mindestens um den Faktor `PAARUNG_VORSPRUNG`
-    naeher, meldet offensichtlich er. Im Fall oben 1 m gegen 130 m -- eindeutig.
-
-    Das behebt die geteilte Kennung nicht (das kann nur der Client), aber es sorgt dafuer,
-    dass JEDE Meldung dem zugeordnet wird, der sie tatsaechlich geschickt hat. Und es wirkt
-    fuer jede Bruegge da draussen, ohne dass jemand etwas installieren muss.
-    """
-    max_m = schranke_m(gs_kt, PAARUNG_FAKTOR)
-    max_ft = schranke_ft(vs_ft_min, PAARUNG_FAKTOR)
-
-    gemerkt_m = None
-    beste: Kandidat | None = None
-    for k in kandidaten:
-        if abs(k.alt_ft - (alt_ft or 0.0)) > max_ft:
-            continue
-        m = abstand_m(lat, lon, k.lat, k.lon)
-        if k.cid == gemerkte_cid:
-            gemerkt_m = m
-            continue
-        if m > max_m:
-            continue
-        if beste is None or m < beste.abstand:
-            k.abstand = m
-            beste = k
-
-    if beste is None:
-        return None
-    # Der Gemerkte ist gar nicht mehr in der Liste (ausgeloggt): Das regelt der Aufrufer
-    # ueber `partner is None`, nicht diese Funktion -- hier wird nur VERGLICHEN.
-    if gemerkt_m is None:
-        return None
-    return beste if beste.abstand <= gemerkt_m * PAARUNG_VORSPRUNG else None
+# ⚠⚠ HIER STAND `deutlich_besser()`, UND ES KOMMT NICHT ZURÜCK.
+#
+# Es fragte bei JEDER Meldung, ob ein anderer Kandidat mindestens doppelt so gut passt wie
+# der gemerkte, und hängte die Zuordnung dann SOFORT um — ohne den Verstoßzähler, den
+# `bleibt_plausibel` und `PAARUNG_LOESEN_TAKTE` sonst verlangen. Damit war die harte Bindung,
+# die das Kniebrett seit v13.2.0 trägt, auf der Serverseite ausgehebelt.
+#
+# Der Anlass war echt (zwei MSFS-Brüggen teilten sich die Kennung `9e3711c100000000`), das
+# Mittel war es nicht: Das Problem war eine geteilte IDENTITÄT, geschwächt wurde die BINDUNG.
+# Am 14.09.2026 hat das so ausgesehen:
+#
+#     19:30:22  Kennung 9e3711c100000000 haengt um, 1642160 -> 1602713 (572 m gegen 1175 m)
+#
+# 572/1175 = 0,486 — knapp unter PAARUNG_VORSPRUNG, also „deutlich besser". Einem Piloten
+# wurde seine Zuordnung bei 572 m Abstand an jemanden abgegeben, der 1,2 km entfernt war.
+# Das ist kein Grenzfall, den man tolerieren kann; so arbeitet die Regel.
+#
+# Die Identität sichert seit v14.40.0 der Server (er vergibt die Kennung, s.
+# `_bruegge_zuordnen`), und die Eindeutigkeit sichert `belegt` in `zuordnen()`. Wer hier
+# wieder eine Umhäng-Regel einzieht, hebelt beides aus.
 
 
 def ist_sprung(lat: float, lon: float, vor_lat: float | None, vor_lon: float | None,

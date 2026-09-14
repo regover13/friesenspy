@@ -55,6 +55,7 @@ from app.alerts import format_online_message, send_telegram_alert
 from app.statsim import fetch_flight_track, fetch_pilot_flights
 from app.teamspeak import fetch_channel_clients, parse_channel_ids
 from app import vrp
+from app import bruegge
 
 logger = logging.getLogger(__name__)
 
@@ -809,7 +810,11 @@ class VatsimPoller:
     #: eine Netzschwankung, zehn sind ein Abriss. Die Karte faellt danach von allein auf
     #: VATSIM zurueck, weil sie dieselbe Frist noch einmal selbst prueft -- der Strom muss
     #: also nicht eigens melden, dass etwas zu Ende ist.
-    BRUEGGE_FRIST_S = 10.0
+    #:
+    #: Steht seit dem 15.09.2026 in `app/bruegge.py` und wird von dort geholt: Dieselbe Frist
+    #: entscheidet dort, wie lange eine CID fuer andere Brueggen belegt ist. Zwei Zahlen fuer
+    #: einen Begriff waeren zwei Stellen, an denen sie auseinanderlaufen koennen.
+    BRUEGGE_FRIST_S = bruegge.MELDUNG_FRIST_S
 
     def bruegge_position_merken(self, cid: int, lage: dict) -> None:
         """Eine frisch gemeldete Bruegge-Position fuer den Sekundenstrom vormerken.
