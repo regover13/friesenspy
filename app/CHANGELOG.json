@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.43.0",
+    "date": "2026-09-14",
+    "highlight": false,
+    "title": "Gesetzte Objekte stehen nicht mehr alle in dieselbe Richtung",
+    "items": [
+      "🧭 Bisher zeigte jedes Objekt, das die FriesenBrügge hinstellt, exakt nach Norden — drei Seehunde nebeneinander lagen ausgerichtet wie auf dem Kasernenhof. Jetzt würfelt der Server die Richtung aus, bei jedem Hinstellen neu.",
+      "☑️ Im Admin gibt es dafür einen Haken „zufällige Richtung“ (voreingestellt an) und daneben ein Feld für eine feste Gradzahl — für die Fälle, wo die Richtung zählt: ein Windsack, eine Flagge, ein Flugzeug am Rollhalt.",
+      "🎲 Gewürfelt wird auf dem Server, nicht im Browser. So bekommt auch ein künftiger Event dieselbe Streuung, ohne durch die Admin-Oberfläche zu müssen."
+    ]
+  },
+  {
     "version": "14.42.1",
     "date": "2026-09-14",
     "highlight": false,

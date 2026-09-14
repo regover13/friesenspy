@@ -98,16 +98,24 @@ FARBEN = {
 # hundert gesetzten Objekten gehoert es gemessen (s. MESSLISTE).
 #
 # Der Nutzer wollte 10 km. 15000 laesst Luft.
-# ⚠ MESSREIHE, NOCH NICHT ABGESCHLOSSEN (14.09.2026):
+# ⚠ ES GIBT EINE HARTE SCHRANKE BEI RUND 6,5 km -- gemessen am 14.09.2026, im Flug:
 #
 #     eingestellt   wirksam
 #      2000 (Vorgabe)  1830 m   passt 1:1
-#     15000            6480 m   nur 43 %  <- unerklaert
-#     50000            ?        <- dieser Versuch
+#     15000            6480 m   3,5 NM
+#     50000            6480 m   UNVERAENDERT
 #
-# Bleibt es bei 6480 m, gibt es eine harte Schranke, die die Doku nicht nennt. Waechst es
-# mit, wirkt der Wert -- nur nicht linear, und dann laesst sich der Faktor ausrechnen.
-MAX_SICHT_M = 50000.0
+# Der Wert wirkt also nur bis dahin; alles darueber ist wirkungslos. In keiner Doku steht
+# das -- die SDK-Seite nennt allein den Standardwert 2000 und kein Maximum.
+#
+# 15000 statt 50000: Beide erreichen die Schranke, aber 50000 wuerde im Quelltext eine
+# Reichweite vortaeuschen, die es nicht gibt. Wer die Zahl spaeter liest, soll nicht
+# glauben, die Saeule sei 50 km weit zu sehen.
+#
+# ⚠ WER MEHR BRAUCHT, BRAUCHT ETWAS ANDERES ALS PARTIKEL: Ein CruiseShip01 war am
+# 11.09.2026 aus 22 km zu sehen -- das ist Geometrie. Oder ein Licht (s. MESSLISTE,
+# Stichwort wENLK_lightdummy). Am Effekt selbst ist hier Schluss.
+MAX_SICHT_M = 15000.0
 
 LEBENSDAUER_S = 30.0
 # Am 14.09.2026 von 22 auf 30 gesetzt -- Nutzerentscheidung im Flug, nachdem er beide

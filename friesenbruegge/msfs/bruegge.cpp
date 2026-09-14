@@ -933,6 +933,25 @@ static void soll_abgleichen(const char* json) {
 // Zuordnungs-Spec vermeiden will ("Zuordnung halten, sobald sie steht").
 static void kennung_uebernehmen(const char* json) {
     if (g_kennung[0] != '\0') return;
+
+    // ⚠⚠ NICHT, SOLANGE DIE DATEI NOCH GELESEN WIRD -- sonst gewinnt der Server das Rennen
+    // gegen die eigene Platte.
+    //
+    // Gemessen am 14.09.2026: Die Kennung wechselte bei JEDEM Start, obwohl die Datei
+    // sauber geschrieben wurde (16 Bytes, richtiger Inhalt). Der Grund war die Reihenfolge.
+    // `fsIOOpenRead` laeuft asynchron und braucht bis zu KENNUNG_WARTE_S; die erste Meldung
+    // geht aber schon nach einer Sekunde hinaus. Der Server antwortete mit einer frischen
+    // Kennung, die Bruegge uebernahm sie -- und der Lese-Callback kam ins Leere.
+    //
+    // `g_kennung_fest` wird erst gesetzt, wenn das Lesen abgeschlossen ODER abgelaufen ist
+    // (s. kennung_pruefen). Vorher nehmen wir nichts entgegen. Die paar Sekunden ohne
+    // Kennung kosten nur einen vollen Positionsmatch, und den kann der Server ohnehin --
+    // genau dafuer ist er gebaut.
+    //
+    // Das ist der DRITTE Wettlauf derselben Bauart an dieser einen Funktion: erst das
+    // Schreiben gegen das Lesen, dann das Schliessen gegen das Schreiben, jetzt der Server
+    // gegen die Platte. Wer hier etwas aendert, frage sich zuerst, was gleichzeitig laeuft.
+    if (!g_kennung_fest) return;
     char neu[40] = {0};
     if (!json_text_in(json, "kennung", neu, sizeof(neu))) return;
     size_t n = std::strlen(neu);

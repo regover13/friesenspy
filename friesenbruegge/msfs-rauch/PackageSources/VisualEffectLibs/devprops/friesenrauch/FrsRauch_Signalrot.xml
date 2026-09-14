@@ -13,7 +13,7 @@
             <ParticleRate>{00000000-0000-0000-0000-000000000000}, 33.000000</ParticleRate>
             <Capacity>1237.500</Capacity>
             <TimeEmission>30.000000</TimeEmission>
-            <MaxDistanceEmission>50000.000000</MaxDistanceEmission>
+            <MaxDistanceEmission>15000.000000</MaxDistanceEmission>
             <ParticleInit>
                 <ObjectReference InstanceId="{713A0EFD-34D6-5A32-9E29-371C8209E315}" id="BlockParticleInit"/>
             </ParticleInit>
