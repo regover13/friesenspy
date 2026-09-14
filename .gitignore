@@ -40,3 +40,11 @@ scripts/.cache/
 msfs-panel/Package/
 msfs-panel/zip-stage/
 msfs-panel/*.zip
+
+# Arbeitsdateien des Nutzers -- am 14.09.2026 versehentlich mit `git add -A` ins
+# oeffentliche Repo gekommen und sofort wieder entfernt. Sie bleiben auf der Platte,
+# gehoeren aber nicht in die Versionierung.
+aircraft-photos/
+friesenkutter-*.html
+kutter-card.png
+vrp_openaip.json
