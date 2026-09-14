@@ -8,6 +8,36 @@ und prüfen, ob eine andere die Aufgabe schon erledigt hat.
 
 ---
 
+## ⚠ Gestreamte Titel sind nicht setzbar (gefunden 14.09.2026)
+
+**Der Katalog führt seit heute 2642 Titel aus den gestreamten `.fsarchive`-Paketen — und
+mindestens ein Teil davon lässt sich nicht setzen.** Gefunden beim Lasttest mit 200
+gemischten Objekten: Von 402 Anforderungen scheiterten 25, ausschließlich in zwei Arten.
+
+| Art | Fehlschläge | MSFS-Titel | Quelle |
+|---|---|---|---|
+| `mast` | 14 | `VO_Fire_R1_150` … `_200` | `streamed` |
+| `kran` | 11 | `Microsoft_Truck_Crane_Small` … | `streamed` |
+
+Beide Arten **haben** Titel — die Brügge hat alle durchprobiert und `KEIN_MODELL_MEHR`
+gemeldet. Der Rückfall funktionierte also genau wie gebaut; es gab nur nichts, worauf er
+hätte fallen können.
+
+**Die Ursache liegt in der Natur des Streamings:** Ein Titel steht im Paketverzeichnis,
+also im Katalog. Ob MSFS das Paket **lokal vorliegen** hat, ist eine andere Frage — er lädt
+bei Bedarf nach, und `AICreateSimulatedObject` kann nur setzen, was da ist.
+
+### Was daraus folgt
+
+- **Eine Art sollte nie nur gestreamte Titel haben.** Mindestens einer aus `bord` oder
+  `community` gehört ans Ende der Liste, sonst fällt die ganze Art aus.
+- **`mast` und `kran` sind derzeit X-Plane-eigen**, obwohl der Katalog MSFS-Titel zeigt.
+  Entweder stilllegen oder setzbare Titel suchen.
+- ⚠ **Ungeklärt: Hängt es am Streaming oder an diesen Titeln?** Vielleicht sind
+  `VO_Fire_R1_*` gar keine SimObjects, sondern Szenerieobjekte — dann wäre nicht das
+  Streaming schuld, sondern die Herkunft aus dem falschen Verzeichnis. Ein Titel aus einem
+  nachweislich heruntergeladenen gestreamten Paket würde die Fälle trennen.
+
 ## Kann die Brügge ein FLUGZEUG hinstellen? (vorgemerkt 14.09.2026)
 
 **Eine Messung, fünf Arten.** In MSFS ist ein Flugzeug ein SimObject vom Typ *Airplane*, und
@@ -112,14 +142,32 @@ gleich große Tiere sähen von oben nach Tapete aus.
 Alles Weitere — Bauskripte, Fallen, Maße — steht in
 [`friesenbruegge/seehund/LIESMICH.md`](../friesenbruegge/seehund/LIESMICH.md).
 
-### ⚠ Was noch offen ist
+### ✅ In beiden Simulatoren abgenommen (14.09.2026)
 
-**Im Simulator gesehen hat das Modell niemand.** Weder in MSFS noch in X-Plane. Drei Dinge
-können stumm schiefgehen, und keines davon lässt sich ohne Simulator prüfen:
+X-Plane zuerst (*„sind da"*), dann MSFS an denselben Koordinaten (*„alles OK jetzt"*).
+Zwischendurch 200 Seehunde in fünf Rudeln und 200 gemischte Objekte aus dreizehn Arten —
+*„sieht gut aus. lass sie stehen"*. Einzelheiten in
+[`friesenbruegge/MESSLISTE.md`](../friesenbruegge/MESSLISTE.md).
 
-- die Textur greift nicht → grauer oder schwarzer Seehund
-- die Achsen stimmen nicht → liegt auf der Seite oder steckt im Boden
-- `minSize="0"` und `DistanceToNotAnimate` wirken nicht → aus 200 ft unsichtbar
+### ⚠ Was offen bleibt
+
+**Die Sichtweite in MSFS.** Der Seehund hat eine Bounding Sphere von 1,86 m, und MSFS
+entscheidet die Sichtbarkeit über genau diese Größe — `minSize="0"` wird überstimmt.
+Gemessen ist der Zusammenhang am Rauch: ein 2-m-Träger verschwand bei **100 m**, ein
+90-m-Träger trug **1830 m**. Dazwischen ist nichts ausgemessen.
+
+Der Weg ist bekannt und beim Rauch erprobt: ein **unsichtbarer Trägerquader**
+(`ASOBO_material_invisible`), der die Bounding Box vergrößert, ohne gezeichnet zu werden.
+Hochgerechnet braucht es rund 20 m für 1 km Sichtweite. ⚠ Er muss **auf** dem Ursprung
+stehen, nicht um ihn herum — `auf_boden` setzt den Ursprung auf Geländehöhe, ein zentrierter
+Quader steckte zur Hälfte im Watt.
+
+⚠ **Ungeprüft ist dabei, ob MSFS unsichtbare Geometrie überhaupt mitzählt.** Beim Rauch war
+der Träger immer unsichtbar, es fehlt der Gegenversuch. Bringt der Quader nichts, ist das
+die erste Stelle zum Nachsehen.
+
+**Und die Farbe.** Dass die Tiere stehen, ist belegt; ob die Palettentextur greift, hat
+niemand ausdrücklich bestätigt.
 
 ⚠ **`DistanceToNotAnimate=2000` ist gesetzt, aber der Mechanismus ist beim Seehund
 ungeprüft.** Beim Rauch gibt es einen nachvollziehbaren Zusammenhang — ein Partikel-Emitter

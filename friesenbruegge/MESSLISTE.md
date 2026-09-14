@@ -144,7 +144,48 @@ Tieren nichts mehr gesehen.
   Bild, aber gezählt hat sie niemand. Für den Kieker ist das die eigentliche Zahl.
 - **Die Farbe des Seehunds** — greift die Palettentextur? Aus der Ferne nicht zu beurteilen.
 
-## ⚠ MSFS: DER SEEHUND IST DORT NOCH UNGEPRÜFT (14.09.2026)
+## ✅ MSFS TRÄGT AUCH — 377 Objekte, beide Simulatoren (14.09.2026)
+
+Dieselbe Kolonie in MSFS, an denselben Koordinaten. Sein Urteil: **„alles OK jetzt"**.
+
+Damit ist der Seehund in **beiden** Simulatoren bestätigt, und zwar über zwei ganz
+verschiedene Ketten: X-Plane lädt eine handgeschriebene OBJ8 mit PNG, MSFS ein glTF mit
+KTX2 aus einem kompilierten Paket. Dass beide aus derselben Blender-Datei stammen, war die
+eigentliche Frage.
+
+### Nebenbei belegt
+
+- **Ein Simulatorwechsel bei gleicher CID funktioniert.** X-Plane und MSFS melden
+  verschiedene Kennungen (`fb0225a72bb734be` / `2119477d19353117`); die Objekte hängen an
+  der CID und kamen in MSFS als `FrsSeehund_Kuh` an, wo X-Plane `…/seehund_kuh.obj` bekam.
+- **Der Kennungs-Wettlauf in MSFS ist behoben.** `KENNUNG_WARTE_S 3` in der 1.10.0 — die
+  Brügge meldete mit einer stabilen Kennung.
+- **Ohne VATSIM geschieht wirklich nichts.** Im Log stand minutenlang *„keine Zuordnung
+  (1 Kandidaten) -- kein Kandidat innerhalb 400 m / 300 ft"*, bis er gewechselt hatte.
+  Die Schranke wirkt wie entworfen.
+
+### ⚠ UND EIN BEFUND, DER ÜBER DIESEN TAG HINAUSREICHT: GESTREAMTE TITEL SIND NICHT SETZBAR
+
+Von 402 angeforderten Objekten scheiterten **25**, und zwar ausschließlich zwei Arten:
+
+| Art | Fehlschläge | MSFS-Titel | Quelle |
+|---|---|---|---|
+| `mast` | 14 | `VO_Fire_R1_150` … `_200` | `streamed` |
+| `kran` | 11 | `Microsoft_Truck_Crane_Small` … | `streamed` |
+
+Beide Arten **haben** MSFS-Titel — die Brügge hat alle durchprobiert und dann
+`KEIN_MODELL_MEHR` gemeldet. Genau das Verhalten, für das der Rückfall gebaut wurde.
+
+**Die Gemeinsamkeit ist `quelle='streamed'`.** Diese Titel stammen aus dem
+`.fsarchive`-Leser vom selben Tag; sie stehen im Katalog, weil MSFS sie im
+Paketverzeichnis nennt. Ob der Simulator sie **lokal vorliegen** hat, ist etwas völlig
+anderes — gestreamte Pakete lädt er bei Bedarf nach, und `AICreateSimulatedObject` kann
+nur setzen, was da ist.
+
+⚠ **Das trifft potenziell jeden der 2642 gestreamten Titel**, nicht nur diese beiden Arten.
+Und es fällt erst im Flug auf. Wer aus dem Katalog eine Art zusammenstellt, sollte
+gestreamte Titel nicht allein stehen lassen — mindestens ein Titel aus `bord` oder
+`community` gehört dahinter.
 
 **In keinem Simulator gesehen.** Das Modell ist gebaut, in beide Pakete eingebaut und auf
 dem Server der Art `robbe` zugeordnet — für MSFS **und** X-Plane. Was es leistet, weiß
