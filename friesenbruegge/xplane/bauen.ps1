@@ -9,7 +9,10 @@
 # Nach dem Bau muss X-Plane NEU GESTARTET werden -- Plugins liest es nur beim Start.
 
 param(
-    [string]$XPlane = "",                     # Pfad zur X-Plane-Installation
+    # Pfad zur X-Plane-Installation. LEER heisst nicht "nicht installieren", sondern
+    # "selbst suchen" -- s. unten.
+    [string]$XPlane = "",
+    [switch]$NurBauen,                        # ausdruecklich NICHT installieren
     [string]$Sdk = "$env:TEMP\xpsdk\SDK"
 )
 
@@ -67,11 +70,34 @@ if ($cpp -match '#define\s+BRUEGGE_VERSION\s+"([0-9.]+)"') { $fassung = $Matches
 Write-Output ("gebaut: {0}  ({1:N0} Bytes, Fassung {2})" -f $xpl, (Get-Item $xpl).Length, $fassung)
 
 # ---- Ins X-Plane legen ----------------------------------------------------
-if (-not $XPlane) {
+# ---------------------------------------------------------------------------------------
+# INSTALLIEREN IST DIE VORGABE, NICHT DIE AUSNAHME.
+#
+# Hier stand: ohne `-XPlane` wird gebaut und ein Hinweis ausgegeben, wie man installiert.
+# Das ging am 14.09.2026 schief -- die Fassung 1.2.0 lag gebaut im Arbeitsordner, waehrend
+# im Simulator die alte 1.1.0 lief. Beim Probeflug wurde damit genau das getestet, was sich
+# NICHT geaendert hatte. Der Hinweis stand da, wurde gelesen und blieb trotzdem folgenlos.
+#
+# Das MSFS-Gegenstueck (`msfs\paket.ps1`) macht es seit jeher richtig: Es legt das Paket
+# ohne Zutun in den Community-Ordner. Wer nur bauen will, sagt das jetzt ausdruecklich
+# (`-NurBauen`) -- die stille Vorgabe darf nicht die sein, bei der nichts ankommt.
+# ---------------------------------------------------------------------------------------
+if ($NurBauen) {
     Write-Output ""
-    Write-Output "Kein -XPlane angegeben. Zum Installieren:"
-    Write-Output "  .\bauen.ps1 -XPlane 'D:\X-Plane 12'"
+    Write-Output "Nur gebaut (-NurBauen). Im Simulator laeuft weiter, was dort liegt."
     exit 0
+}
+if (-not $XPlane) {
+    # Die ueblichen Orte durchgehen, statt den Nutzer fragen zu lassen.
+    $kandidaten = @("D:\X-Plane 12", "C:\X-Plane 12", "$env:USERPROFILE\X-Plane 12",
+                    "E:\X-Plane 12")
+    $XPlane = $kandidaten | Where-Object { Test-Path "$_\Resources\plugins" } | Select-Object -First 1
+    if (-not $XPlane) {
+        Write-Warning "X-Plane nicht gefunden -- gesucht in: $($kandidaten -join ', ')"
+        Write-Warning "Mit Pfad aufrufen:  .\bauen.ps1 -XPlane 'D:\X-Plane 12'"
+        exit 1
+    }
+    Write-Output "X-Plane gefunden: $XPlane"
 }
 if (-not (Test-Path "$XPlane\Resources\plugins")) {
     throw "Kein X-Plane unter $XPlane -- Resources\plugins fehlt."
