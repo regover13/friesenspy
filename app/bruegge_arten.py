@@ -136,9 +136,26 @@ ARTEN: dict[str, tuple[str, dict[str, list]]] = {
     # Stosszaehne entfernt, Backen eingezogen, Schnauze gerundet, Schwanzflosse
     # geschlossen, Hals gekuerzt. Drei Groessen nach den Angaben der Seehundstation
     # Norddeich: Bulle 1,80 m, Kuh 1,60 m, Heuler 0,85 m.
-    "robbe": ("Eine Robbe -- fuer die Zaehlaufgabe", {
+    # ⚠ DIE DREI `ahqa`-TITEL STEHEN AUF `aus`, UND DAS IST EINE NUTZERENTSCHEIDUNG
+    # (14.09.2026): *"gibt es die art Robbe wieder? NUR mit unseren eigenen Robben?"*
+    # Dieselbe Linie wie beim Rauch -- was ein Fremdpaket braucht, geht nicht hinaus, auch
+    # nicht als Nachruecker. Geloescht sind sie nicht: Ein Klick im Admin holt sie zurueck.
+    #
+    # ⚠ ZWISCHENZEITLICH WAREN DARAUS DREI ARTEN GEWORDEN (`seehund_kuh`, `seehund_bulle`,
+    # `seehund_heuler`), und dahinter stand ein echter Grund: Ein Soll-Eintrag traegt genau
+    # EINE Art, und die Bruegge nimmt daraus IMMER Rang 1 -- sie rueckt nur nach, wenn ein
+    # Titel scheitert. Mit einer Sammelart `robbe` steht an jeder Station folglich eine Kuh;
+    # gemischte Kolonien gaebe es nur ueber drei getrennte Arten.
+    #
+    # Zusammengefasst wurde trotzdem, weil `Ein Titel gehoert zu HOECHSTENS einer Art` die
+    # Wahl erzwingt -- beides nebeneinander geht nicht. Wer die Mischung will, baut sie an
+    # der richtigen Stelle: ein Wuerfeln unter den Titeln einer Art, so wie der Server schon
+    # den Kurs wuerfelt (`kurs_zufall`, v14.43.0). Dann bleibt es bei einer Art.
+    "robbe": ("Eine Robbe -- Kuh (1,60 m), Bulle (1,80 m), Heuler (0,85 m), "
+              "eigenes Modell in beiden Simulatoren", {
         "msfs2024": ["FrsSeehund_Kuh", "FrsSeehund_Bulle", "FrsSeehund_Heuler",
-                     "ahqa seal moving", "ahqa sea lion moving", "ahqa walrus moving"],
+                     ("ahqa seal moving", AUS), ("ahqa sea lion moving", AUS),
+                     ("ahqa walrus moving", AUS)],
         "xplane12": [XP_EIGEN + "seehund_kuh.obj",
                      XP_EIGEN + "seehund_bulle.obj",
                      XP_EIGEN + "seehund_heuler.obj"],
