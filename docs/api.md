@@ -2458,10 +2458,18 @@ die Notbremse aushebeln, die für den Fall da ist, dass es im Betrieb klemmt. Ke
 verworfen, bevor die Kandidatenliste überhaupt gebildet wird, und bei `eigene` fällt jeder
 fremde Eintrag heraus. Der Client sendet zwar weniger, entscheiden tut er nichts.
 
-⚠ **`aus` ist ein langer Takt (900 s), keine 0.** Dieselbe Überlegung wie bei
-`_bruegge_takt`: Ein Kniebrett, das gar keine Antwort mehr bekäme, könnte Abschaltung nicht
-von Netzausfall unterscheiden — und das **Wiedereinschalten** braucht denselben Weg. Fragt
-niemand mehr, erfährt auch niemand, dass es wieder erlaubt ist.
+⚠ **`aus` ist ein langer Takt (60 s), keine 0.** Ein Kniebrett, das gar keine Antwort mehr
+bekäme, könnte Abschaltung nicht von Netzausfall unterscheiden — und das
+**Wiedereinschalten** braucht denselben Weg. Fragt niemand mehr, erfährt auch niemand, dass
+es wieder erlaubt ist.
+
+⚠ **Warum 60 und nicht 900 wie bei der Brügge:** Die 900 bedenken nur eine Richtung.
+Abschalten wirkt sofort, das Wiedereinschalten erst bei der nächsten Frage des Clients — bei
+900 s also bis zu **15 Minuten später**. Am 15.09.2026 stand der Schalter der *Brügge* im
+Admin längst wieder auf „an", und sie meldete trotzdem nicht; das kostete eine
+Viertelstunde Fehlersuche und wurde zuerst für einen Fehler der neuen Vorrangregel gehalten
+(sie ist bis heute nicht zurückgekehrt — Issue #38). Die Last spricht nicht dagegen:
+60 Anfragen je Stunde und Client gegen vier, jede mit leerer Liste.
 
 **Keine Datenbank im Meldeweg.** Die Meldung geht in den Prozessspeicher des Pollers
 (`VatsimPoller.kniebrett_position_merken` → `_bruegge_live`), aus dem der Sekundenstrom die
@@ -2500,6 +2508,24 @@ die eigene Brügge des Piloten. Zwei Regeln:
 
 `uebernommen`/`verworfen` sind die Gegenprobe dazu: Ein Kniebrett, das lauter Nullen
 zurückbekommt, meldet Flugzeuge, die schon jemand anders besser kennt.
+
+⭐ **Und der eigentliche Lasthebel ist ein anderer als der Vorrang: Wer darf schweigen?**
+Meldet das **eigene** Kniebrett eines Piloten, bekommt seine FriesenBrügge in ihrer Antwort
+einen Takt von `_BRUEGGE_TAKT_MIT_KNIEBRETT_S` = 5 s statt 1 s
+(`VatsimPoller.kniebrett_meldet_fuer`). Dort geht es darum, wessen Punkt gilt — hier darum,
+dass die teure Seite gar nicht erst anklopft: Die Brügge-Meldung kostet fünf DB-Aufrufe plus
+Positionsmatching, die des Kniebretts keinen.
+
+Ihre Objekte gelten 300 s, sie verliert dabei also nichts, und `soll` geht weiter mit — der
+Hebel drosselt, er schaltet nicht ab.
+
+⚠ **Eine FREMDmeldung zählt dafür ausdrücklich nicht.** Ein fremdes Kniebrett sieht den
+Piloten nur, solange er in dessen Umkreis fliegt; seine Brügge deswegen zu drosseln hieße,
+die Auflösung seiner Spur von jemandem abhängig zu machen, der jederzeit wegfliegen kann.
+
+⚠ **Und der Schritt ist bewusst klein.** Eine Brügge ist am 15.09.2026 nach einer Drossel auf
+900 s in 30 Minuten nicht zurückgekehrt (#38). Bei 5 s ist der schlimmste Fall eine gröbere
+Spur, nie eine leere.
 
 ⚠ **`bruegge_belegte_cids` wird hier NICHT angefasst.** Diese Sperre ist gegen *verwechselte*
 Identitäten gebaut — zwei Brüggen, die sich um denselben Piloten streiten — und nicht gegen

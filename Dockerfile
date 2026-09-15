@@ -49,11 +49,16 @@ EXPOSE 8091
 # uvicorn wartet beim Beenden auf das Ende aller laufenden Antworten. /api/sse
 # liefert einen endlosen Stream -- eine einzige offene SSE-Verbindung haelt den
 # Container deshalb fest, bis Docker nach seiner Gnadenfrist (10 s, Default)
-# SIGKILL schickt. Gemessen mit diesem Image und einer offenen Verbindung:
+# SIGKILL schickt. Gemessen mit diesem Image, echter App, einer offenen
+# SSE-Verbindung und einer Gnadenfrist von 30 s (damit der Unterschied
+# sichtbar wird; in Produktion sind es 10 s):
 #
-#   ohne die Option            30,5 s bis zum Stopp, Exit 137 (SIGKILL)
-#   mit der Option (1 s)        1,8 s bis zum Stopp, Exit 0
-#   ohne SSE-Verbindung         0,7 s bis zum Stopp, Exit 0
+#   ohne die Option            30,9 s bis zum Stopp, Exit 137 (SIGKILL)
+#   mit der Option (3 s)        4,7 s bis zum Stopp, Exit 0
+#
+# Die 4,7 s sind nicht das Zeitlimit, sondern der Lifespan-Shutdown: Ohne jede
+# SSE-Verbindung dauert der Stopp genauso lange (4,7 s). Das Zeitlimit kostet
+# also nichts, es verhindert nur das Haengenbleiben.
 #
 # Das waren die ersten 10 der 16-20 Sekunden, die ein Deploy die Website
 # unerreichbar macht -- und jede dieser Sekunden ist fuer die FriesenBruegge

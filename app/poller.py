@@ -955,6 +955,27 @@ class VatsimPoller:
         }
         return True
 
+    def kniebrett_meldet_fuer(self, cid: int) -> bool:
+        """Meldet das EIGENE Kniebrett dieses Piloten gerade? (GitHub-Issue #23)
+
+        ⭐ **Damit darf seine FriesenBruegge schweigen** -- und das ist der eigentliche
+        Lasthebel, nicht die Vorrangregel. Gemessen: `/api/bruegge/melden` kostet fuenf
+        DB-Aufrufe je Meldung plus Positionsmatching, `/api/kniebrett/melden` keinen. Melden
+        beide denselben Piloten, ist die Bruegge-Anfrage im Sekundentakt Arbeit ohne
+        Ergebnis.
+
+        ⚠ **Eine FREMDmeldung zaehlt ausdruecklich nicht.** Ein fremdes Kniebrett sieht den
+        Piloten nur, solange er in dessen Umkreis fliegt -- seine Bruegge deswegen zu
+        drosseln hiesse, die Aufloesung seiner Spur von jemandem abhaengig zu machen, der
+        jederzeit wegfliegen kann. Nur seine eigene Selbstmeldung traegt.
+        """
+        e = self._bruegge_live.get(int(cid))
+        if not e or e.get("melder") is None:
+            return False
+        if int(e["melder"]) != int(cid):
+            return False
+        return (time.monotonic() - e["ts"]) < self.BRUEGGE_FRIST_S
+
     async def _bruegge_strom_schleife(self) -> None:
         """Den Sekundenstrom takten -- als eigene Schleife, NICHT als Scheduler-Job.
 

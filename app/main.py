@@ -909,7 +909,30 @@ _KNIEBRETT_TAKT_VORGABE_S = 1
 #: Kniebrett, das gar keine Antwort mehr bekaeme, koennte Abschaltung nicht von Netzausfall
 #: unterscheiden. Und die Abschaltung ZURUECKZUNEHMEN braucht denselben Weg: Fragt niemand
 #: mehr, erfaehrt auch niemand, dass es wieder erlaubt ist.
-_KNIEBRETT_TAKT_AUS_S = 900
+#:
+#: ⚠ **60 und nicht 900**, und das ist im Betrieb gelernt (15.09.2026). Die 900 der Bruegge
+#: bedenken nur die eine Richtung: Abschalten wirkt sofort, aber das Wiedereinschalten
+#: erfaehrt der Client erst bei seiner naechsten Frage -- bei 900 s also bis zu **15 Minuten
+#: spaeter**. An dem Tag stand der Schalter im Admin laengst wieder auf "an", und niemand
+#: verstand, warum nichts passierte. Ein Schalter, dessen Wirkung eine Viertelstunde auf sich
+#: warten laesst, wird fuer kaputt gehalten.
+#:
+#: Die Last spricht nicht dagegen: 60 Anfragen je Stunde und Client, gegen vier. Bei einer
+#: Handvoll Kniebrettern ist das nichts -- und im Aus-Zustand traegt jede Anfrage eine leere
+#: Liste.
+_KNIEBRETT_TAKT_AUS_S = 60
+
+#: Wie oft die FriesenBruegge fragen soll, wenn das EIGENE Kniebrett desselben Piloten
+#: ohnehin meldet (s. `VatsimPoller.kniebrett_meldet_fuer`).
+#:
+#: ⭐ Der eigentliche Lasthebel: Nicht "wer gewinnt", sondern wer gar nicht erst fragt. Die
+#: Bruegge-Meldung kostet fuenf DB-Aufrufe plus Positionsmatching, die des Kniebretts keinen;
+#: melden beide denselben Piloten, ist die teurere von beiden Arbeit ohne Ergebnis.
+#:
+#: Fuenf Sekunden sind die Mitte zweier Fristen: Ihre Objekte gelten `_BRUEGGE_GILT_BIS_S`
+#: = 300 s, sie verliert also nichts -- und verstummt das Kniebrett, ist sie binnen einer
+#: Frist (`MELDUNG_FRIST_S` = 10 s) wieder im Regeltakt.
+_BRUEGGE_TAKT_MIT_KNIEBRETT_S = 5
 #: So lange gilt eine gelesene Einstellung. Der Preis: Die Abschaltung wirkt bis zu zehn
 #: Sekunden spaeter. Der Gegenwert: Der Meldeweg fasst die Datenbank ueberhaupt nicht an --
 #: bei fuenf Kniebrettern im Sekundentakt waeren es sonst fuenf Abfragen je Sekunde fuer
@@ -1417,6 +1440,26 @@ async def bruegge_melden(request: Request):
             conn, kennung, lat, lon, alt_ft, gs_kt, simulator, settings, vs_ft_min)
         # Ab jetzt gilt die zugeteilte auch hier -- `steht` und die Ablage haengen daran.
         kennung = kennung or (zugeteilt or "")
+
+        # ⭐ WER DARF SCHWEIGEN? -- Meldet das EIGENE Kniebrett dieses Piloten, darf seine
+        # Bruegge langsamer fragen (GitHub-Issue #23).
+        #
+        # Das ist der eigentliche Lasthebel, und er ist ein ANDERER als die Vorrangregel im
+        # Poller: Dort geht es darum, wessen Punkt gilt -- hier darum, dass die teure Seite
+        # gar nicht erst anklopft. Gemessen: Diese Meldung kostet fuenf DB-Aufrufe plus das
+        # Positionsmatching, die des Kniebretts keinen. Melden beide denselben Piloten, ist
+        # die Bruegge-Anfrage im Sekundentakt Arbeit ohne Ergebnis -- ihr Punkt wird ohnehin
+        # ueberschrieben.
+        #
+        # ⚠ SCHLIMMSTENFALLS WIRD DIE SPUR GROEBER, NIE LEER. Am 15.09.2026 ist eine Bruegge
+        # nach einer Drossel auf 900 s in 30 Minuten nicht zurueckgekehrt (Issue #38) --
+        # warum, ist offen. Fuenf Sekunden sind deshalb bewusst ein KLEINER Schritt: Selbst
+        # wenn sie darin haengen bliebe, meldet sie weiter, nur seltener. Ein Takt in der
+        # Groessenordnung von Minuten waere an dieser Stelle unverantwortlich, solange der
+        # Rueckweg nicht geklaert ist.
+        _p = getattr(request.app.state, "poller", None)
+        if _p is not None and _p.kniebrett_meldet_fuer(cid):
+            takt = max(takt, _BRUEGGE_TAKT_MIT_KNIEBRETT_S)
         if cid is None:
             # Ohne Zuordnung geschieht NICHTS -- keine Anzeige, keine Ablage, keine Objekte.
             # Die Pruefung steht damit vor allem Teuren; ein Pilot, der den Simulator laufen

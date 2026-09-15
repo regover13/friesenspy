@@ -22,9 +22,17 @@ des Fensters ist jedes Mal dieselbe:
 
 | Abschnitt | vor dem 15.09.2026 | seither |
 |---|---|---|
-| alter Container beendet sich | ~10 s (endete mit **SIGKILL**) | ~3 s, sauber |
+| alter Container beendet sich | ~10 s, endete mit **SIGKILL** | **4,7 s**, Exit 0 |
 | neuer Container startet die App | ~7 s | ~7 s |
-| **Summe** | **16–20 s** | **~10 s** |
+| **Summe** | **16–20 s** | **~12 s** |
+
+Die 4,7 s sind gemessen, nicht gerechnet: Mit dem echten Image und einer offenen
+SSE-Verbindung braucht der Stopp **30,9 s und endet mit Exit 137**, wenn man das Argument
+aus dem `CMD` nimmt, und **4,7 s mit Exit 0**, wenn es drinsteht (Gnadenfrist im Test auf
+30 s gesetzt, damit der Unterschied sichtbar wird; in Produktion sind es 10 s). Der Rest von
+4,7 s ist **nicht** das Zeitlimit, sondern der Lifespan-Shutdown — ohne jede SSE-Verbindung
+dauert der Stopp genauso lange. Das Zeitlimit kostet also nichts, es verhindert nur das
+Hängenbleiben.
 
 Die 10 Sekunden waren Dockers Gnadenfrist: uvicorn wartet beim Beenden auf das Ende aller
 laufenden Antworten, und `/api/sse` liefert einen Stream, der nie endet. Eine einzige offene

@@ -3,9 +3,9 @@
     "version": "14.49.3",
     "date": "2026-09-15",
     "highlight": false,
-    "title": "Eine neue Fassung reißt die Karte nur noch halb so lange weg",
+    "title": "Eine neue Fassung nimmt die Karte für kürzere Zeit weg",
     "items": [
-      "⏱️ Wenn eine neue Fassung ausgeliefert wird, ist die Website für einen Moment nicht erreichbar — das ließ sich nicht ganz vermeiden, war aber mit 16 bis 20 Sekunden doppelt so lang wie nötig. Die Hälfte davon verging damit, dass die alte Fassung sich nicht beenden ließ: Sie wartete auf Verbindungen, die von sich aus nie enden, und wurde am Ende abgewürgt. Jetzt verabschiedet sie sich von allein, und der Moment dauert nur noch rund zehn Sekunden.",
+      "⏱️ Wenn eine neue Fassung ausgeliefert wird, ist die Website für einen Moment nicht erreichbar — das ließ sich nicht ganz vermeiden, war aber mit 16 bis 20 Sekunden länger als nötig. Ein gutes Drittel davon verging damit, dass die alte Fassung sich nicht beenden ließ: Sie wartete auf Verbindungen, die von sich aus nie enden, und wurde am Ende abgewürgt. Jetzt verabschiedet sie sich von allein, und der Moment dauert noch rund zwölf Sekunden.",
       "🌉 Für die FriesenBrügge zählt das doppelt: Sie meldet jede Sekunde, und jede Sekunde ohne Antwort lässt ihren Punkt auf der Karte stehen. Die HTTP-502-Meldungen, über die sie in den letzten Tagen gestolpert ist, kamen ausnahmslos aus diesen Fenstern — nachgezählt an zwei vollen Tagen, 839 von 839."
     ]
   },

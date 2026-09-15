@@ -176,9 +176,15 @@ class TestAusschalter:
     def test_aus_kostet_den_client_fast_keine_anfragen_mehr(self, env):
         """`aus` ist ein langer Takt, keine 0: Ein Kniebrett, das gar keine Antwort mehr
         bekäme, könnte Abschaltung nicht von Netzausfall unterscheiden -- dasselbe Muster
-        wie bei `_bruegge_takt`. Und über dieselbe Antwort kommt das Wiedereinschalten an."""
+        wie bei `_bruegge_takt`. Und über dieselbe Antwort kommt das Wiedereinschalten an.
+
+        ⚠ Hier stand `>= 300`, und das war zu grob gedacht: Der Wert muss nach OBEN begrenzt
+        sein, nicht nach unten (s. TestAusTaktIstKurzGenug). Ein Takt von 900 s macht aus dem
+        Wiedereinschalten eine Viertelstunde Warten."""
         r = _melden(env, [])
-        assert r.json()["naechste_frage_in_s"] >= 300
+        takt = r.json()["naechste_frage_in_s"]
+        assert takt >= 30                      # nicht im Regeltakt weiterreden
+        assert takt <= 60                      # aber auch nicht verstummen
 
     def test_ein_client_der_die_abschaltung_uebergeht_wird_verworfen(self, env):
         """Der eigentliche Punkt: Nicht der Client entscheidet, ob er schweigt."""
@@ -800,3 +806,121 @@ class TestAuswahlNurKniebretter:
         block = _ADMIN[stelle:stelle + 900]
         assert "_kbStand.auswahl" in block
         assert "/api/admin/pilots" not in block
+
+
+# ---------------------------------------------------------------------------------------
+#  11. Der Ausschalter muss sich wie ein Schalter anfühlen
+# ---------------------------------------------------------------------------------------
+
+class TestAusTaktIstKurzGenug:
+    def test_aus_wirkt_binnen_einer_minute_zurueck(self, env):
+        """⚠ 900 s waren die Zahl der FriesenBrügge, und sie ist hier übernommen worden,
+        ohne die Gegenrichtung zu bedenken: Abschalten wirkt sofort, aber das
+        WIEDEREINSCHALTEN erfährt der Client erst bei seiner nächsten Frage. Bei 900 s sind
+        das bis zu 15 Minuten, in denen ein zurückgestellter Schalter nichts tut -- am
+        15.09.2026 im Betrieb erlebt und zuerst für einen Fehler gehalten.
+
+        Die Last spricht nicht dagegen: 60 Anfragen je Stunde und Client sind nichts."""
+        assert main._KNIEBRETT_TAKT_AUS_S <= 60
+        r = _melden(env, [])
+        assert r.json()["modus"] == "aus"
+        assert r.json()["naechste_frage_in_s"] == main._KNIEBRETT_TAKT_AUS_S
+
+    def test_aber_lang_genug_um_nicht_im_takt_zu_bleiben(self):
+        """Eine 0 oder ein Sekundentakt wäre kein Aus-Zustand, sondern derselbe Verkehr
+        ohne Nutzen."""
+        assert main._KNIEBRETT_TAKT_AUS_S >= 30
+
+
+# ---------------------------------------------------------------------------------------
+#  12. Wer darf schweigen? -- die Brügge, wenn das Kniebrett denselben Piloten meldet
+# ---------------------------------------------------------------------------------------
+#
+# ⭐ Der eigentliche Lasthebel, und er ist ein anderer als die Vorrangregel: Dort geht es
+# darum, WESSEN Punkt gilt -- hier darum, dass die teure Seite gar nicht erst fragt.
+#
+# Gemessen: `/api/bruegge/melden` macht fünf DB-Aufrufe je Meldung plus Positionsmatching,
+# `/api/kniebrett/melden` keinen. Melden beide denselben Piloten, ist die Brügge-Anfrage
+# reine Arbeit ohne Ergebnis -- ihr Punkt wird ohnehin vom Kniebrett überschrieben oder
+# überschreibt es.
+#
+# Ihre Objekte gelten 300 s (`_BRUEGGE_GILT_BIS_S`), ein Takt von 5 s ist dafür unkritisch.
+
+class TestBrueggeDarfSchweigen:
+    def test_ohne_kniebrett_bleibt_der_regeltakt(self, env):
+        assert env.poller.kniebrett_meldet_fuer(MELDER) is False
+
+    def test_meldet_ein_kniebrett_denselben_piloten_darf_die_bruegge_langsamer_fragen(self, env):
+        _modus_setzen(env, "eigene")
+        _melden(env, [_flugzeug(cs=MELDER_CS, lat=LAT, lon=LON)])
+        assert env.poller.kniebrett_meldet_fuer(MELDER) is True
+
+    def test_eine_fremdmeldung_zaehlt_dafuer_NICHT(self, env):
+        """Das ist die wichtige Grenze: Ein fremdes Kniebrett sieht den Piloten nur, solange
+        er in dessen Umkreis fliegt. Seine Brügge deswegen zu drosseln hieße, die Auflösung
+        von jemandem abhängig zu machen, der jederzeit wegfliegen kann."""
+        _modus_setzen(env, "alle")
+        _melden(env, [_flugzeug()])          # MELDER meldet FREMD mit
+        assert env.poller.kniebrett_meldet_fuer(FREMD) is False
+
+    def test_eine_alte_meldung_zaehlt_nicht(self, env, monkeypatch):
+        import app.poller as poller_modul
+        _modus_setzen(env, "eigene")
+        _melden(env, [_flugzeug(cs=MELDER_CS, lat=LAT, lon=LON)])
+        t0 = env.poller._bruegge_live[MELDER]["ts"]
+        monkeypatch.setattr(poller_modul.time, "monotonic", lambda: t0 + 30.0)
+        assert env.poller.kniebrett_meldet_fuer(MELDER) is False
+
+    def test_der_gedrosselte_takt_liegt_unter_der_objektfrist(self):
+        """Sonst verlöre die Brügge ihren Sollzustand, während sie schweigt -- und räumte
+        alle Objekte ab (`g_gilt_bis_s` in bruegge.cpp)."""
+        assert main._BRUEGGE_TAKT_MIT_KNIEBRETT_S < main._BRUEGGE_GILT_BIS_S
+
+    def test_und_er_holt_die_bruegge_schnell_zurueck(self):
+        """Verstummt das Kniebrett, verfällt sein Eintrag nach MELDUNG_FRIST_S. Die Brügge
+        muss davor oder kurz danach wieder fragen, sonst klafft eine Lücke auf der Karte."""
+        from app import bruegge
+        assert main._BRUEGGE_TAKT_MIT_KNIEBRETT_S <= bruegge.MELDUNG_FRIST_S
+
+    def test_der_hebel_greift_im_bruegge_endpunkt_selbst(self, env, monkeypatch):
+        """Die Hilfsfunktion allein beweist nichts -- geprüft wird, was die Brügge in ihrer
+        Antwort wirklich zu lesen bekommt."""
+        conn = get_connection(env.db)
+        try:
+            # Ohne Forum-Login weist der Brügge-Endpunkt jede Meldung ab.
+            conn.execute("INSERT OR REPLACE INTO forum_callsign (callsign, cid, updated_at) "
+                         "VALUES (?, ?, ?)", (MELDER_CS, MELDER, "2026-09-15T00:00:00Z"))
+            conn.commit()
+        finally:
+            conn.close()
+        lage = {"lat": LAT, "lon": LON, "alt_msl_ft": 500.0, "alt_agl_ft": 0.0,
+                "gs_kt": 0.0, "kurs": 210.0, "vs_ft_min": 0.0, "am_boden": True}
+
+        # 1. Ohne Kniebrett: Regeltakt.
+        r = env.client.post("/api/bruegge/melden",
+                            json={"protokoll": 2, "simulator": "msfs2024",
+                                  "kennung": "aaaa1111bbbb2222", "lage": lage})
+        assert r.status_code == 200
+        ohne = r.json()["naechste_frage_in_s"]
+        assert ohne == main._BRUEGGE_TAKT_VORGABE_S
+
+        # 2. Sein Kniebrett meldet -- jetzt darf sie langsamer fragen.
+        #    ⚠ Die Zeit muss dafür über KNIEBRETT_ZUSCHLAG_S hinaus: Die Brügge hält den
+        #    Eintrag aus Schritt 1 noch, und genau das ist die Vorrangregel. Beide Regeln
+        #    greifen hier nacheinander -- das ist kein Testkniff, sondern der Betriebsfall
+        #    (die Brügge meldet zuerst, das Kniebrett kommt dazu).
+        import app.poller as poller_modul
+        t0 = env.poller._bruegge_live[MELDER]["ts"]
+        # `monkeypatch` und nicht von Hand setzen: Ein Fehlschlag mitten im Test ließe die
+        # gefälschte Uhr sonst stehen, und der nächste Test in derselben Sitzung erbt sie.
+        monkeypatch.setattr(poller_modul.time, "monotonic", lambda: t0 + 4.0)
+        _modus_setzen(env, "eigene")
+        assert _melden(env, [_flugzeug(cs=MELDER_CS, lat=LAT, lon=LON)]).json()["uebernommen"] == 1
+        r = env.client.post("/api/bruegge/melden",
+                            json={"protokoll": 2, "simulator": "msfs2024",
+                                  "kennung": "aaaa1111bbbb2222", "lage": lage})
+        assert r.json()["naechste_frage_in_s"] == main._BRUEGGE_TAKT_MIT_KNIEBRETT_S
+
+        # 3. ... und ihre Objekte bekommt sie weiterhin: Der Hebel drosselt, er schaltet
+        #    nicht ab. Ein leeres `soll` hier hieße, dass sie alles abräumt.
+        assert "soll" in r.json()

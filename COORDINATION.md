@@ -28,9 +28,12 @@ peer` — ein blockierter Event-Loop sähe anders aus (er ließe warten, nicht a
 
 **Die wirkliche Ursache:** uvicorn wartet beim Beenden auf das Ende aller laufenden
 Antworten. `/api/sse` liefert einen Stream, der nie endet — eine offene SSE-Verbindung hielt
-den alten Container fest, bis Docker nach 10 s `SIGKILL` schickte. Isoliert gemessen, selbes
-Image, eine Verbindung: **30,5 s und Exit 137** ohne Zeitlimit, **1,8 s und Exit 0** mit.
-Behoben mit `--timeout-graceful-shutdown 3` im CMD.
+den alten Container fest, bis Docker nach 10 s `SIGKILL` schickte. A/B gemessen mit dem
+echten Image und einer offenen SSE-Verbindung (Gnadenfrist im Test 30 s): **30,9 s und
+Exit 137** ohne das Argument, **4,7 s und Exit 0** mit. Behoben mit
+`--timeout-graceful-shutdown 3` im CMD; das Deploy-Fenster fällt damit von 16–20 s auf ~12 s.
+Die 4,7 s sind übrigens **nicht** das Zeitlimit, sondern der Lifespan-Shutdown — ohne jede
+SSE-Verbindung dauert der Stopp genauso lange.
 
 ### Was das für die Arbeit an der Brügge heißt
 
@@ -118,6 +121,52 @@ eigene Eintrag **über den Index** auf `HEAD` (`git hash-object -w` +
 anderen Sitzung zeigte danach genau ihren Block — sie hat ihn als `14.49.1` nachgezogen.
 Das ist der saubere Handgriff für genau diesen Fall; er steht hier, weil er sonst beim
 nächsten Mal wieder erfunden werden müsste.
+
+---
+
+## 2026-09-15 (nachmittags) — ⚠ EIN EINGRIFF IN `bruegge_melden`, mit Ansage
+
+**Die Grenze aus dem Eintrag weiter unten ist an EINER Stelle bewusst überschritten worden**
+(Nutzeranweisung vom 15.09.2026). Betroffen ist `bruegge_melden` in `app/main.py`, und zwar
+genau ein Block von drei Zeilen direkt nach `_bruegge_zuordnen`:
+
+```python
+_p = getattr(request.app.state, "poller", None)
+if _p is not None and _p.kniebrett_meldet_fuer(cid):
+    takt = max(takt, _BRUEGGE_TAKT_MIT_KNIEBRETT_S)
+```
+
+**Was es tut:** Meldet das *eigene* Kniebrett eines Piloten, bekommt seine Brügge einen Takt
+von 5 s statt 1 s. Es ist der Lasthebel, der aus der Messung folgt — diese Meldung kostet
+fünf DB-Aufrufe plus Positionsmatching, die des Kniebretts keinen.
+
+**Was es NICHT anfasst:** `_bruegge_zuordnen`, `app/bruegge.py`, `bruegge_belegte_cids`, die
+Antwortstruktur, `soll`, `steht`, die Kennungsvergabe. Der Block steht *hinter* der Zuordnung
+und ändert nur eine Zahl, die ohnehin in jede Antwort geht.
+
+**Beim Rebase:** Wer in `bruegge_melden` arbeitet, wird diesen Block sehen. Er darf verschoben
+oder anders gelöst werden, solange die Wirkung bleibt — gebunden ist sie durch
+`tests/test_kniebrett_melden.py::TestBrueggeDarfSchweigen::test_der_hebel_greift_im_bruegge_endpunkt_selbst`.
+
+---
+
+## 2026-09-15 (nachmittags) — Zwei Befunde an der Brügge, beide als Issue
+
+Aus dem Probeflug mit Kniebrett, beide **nicht** von dieser Sitzung behoben (ihr Endpunkt und
+ihr Modul gehören der anderen):
+
+- **[#37](https://github.com/regover13/friesenspy/issues/37)** — `/api/bruegge/melden`
+  antwortet blockweise mit HTTP 502 (53 an einem Tag, davon sechs Deploy-Artefakte, die man
+  abziehen muss). Der Gegenversuch liegt jetzt vor: Derselbe Takt ohne Datenbank im
+  Meldeweg (`/api/kniebrett/melden`) hat null 502er.
+- **[#38](https://github.com/regover13/friesenspy/issues/38)** — Nach einer Drossel auf 900 s
+  kehrt die Brügge **nicht zurück**; 30 Minuten gemessen, null Anfragen. `g_takt_s` wird beim
+  Laden eines neuen Flugs nicht zurückgesetzt, ein Flugwechsel hilft also nicht. Der „Ganz
+  aus"-Knopf ist damit eine Einbahnstraße bis zum Sim-Neustart.
+
+**Dieselbe Falle steckte im Kniebrett-Schalter** (`_KNIEBRETT_TAKT_AUS_S` war aus Gewohnheit
+ebenfalls 900) und ist dort auf **60** gesenkt. Wer die Brügge nachzieht, findet die
+Begründung in #38.
 
 ---
 
