@@ -1352,3 +1352,21 @@ class TestRangfolgeNachVollstaendigkeit:
 
     def test_und_der_merker_waechst_nicht_endlos(self):
         assert "delete _kniebrettFremdWerte[cs];" in _INDEX
+
+    def test_auch_eine_VOLLSTAENDIGE_meldung_traegt_den_lasthebel(self, env):
+        """⚠ DIE REGRESSION, die Punkt 6 in Punkt 1 gerissen hat (im Flug gefunden).
+
+        `_kniebrett_versuch` wurde nur bei `QUELLE_SELBST` gesetzt. Als mit Punkt 6 die
+        Stufe `QUELLE_KNIEBRETT_VOLL` dazukam, fiel ausgerechnet die BESTE Meldung durch
+        diese Bedingung — und die Brügge meldete weiter im Sekundentakt, obwohl das
+        Kniebrett längst lieferte.
+
+        Gefunden wurde es nicht von den Tests: Die arbeiten alle mit `_flugzeug()`, und das
+        schickt kein `agl`/`gnd`. Eine ganze Testklasse prüfte damit nur den Fall, den es
+        nach dem Paket-Update gar nicht mehr gibt."""
+        _modus_setzen(env, "eigene")
+        e = _flugzeug(cs=MELDER_CS, lat=LAT, lon=LON)
+        e.update({"agl": 15.0, "gnd": True, "vs": 0.0})
+        r = _melden(env, [e])
+        assert r.json()["uebernommen"] == 1
+        assert env.poller.kniebrett_meldet_fuer(MELDER) is True

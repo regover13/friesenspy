@@ -920,7 +920,13 @@ class VatsimPoller:
         # ⭐ ZUERST den Versuch vermerken, dann erst ueber den Vorrang entscheiden. Die
         # Reihenfolge ist der ganze Fix: Eine abgewiesene Selbstmeldung ist trotzdem der
         # Beweis, dass das Kniebrett liefert.
-        if guete == self.QUELLE_SELBST:
+        # ⚠ JEDE Selbstmeldung zaehlt, nicht nur die unvollstaendige. Hier stand
+        # `== QUELLE_SELBST`, und als mit der neuen Rangfolge `QUELLE_KNIEBRETT_VOLL`
+        # dazukam, fiel ausgerechnet die BESTE Meldung durch die Bedingung: Die Bruegge
+        # meldete weiter im Sekundentakt, obwohl das Kniebrett laengst lieferte (im Flug
+        # gefunden, 15.09.2026). Die Tests haben es nicht gesehen -- sie arbeiten alle mit
+        # Meldungen ohne `agl`/`gnd`.
+        if guete != self.QUELLE_FREMD:
             self._kniebrett_versuch[cid] = time.monotonic()
         vorhanden = self._bruegge_live.get(cid)
         if vorhanden is not None and (time.monotonic() - vorhanden["ts"]) < self.BRUEGGE_FRIST_S:
