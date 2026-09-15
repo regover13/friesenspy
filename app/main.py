@@ -1213,7 +1213,13 @@ async def kniebrett_melden(request: Request):
     #
     # Einmal je Minute genuegt -- bei Sekundentakt waere es sonst eine Zeile je Sekunde und
     # je Kniebrett, genau das Rauschen, gegen das der nginx-Filter der Bruegge gebaut wurde.
-    if secrets.randbelow(60) == 0:
+    # ⚠ NUR MELDUNGEN MIT INHALT. Die erste Fassung loggte jede sechzigste Meldung --
+    # und weil der Sender nur AENDERUNGEN schickt, sind bei einem stehenden Flugzeug drei
+    # von vier Meldungen leer. Sie hat dreimal hintereinander eine leere erwischt und
+    # damit "das Panel meldet nichts" nahegelegt, waehrend im Strom sieben Flugzeuge
+    # standen (15.09.2026). Eine Stichprobe, die zu drei Vierteln auf den
+    # uninteressanten Fall zeigt, ist keine Messung.
+    if flugzeuge and secrets.randbelow(20) == 0:
         _logger.info(
             "Kniebrett %s meldet %s Flugzeug(e) [%s] -- modus=%s uebernommen=%s verworfen=%s",
             melder, len(flugzeuge),

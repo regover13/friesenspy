@@ -1325,3 +1325,30 @@ class TestRangfolgeNachVollstaendigkeit:
         sender = _INDEX.index("function _kbEigenes()")
         sblock = _INDEX[sender:_INDEX.index("\n}", sender)]
         assert "gnd: (_simPos.gnd == null) ? null : !!_simPos.gnd" in sblock
+
+    def test_der_15_sekunden_abruf_ueberschreibt_die_frische_position_nicht(self):
+        """⚠ ZWEI SCHREIBER AUF `_verkehrRoh`, und ohne Sperre gewinnt der langsame.
+
+        Der Strom trägt die sekundengenaue Position hinein, `_verkehrAbrufen` schreibt alle
+        paar Sekunden den bis zu 15 s alten VATSIM-Wert darüber — auf der Karte ruckelt es
+        dann trotz sekundengenauer Daten. Bei den FRIESEN gibt es diese Sperre seit jeher
+        (`_markerGehoertDemSim`); für Fremdverkehr fehlte sie, weil es dort bis zum
+        15.09.2026 gar keine zweite Quelle gab."""
+        stelle = _INDEX.index("_verkehrRoh[cs] = { lat: e.lat")
+        davor = _INDEX[max(0, stelle - 300):stelle]
+        assert "_kniebrettFremdFrisch(cs)" in davor
+
+    def test_und_der_tuerkise_saum_gilt_auch_fuer_sie(self):
+        """Türkis heißt überall dasselbe: sekundengenau, und es steht fest, wer das ist.
+        Im Kniebrett kommt die Aussage aus dem Sim-Matching, auf der Website daraus, dass
+        ein Kniebrett das Flugzeug meldet."""
+        stelle = _INDEX.index("const zugeordnet = !!e._zugeordnet")
+        assert "_kniebrettFremdFrisch(cs)" in _INDEX[stelle:stelle + 120]
+
+    def test_die_frist_ist_dieselbe_wie_ueberall(self):
+        stelle = _INDEX.index("function _kniebrettFremdFrisch(")
+        block = _INDEX[stelle:_INDEX.index("\n}", stelle)]
+        assert "_BRUEGGE_FRIST_MS" in block
+
+    def test_und_der_merker_waechst_nicht_endlos(self):
+        assert "delete _kniebrettFremdWerte[cs];" in _INDEX
