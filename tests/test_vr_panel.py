@@ -3244,8 +3244,8 @@ def test_paketversion_gehoben_und_gleichlaufend():
     manifest = json.loads(
         (Path(__file__).resolve().parents[1] / "msfs-panel" / "PackageSources" / "FriesenSpy"
          / "manifest.json").read_text(encoding="utf-8"))
-    assert 'const PAKET_VERSION = "2.2.0"' in PANEL_TSX
-    assert manifest["package_version"] == "2.2.0"
+    assert 'const PAKET_VERSION = "2.3.0"' in PANEL_TSX
+    assert manifest["package_version"] == "2.3.0"
 
 
 def test_seite_nimmt_den_brueckenzustand_entgegen():
@@ -3488,3 +3488,61 @@ def test_die_einstellungsansicht_traegt_beide_themen():
     assert "panel-abschnitt-titel" in INDEX
     # Auf der Website gibt es kein Kniebrett, dessen Flaeche zu klein waere.
     assert "html:not(.vr-panel) #panel-anzeige { display: none !important; }" in INDEX
+
+
+# ---------------------------------------------------------------------------------------
+# Paket 2.3.0 -- die drei Werte, die bisher nur die Bruegge kannte
+# ---------------------------------------------------------------------------------------
+
+@ohne_panel
+def test_das_kniebrett_meldet_hoehe_ueber_grund_steigrate_und_am_boden():
+    """Solange diese drei fehlten, war die Bruegge die reichere Quelle -- und NUR deshalb
+    hatte sie bei gleichzeitigem Betrieb den Vortritt. Das Kniebrett kennt die Identitaet
+    ohne Raten und kostet den Server keinen Datenbankzugriff; was ihm fehlte, waren diese
+    drei Werte.
+
+    Geprueft wird der Rumpf von `positionSenden` -- ueber die ganze Datei gesucht faende der
+    Test auch einen Kommentar oder eine Typdeklaration."""
+    stelle = PANEL_TSX.index("private positionSenden(")
+    rumpf = _ohne_kommentare(PANEL_TSX[stelle:PANEL_TSX.index("\n  }", stelle)])
+    assert '"PLANE ALT ABOVE GROUND"' in rumpf
+    assert '"SIM ON GROUND"' in rumpf
+    assert '"VERTICAL SPEED"' in rumpf
+    # Und sie muessen auch HINAUSGEHEN -- gelesen und dann verworfen waere schlimmer als gar
+    # nicht gelesen: Es kostet jeden Takt Zeit und nuetzt niemandem.
+    assert "alt_agl_ft:" in rumpf
+    assert "vs_ft_min:" in rumpf
+    assert "am_boden:" in rumpf
+
+
+@ohne_panel
+def test_die_drei_neuen_werte_tragen_die_namen_des_protokolls():
+    """`alt_agl_ft`, `vs_ft_min`, `am_boden` -- dieselben wie in der Meldung der Bruegge
+    (friesenbruegge/PROTOKOLL.md). Die Seite reicht sie unveraendert an den Server weiter;
+    jede Umbenennung unterwegs waere eine Stelle mehr, an der sie verlorengehen koennen.
+
+    ⚠ Gesucht wird im KOMMENTARFREIEN Rumpf. Ein frueherer Anlauf suchte ueber die ganze
+    Datei und war damit blind: Die drei Namen stehen auch im Kommentar darueber, also blieb
+    er gruen, als `am_boden` zur Probe in `amBoden` umbenannt wurde (gemessen 15.09.2026).
+    Genau davor warnt der Kopf von test_bruegge_quelltext.py -- die Suche findet sonst die
+    Erklaerung statt der Anweisung."""
+    protokoll = (_TSX_PFAD.parents[4] / "friesenbruegge" / "PROTOKOLL.md").read_text(
+        encoding="utf-8")
+    stelle = PANEL_TSX.index("private positionSenden(")
+    rumpf = _ohne_kommentare(PANEL_TSX[stelle:PANEL_TSX.index("\n  }", stelle)])
+    for feld in ("alt_agl_ft", "vs_ft_min", "am_boden"):
+        assert feld in protokoll, f"{feld} steht gar nicht im Protokoll"
+        assert feld + ":" in rumpf, f"{feld} geht im Kniebrett nicht unter diesem Namen hinaus"
+
+
+@ohne_panel
+def test_unbekannt_ist_nicht_null():
+    """Ein stehendes Flugzeug hat 0 ft ueber Grund und 0 ft/min -- beides gueltige Aussagen.
+    `null` heisst `weiss ich nicht`, und der Server behandelt beides verschieden. Ein
+    `|| 0` an dieser Stelle machte aus `unbekannt` ein `am Boden, Steigrate null`."""
+    stelle = PANEL_TSX.index("private positionSenden(")
+    rumpf = _ohne_kommentare(PANEL_TSX[stelle:PANEL_TSX.index("\n  }", stelle)])
+    for feld, quelle in (("alt_agl_ft", "agl"), ("vs_ft_min", "vs")):
+        assert f"{feld}: isFinite({quelle}) ? {quelle} : null" in rumpf, \
+            f"{feld} unterscheidet `unbekannt` nicht von einer echten Null"
+    assert "am_boden: isFinite(amBoden) ? amBoden > 0.5 : null" in rumpf

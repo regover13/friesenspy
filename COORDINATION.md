@@ -6,6 +6,40 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-15 (abends) — Kniebrett 2.3.0 sendet drei Werte, die niemand liest
+
+**Für die Server-Sitzung: vier Zeilen fehlen in `app/static/index.html`.** Eine lokale
+Windows-Sitzung hat den Auftrag aus `docs/uebergabe-msfs-build.md` umgesetzt, Punkt 3
+(„drei SimVars ins EFB-Panel") aber nur zur Hälfte liefern können — `app/` war ihr
+ausdrücklich gesperrt.
+
+Das Panel schickt ab **Paket 2.3.0** drei zusätzliche Felder in seiner `position`-Meldung:
+
+| Feld | SimVar | Einheit |
+|---|---|---|
+| `alt_agl_ft` | `PLANE ALT ABOVE GROUND` | Fuß |
+| `vs_ft_min` | `VERTICAL SPEED` | Fuß/Minute |
+| `am_boden` | `SIM ON GROUND` | `true`/`false` |
+
+**Die Namen sind absichtlich die des Protokolls** (`friesenbruegge/PROTOKOLL.md`), nicht die
+kurzen der Nachbarfelder (`hdg`, `gs`, `windRi`) — die Seite soll sie unverändert
+weiterreichen können.
+
+Anzufassen ist der Empfänger bei **`app/static/index.html:9021`** (`d.quelle ===
+'friesenspy-shell'`, wo schon `windRi`/`windKt` gelesen werden). `null` heißt „unbekannt"
+und ist von einer echten Null zu unterscheiden: Ein stehendes Flugzeug hat 0 ft über Grund
+und 0 ft/min, beides gültige Aussagen. Ein älteres Kniebrett schickt die Felder gar nicht —
+genau wie beim Wind ab 2.1.0.
+
+**Solange das fehlt, ändert sich nichts** (die Felder laufen ins Leere), und der Vorrang
+„Brügge vor Kniebrett" bleibt richtig. Erst danach sind beide Quellen gleichwertig — das ist
+Punkt 5 und 6 der Server-Liste.
+
+⚠ **Das Paket ist noch NICHT auf der Download-Seite.** Es liegt gebaut im Community-Ordner
+und wartet auf den Kontrollstart im Simulator.
+
+---
+
 ## ⚠ 2026-09-15 — ZWEI SITZUNGEN IM SELBEN ARBEITSBAUM (dieser Eintrag schon zweimal verloren)
 
 `~/projects/friesenspy` wird von beiden Sitzungen gleichzeitig benutzt. Das hat an einem

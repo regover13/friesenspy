@@ -1,5 +1,35 @@
 # Übergabe an eine LOKALE Session (Windows) — FriesenBrügge bauen
 
+> ## ✅ ERLEDIGT am 15.09.2026 abends — und der Verdacht war falsch
+>
+> **Kein BOM.** `layout.json` und `manifest.json` beginnen beide mit `7B 0D 0A 20` (`{\r\n␣`).
+> Der Zehn-Sekunden-Griff hat den Build also nicht überflüssig gemacht.
+>
+> **Auch die drei Build-Fallen waren es nicht** — und das ließ sich ohne Simulator messen:
+> Die Import- und Exporttabelle der installierten `bruegge.wasm` zeigt `__indirect_function_table`
+> exportiert (Falle 2 aus), kein `__stack_chk_*` unter den 21 Importen (Falle 1 aus), alle
+> SimConnect-Funktionen als `env::`-Importe (Falle 3 aus), `module_init` und `module_deinit`
+> exportiert. Das Paket war formal einwandfrei: 64 Einträge in der `layout.json`, null
+> Größenabweichungen gegen die Platte.
+>
+> **Die Ursache stand derweil in Issue #38, bestätigt und ungenutzt.** `g_takt_s` wurde beim
+> Weltwechsel nicht zurückgesetzt: Wer einmal auf 900 s gedrosselt war, kam nur über einen
+> Neustart des Simulators zurück — der Ausschalter war eine Einbahnstraße. Das ist jetzt
+> behoben (Brügge **1.11.0**), mit `g_vertrag_tot` als Ausnahme für den toten Vertrag nach
+> einem `426`.
+>
+> **Ein Punkt des Auftrags ist so nicht baubar:** „`SimConnect_Open` im Sekundentakt
+> wiederholen" braucht einen Taktgeber, und den hat ein reines WASM-Modul ausschließlich
+> über SimConnect selbst. In keinem der 21 SDK-Header (`WASM\include\MSFS`) steht ein Frame-
+> oder Timer-Callback für Module; `MSFS_Events.h` kennt nur Key-Events. Gebaut sind deshalb
+> drei Sofortversuche und — der eigentliche Gewinn — Logzeilen.
+>
+> **Punkt 3 ist halb:** Das Panel (2.3.0) sendet die drei Werte, gelesen werden müssen sie in
+> `app/static/index.html:9021`. Das war dieser Sitzung gesperrt; s. `COORDINATION.md`.
+>
+> **Noch nicht ausgeliefert.** Beide Pakete liegen im Community-Ordner und warten auf den
+> Kontrollstart. 2723 Tests grün, acht neue Regressionstests einzeln gegengeprüft.
+
 **Stand: 15.09.2026, abends.** Geschrieben von der Server-Session auf dem VPS. Sie kann alles
 außer einem: das MSFS-WASM-Modul bauen. Dafür braucht es das MSFS-SDK, und das ist
 proprietär — anders als das X-Plane-SDK, das der Workflow `bruegge-xplane.yml` frei per URL

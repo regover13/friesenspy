@@ -36,7 +36,7 @@ const DEVICE_KEY = "friesenspy_device";
  * WICHTIG fuer die Auswertung auf der Seite: Ein Paket VOR 2.0.0 schickt dieses Feld gar
  * nicht. Sein Fehlen ist deshalb kein Fehler, sondern die Aussage "aelter als 2.0.0".
  */
-const PAKET_VERSION = "2.2.0";
+const PAKET_VERSION = "2.3.0";
 
 /**
  * Zufaellige Geraete-ID erzeugen -- oder "" , wenn das nicht sicher moeglich ist.
@@ -472,6 +472,26 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
       const windRi = sv.GetSimVarValue("AMBIENT WIND DIRECTION", "degrees");
       const windKt = sv.GetSimVarValue("AMBIENT WIND VELOCITY", "knots");
 
+      // Die drei Werte, die bisher NUR die Brügge kannte -- und der einzige Grund, warum sie
+      // bei gleichzeitigem Betrieb den Vortritt bekam. Das Kniebrett weiss, WER es ist, ohne
+      // zu raten, und kostet den Server keinen Datenbankzugriff; die Brügge muss den Piloten
+      // erst über seine Position zuordnen. Umgekehrt konnte nur sie sagen, wie hoch über Grund
+      // jemand ist und ob er steht. Mit diesen drei Werten sind beide Quellen gleichwertig.
+      //
+      // Die Namen sind ABSICHTLICH die des Protokolls (`alt_agl_ft`, `vs_ft_min`, `am_boden`,
+      // s. friesenbruegge/PROTOKOLL.md) und nicht die kurzen der Zeilen darüber: Die Seite
+      // reicht sie unverändert an den Server weiter, und jede Umbenennung unterwegs wäre eine
+      // Stelle mehr, an der sie verlorengehen können.
+      //
+      // ⚠ Drei SimVar-Zugriffe mehr je Takt -- s. den Hinweis oben im Kopf der Datei, jeder
+      // kostet messbar Zeit. Sie stehen hier zusammen mit den übrigen in EINEM Durchgang,
+      // damit es bei einem Takt bleibt und nicht zwei daraus werden.
+      const agl = sv.GetSimVarValue("PLANE ALT ABOVE GROUND", "feet");
+      // "SIM ON GROUND" liefert 0 oder 1, nicht true/false -- der Vergleich macht daraus
+      // einen Wahrheitswert, den der Server so lesen kann wie den der Brügge.
+      const amBoden = sv.GetSimVarValue("SIM ON GROUND", "bool");
+      const vs = sv.GetSimVarValue("VERTICAL SPEED", "feet per minute");
+
       // Beim Laden eines Fluges liefern die Variablen kurzzeitig Unsinn (0/0 mitten im
       // Atlantik oder NaN). So etwas weiterzureichen hiesse, die Karte an einen Ort zu
       // schieben, an dem niemand ist.
@@ -509,6 +529,13 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
           // 0 und eine gueltige Aussage.
           windRi: isFinite(windRi) ? windRi : null,
           windKt: isFinite(windKt) ? windKt : null,
+          // Höhe über Grund, Steigrate, am Boden -- erst ab Paket 2.3.0. `null` heisst auch
+          // hier „unbekannt", und das ist von einer echten Null zu unterscheiden: Ein
+          // stehendes Flugzeug hat 0 ft über Grund und 0 ft/min, und beides sind gültige
+          // Aussagen. Ein älteres Kniebrett schickt die Felder gar nicht erst.
+          alt_agl_ft: isFinite(agl) ? agl : null,
+          vs_ft_min: isFinite(vs) ? vs : null,
+          am_boden: isFinite(amBoden) ? amBoden > 0.5 : null,
         },
         "*",
       );
