@@ -20,7 +20,7 @@ Wege dorthin, gebündelt in **`_punktIstSekundengenau(callsign)`**:
 |---|---|---|
 | FriesenBrügge / fremdes Kniebrett | `_brueggeFrisch` | nur Website |
 | Sim-Matching hat zugeordnet | `_friesenSimWerte[cs] && _simVerkehrFrisch()` | nur Kniebrett |
-| das eigene Flugzeug | `_istEigenesFlugzeug` (trägt `_simPosFrisch` in sich) | nur Kniebrett |
+| das eigene Flugzeug **auf VATSIM** | `_istEigenesFlugzeug` (trägt `_simPosFrisch` in sich) | nur Kniebrett |
 
 **Fremdverkehr bekommt nur den SAUM**, nicht die Fläche: `.aircraft-marker-fremd-sim`
 (`rgba(118,239,230,0.95)`, das Symbol-Türkis `#19d3c5` auf L=70 % aufgehellt). Die Fläche
@@ -41,10 +41,23 @@ Schlüssel behält, und beim eigenen Flugzeug, weil `updateMap` es anlegt, bevor
 sich meldet, und es danach nie wieder anfasst (`!demSim`). Wer `setIcon` an `_fsHeading`
 allein hängt, lässt ein geradeaus fliegendes Flugzeug in der falschen Farbe stehen.
 
-⚠ **`_eigenesFlugzeugZeichnen` setzt `true` fest, nicht `_punktIstSekundengenau`.** Das ist
-Absicht: `_meinCallsign()` liest aus `liveData`, und wer ohne FRS-Rufzeichen fliegt, steht
-dort nicht. Hinter `_simPosFrisch()` ist der Punkt sekundengenau — ob wir den Piloten
-benennen können, ist eine andere Frage.
+⚠ **Das eigene Flugzeug ist online türkis und offline BLAU** (Nutzer-Wahl 15.09.2026, nach
+einer Stunde „immer türkis" korrigiert). Es ist der einzige Fall, in dem die beiden Hälften
+der Farbaussage auseinanderfallen: Türkis sagt *sekundengenau* **und** *es steht fest, wer
+das ist*. Ohne VATSIM trifft nur das erste zu — es gibt keinen Eintrag in `liveData`, kein
+Rufzeichen, keine Identität; das Symbol heißt wörtlich „DEIN FLUGZEUG". Ein türkiser Punkt
+neben türkisen Nachbarn behauptete eine Zuordnung, die es nicht gibt.
+
+Die ursprüngliche Begründung für „immer türkis" (*„es gibt keine zweite Quelle, gegen die
+man vergleichen könnte"*) beantwortete nur die Frage nach der **Genauigkeit**. Die Farbe
+beantwortet aber beide — wer sie setzt, muss beide prüfen.
+
+Technisch trennt sich das von selbst: `_eigenesFlugzeugZeichnen` setzt im Online-Zweig fest
+`true` (dass der VATSIM-Marker existiert, IST die Identität), im Offline-Zweig gar nichts.
+Und der dritte Weg in `_punktIstSekundengenau` greift offline ohnehin nicht, weil
+`_meinCallsign()` über `_meinLiveEintrag()` aus `liveData` liest. **Es braucht also keine
+zweite Bedingung, die den Offline-Fall ausschließt** — aber die Kette ist lang, deshalb
+bindet `test_offline_greift_die_regel_von_selbst_nicht` sie fest.
 
 ### Nebenbefund: ein Quelltext-Test, der nur ein Drittel prüfte
 

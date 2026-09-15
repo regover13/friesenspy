@@ -1,5 +1,14 @@
 [
   {
+    "version": "14.49.2",
+    "date": "2026-09-15",
+    "highlight": false,
+    "title": "Dein eigenes Flugzeug: türkis auf VATSIM, blau offline",
+    "items": [
+      "🔵 Seit heute Mittag war dein eigenes Flugzeug im Kniebrett immer türkis — auch offline. Das war zu weit gegriffen: Türkis sagt zweierlei, nämlich dass die Position sekundengenau ist UND dass feststeht, wer da fliegt. Ohne VATSIM trifft nur das erste zu; dein Flugzeug hat dann gar kein Rufzeichen und heißt auf der Karte wörtlich „Dein Flugzeug\". Ein türkiser Punkt neben türkisen Nachbarn hätte eine Zuordnung behauptet, die es nicht gibt. Offline ist es deshalb wieder blau, auf VATSIM bleibt es türkis."
+    ]
+  },
+  {
     "version": "14.49.1",
     "date": "2026-09-15",
     "highlight": false,

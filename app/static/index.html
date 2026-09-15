@@ -12473,12 +12473,14 @@ function _eigenesFlugzeugZeichnen() {
     // Auch der Kurs kommt aus dem Sim: Sonst zeigt das Symbol in die Richtung von vor bis
     // zu 15 Sekunden, waehrend es an der richtigen Stelle steht.
     //
-    // Und die Farbe: Hier stehen wir hinter `_simPosFrisch()`, der Punkt ist also
-    // sekundengenau -- fest `true`, nicht ueber `_punktIstSekundengenau`. Das ist keine
-    // Abkuerzung, sondern der Unterschied zwischen "ist es so?" und "wissen wir es?":
-    // `_meinCallsign()` liest aus `liveData`, und wer ohne FRS-Rufzeichen fliegt, steht dort
-    // nicht. Der Merker MUSS mitgeprueft werden -- `updateMap` legt diesen Marker an, bevor
-    // der Simulator sich meldet, und ruehrt ihn danach nicht mehr an (`!demSim`). Haengt die
+    // Und die Farbe: TUERKIS, fest `true` und nicht ueber `_punktIstSekundengenau`. Beide
+    // Haelften der Farbaussage treffen hier zu -- der Punkt kommt hinter `_simPosFrisch()`
+    // aus dem Simulator (sekundengenau), und dass dieser Marker existiert, heisst, dass
+    // VATSIM den Piloten kennt (Identitaet). Genau daran haengt der Unterschied zum
+    // Offline-Zweig unten, der blau bleibt.
+    //
+    // Der Merker MUSS mitgeprueft werden -- `updateMap` legt diesen Marker an, bevor der
+    // Simulator sich meldet, und ruehrt ihn danach nicht mehr an (`!demSim`). Haengt die
     // Farbe allein am Kurs, bliebe ein geradeaus fliegendes Flugzeug blau.
     if (vatsimMarker._fsHeading !== hdg || vatsimMarker._fsGenau !== true) {
       vatsimMarker.setIcon(makeAircraftIcon(hdg, false, true));
@@ -12509,10 +12511,18 @@ function _eigenesFlugzeugZeichnen() {
   // Offline (oder noch nicht im VATSIM-Strom): eigener Marker.
   const beschriftung = _eigenLabel();
   if (!_eigenerSimMarker) {
-    // Ohne VATSIM daneben gibt es ueberhaupt keine zweite Quelle, gegen die man vergleichen
-    // koennte -- dieser Marker IST der Simulator. Tuerkis ohne Vorbehalt.
+    // BLAU, nicht tuerkis -- und das ist der eine Fall, in dem die beiden Haelften der
+    // Farbaussage auseinanderfallen. Tuerkis sagt zweierlei: "sekundengenau" UND "es steht
+    // fest, wer das ist". Die erste Haelfte trifft hier zu, die zweite nicht: Ohne VATSIM
+    // gibt es keinen Eintrag in `liveData`, kein Rufzeichen, keine Identitaet -- das Symbol
+    // heisst hier woertlich "DEIN FLUGZEUG" und sonst nichts. Ein tuerkiser Punkt neben
+    // tuerkisen Nachbarn behauptete eine Zuordnung, die es nicht gibt.
+    //
+    // Hier stand am 15.09.2026 fuer eine Stunde "Tuerkis ohne Vorbehalt", begruendet mit
+    // "es gibt keine zweite Quelle, gegen die man vergleichen koennte". Das war die Frage
+    // nach der Genauigkeit -- die Farbe beantwortet aber beide.
     _eigenerSimMarker = L.marker([_simPos.lat, _simPos.lon],
-                                 { icon: makeAircraftIcon(hdg, false, true),
+                                 { icon: makeAircraftIcon(hdg),
                                    rotateWithView: true })
       .bindPopup('<div class="popup-callsign">DEIN FLUGZEUG</div>'
                + '<div class="popup-row">Quelle: <span>Simulator</span></div>', { maxWidth: 240 })
@@ -12526,7 +12536,7 @@ function _eigenesFlugzeugZeichnen() {
   }
   _eigenerSimMarker.setLatLng([_simPos.lat, _simPos.lon]);
   if (_eigenerSimMarker._fsHeading !== hdg) {
-    _eigenerSimMarker.setIcon(makeAircraftIcon(hdg, false, true));
+    _eigenerSimMarker.setIcon(makeAircraftIcon(hdg));
     _eigenerSimMarker._fsHeading = hdg;
   }
   if (_eigenerSimMarker._fsLabel !== beschriftung) {
@@ -12739,8 +12749,14 @@ function _istEigenesFlugzeug(callsign) {
  * kommt aus `_simPos`, also direkt aus dem Simulator, ohne Netzweg und ohne dass irgendwer
  * raten muesste, wer da fliegt -- es ist der genaueste Punkt der ganzen Karte. Dass es
  * trotzdem blau blieb, waehrend jeder zugeordnete Nachbar tuerkis wurde, war schlicht eine
- * Luecke: Die Farbe sagt, wie genau die Karte ein Flugzeug kennt, und genauer als das eigene
- * kennt sie keines. `_istEigenesFlugzeug` traegt die Frist (`_simPosFrisch`) schon in sich.
+ * Luecke. `_istEigenesFlugzeug` traegt die Frist (`_simPosFrisch`) schon in sich.
+ *
+ * ⚠ Dieser dritte Weg gilt NUR ONLINE, und zwar von selbst: `_meinCallsign()` kommt ueber
+ * `_meinLiveEintrag()` aus `liveData`, und wer nicht auf VATSIM steht, steht dort nicht.
+ * Fliegt man offline, hat das eigene Flugzeug ueberhaupt kein Rufzeichen und damit auch
+ * keinen Marker in `mapMarkers` -- es bekommt stattdessen `_eigenerSimMarker`, und der ist
+ * bewusst BLAU (Begruendung dort). Tuerkis sagt zwei Dinge zugleich, "sekundengenau" und
+ * "es steht fest, wer das ist"; offline trifft nur das erste zu.
  */
 function _punktIstSekundengenau(callsign) {
   if (_brueggeFrisch(callsign)) return true;

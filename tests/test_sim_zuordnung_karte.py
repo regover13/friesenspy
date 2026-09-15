@@ -202,18 +202,56 @@ def test_die_zuordnung_wird_am_eintrag_festgehalten():
     assert "_zugeordnet = true" in block
 
 
-def test_das_eigene_flugzeug_wird_auch_wirklich_tuerkis_gezeichnet():
-    """`_punktIstSekundengenau` allein genuegt hier nicht: `updateMap` legt diesen Marker an,
-    bevor der Simulator sich meldet, und ruehrt ihn danach nicht mehr an (`!demSim`). Die
-    Farbe muss also aus `_eigenesFlugzeugZeichnen` kommen -- und der Merker MIT in die
-    Bedingung, sonst bliebe ein geradeaus fliegendes Flugzeug blau.
-    """
+def _eigen_zweige():
+    """Der Rumpf von `_eigenesFlugzeugZeichnen`, getrennt in den Online- und den
+    Offline-Teil. Die Grenze ist der Kommentar, der den zweiten einleitet."""
     block = INDEX[INDEX.index("function _eigenesFlugzeugZeichnen("):]
     block = block[:block.index("\n}\n")]
-    assert "makeAircraftIcon(hdg, false, true)" in block
-    assert "_fsGenau !== true" in block
-    # Kein Aufruf mehr ohne die Farbangabe -- jeder davon zeichnete blau.
-    assert "makeAircraftIcon(hdg)" not in block
+    grenze = "// Offline (oder noch nicht im VATSIM-Strom): eigener Marker."
+    assert grenze in block, "Grenze zwischen den beiden Zweigen nicht gefunden"
+    i = block.index(grenze)
+    return block[:i], block[i:]
+
+
+def test_online_ist_das_eigene_flugzeug_tuerkis():
+    """Beide Hälften der Farbaussage treffen zu: Der Punkt kommt aus dem Simulator, und dass
+    dieser Marker überhaupt existiert, heißt, dass VATSIM den Piloten kennt.
+
+    `_punktIstSekundengenau` allein genügt hier nicht: `updateMap` legt den Marker an, bevor
+    der Simulator sich meldet, und rührt ihn danach nicht mehr an (`!demSim`). Die Farbe muss
+    also aus `_eigenesFlugzeugZeichnen` kommen — und der Merker MIT in die Bedingung, sonst
+    bliebe ein geradeaus fliegendes Flugzeug blau.
+    """
+    online, _ = _eigen_zweige()
+    assert "makeAircraftIcon(hdg, false, true)" in online
+    assert "_fsGenau !== true" in online
+
+
+def test_offline_bleibt_das_eigene_flugzeug_blau():
+    """Der eine Fall, in dem die beiden Hälften auseinanderfallen (Nutzer-Wahl 15.09.2026).
+
+    Türkis sagt „sekundengenau" UND „es steht fest, wer das ist". Ohne VATSIM gibt es keinen
+    Eintrag in `liveData`, kein Rufzeichen, keine Identität — das Symbol heißt wörtlich „DEIN
+    FLUGZEUG" und sonst nichts. Ein türkiser Punkt neben türkisen Nachbarn behauptete eine
+    Zuordnung, die es nicht gibt.
+    """
+    _, offline = _eigen_zweige()
+    assert "makeAircraftIcon(hdg)" in offline
+    assert "makeAircraftIcon(hdg, false, true)" not in offline
+
+
+def test_offline_greift_die_regel_von_selbst_nicht():
+    """Der dritte Weg in `_punktIstSekundengenau` hängt an `_meinCallsign()`, und das kommt
+    über `_meinLiveEintrag()` aus `liveData`. Wer nicht auf VATSIM steht, steht dort nicht —
+    es braucht also keine zweite Bedingung, die den Offline-Fall ausschließt.
+
+    Gebunden, weil die Kette lang und der Zusammenhang nicht offensichtlich ist: Zöge jemand
+    `_meinCallsign()` auf eine andere Quelle um, fiele das hier auf und nicht erst im Flug.
+    """
+    block = INDEX[INDEX.index("function _meinLiveEintrag("):]
+    block = block[:block.index("\n}")]
+    assert "liveData" in block
+    assert "_meineCid == null" in block
 
 
 def test_der_saum_wechselt_auch_ohne_kursaenderung():
