@@ -7158,6 +7158,9 @@ function _verkehrZeichnen(liste) {
         vorhanden._fsHeading = hdg;
         vorhanden._fsZugeordnet = zugeordnet;
       }
+      // Das Muster fuer den Sekundentakt merken: Dort steht nur das Rufzeichen zur
+      // Verfuegung, und ein Schild, das im Takt sein Muster verliert, flackert.
+      vorhanden._fsMuster = String(e.ac || e.aircraft || '').trim();
       if (vorhanden._fsLabel !== beschriftung) {
         vorhanden.setTooltipContent(beschriftung);
         vorhanden._fsLabel = beschriftung;
@@ -10869,15 +10872,19 @@ function _brueggeFrisch(callsign) {
  * ⚠ IM KNIEBRETT NICHT. Dort traegt das Sim-Matching, das den direkten Weg zum Simulator
  * hat -- dieselbe Entscheidung wie beim Bruegge-Strom (15.09.2026).
  */
-// cs -> Empfangszeit der letzten Kniebrett-Meldung. Dieselbe Rolle wie `_brueggeWerte` bei
-// den Friesen: Sie beantwortet "wird dieses Flugzeug gerade sekundengenau gemeldet?" -- und
-// daran haengt zweierlei, die Sperre gegen das Ueberschreiben und der tuerkise Saum.
+// cs -> { alt, gs, ts } der letzten Kniebrett-Meldung. Dieselbe Rolle wie `_brueggeWerte`
+// bei den Friesen -- und aus demselben Grund AUCH die Werte und nicht nur die Zeit: Am
+// Schild stehen Hoehe und Fahrt, und die kaemen sonst weiter aus dem 15-Sekunden-Abruf.
+//
+// ⚠ Das war der dritte Fall desselben Fehlers an einem Abend (15.09.2026): erst die Position
+// sekundengenau machen und die Zahlen daneben vergessen. Der Nutzer sah es sofort -- "auf dem
+// Tablet laufend Aenderungen an speed und MSL, auf der Website nicht".
 const _kniebrettFremdWerte = Object.create(null);
 
 /** Wird dieses fremde Flugzeug gerade sekundengenau gemeldet? */
 function _kniebrettFremdFrisch(cs) {
-  const t = _kniebrettFremdWerte[cs];
-  return !!(t && (Date.now() - t) < _BRUEGGE_FRIST_MS);
+  const e = _kniebrettFremdWerte[cs];
+  return !!(e && (Date.now() - e.ts) < _BRUEGGE_FRIST_MS);
 }
 
 function _kniebrettFremdEinarbeiten(liste) {
@@ -10890,7 +10897,11 @@ function _kniebrettFremdEinarbeiten(liste) {
     if (!_verkehrMarker[e.cs]) continue;
     _verkehrRoh[e.cs] = { lat: Number(e.lat), lon: Number(e.lon),
                           hdg: Number(e.hdg) || 0, gs: Number(e.gs) || 0, ts: jetzt };
-    _kniebrettFremdWerte[e.cs] = jetzt;
+    _kniebrettFremdWerte[e.cs] = {
+      alt: (e.alt == null) ? null : Number(e.alt),
+      gs:  (e.gs  == null) ? null : Number(e.gs),
+      ts: jetzt
+    };
   }
 }
 
@@ -12483,6 +12494,43 @@ function _naviTakt(sofort) {
     if (!roh) continue;
     const p = _jetztGerechnet(roh);
     _verkehrMarker[cs].setLatLng([p.lat, p.lon]);
+
+    // ⭐ Und die BESCHRIFTUNG mitziehen, solange ein Kniebrett dieses Flugzeug meldet.
+    //
+    // ⚠ Ohne das bewegt sich das Symbol sekundengenau, waehrend Hoehe und Fahrt daneben am
+    // 15-Sekunden-Abruf haengen -- derselbe Widerspruch wie bei den Friesen, nur eine Ebene
+    // weiter. Nur bei echter Aenderung: `setTooltipContent` tauscht das DOM-Element.
+    const kb = _kniebrettFremdWerte[cs];
+    if (kb && (Date.now() - kb.ts) < _BRUEGGE_FRIST_MS) {
+      const m = _verkehrMarker[cs];
+
+      // ⚠ WER BEWEGT, MUSS AUCH DREHEN. Der Takt setzte bisher nur die Position -- das
+      // Symbol behielt die Richtung, die es beim letzten 15-Sekunden-Abruf hatte, und flog
+      // sichtbar seitwaerts (Nutzer, 16.09.2026: "die Flugzeuge bewegen sich teilweise
+      // seitlich").
+      //
+      // Genau derselbe Fehler stand schon einmal bei den FRIESEN (23.08.2026, "dreht nicht
+      // in die Richtung in die es fliegt") und ist dort in dieser Schleife eine Ebene
+      // hoeher behoben. Fuer den Fremdverkehr fehlte er, weil dessen Kurs bis heute nur
+      // alle 15 Sekunden kam -- da faellt ein schraeges Symbol nicht auf.
+      const kurs = Math.round(Number(roh.hdg) || 0);
+      const tuerkis = true;   // wir sind im Zweig "wird gerade gemeldet"
+      if (m._fsHeading !== kurs || m._fsZugeordnet !== tuerkis) {
+        m.setIcon(makeAircraftIcon(kurs, true, tuerkis));
+        m._fsHeading = kurs;
+        m._fsZugeordnet = tuerkis;
+      }
+
+      const beschriftung = _verkehrLabel({
+        cs: cs, ac: m._fsMuster || '',
+        alt: (kb.alt != null) ? kb.alt : 0,
+        gs:  (kb.gs  != null) ? kb.gs  : roh.gs
+      });
+      if (m._fsLabel !== beschriftung) {
+        m.setTooltipContent(beschriftung);
+        m._fsLabel = beschriftung;
+      }
+    }
   }
 
   // 3. Das eigene Flugzeug aus der Sim-Position -- die einzige Stelle, die es setzt.

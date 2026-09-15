@@ -1370,3 +1370,47 @@ class TestRangfolgeNachVollstaendigkeit:
         r = _melden(env, [e])
         assert r.json()["uebernommen"] == 1
         assert env.poller.kniebrett_meldet_fuer(MELDER) is True
+
+    def test_hoehe_und_fahrt_des_fremdverkehrs_kommen_aus_der_meldung(self):
+        """⚠ DERSELBE FEHLER ZUM DRITTEN MAL an einem Abend: Position sekundengenau gemacht,
+        die Zahlen daneben vergessen. Der Nutzer sah es sofort — „auf dem Tablet laufend
+        Änderungen an speed und MSL, auf der Website nicht".
+
+        Der Server schickte `alt` längst mit; der Client hat es weggeworfen und das Schild
+        weiter aus dem 15-Sekunden-Abruf gebaut."""
+        stelle = _INDEX.index("_kniebrettFremdWerte[e.cs] = {")
+        block = _INDEX[stelle:stelle + 220]
+        assert "alt:" in block and "gs:" in block and "ts: jetzt" in block
+
+    def test_und_der_sekundentakt_zieht_die_beschriftung_nach(self):
+        # ⚠ Am _naviTakt verankern: `for (const cs in _verkehrMarker)` gibt es zweimal,
+        # das erste Vorkommen steht in `_verkehrLeeren` und enthält nichts davon.
+        stelle = _INDEX.index("for (const cs in _verkehrMarker) {",
+                              _INDEX.index("function _naviTakt("))
+        block = _INDEX[stelle:_INDEX.index("\n  }", stelle)]
+        assert "_kniebrettFremdWerte[cs]" in block
+        assert "setTooltipContent(beschriftung)" in block
+        assert "_fsLabel !== beschriftung" in block      # nur bei echter Änderung
+
+    def test_das_muster_ueberlebt_den_takt(self):
+        """Im Sekundentakt steht nur das Rufzeichen zur Verfügung — ohne gemerktes Muster
+        verlöre das Schild es bei jedem Durchgang und flackerte."""
+        assert "_fsMuster = String(e.ac || e.aircraft || '').trim();" in _INDEX
+        # ⚠ Am _naviTakt verankern: `for (const cs in _verkehrMarker)` gibt es zweimal,
+        # das erste Vorkommen steht in `_verkehrLeeren` und enthält nichts davon.
+        stelle = _INDEX.index("for (const cs in _verkehrMarker) {",
+                              _INDEX.index("function _naviTakt("))
+        assert "m._fsMuster" in _INDEX[stelle:_INDEX.index("\n  }", stelle)]
+
+    def test_wer_bewegt_muss_auch_drehen(self):
+        """Der Takt setzte nur die Position — das Symbol behielt die Richtung vom letzten
+        15-Sekunden-Abruf und flog sichtbar seitwärts. Bei den Friesen ist derselbe Fehler
+        seit dem 23.08.2026 behoben; für Fremdverkehr fehlte er, weil dessen Kurs bis heute
+        ohnehin nur alle 15 Sekunden kam."""
+        # ⚠ Am _naviTakt verankern: `for (const cs in _verkehrMarker)` gibt es zweimal,
+        # das erste Vorkommen steht in `_verkehrLeeren` und enthält nichts davon.
+        stelle = _INDEX.index("for (const cs in _verkehrMarker) {",
+                              _INDEX.index("function _naviTakt("))
+        block = _INDEX[stelle:_INDEX.index("\n  }", stelle)]
+        assert "setIcon(makeAircraftIcon(kurs, true" in block
+        assert "_fsHeading !== kurs" in block      # nur bei echter Änderung
