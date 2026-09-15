@@ -6,6 +6,39 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-15 (spät) — Die Rangfolge ist gedreht (Punkt 6, Server-Sitzung)
+
+`QUELLE_KNIEBRETT_VOLL = 3` steht jetzt über der Brügge — **aber nur für Meldungen, die
+`agl` UND `gnd` tragen**:
+
+| Quelle | Rang |
+|---|---|
+| eigenes Kniebrett mit `agl` + `gnd` (Paket ab 2.3.0) | **3** |
+| FriesenBrügge | 2 |
+| eigenes Kniebrett ohne diese Werte | 2 |
+| fremdes Kniebrett | 1 |
+
+**Entschieden wird an der MELDUNG, nicht an einer Versionsnummer.** Wer ein älteres Paket
+fliegt, behält die Brügge als bessere Quelle, ohne dass jemand eine Liste pflegen müsste.
+
+⚠ **Drei Stellen, ohne die die Regel wirkungslos geblieben wäre** — und keine davon hätte
+ein Test gefunden:
+
+1. **`app/static/index.html` verwarf die drei Werte** (der Abschnitt darunter). Die Kette
+   war unterbrochen; der Server hätte nur Meldungen ohne `agl` gesehen.
+2. **`bruegge_position_merken` schrieb bedingungslos.** Sie hätte den besseren Eintrag eine
+   Sekunde später überbügelt — beide hätten sich im Sekundentakt abgewechselt.
+3. **Der alte Brügge-Vorrang fragte nur „hält sie den Eintrag?"**, nicht „ist sie auch
+   besser?". Er hätte die neue Stufe weiterhin ausgesperrt.
+
+`null` wird als `null` durchgereicht und nicht zu `0`/`false`: Am Boden **ist** agl null,
+und das ist etwas anderes als „das Paket weiß es nicht". An dieser Unterscheidung hängt die
+ganze Regel.
+
+**Damit ist die Sieben-Punkte-Liste abgearbeitet** (1–4 und 6 Server, 5 und 7 lokal).
+
+---
+
 ## 2026-09-15 (abends) — Die vierte Stufe steht: `fremd` (Server-Sitzung)
 
 `KNIEBRETT_MODI` ist jetzt `(aus, eigene, alle, fremd)`. Berührt: `app/database.py`,
@@ -42,7 +75,15 @@ dadurch als binär (`file` sagte „data"), `grep` schwieg ohne `-a`.
 
 ---
 
-## 2026-09-15 (abends) — Kniebrett 2.3.0 sendet drei Werte, die niemand liest
+## 2026-09-15 (abends) — Kniebrett 2.3.0 sendet drei Werte ✅ ERLEDIGT
+
+> **✅ Nachtrag derselben Nacht:** Die vier Zeilen sind drin (`f9f5e37`), und die Rangfolge
+> ist gedreht. Der Abschnitt bleibt stehen, weil die Begründung darunter weiter gilt — nur
+> der Titel stimmte nach zwei Stunden nicht mehr. **Er hat sich fast gerächt:** Beim Bauen
+> der neuen Rangfolge wäre die Kette genau hier unterbrochen geblieben, ohne dass ein Test
+> es gemerkt hätte — der Server hätte nur Meldungen ohne `agl` gesehen und brav den alten
+> Rang vergeben. Gefunden durch Nachsehen, nicht durch die Suite.
+
 
 **Für die Server-Sitzung: vier Zeilen fehlen in `app/static/index.html`.** Eine lokale
 Windows-Sitzung hat den Auftrag aus `docs/uebergabe-msfs-build.md` umgesetzt, Punkt 3
