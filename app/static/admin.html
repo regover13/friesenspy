@@ -1474,6 +1474,91 @@
         </div>
 
         <div class="panel">
+          <div class="panel-title"><span>📋 Kniebrett meldet Positionen</span></div>
+          <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
+            Das MSFS-Kniebrett führt Sim-Verkehr und VATSIM-Verkehr zusammen und kennt dadurch
+            die Position <b>aller Friesen in seiner Reichweite</b> auf die Sekunde genau (gemessen
+            bis 92&nbsp;km). Meldet es sie zurück, erscheinen diese Piloten für alle anderen in
+            Echtzeit auf der Karte — auch die, die selbst nichts installiert haben.
+            <b>Genau deshalb ist der Schalter hier.</b>
+          </p>
+
+          <div style="margin-bottom:14px;">
+            <div style="font-size:0.85rem;color:#cfe0f2;margin-bottom:6px;">Was darf gemeldet werden?</div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+              <button class="btn btn-sm kb-modus" data-modus="aus">aus</button>
+              <button class="btn btn-sm kb-modus" data-modus="eigene">nur eigene Position</button>
+              <button class="btn btn-sm kb-modus" data-modus="alle">alle erkannten Friesen</button>
+              <span id="kb-modus-wert" class="mono" style="color:#8aa0b8;font-size:0.78rem;">…</span>
+            </div>
+            <p style="color:#6b7d8f;font-size:0.78rem;margin:8px 0 0;">
+              Wirkt binnen zehn Sekunden für alle, ohne Deploy und ohne dass jemand etwas neu
+              installiert — das Kniebrett fragt ohnehin ständig, und über die Antwort kommt die
+              Abschaltung an. Auf <i>aus</i> fragt es nur noch alle 15 Minuten.
+            </p>
+          </div>
+
+          <div style="margin-bottom:14px;">
+            <label style="font-size:0.85rem;color:#cfe0f2;">
+              Takt: <b id="kb-takt-wert">1</b> s
+            </label>
+            <input type="range" id="kb-takt" min="1" max="5" value="1"
+                   style="width:100%;margin:6px 0;">
+            <div style="display:flex;gap:8px;align-items:center;">
+              <button class="btn btn-sm" id="kb-takt-speichern">Takt setzen</button>
+              <span style="color:#8aa0b8;font-size:0.78rem;">
+                Drossel bei Last — die Karte wird dadurch gröber, nicht falsch. Weiter als
+                5&nbsp;s geht bewusst nicht: Ab dort beginnt der Punkt zu blinken, weil er
+                schneller verfällt, als die nächste Meldung kommt. Wer mehr will, schaltet aus.
+              </span>
+            </div>
+          </div>
+
+          <div style="border-top:1px solid #22303f;padding-top:12px;margin-bottom:14px;">
+            <div style="font-size:0.85rem;color:#cfe0f2;margin-bottom:8px;">
+              Einzelne Piloten begrenzen
+            </div>
+            <p style="color:#6b7d8f;font-size:0.78rem;margin:0 0 8px;">
+              Für den Fall, dass es bei <i>einem</i> klemmt. Der globale Schalter oben bleibt
+              dabei die Obergrenze: Steht er auf <i>nur eigene</i>, meldet auch ein Pilot mit
+              <i>alle</i> nur sich selbst. Kein Eintrag heißt „folgt dem globalen Wert“.
+            </p>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;">
+              <select id="kb-pilot" style="min-width:230px;padding:6px;"></select>
+              <select id="kb-pilot-modus" style="padding:6px;">
+                <option value="aus">aus</option>
+                <option value="eigene">nur eigene Position</option>
+                <option value="alle">alle erkannten Friesen</option>
+              </select>
+              <button class="btn btn-sm" id="kb-pilot-setzen">setzen</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Pilot</th><th>darf</th><th></th></tr></thead>
+                <tbody id="kb-piloten"><tr><td colspan="3" class="empty-hint">Lädt …</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div style="border-top:1px solid #22303f;padding-top:12px;">
+            <div style="font-size:0.85rem;color:#cfe0f2;margin-bottom:8px;">
+              Wer versorgt gerade wen?
+            </div>
+            <p style="color:#6b7d8f;font-size:0.78rem;margin:0 0 8px;">
+              Die Frage, die man sonst nirgends beantwortet bekommt: Auf der Karte sieht man den
+              Punkt, nicht seine Quelle. Steht hier nichts, läuft die Karte auf VATSIM — das ist
+              kein Fehler, sondern der Normalzustand ohne offenes Kniebrett.
+            </p>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>gezeigt wird</th><th>Quelle</th><th>gemeldet von</th><th>Alter</th></tr></thead>
+                <tbody id="kb-live"><tr><td colspan="4" class="empty-hint">Lädt …</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
           <div class="panel-title"><span>🌉 FriesenBrügge</span></div>
           <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
             Die FriesenBrügge meldet die Position aus dem Simulator und stellt hin, was hier
@@ -2181,6 +2266,150 @@
       // #77-Erweiterung: Autocomplete an den (dynamisch gerenderten) Bearbeiten-Strecken-Feldern.
       c.querySelectorAll('input[id^="edit-route-"]').forEach(inp => wireIcaoPicker(inp));
     }
+
+    // ------------------------------------------------- Kniebrett meldet Positionen (#23)
+    //
+    // Bedient zwei Ebenen desselben Schalters: global und je Pilot. Die globale ist ein
+    // DECKEL -- das steht im Fliesstext und wird serverseitig durchgesetzt
+    // (`_kniebrett_modus_fuer`), nicht hier.
+    let _kbPiloten = [];
+    let _kbStand = { modus: 'aus', takt_s: 1, piloten: [], live: [] };
+
+    function kbName(cid) {
+      const p = (_kbPiloten || []).find(function (x) { return String(x.cid) === String(cid); });
+      if (!p) return String(cid);
+      const rufe = (p.callsigns || []).join(', ');
+      return [rufe || null, p.name || null].filter(Boolean).join(' · ') || String(cid);
+    }
+
+    const _KB_MODUS_TEXT = { aus: 'aus', eigene: 'nur eigene Position',
+                             alle: 'alle erkannten Friesen' };
+
+    async function kbLaden() {
+      try {
+        const r = await fetch('/api/admin/kniebrett', { credentials: 'same-origin' });
+        if (!r.ok) return;
+        _kbStand = await r.json();
+
+        document.querySelectorAll('.kb-modus').forEach(function (b) {
+          const an = (b.dataset.modus === _kbStand.modus);
+          // Der gewaehlte Zustand muss auf einen Blick erkennbar sein: Drei Knoepfe, von
+          // denen einer gilt, sind sonst drei Angebote.
+          b.style.outline = an ? '2px solid #2d9cdb' : '';
+          b.style.opacity = an ? '1' : '.65';
+        });
+        const mw = document.getElementById('kb-modus-wert');
+        if (mw) {
+          mw.textContent = (_kbStand.modus === 'aus')
+            ? 'niemand meldet'
+            : (_KB_MODUS_TEXT[_kbStand.modus] || _kbStand.modus);
+        }
+
+        const takt = document.getElementById('kb-takt');
+        // Die Obergrenze kommt vom Server: Sie haengt an der Verfallsfrist, nicht am
+        // Geschmack -- und sie steht dort, wo sie geprueft wird.
+        if (takt && _kbStand.takt_max_s) takt.max = _kbStand.takt_max_s;
+        if (takt && _kbStand.takt_s <= (_kbStand.takt_max_s || 5)) takt.value = _kbStand.takt_s;
+        const tw = document.getElementById('kb-takt-wert');
+        if (tw) tw.textContent = _kbStand.takt_s;
+
+        const pb = document.getElementById('kb-piloten');
+        if (pb) {
+          pb.innerHTML = (_kbStand.piloten && _kbStand.piloten.length)
+            ? _kbStand.piloten.map(function (p) {
+                return '<tr><td>' + kbName(p.cid) + '</td><td>' +
+                       (_KB_MODUS_TEXT[p.modus] || p.modus) +
+                       '</td><td><button class="btn btn-sm kb-weg" data-cid="' + p.cid +
+                       '">zurücknehmen</button></td></tr>';
+              }).join('')
+            // Kein Eintrag ist KEIN Zustand, sondern die Abwesenheit einer Ausnahme --
+            // deshalb steht hier nicht "alle dürfen alles".
+            : '<tr><td colspan="3" class="empty-hint">Keine Ausnahme — es gilt überall der ' +
+              'Wert oben.</td></tr>';
+          pb.querySelectorAll('.kb-weg').forEach(function (b) {
+            b.addEventListener('click', async function () {
+              await kbPilotSetzen(b.dataset.cid, '');
+            });
+          });
+        }
+
+        const lb = document.getElementById('kb-live');
+        if (lb) {
+          lb.innerHTML = (_kbStand.live && _kbStand.live.length)
+            ? _kbStand.live.map(function (z) {
+                const quelle = z.quelle === 'bruegge' ? 'FriesenBrügge'
+                             : z.quelle === 'selbst' ? 'eigenes Kniebrett'
+                             : 'fremdes Kniebrett';
+                return '<tr><td>' + kbName(z.cid) + '</td><td>' + quelle + '</td><td>' +
+                       (z.melder == null ? '—' : kbName(z.melder)) +
+                       '</td><td class="mono">' + z.alter_s + ' s</td></tr>';
+              }).join('')
+            : '<tr><td colspan="4" class="empty-hint">Niemand wird gerade sekundengenau ' +
+              'gezeigt.</td></tr>';
+        }
+      } catch (e) { /* der Admin bleibt bedienbar, auch wenn niemand meldet */ }
+    }
+
+    async function kbPilotSetzen(cid, modus) {
+      await fetch('/api/admin/kniebrett/pilot', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cid: parseInt(cid, 10), modus: modus }),
+      });
+      kbLaden();
+    }
+
+    (function kbBinden() {
+      document.querySelectorAll('.kb-modus').forEach(function (b) {
+        b.addEventListener('click', async function () {
+          await fetch('/api/admin/kniebrett/modus', {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ modus: b.dataset.modus }),
+          });
+          kbLaden();
+        });
+      });
+
+      const takt = document.getElementById('kb-takt');
+      const tw = document.getElementById('kb-takt-wert');
+      if (takt && tw) takt.addEventListener('input', function () { tw.textContent = takt.value; });
+      const sp = document.getElementById('kb-takt-speichern');
+      if (sp) sp.addEventListener('click', async function () {
+        await fetch('/api/admin/kniebrett/takt', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ takt_s: parseInt(takt.value, 10) }),
+        });
+        kbLaden();
+      });
+
+      const setzen = document.getElementById('kb-pilot-setzen');
+      if (setzen) setzen.addEventListener('click', function () {
+        const cid = document.getElementById('kb-pilot').value;
+        if (!cid) return;
+        kbPilotSetzen(cid, document.getElementById('kb-pilot-modus').value);
+      });
+
+      // Die Pilotenliste holt dieses Panel selbst statt `_bgPiloten` mitzubenutzen: Die
+      // Brügge-Schliessung laedt sie in ihrer eigenen Reihenfolge, und eine Abhaengigkeit
+      // davon waere ein leeres Auswahlfeld, sobald dort jemand etwas umstellt.
+      (async function () {
+        try {
+          const r = await fetch('/api/admin/pilots', { credentials: 'same-origin' });
+          if (r.ok) _kbPiloten = await r.json();
+        } catch (e) { /* dann bleibt die Auswahl leer, der Rest funktioniert */ }
+        const sel = document.getElementById('kb-pilot');
+        if (sel) {
+          sel.innerHTML = '<option value="">Pilot wählen …</option>' +
+            (_kbPiloten || []).map(function (p) {
+              return '<option value="' + p.cid + '">' + kbName(p.cid) + '</option>';
+            }).join('');
+        }
+        kbLaden();
+      })();
+      setInterval(kbLaden, 10000);
+    })();
 
     // ---------------------------------------------------------------- Brügge
     async function bgLaden() {

@@ -120,6 +120,10 @@ from app.database import (
     katalog_zusammenfassung,
     bruegge_soll_loeschen,
     bruegge_soll_alle,
+    KNIEBRETT_MODI,
+    kniebrett_rang,
+    kniebrett_modi_alle,
+    kniebrett_modus_setzen,
     get_panel_prefs,
     set_panel_prefs,
     revoke_panel_device,
@@ -863,6 +867,290 @@ async def panel_diag(request: Request):
     finally:
         conn.close()
     return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------------------
+# Das Kniebrett meldet SEIN GEBIET (GitHub-Issue #23)
+# ---------------------------------------------------------------------------------------
+#
+# Der Unterschied zur Bruegge in einem Satz: Sie meldet EINEN Piloten (sich selbst) und der
+# Server raet aus der Position, wer das ist. Das Kniebrett meldet ALLE in Reichweite -- und
+# bringt die Identitaet mit.
+#
+# Es kann das, weil es beides schon hat: `_verkehrZusammenfuehren` (index.html) fuehrt den
+# Sim-Verkehr mit dem VATSIM-Verkehr zusammen, und nach diesem Durchlauf liegt fuer jedes
+# erkannte Flugzeug die sekundengenaue Position aus dem Simulator UND das Rufzeichen aus
+# VATSIM vor. Gemessen am 14.09.2026 (`panel_diag`, kind='zuordnung'): Friesen in Reichweite
+# wurden 5 von 5 erkannt, weiteste Entfernung 92 km.
+#
+# ⚠ EIN IRRWEG, DER HIER NICHT WIEDERHOLT WERDEN SOLL: Die ROHDATEN von GET_AIR_TRAFFIC
+# tragen kein Rufzeichen (`cs: ''`), kein Muster (`ac: ''`) und melden durchgehend `gs: 0`,
+# gelegentlich `alt: 100000`. Wer nur die ansieht, haelt das Vorhaben fuer unmoeglich. Die
+# Identitaet entsteht erst im Matching.
+#
+# ⚠ WARUM EIN EIGENER ENDPUNKT UND NICHT `/api/bruegge/melden`: `bruegge_belegte_cids`
+# sperrt eine cid fuer 10 s, sobald eine Bruegge sie meldet. Diese Sperre ist gegen
+# VERWECHSELTE Identitaeten gebaut -- zwei Bruggen, die sich um denselben Piloten streiten --
+# und NICHT gegen mehrere Quellen fuer dieselbe, richtig erkannte cid. Hier durchzumelden
+# hiesse, sie dafuer aufzuweichen und damit den Schutz zu verlieren, der gerade erst
+# eingezogen wurde. Nebenan gebaut bleibt sie unangetastet und gilt weiter nur zwischen
+# Bruggen.
+
+_KNIEBRETT_MAX_BYTES = 64 * 1024
+#: Mehr Flugzeuge nimmt eine Meldung nicht. 92 km Reichweite sind gemessen, zwanzig
+#: Flugzeuge darin waeren ein voller FriesenFlieger-Freitag. Die Grenze schuetzt den
+#: Sekundentakt gegen einen Client, der seine ganze Verkehrsliste hineinschreibt -- und
+#: sie kappt, statt abzuweisen: Ein zu langes Paket ist kein Grund, auch den gueltigen
+#: Anfang wegzuwerfen.
+_KNIEBRETT_MAX_FLUGZEUGE = 40
+_KNIEBRETT_TAKT_VORGABE_S = 1
+#: "Aus" ist ein langer Takt, keine 0 -- dieselbe Ueberlegung wie bei `_bruegge_takt`: Ein
+#: Kniebrett, das gar keine Antwort mehr bekaeme, koennte Abschaltung nicht von Netzausfall
+#: unterscheiden. Und die Abschaltung ZURUECKZUNEHMEN braucht denselben Weg: Fragt niemand
+#: mehr, erfaehrt auch niemand, dass es wieder erlaubt ist.
+_KNIEBRETT_TAKT_AUS_S = 900
+#: So lange gilt eine gelesene Einstellung. Der Preis: Die Abschaltung wirkt bis zu zehn
+#: Sekunden spaeter. Der Gegenwert: Der Meldeweg fasst die Datenbank ueberhaupt nicht an --
+#: bei fuenf Kniebrettern im Sekundentakt waeren es sonst fuenf Abfragen je Sekunde fuer
+#: drei Zeilen, die sich fast nie aendern.
+_KNIEBRETT_EINSTELLUNG_TTL_S = 10.0
+#: Der Takt darf NICHT über die Verfallsfrist hinaus (`bruegge.MELDUNG_FRIST_S` = 10 s).
+#:
+#: ⚠ Das ist keine Vorsicht, sondern eine Rechnung: Bei einem Takt von 15 s lebte jeder Punkt
+#: 10 s aus dem Kniebrett und fiele 5 s auf VATSIM zurück -- auf der Karte ein sichtbarer
+#: Sprung, alle 15 Sekunden, dauerhaft. Eine Drossel soll die Anzeige gröber machen, nicht
+#: blinken lassen. Wer weiter drosseln will, schaltet ab; dazwischen gibt es nichts
+#: Sinnvolles.
+_KNIEBRETT_TAKT_MAX_S = 5
+#: Wie viel schneller als sein VATSIM-Stand darf ein gemeldetes Flugzeug höchstens sein,
+#: BEVOR die Schranke wächst?
+#:
+#: ⭐ **Hier liegt der Unterschied zur Brügge, und er ist grundsätzlich.** `schranke_m` rechnet
+#: mit der Geschwindigkeit AUS DER MELDUNG -- bei der Brügge richtig, denn sie meldet sich
+#: selbst und hätte nichts davon, sich das eigene Toleranzfenster aufzublasen. Hier meldet ein
+#: Client über DRITTE: Er bestimmte damit selbst, wie weit er einen fremden Piloten von dessen
+#: VATSIM-Stand wegschieben darf. Mit `gs: 1000, vs: 99999` wären das gemessen 33 km und
+#: 40.000 ft -- und weil der erste Fremdmelder den Zuschlag behält, bliebe der Punkt dort.
+#:
+#: Deshalb gilt hier der VATSIM-Wert als Grundlage und die Meldung nur als Zuschlag: 60 kt
+#: Beschleunigung in 29 Sekunden schafft kein Flugzeug dieser Gruppe, und 4000 ft/min ist
+#: mehr, als eine C172 je gesehen hat.
+_KNIEBRETT_GS_RESERVE_KT = 60.0
+_KNIEBRETT_VS_MAX_FT_MIN = 4000.0
+
+_kniebrett_cache: dict = {"ts": 0.0, "modus": "aus", "takt": _KNIEBRETT_TAKT_VORGABE_S,
+                          "piloten": {}}
+
+
+def _reset_kniebrett_cache() -> None:
+    """Den Einstellungs-Cache leeren (Tests, und nach jedem Admin-Schreibvorgang)."""
+    _kniebrett_cache["ts"] = 0.0
+
+
+def _kniebrett_einstellungen(settings) -> tuple[str, int, dict]:
+    """``(globaler Modus, Takt in s, {cid: Modus})`` -- hoechstens alle 10 s frisch gelesen."""
+    jetzt = time.monotonic()
+    if jetzt - float(_kniebrett_cache["ts"]) <= _KNIEBRETT_EINSTELLUNG_TTL_S:
+        return (_kniebrett_cache["modus"], _kniebrett_cache["takt"],
+                _kniebrett_cache["piloten"])
+    conn = get_connection(settings.DB_PATH)
+    try:
+        modus = str(get_app_setting(conn, "kniebrett_melden_modus", "aus"))
+        if modus not in KNIEBRETT_MODI:
+            modus = "aus"
+        try:
+            takt = int(get_app_setting(conn, "kniebrett_takt_s",
+                                       str(_KNIEBRETT_TAKT_VORGABE_S)))
+        except (TypeError, ValueError):
+            takt = _KNIEBRETT_TAKT_VORGABE_S
+        takt = max(1, min(_KNIEBRETT_TAKT_MAX_S, takt))
+        piloten = kniebrett_modi_alle(conn)
+    finally:
+        conn.close()
+    _kniebrett_cache.update({"ts": jetzt, "modus": modus, "takt": takt, "piloten": piloten})
+    return modus, takt, piloten
+
+
+def _kniebrett_modus_fuer(cid: int, settings) -> tuple[str, int]:
+    """Was darf DIESES Kniebrett -- und wann soll es wieder fragen?
+
+    Der globale Wert ist ein DECKEL, kein Vorschlag: gilt das Minimum aus beiden Raengen.
+    Sonst koennte ein einzelner Pilot-Eintrag die Notbremse aushebeln, die fuer den Fall da
+    ist, dass es im Betrieb klemmt.
+    """
+    modus, takt, piloten = _kniebrett_einstellungen(settings)
+    je_pilot = piloten.get(int(cid))
+    if je_pilot is not None:
+        modus = KNIEBRETT_MODI[min(kniebrett_rang(modus), kniebrett_rang(je_pilot))]
+    return modus, (_KNIEBRETT_TAKT_AUS_S if modus == "aus" else takt)
+
+
+def _kniebrett_antwort(modus: str, takt: int, uebernommen: int = 0,
+                       verworfen: int = 0) -> dict:
+    """Die Antwort ans Kniebrett -- und zugleich der Weg, auf dem die Abschaltung ankommt.
+
+    Es fragt ohnehin jede Sekunde; ein zweiter Kanal (Push, SSE, ein Feld in /api/me) waere
+    eine weitere Stelle, an der etwas ausfallen kann, fuer eine Auskunft, die hier sowieso
+    vorbeikommt.
+    """
+    return {"protokoll": 1, "modus": modus, "naechste_frage_in_s": takt,
+            "uebernommen": uebernommen, "verworfen": verworfen}
+
+
+def _kniebrett_kandidaten(request) -> dict:
+    """``{CALLSIGN: Kandidat}`` aus dem Poller-Speicher -- ohne Datenbank.
+
+    ⭐ **Hier wird die Datenbank bewusst NICHT gefragt.** Der Poller hatte diese Zeilen im
+    letzten Poll-Zyklus ohnehin in der Hand (`friesen_snapshot`); sie im Sekundentakt erneut
+    zu lesen waere eine Abfrage je Meldung und je Kniebrett fuer Daten, die sich alle 15 s
+    aendern.
+
+    Kein Rueckfall auf die Datenbank, wenn der Schnappschuss fehlt: Dann ist entweder der
+    erste Poll noch nicht durch (hoechstens 15 s nach dem Start) oder es laeuft kein Poller
+    (Test). Beides ist kurz bzw. kein Betriebsfall, und ein zweiter Weg waere eine zweite
+    Stelle, an der die Kandidatenliste anders aussehen kann.
+    """
+    poller = getattr(request.app.state, "poller", None)
+    roh = getattr(poller, "friesen_snapshot", None) or []
+    # Die VATSIM-Geschwindigkeit je cid daneben behalten: Sie ist die einzige Zahl in dieser
+    # Prüfung, die der Melder NICHT in der Hand hat (s. _KNIEBRETT_GS_RESERVE_KT).
+    gs_vatsim = {}
+    for f in roh:
+        try:
+            gs_vatsim[int(f["cid"])] = float(f.get("groundspeed") or 0.0)
+        except (KeyError, TypeError, ValueError):
+            continue
+    out = {}
+    for k in bruegge.kandidaten_bilden(roh):
+        if k.callsign:
+            out[k.callsign.upper()] = (k, gs_vatsim.get(int(k.cid), 0.0))
+    return out
+
+
+@app.post("/api/kniebrett/melden", include_in_schema=False)
+async def kniebrett_melden(request: Request):
+    """Das Kniebrett meldet, welche Flugzeuge es erkannt hat.
+
+    **Mit `cs` statt einer Kennung.** Das angemeldete Kniebrett kennt seine eigene cid
+    (ueber die Sitzung, `_current_cid`) und die Rufzeichen der erkannten Flugzeuge (aus
+    seinem Matching). Es muss nichts raten -- anders als die Bruegge, bei der der Server die
+    Zuordnung aus der Position herleitet. Deshalb gibt es hier **kein Positionsmatching**,
+    weder fuer den Melder noch fuer die Gemeldeten.
+
+    **Geprueft wird trotzdem** -- hier meldet ein Client ueber DRITTE, und das ist eine
+    andere Vertrauenslage als bei der Bruegge, die nur sich selbst meldet. Die Schranke aus
+    `app/bruegge.py` (Kinematik gegen den VATSIM-Stand) ist dafuer schon da und kostet
+    nichts: Ohne sie koennte ein angemeldeter Pilot jeden anderen auf der Karte verschieben.
+
+    **Der Ausschalter wirkt hier, nicht im Client.** Ein Kniebrett, das die Abschaltung
+    uebergeht, wird serverseitig verworfen, bevor irgendetwas Teures geschieht.
+
+    ⚠ **KEINE DATENBANK IM MELDEWEG.** Die Meldung geht in den Prozessspeicher des Pollers
+    (`kniebrett_position_merken`), aus dem sich der Sekundenstrom der Live-Karte ohnehin
+    speist. `bruegge_positionen_holen` wird nirgends aufgerufen -- die Zeile in
+    `bruegge_positions` ist reine Admin-Anzeige. Fuenf Kniebretter mit je zehn erkannten
+    Flugzeugen waeren 50 Schreibvorgaenge je Sekunde, groesstenteils redundant, weil mehrere
+    dieselben Flugzeuge sehen.
+    """
+    raw = await request.body()
+    if len(raw) > _KNIEBRETT_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Meldung zu groß")
+    try:
+        body = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise HTTPException(status_code=400, detail="Ungültiges JSON")
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Objekt erwartet")
+
+    settings = get_settings()
+    melder = _current_cid(request, settings)
+    if melder is None:
+        # Ohne Anmeldung gibt es niemanden, in dessen Namen gemeldet wuerde. Kein Fehler,
+        # sondern "aus": Der Sender im Kniebrett soll dann ruhig werden und nicht in eine
+        # Fehlerschleife laufen -- angemeldet ist es im Regelfall laengst.
+        return _kniebrett_antwort("aus", _KNIEBRETT_TAKT_AUS_S)
+
+    modus, takt = _kniebrett_modus_fuer(melder, settings)
+    if modus == "aus":
+        return _kniebrett_antwort("aus", takt)
+
+    flugzeuge = body.get("flugzeuge")
+    if not isinstance(flugzeuge, list):
+        flugzeuge = []
+    verworfen = max(0, len(flugzeuge) - _KNIEBRETT_MAX_FLUGZEUGE)
+    flugzeuge = flugzeuge[:_KNIEBRETT_MAX_FLUGZEUGE]
+
+    kandidaten = _kniebrett_kandidaten(request)
+    poller = getattr(request.app.state, "poller", None)
+    uebernommen = 0
+    for e in flugzeuge:
+        if not isinstance(e, dict):
+            verworfen += 1
+            continue
+        treffer = kandidaten.get(str(e.get("cs") or "").upper())
+        if treffer is None:
+            # Kein Friese auf VATSIM unter diesem Rufzeichen. Auf der Karte gaebe es
+            # nichts, woran der Punkt haengen koennte.
+            verworfen += 1
+            continue
+        kand, gs_vatsim_kt = treffer
+        if modus == "eigene" and int(kand.cid) != int(melder):
+            verworfen += 1
+            continue
+        try:
+            lat = float(e["lat"])
+            lon = float(e["lon"])
+        except (KeyError, TypeError, ValueError):
+            verworfen += 1
+            continue
+        if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
+            verworfen += 1
+            continue
+        # Die gemeldeten Zahlen, in den Bereich geklemmt, in dem sie überhaupt etwas
+        # bedeuten können. Ein Kurs von 99999 ist kein Kurs, und er ginge sonst so in den
+        # Sekundenstrom an alle offenen Karten.
+        gs = max(0.0, _kniebrett_zahl(e.get("gs")))
+        hdg = _kniebrett_zahl(e.get("hdg")) % 360.0
+        # Die Höhe NUR prüfen, wenn sie mitkommt. Ein Panel-Paket vor 1.4.0 schickt keine;
+        # sie als 0 ft zu lesen hieße, jede Meldung aus großer Höhe still zu verwerfen --
+        # ein Fehler, der wie "der Pilot meldet eben nicht" aussähe.
+        hat_alt = e.get("alt") is not None
+        alt = _kniebrett_zahl(e.get("alt")) if hat_alt else kand.alt_ft
+        # ⭐ Die Schranke wächst NICHT mit dem, was der Melder behauptet (s. die Konstanten
+        # oben): Grundlage ist der VATSIM-Stand, die Meldung darf ihn nur um eine Reserve
+        # überbieten. Die Steigrate ist hart gedeckelt; sie ist ohnehin nur dafür da, einem
+        # steigenden Flugzeug die Abweichung von seiner alten VATSIM-Höhe zuzugestehen.
+        gs_schranke = min(max(gs, gs_vatsim_kt), gs_vatsim_kt + _KNIEBRETT_GS_RESERVE_KT)
+        vs_schranke = min(abs(_kniebrett_zahl(e.get("vs"))), _KNIEBRETT_VS_MAX_FT_MIN)
+        if not bruegge.bleibt_plausibel(lat, lon, alt, gs_schranke, kand, vs_schranke):
+            verworfen += 1
+            continue
+        if poller is None:
+            # Ohne Poller ist die Meldung gespeichert-nirgends, aber nicht kaputt -- dieselbe
+            # Rangfolge wie bei der Bruegge: lieber nicht live als ein Fehler.
+            verworfen += 1
+            continue
+        if poller.kniebrett_position_merken(
+                kand.cid,
+                {"lat": lat, "lon": lon, "hdg": hdg, "gs": gs,
+                 "alt": alt if hat_alt else None,
+                 "agl": None if e.get("agl") is None else _kniebrett_zahl(e.get("agl")),
+                 "gnd": bool(e.get("gnd"))},
+                melder):
+            uebernommen += 1
+        else:
+            # Eine bessere oder gleich gute Quelle hat diese cid gerade in der Hand.
+            verworfen += 1
+    return _kniebrett_antwort(modus, takt, uebernommen, verworfen)
+
+
+def _kniebrett_zahl(wert) -> float:
+    """Eine Zahl aus der Meldung, oder 0.0. Ein einzelnes NaN darf nichts umwerfen."""
+    try:
+        f = float(wert)
+    except (TypeError, ValueError):
+        return 0.0
+    return f if f == f and abs(f) != float("inf") else 0.0
 
 
 # ---------------------------------------------------------------------------------------
@@ -1813,6 +2101,120 @@ async def admin_bruegge_takt(request: Request):
     finally:
         conn.close()
     return {"status": "ok", "takt_s": takt}
+
+
+@app.get("/api/admin/kniebrett")
+async def admin_kniebrett(request: Request):
+    """Wer darf melden, wie oft -- und wer versorgt gerade wen? (Admin, GitHub-Issue #23)"""
+    require_admin(request)
+    settings = get_settings()
+    conn = get_connection(settings.DB_PATH)
+    try:
+        modus = str(get_app_setting(conn, "kniebrett_melden_modus", "aus"))
+        if modus not in KNIEBRETT_MODI:
+            modus = "aus"
+        try:
+            takt = int(get_app_setting(conn, "kniebrett_takt_s",
+                                       str(_KNIEBRETT_TAKT_VORGABE_S)))
+        except (TypeError, ValueError):
+            takt = _KNIEBRETT_TAKT_VORGABE_S
+        piloten = [{"cid": cid, "modus": m}
+                   for cid, m in sorted(kniebrett_modi_alle(conn).items())]
+    finally:
+        conn.close()
+    # Wer gerade wen versorgt -- die Frage, die man sonst nirgends beantwortet bekommt: Auf
+    # der Karte sieht man den Punkt, nicht seine Quelle. Aus dem Prozessspeicher, nicht aus
+    # der Datenbank; dort steht davon nichts (s. den Endpunkt).
+    poller = getattr(request.app.state, "poller", None)
+    live = []
+    if poller is not None:
+        jetzt = time.monotonic()
+        for cid, e in getattr(poller, "_bruegge_live", {}).items():
+            live.append({
+                "cid": cid,
+                "melder": e.get("melder"),
+                "quelle": "bruegge" if e.get("melder") is None
+                          else ("selbst" if int(e["melder"]) == int(cid) else "kniebrett"),
+                "alter_s": round(jetzt - e["ts"], 1),
+            })
+    return {"modus": modus, "takt_s": max(1, min(_KNIEBRETT_TAKT_MAX_S, takt)),
+            "takt_max_s": _KNIEBRETT_TAKT_MAX_S, "piloten": piloten,
+            "live": sorted(live, key=lambda x: x["cid"]), "modi": list(KNIEBRETT_MODI)}
+
+
+@app.post("/api/admin/kniebrett/modus")
+async def admin_kniebrett_modus(request: Request):
+    """Den globalen Schalter stellen: aus | eigene | alle.
+
+    Er ist ein DECKEL -- ein Pilot-Eintrag kann ihn nicht ueberschreiten (s.
+    `_kniebrett_modus_fuer`). Deshalb ist er auch die Notbremse, wenn es im Betrieb klemmt:
+    einmal auf `aus`, und binnen zehn Sekunden meldet niemand mehr.
+    """
+    require_admin(request)
+    body = await request.json()
+    modus = str(body.get("modus") or "")
+    if modus not in KNIEBRETT_MODI:
+        raise HTTPException(status_code=400,
+                            detail=f"modus muss einer von {list(KNIEBRETT_MODI)} sein")
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        set_app_setting(conn, "kniebrett_melden_modus", modus)
+        conn.commit()
+    finally:
+        conn.close()
+    _reset_kniebrett_cache()
+    return {"status": "ok", "modus": modus}
+
+
+@app.post("/api/admin/kniebrett/takt")
+async def admin_kniebrett_takt(request: Request):
+    """Die Drossel stellen -- 1 bis 900 Sekunden, wie bei der Bruegge."""
+    require_admin(request)
+    body = await request.json()
+    try:
+        takt = int(body.get("takt_s"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="takt_s fehlt oder ist keine Zahl")
+    if not (1 <= takt <= _KNIEBRETT_TAKT_MAX_S):
+        raise HTTPException(
+            status_code=400,
+            detail=f"takt_s muss zwischen 1 und {_KNIEBRETT_TAKT_MAX_S} liegen "
+                   f"(darüber blinkt der Punkt — wer weiter drosseln will, schaltet ab)")
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        set_app_setting(conn, "kniebrett_takt_s", str(takt))
+        conn.commit()
+    finally:
+        conn.close()
+    _reset_kniebrett_cache()
+    return {"status": "ok", "takt_s": takt}
+
+
+@app.post("/api/admin/kniebrett/pilot")
+async def admin_kniebrett_pilot(request: Request):
+    """Einen einzelnen Piloten begrenzen -- oder die Begrenzung wieder entfernen.
+
+    Ein leerer Modus LOESCHT den Eintrag und ist damit etwas anderes als `alle`: Danach
+    folgt der Pilot wieder dem globalen Wert, auch wenn der spaeter heruntergedreht wird.
+    """
+    require_admin(request)
+    body = await request.json()
+    try:
+        cid = int(body.get("cid"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="cid fehlt oder ist keine Zahl")
+    modus = str(body.get("modus") or "")
+    if modus and modus not in KNIEBRETT_MODI:
+        raise HTTPException(status_code=400,
+                            detail=f"modus muss leer oder einer von {list(KNIEBRETT_MODI)} sein")
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        kniebrett_modus_setzen(conn, cid, modus or None)
+        conn.commit()
+    finally:
+        conn.close()
+    _reset_kniebrett_cache()
+    return {"status": "ok", "cid": cid, "modus": modus}
 
 
 @app.get("/api/admin/panel-diag")

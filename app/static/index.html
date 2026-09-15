@@ -4358,7 +4358,7 @@
         </li>
         <li class="karten-legende-bruegge">
           <span class="aircraft-marker aircraft-marker-bruegge karten-legende-flz"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.25 2.2c0-.5.34-.9.75-.9s.75.4.75.9v6.05h8.4c.45 0 .8.36.8.8v1.1c0 .44-.35.8-.8.8h-8.4v5.3l3.1 1.5c.3.15.5.45.5.8v.95l-4.35-1.1-4.35 1.1v-.95c0-.35.2-.65.5-.8l3.1-1.5v-5.3H2.85c-.45 0-.8-.36-.8-.8v-1.1c0-.44.35-.8.8-.8h8.4z"/></svg></span>
-          <span><strong>Türkis</strong> — ein Friese, dessen <a href="/download" style="color:var(--green);">FriesenBrügge</a> gerade meldet: Position sekundengenau statt bis zu 35 Sekunden alt wie bei VATSIM.</span>
+          <span><strong>Türkis</strong> — die Position kommt sekundengenau aus einem Simulator statt bis zu 35 Sekunden alt von VATSIM. Meist ist es seine eigene <a href="/download" style="color:var(--green);">FriesenBrügge</a>; welche Quelle es ist, steht im Fenster, wenn du das Flugzeug anklickst.</span>
         </li>
       </ul>
 
@@ -6322,6 +6322,10 @@ function _verkehrZusammenfuehren() {
       _positionsRoh[v.cs] = { lat: s.lat, lon: s.lon, hdg: Number(s.hdg) || 0,
                               gs: Number(s.gs) || 0, ts: _simVerkehr.ts };
       _friesenSimWerte[v.cs] = { alt: s.alt, gs: s.gs };
+      // ... und dieselben Werte fuer die Meldung ans FriesenSpy vormerken (Issue #23).
+      // HIER und nur hier: An dieser Stelle steht die Zuordnung fest, und sie steht fuer
+      // einen FRIESEN -- fuer den hat der Server eine cid, an der ein Punkt haengen kann.
+      _kbVorratMerken(v.cs, s);
       continue;
     }
     const e = { lat: s.lat, lon: s.lon, alt: s.alt, hdg: s.hdg, gs: s.gs,
@@ -6362,6 +6366,223 @@ function _verkehrZusammenfuehren() {
   _paarungenAufraeumen(sim);
   _zuordnungDiagnose(sim, vat, zugeordnet, nochOffen);
   return out;
+}
+
+// ==========================================================================
+//  DAS KNIEBRETT MELDET SEIN GEBIET (GitHub-Issue #23)
+// ==========================================================================
+//
+// Die Umkehrung des Brueggen-Gedankens: Statt dass jeder Pilot seine eigene Position
+// meldet, meldet EIN Kniebrett alle, die es erkannt hat. Bei einem FriesenFlieger-Freitag
+// deckt damit ein einziger offener Bildschirm das ganze Feld ab.
+//
+// ⭐ **Das kostet nichts an Rechnung und kein neues EFB-Paket.** Die Zahlen liegen bereits
+// in dieser Seite: `_verkehrZusammenfuehren` paart den Sim-Verkehr mit dem VATSIM-Verkehr,
+// und nach diesem Durchlauf steht fuer jeden erkannten Friesen beides fest -- die
+// sekundengenaue Position aus dem Simulator und das Rufzeichen aus VATSIM. Der Sender
+// schickt nur mit, was ohnehin schon gerechnet wurde.
+//
+// ⚠ Gemeldet werden NUR FRIESEN, und das ist keine Sparsamkeit: Fuer alle anderen hat der
+// Server keine cid, und die Ablage (`bruegge_positions`) wie der Sekundenstrom haengen an
+// ihr. Fremdverkehr zeichnet die Website ohnehin aus `/api/traffic`. Dazu kommt die
+// Messung vom 14.09.2026: Friesen wurden 5 von 5 erkannt (sie sind ueber `liveData`
+// vollstaendig bekannt), Fremdverkehr nur teilweise (DFIPS 1 von 2, DEKLR 0 von 2).
+//
+// ⚠ NUR IM KNIEBRETT. Auf der Website gibt es keinen Sim-Verkehr -- dort waere jede
+// Meldung eine Abschrift dessen, was der Server gerade selbst geschickt hat.
+
+const _KB_PFAD = '/api/kniebrett/melden';
+// Aelter als das, wird ein unveraenderter Punkt trotzdem wieder geschickt. Die Zahl haengt
+// an der Serverfrist (`bruegge.MELDUNG_FRIST_S` = 10 s): Nach ihr laesst der Server einen
+// Punkt verfallen und die Karte faellt auf VATSIM zurueck. Ein stehendes Flugzeug am
+// Vorfeld aendert aber minutenlang nichts -- ohne diese Wiederholung verschwaende es,
+// obwohl es genau dort noch steht. Vier Sekunden lassen zwei Meldungen ausfallen, bevor
+// es eng wird.
+const _KB_WIEDERHOLEN_MS = 4000;
+// Nach einem Fehlschlag (429, Netz weg, Server im Deploy) nicht weiterhaemmern. Die
+// Wartezeit verdoppelt sich bis hierher und faellt beim ersten Erfolg sofort zurueck.
+const _KB_RUECKZUG_MAX_MS = 30000;
+
+let _kbTimer = null;
+let _kbModus = null;            // was der Server zuletzt erlaubt hat
+let _kbTaktMs = 1000;           // vom Server vorgegeben (`naechste_frage_in_s`)
+let _kbRueckzugMs = 0;
+// cs -> letzte GESENDETE Fassung, fuer "nur senden, was sich geaendert hat"
+let _kbGesendet = Object.create(null);
+// cs -> {lat, lon, alt, hdg, gs, vs, gnd, ts}, aus dem Matching. Wird von
+// `_verkehrZusammenfuehren` gefuellt -- dort und nur dort steht die Zuordnung fest.
+let _kbVorrat = Object.create(null);
+
+function _kbVorratMerken(cs, s) {
+  if (!_PANEL_MODUS || !cs) return;
+  _kbVorrat[cs] = {
+    lat: s.lat, lon: s.lon,
+    alt: (s.alt == null) ? null : Number(s.alt),
+    hdg: Number(s.hdg) || 0,
+    gs: Number(s.gs) || 0,
+    // Die Steigrate schickt der Server nicht umsonst mit in seine Schranke: Ohne sie faellt
+    // die Hoehenpruefung auf ihre Untergrenze zurueck, und ein steigendes Flugzeug weicht
+    // zwangslaeufig von seiner bis zu 29 s alten VATSIM-Hoehe ab.
+    vs: Math.round(_simSinkrate(s.id) || 0),
+    gnd: !!s.gnd,
+    ts: Date.now()
+  };
+}
+
+// Die eigene Steig-/Sinkrate -- und sie ist PFLICHT, nicht Zierde.
+//
+// ⚠ Hier stand anfangs schlicht `vs: 0`, weil `_simPos` keine Rate traegt. Das ist genau der
+// Fehler, den der Server fuer die FREMDEN Flugzeuge vermeidet: Ohne Rate faellt seine
+// Hoehenschranke auf 300 ft, und ein steigendes Flugzeug weicht zwangslaeufig von seiner bis
+// zu 29 s alten VATSIM-Hoehe ab -- ab rund 620 ft/min ist die eigene Meldung damit
+// unplausibel und wird verworfen. Ergebnis waere gewesen: Wer selbst meldet, verliert seinen
+// Punkt beim Steigflug an ein fremdes Kniebrett, das die Rate mitschickt. Die Rangfolge der
+// Quellen stuende auf dem Kopf.
+//
+// Gerechnet wird wie in `_simHoehenSpurFortschreiben` -- dieselbe Glaettung, damit beide
+// Seiten dieselbe Groesse meinen.
+let _kbEigenSpur = null;    // {alt, ts, vs}
+
+function _kbEigenVs() {
+  if (!_simPos || _simPos.alt == null) { _kbEigenSpur = null; return 0; }
+  const alt = Number(_simPos.alt);
+  const ts = _simPos.ts;
+  if (!_kbEigenSpur) { _kbEigenSpur = { alt: alt, ts: ts, vs: 0 }; return 0; }
+  const dtS = (ts - _kbEigenSpur.ts) / 1000;
+  if (dtS <= 0) return _kbEigenSpur.vs;
+  const roh = (alt - _kbEigenSpur.alt) / dtS * 60;
+  const gewicht = 1 - Math.exp(-dtS / 4);
+  _kbEigenSpur = { alt: alt, ts: ts, vs: _kbEigenSpur.vs + gewicht * (roh - _kbEigenSpur.vs) };
+  return _kbEigenSpur.vs;
+}
+
+// Das eigene Flugzeug taucht im Sim-Verkehr NICHT auf -- `GET_AIR_TRAFFIC` liefert die
+// anderen. Es kommt ueber die Positionsbruecke (`_simPos`) und ist die genaueste Quelle,
+// die es hier gibt.
+function _kbEigenes() {
+  if (!_simPos || (Date.now() - _simPos.ts) >= _SIM_POS_MAX_ALTER_MS) return null;
+  const cs = _meinCallsign();
+  if (!cs) return null;
+  const vs = Math.round(_kbEigenVs());
+  return { cs: cs, lat: _simPos.lat, lon: _simPos.lon,
+           alt: (_simPos.alt == null) ? null : Number(_simPos.alt),
+           hdg: Number(_simPos.hdg) || 0, gs: Number(_simPos.gs) || 0,
+           vs: vs, gnd: false };
+}
+
+function _kbUnveraendert(a, b) {
+  // Fuenf Nachkommastellen sind rund 1,1 m -- feiner, als ein Symbol auf der Karte zeigen
+  // kann, und genau die Aufloesung, in der das Kniebrett die Position ohnehin bekommt.
+  return a && b
+      && a.lat.toFixed(5) === b.lat.toFixed(5)
+      && a.lon.toFixed(5) === b.lon.toFixed(5)
+      && Math.round(a.hdg) === Math.round(b.hdg)
+      && Math.round(a.gs) === Math.round(b.gs);
+}
+
+/**
+ * Was jetzt zu melden ist -- oder eine leere Liste.
+ *
+ * Zwei Sparsamkeiten, die zusammengehoeren: Es geht nur hinaus, was sich GEAENDERT hat --
+ * und was sich lange nicht geaendert hat, geht trotzdem wieder hinaus, damit der Server es
+ * nicht verfallen laesst (s. _KB_WIEDERHOLEN_MS). Ohne die zweite Haelfte waere die erste
+ * ein Fehler: Ein stehendes Flugzeug verschwaende von der Karte.
+ */
+function _kbNutzlast() {
+  const jetzt = Date.now();
+  // Der Vorrat wird IMMER durchgesehen, auch wenn gerade nichts gemeldet werden darf.
+  // Sonst waechst er in den Modi "aus" und "eigene" mit jedem je gesehenen Flugzeug weiter,
+  // ohne dass ihn jemals wieder etwas anfasst.
+  for (const cs in _kbVorrat) {
+    // Was der Simulator seit einer Weile nicht mehr liefert, ist aus seinem Umkreis
+    // heraus -- dann hat das Kniebrett dazu nichts Besseres mehr zu sagen als VATSIM.
+    if ((jetzt - _kbVorrat[cs].ts) >= _SIM_POS_MAX_ALTER_MS) delete _kbVorrat[cs];
+  }
+  for (const cs in _kbGesendet) {
+    if ((jetzt - _kbGesendet[cs].ts) >= (_KB_WIEDERHOLEN_MS * 10)) delete _kbGesendet[cs];
+  }
+  if (_kbModus === 'aus') return [];
+
+  const eigen = _kbEigenes();
+  const alle = [];
+  if (eigen) alle.push(eigen);
+  // Im Modus "eigene" verhaelt sich das Kniebrett wie eine FriesenBruegge: Es meldet nur
+  // sich selbst. Der Server setzt dasselbe noch einmal durch -- hier geht es darum, gar
+  // nicht erst zu senden, was ohnehin verworfen wuerde.
+  if (_kbModus === 'alle') {
+    for (const cs in _kbVorrat) {
+      if (eigen && cs === eigen.cs) continue;
+      const e = _kbVorrat[cs];
+      alle.push({ cs: cs, lat: e.lat, lon: e.lon, alt: e.alt, hdg: e.hdg, gs: e.gs,
+                  vs: e.vs, gnd: e.gnd });
+    }
+  }
+  const raus = [];
+  for (let i = 0; i < alle.length; i++) {
+    const e = alle[i];
+    const vorher = _kbGesendet[e.cs];
+    if (vorher && (jetzt - vorher.ts) < _KB_WIEDERHOLEN_MS && _kbUnveraendert(vorher, e)) continue;
+    raus.push(e);
+  }
+  return raus;
+}
+
+/**
+ * Erst vermerken, wenn es ANGEKOMMEN ist.
+ *
+ * ⚠ Das war zuerst in `_kbNutzlast` mit erledigt, und darin steckte ein leiser Fehler: Nach
+ * einem Fehlschlag (429, Netz weg, Deploy) galt ein Punkt als gesendet, der nie ankam. Beim
+ * naechsten Versuch fiel er als "unveraendert" heraus -- und ein STEHENDES Flugzeug, das nur
+ * von der Wiederholung lebt, verschwand nach zehn Sekunden von der Karte.
+ */
+function _kbGesendetVermerken(liste) {
+  const jetzt = Date.now();
+  for (let i = 0; i < liste.length; i++) {
+    const e = liste[i];
+    _kbGesendet[e.cs] = { lat: e.lat, lon: e.lon, hdg: e.hdg, gs: e.gs, ts: jetzt };
+  }
+}
+
+async function _kbMelden() {
+  let wartenMs = _kbTaktMs;
+  try {
+    // Auch eine LEERE Liste geht hinaus, und das ist der Ausschalter-Mechanismus: Das
+    // Kniebrett fragt weiter (im Modus "aus" alle 15 Minuten), und ueber die Antwort
+    // erfaehrt es, wenn es wieder melden darf. Ein Sender, der ganz verstummt, koennte
+    // nicht mehr eingeschaltet werden, ohne dass der Pilot die Seite neu laedt.
+    const nutzlast = _kbNutzlast();
+    const r = await fetch(_KB_PFAD, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ protokoll: 1, flugzeuge: nutzlast })
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    _kbGesendetVermerken(nutzlast);
+    _kbModus = (typeof d.modus === 'string') ? d.modus : 'aus';
+    const takt = Number(d.naechste_frage_in_s);
+    if (isFinite(takt) && takt >= 1) _kbTaktMs = Math.min(900, takt) * 1000;
+    _kbRueckzugMs = 0;
+    wartenMs = _kbTaktMs;
+    // Der Server hat die Meldung angenommen -- was er verworfen hat, wird beim naechsten
+    // Mal ohnehin neu geschickt. Kein eigener Wiederholungsspeicher: Der naechste Punkt
+    // ist besser als der alte, und die Karte will den neuesten.
+  } catch (e) {
+    // Nichts protokollieren und nichts anzeigen. Ein Sender, der nebenbei laeuft, darf im
+    // Fehlerfall nicht lauter sein als die Anwendung -- und ein Deploy (Container weg fuer
+    // 20 s) ist der haeufigste Grund.
+    _kbRueckzugMs = Math.min(_KB_RUECKZUG_MAX_MS, Math.max(2000, _kbRueckzugMs * 2));
+    wartenMs = _kbRueckzugMs;
+  }
+  _kbTimer = setTimeout(_kbMelden, wartenMs);
+}
+
+function _kbStarten() {
+  if (_kbTimer || !_PANEL_MODUS) return;
+  // Kein `setInterval`: Der Takt kommt vom Server und darf sich jederzeit aendern (Drossel
+  // im Admin). Eine Kette aus `setTimeout` nimmt die neue Zahl sofort an -- und sie kann
+  // sich nicht ueberholen, wenn eine Anfrage einmal laenger braucht als der Takt.
+  _kbTimer = setTimeout(_kbMelden, 1000);
 }
 
 // Einmal je Sitzung, eine Minute nach der ersten Zuordnung -- lange genug, dass sich der
@@ -7475,6 +7696,9 @@ function fsRefreshSession() {
         // Die eigene CID ist die einzige Moeglichkeit, den eigenen Flieger im VATSIM-Strom
         // wiederzuerkennen -- Grundlage von Moving Map und Track-up ohne Sim-Position.
         _meineCid = d.cid || null;
+        // Der Sender fuer Issue #23 haengt an der Anmeldung -- ohne cid meldet der Server
+        // ohnehin "aus" zurueck. Er startet hoechstens einmal (s. _kbStarten).
+        if (_PANEL_MODUS && _meineCid != null) _kbStarten();
         document.getElementById('userName').textContent = d.name || ('CID ' + (d.cid || '—'));
         document.getElementById('userBox').hidden = false;
         // Sichtbarkeits-Panel nur für eingeloggte Mitglieder (CID bekannt).
@@ -10510,6 +10734,14 @@ const _brueggeWerte = {};
 const _BRUEGGE_FRIST_MS = 10000;
 
 /** Liefert die Bruegge fuer dieses Rufzeichen gerade? */
+/** Wie der sekundengenaue Punkt zustande kommt -- für das Kartenfenster. */
+function _quelleName(callsign) {
+  const b = _brueggeWerte[callsign];
+  if (b && b.q === 'k') return 'Kniebrett eines anderen Piloten';
+  if (b && b.q === 'e') return 'Kniebrett';
+  return 'FriesenBrügge';
+}
+
 function _brueggeFrisch(callsign) {
   const b = _brueggeWerte[callsign];
   return !!(b && (Date.now() - b.ts) < _BRUEGGE_FRIST_MS);
@@ -10570,6 +10802,11 @@ function _brueggeStromEinarbeiten(liste) {
     _brueggeWerte[cs] = { alt: (e.alt == null) ? null : Number(e.alt),
                           gs:  (e.gs  == null) ? null : Number(e.gs),
                           agl: (e.agl == null) ? null : Number(e.agl),
+                          // Woher der Punkt kommt (`b` Bruegge, `e` eigenes Kniebrett,
+                          // `k` fremdes Kniebrett). Aeltere Server schicken das Feld nicht
+                          // -- dann ist es die Bruegge, denn eine andere Quelle gab es da
+                          // noch nicht.
+                          q: (typeof e.q === 'string') ? e.q : 'b',
                           gnd: !!e.gnd, ts: jetzt };
   }
 }
@@ -12744,8 +12981,11 @@ function buildPopupHtml(roh) {
   const p = _mitSimWerten(roh);
   // Die Quelle steht nur dann da, wenn sie eine Aussage ist. „VATSIM" bei allen anderen zu
   // schreiben wäre eine Zeile, die in 95 % der Fälle nichts hinzufügt.
+  // ⚠ Die Quelle steht hier als TATSACHE und nicht als Vermutung: Seit ein Kniebrett auch
+  // FREMDE Piloten melden kann (Issue #23), hiesse "FriesenBrügge" bei jedem türkisen Punkt,
+  // jemandem eine Installation anzudichten, die er nie vorgenommen hat.
   const quelle = _brueggeFrisch(p.callsign)
-    ? `<div class="popup-row">Quelle: <span class="popup-bruegge">FriesenBrügge</span></div>`
+    ? `<div class="popup-row">Quelle: <span class="popup-bruegge">${_quelleName(p.callsign)}</span></div>`
     : '';
   return `
     <div class="popup-callsign">${escHtml((p.callsign || '').toUpperCase())}${listenLinkIcon(p.callsign)}</div>
