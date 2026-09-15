@@ -8154,6 +8154,10 @@ function connectSSE() {
         // Takt (s. _naviTakt), und die Liste darunter ist eine Tabelle, keine Laufschrift.
         // Sie hier mitzuziehen hiesse, jede Sekunde die halbe Seite neu zu bauen.
         _brueggeStromEinarbeiten(msg.data);
+        // Gemeldeter FREMDverkehr (Kniebrett-Stufe `fremd`). Er steht in einem eigenen Feld
+        // und nicht in `data`, weil er nach RUFZEICHEN gefuehrt wird statt nach cid -- fuer
+        // Fremdverkehr gibt es auf der Karte keine (`/api/traffic` entfernt sie).
+        if (msg.fremd) _kniebrettFremdEinarbeiten(msg.fremd);
       } else if (msg.type === 'aip_charts') {
         // Im Admin wurde eine Karte gepasst oder ihre Seite getauscht. Auffrischen statt
         // neu laden: Das Kniebrett laedt innerhalb einer Sim-Sitzung nie neu (die EFB-App
@@ -10804,6 +10808,34 @@ function _brueggeFrisch(callsign) {
  * ist die richtige Stelle: Wer NICHT in liveData steht, hat auch keinen Marker, den man
  * bewegen koennte.
  */
+/**
+ * Sekundengenaue FREMDverkehrs-Positionen aus dem Strom einarbeiten.
+ *
+ * Er landet in derselben Tabelle, aus der die Fremdverkehrs-Ebene ohnehin ihre Marker
+ * bewegt (`_verkehrRoh`, Schluessel Rufzeichen) -- es entsteht KEIN zweiter Zeichenweg,
+ * genau wie bei den Friesen ueber `_positionsRoh`.
+ *
+ * ⚠ Nur Flugzeuge, die schon auf der Karte sind. Ein Rohwert ohne Marker bewegt nichts und
+ * bliebe liegen, bis ihn `_verkehrAbrufen` beim naechsten Durchgang wegraeumt -- dieselbe
+ * Ueberlegung wie bei `_brueggeStromEinarbeiten`, wo nur mitgenommen wird, wer in `liveData`
+ * steht.
+ *
+ * ⚠ IM KNIEBRETT NICHT. Dort traegt das Sim-Matching, das den direkten Weg zum Simulator
+ * hat -- dieselbe Entscheidung wie beim Bruegge-Strom (15.09.2026).
+ */
+function _kniebrettFremdEinarbeiten(liste) {
+  if (_PANEL_MODUS) return;
+  if (!Array.isArray(liste) || !liste.length) return;
+  const jetzt = Date.now();
+  for (let i = 0; i < liste.length; i++) {
+    const e = liste[i];
+    if (!e || !e.cs || e.lat == null || e.lon == null) continue;
+    if (!_verkehrMarker[e.cs]) continue;
+    _verkehrRoh[e.cs] = { lat: Number(e.lat), lon: Number(e.lon),
+                          hdg: Number(e.hdg) || 0, gs: Number(e.gs) || 0, ts: jetzt };
+  }
+}
+
 function _brueggeStromEinarbeiten(liste) {
   // ⚠⚠ IM KNIEBRETT NICHT. Dort traegt das Sim-Matching, und es ist die bessere Quelle.
   //

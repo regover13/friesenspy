@@ -1051,6 +1051,31 @@ def _kniebrett_kandidaten(request) -> dict:
     return out
 
 
+def _kniebrett_fremde(request) -> dict:
+    """``{CALLSIGN: (lat, lon, alt_ft, gs_kt)}`` -- der Fremdverkehr aus dem Poller-Speicher.
+
+    Dieselbe Ueberlegung wie bei `_kniebrett_kandidaten`: keine Datenbank im Meldeweg. Der
+    Poller haelt den ganzen Feed ohnehin als `traffic_snapshot` (alle 15 s frisch), und dort
+    steht zu jedem Flugzeug lat/lon/alt/gs -- alles, was die Pruefung braucht.
+
+    ⚠ Die `cid` aus dem Schnappschuss wird hier NICHT gebraucht und nicht weitergereicht:
+    Auf der Karte gibt es fuer Fremdverkehr keine (`/api/traffic` entfernt sie). Die Ablage
+    laeuft ueber das Rufzeichen.
+    """
+    poller = getattr(request.app.state, "poller", None)
+    out = {}
+    for e in (getattr(poller, "traffic_snapshot", None) or []):
+        cs = str(e.get("cs") or "").upper()
+        if not cs:
+            continue
+        try:
+            out[cs] = (float(e["lat"]), float(e["lon"]),
+                       float(e.get("alt") or 0.0), float(e.get("gs") or 0.0))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return out
+
+
 @app.post("/api/kniebrett/melden", include_in_schema=False)
 async def kniebrett_melden(request: Request):
     """Das Kniebrett meldet, welche Flugzeuge es erkannt hat.
@@ -1105,13 +1130,26 @@ async def kniebrett_melden(request: Request):
     flugzeuge = flugzeuge[:_KNIEBRETT_MAX_FLUGZEUGE]
 
     kandidaten = _kniebrett_kandidaten(request)
+    # Der Fremdverkehr wird nur geholt, wenn er auch gemeldet werden darf -- bei `alle` und
+    # darunter ist er gegenstandslos, und der Schnappschuss kann tausend Eintraege haben.
+    fremde = _kniebrett_fremde(request) if modus == "fremd" else {}
     poller = getattr(request.app.state, "poller", None)
     uebernommen = 0
     for e in flugzeuge:
         if not isinstance(e, dict):
             verworfen += 1
             continue
-        treffer = kandidaten.get(str(e.get("cs") or "").upper())
+        cs = str(e.get("cs") or "").upper()
+        treffer = kandidaten.get(cs)
+        if treffer is None and cs in fremde:
+            # ⭐ Ein FREMDES Flugzeug: kein Friese, also keine cid und keine Vorrangfrage.
+            # Geprueft wird trotzdem dasselbe -- er muss auf VATSIM stehen, und seine
+            # gemeldete Lage muss zu seinem VATSIM-Stand passen.
+            if _kniebrett_fremd_uebernehmen(poller, cs, e, fremde[cs]):
+                uebernommen += 1
+            else:
+                verworfen += 1
+            continue
         if treffer is None:
             # Kein Friese auf VATSIM unter diesem Rufzeichen. Auf der Karte gaebe es
             # nichts, woran der Punkt haengen koennte.
@@ -1166,6 +1204,42 @@ async def kniebrett_melden(request: Request):
             # Eine bessere oder gleich gute Quelle hat diese cid gerade in der Hand.
             verworfen += 1
     return _kniebrett_antwort(modus, takt, uebernommen, verworfen)
+
+
+def _kniebrett_fremd_uebernehmen(poller, cs: str, e: dict, stand) -> bool:
+    """Ein gemeldetes fremdes Flugzeug pruefen und vormerken.
+
+    ``stand`` ist sein VATSIM-Wert ``(lat, lon, alt_ft, gs_kt)`` aus dem Schnappschuss.
+    Geprueft wird mit derselben Kinematik wie bei den Friesen -- und aus demselben Grund:
+    Hier meldet ein Client ueber Dritte, und ohne Schranke koennte er jedes Flugzeug auf der
+    Karte verschieben.
+    """
+    if poller is None:
+        return False
+    try:
+        lat = float(e["lat"])
+        lon = float(e["lon"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
+        return False
+    v_lat, v_lon, v_alt, v_gs = stand
+    gs = max(0.0, _kniebrett_zahl(e.get("gs")))
+    hat_alt = e.get("alt") is not None
+    alt = _kniebrett_zahl(e.get("alt")) if hat_alt else v_alt
+    # Derselbe Deckel wie bei den Friesen: Die Schranke waechst nicht mit dem, was der
+    # Melder behauptet (s. _KNIEBRETT_GS_RESERVE_KT).
+    gs_schranke = min(max(gs, v_gs), v_gs + _KNIEBRETT_GS_RESERVE_KT)
+    vs_schranke = min(abs(_kniebrett_zahl(e.get("vs"))), _KNIEBRETT_VS_MAX_FT_MIN)
+    kand = bruegge.Kandidat(0, cs, v_lat, v_lon, v_alt)
+    if not bruegge.bleibt_plausibel(lat, lon, alt, gs_schranke, kand, vs_schranke):
+        return False
+    merken = getattr(poller, "kniebrett_fremd_merken", None)
+    if merken is None:
+        return False
+    return merken(cs, {"lat": lat, "lon": lon,
+                       "hdg": _kniebrett_zahl(e.get("hdg")) % 360.0, "gs": gs,
+                       "alt": alt if hat_alt else None})
 
 
 def _kniebrett_zahl(wert) -> float:

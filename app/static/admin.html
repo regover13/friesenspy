@@ -1489,12 +1489,16 @@
               <button class="btn btn-sm kb-modus" data-modus="aus">aus</button>
               <button class="btn btn-sm kb-modus" data-modus="eigene">nur eigene Position</button>
               <button class="btn btn-sm kb-modus" data-modus="alle">alle erkannten Friesen</button>
+              <button class="btn btn-sm kb-modus" data-modus="fremd">auch Fremdverkehr</button>
               <span id="kb-modus-wert" class="mono" style="color:#8aa0b8;font-size:0.78rem;">…</span>
             </div>
             <p style="color:#6b7d8f;font-size:0.78rem;margin:8px 0 0;">
               Wirkt binnen zehn Sekunden für alle, ohne Deploy und ohne dass jemand etwas neu
               installiert — das Kniebrett fragt ohnehin ständig, und über die Antwort kommt die
-              Abschaltung an. Auf <i>aus</i> fragt es nur noch alle 15 Minuten.
+              Abschaltung an. Auf <i>aus</i> fragt es nur noch einmal pro Minute.
+              <br>⚠ <b>Auch Fremdverkehr</b> treibt die Menge: Friesen sind eine Handvoll,
+              fremde Flugzeuge im Umkreis können vierzig sein — und der Sekundenstrom geht an
+              <i>jede</i> offene Karte, nicht nur an die des Melders.
             </p>
           </div>
 
@@ -1531,6 +1535,7 @@
                 <option value="aus">aus</option>
                 <option value="eigene">nur eigene Position</option>
                 <option value="alle">alle erkannten Friesen</option>
+                <option value="fremd">auch Fremdverkehr</option>
               </select>
               <button class="btn btn-sm" id="kb-pilot-setzen">setzen</button>
             </div>
@@ -2285,7 +2290,8 @@
     }
 
     const _KB_MODUS_TEXT = { aus: 'aus', eigene: 'nur eigene Position',
-                             alle: 'alle erkannten Friesen' };
+                             alle: 'alle erkannten Friesen',
+                             fremd: 'auch Fremdverkehr' };
 
     async function kbLaden() {
       try {

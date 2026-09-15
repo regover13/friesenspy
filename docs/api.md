@@ -2447,6 +2447,23 @@ die Reihenfolge ist eine Rangfolge:
 | `aus` | nichts |
 | `eigene` | nur die eigene Position (es verhält sich dann wie eine FriesenBrügge) |
 | `alle` | alle erkannten Friesen |
+| `fremd` | zusätzlich der erkannte **Fremdverkehr** |
+
+⚠ **`fremd` steht zuletzt, weil es die Menge treibt.** Friesen sind eine Handvoll, fremde
+Flugzeuge im Umkreis können vierzig sein — und der Sekundenstrom geht an **jede** offene
+Karte, nicht nur an die des Melders. Wer die Stufe einschaltet, entscheidet damit über die
+Last aller Zuschauer.
+
+**Für Fremdverkehr läuft die Ablage über das RUFZEICHEN**, nicht über die cid
+(`VatsimPoller._kniebrett_fremd`, Kürzel `cs` im Strom). Der Grund steht in `/api/traffic`:
+Die cid wird dort ausdrücklich entfernt, bevor die Liste den Server verlässt — die Karte
+führt ihren Fremdverkehr deshalb ohnehin nach Rufzeichen (`_verkehrRoh`), und genau dorthin
+geht der Strom. Kandidaten und Plausibilitätsprüfung kommen aus
+`VatsimPoller.traffic_snapshot`, also wieder **ohne Datenbank**.
+
+Eine Vorrangregel gibt es hier nicht, und das ist kein Versehen: Fremdverkehr hat keine
+eigene Quelle, die man bevorzugen könnte — keine Brügge, kein eigenes Kniebrett. Sehen ihn
+zwei Kniebretter, ist die zweite Meldung schlicht die neuere.
 
 Eingestellt wird **global** (`app_settings.kniebrett_melden_modus`, Vorgabe `aus`) und **je
 Pilot** (Tabelle `kniebrett_melden`). Der wirksame Wert ist das **Minimum** aus beiden: Die

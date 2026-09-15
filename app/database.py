@@ -10442,13 +10442,19 @@ def delete_progress_snapshots(conn: sqlite3.Connection, kind: str) -> int:
 #
 #   aus     -- gar nicht melden
 #   eigene  -- nur die eigene Position (das Kniebrett verhaelt sich wie eine FriesenBruegge)
-#   alle    -- alle im Matching erkannten Flugzeuge
+#   alle    -- alle erkannten FRIESEN
+#   fremd   -- zusaetzlich der erkannte Fremdverkehr
+#
+# ⚠ `fremd` steht zuletzt, weil es die MENGE treibt: Friesen sind eine Handvoll,
+# Fremdverkehr im Umkreis koennen vierzig sein -- und der Sekundenstrom geht an JEDE offene
+# Karte. Wer die Stufe einschaltet, entscheidet damit ueber die Last aller Zuschauer, nicht
+# nur ueber seine eigene.
 #
 # Der Rang macht die globale Einstellung zu einem DECKEL und nicht zu einem Vorschlag:
 # Der wirksame Modus ist das Minimum aus global und je Pilot. Waere es anders, koennte ein
 # einzelner Pilot-Eintrag die Notbremse aushebeln, die fuer den Fall da ist, dass es im
 # Betrieb klemmt.
-KNIEBRETT_MODI = ("aus", "eigene", "alle")
+KNIEBRETT_MODI = ("aus", "eigene", "alle", "fremd")
 
 
 def kniebrett_rang(modus: str | None) -> int:

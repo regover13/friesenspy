@@ -470,44 +470,7 @@ class VatsimPoller:
         # verteilt jedes Update an alle. (Eine geteilte Queue lieferte jede Nachricht nur an
         # EINEN Consumer → nicht alle Clients bekamen Updates.)
         self._sse_subscribers: set[asyncio.Queue] = set()
-        # Die zuletzt gemeldete Bruegge-Position je cid -- fuer den Sekundenstrom an die
-        # Karte. NUR im Speicher, und das ist die Pointe: Die Zeile steht ohnehin schon in
-        # `bruegge_positions` (der Endpunkt schreibt sie), aber sie jede Sekunde von dort zu
-        # LESEN waere eine Abfrage je Sekunde fuer Daten, die eine Funktion weiter oben
-        # bereits in der Hand hatte.
-        #
-        # Ein Prozess, ein Poller: Der Container startet EINEN uvicorn-Worker (Dockerfile,
-        # CMD ohne --workers). Bei mehreren waere dieser Speicher je Worker eigen, und ein
-        # SSE-Client am falschen Worker sähe nichts -- wer das aendert, verlegt den Strom auf
-        # die Datenbank.
-        self._bruegge_live: dict[int, dict] = {}
-        # Die Friesen aus dem letzten Poll-Zyklus, unveraendert wie in `live_positions`.
-        #
-        # ⭐ DAS IST DER GRUND, WARUM DER KNIEBRETT-ENDPUNKT OHNE DATENBANK AUSKOMMT
-        # (GitHub-Issue #23): Er braucht die Kandidaten nur, um ein gemeldetes Rufzeichen
-        # einer cid zuzuordnen und die Position gegen den VATSIM-Stand zu pruefen. Genau
-        # diese Zeilen hatte der Poller eine Funktion weiter oben ohnehin in der Hand
-        # (`get_live_positions`) -- sie im Sekundentakt erneut zu LESEN waere eine Abfrage
-        # je Meldung und je Kniebrett, fuer Daten, die sich alle 15 s aendern.
-        #
-        # Derselbe Gedanke wie bei `_bruegge_live` und `traffic_snapshot`, nur in der
-        # Gegenrichtung: Dort geht etwas aus dem Speicher hinaus, hier kommt etwas herein.
-        self.friesen_snapshot: list[dict] = []
-        self.friesen_snapshot_ts: float = 0.0
-        # cid -> monotonic: wann hat das EIGENE Kniebrett dieses Piloten zuletzt eine
-        # gueltige Meldung geschickt -- UNABHAENGIG davon, ob sie den Vorrang gewonnen hat.
-        #
-        # ⚠ WARUM DAS NICHT IN `_bruegge_live` STEHT, obwohl es dort naheliegt: Weil sich
-        # dort zwei Fragen in die Quere kommen. Der Eintrag beantwortet "wessen Punkt wird
-        # gezeigt?", und den gewinnt die Bruegge (s. `kniebrett_position_merken`). Der Hebel
-        # fragt etwas anderes: "liefert das Kniebrett ueberhaupt?" Beides aus derselben
-        # Zeile lesen zu wollen hat die zwei Regeln gegenseitig aufgehoben -- im Flug
-        # gemessen am 15.09.2026: Solange die Bruegge lief, sah der Hebel nie einen
-        # Kniebrett-Melder und drosselte deshalb nie.
-        #
-        # Ein Feld IM Eintrag hilft auch nicht: `bruegge_position_merken` baut bei jeder
-        # Meldung ein frisches Dict, das Feld waere eine Sekunde spaeter weg.
-        self._kniebrett_versuch: dict[int, float] = {}
+        self._live_speicher_anlegen()
         # Vollständige Prefile-Daten für die API (Liste von Dicts)
         self.last_prefiles: list = []
         # cid → (deptime, departure, arrival) für Änderungserkennung — None = erster Poll
@@ -974,6 +937,90 @@ class VatsimPoller:
         }
         return True
 
+    def _live_speicher_anlegen(self) -> None:
+        """Die Speicher des Sekundenstroms -- an EINER Stelle.
+
+        ⚠ Sie stehen hier zusammen und nicht verstreut in `__init__`, weil die Test-Attrappe
+        sie nachbauen muss (`tests/test_kniebrett_melden.py`). Dreimal ist genau das
+        vergessen worden, sobald ein Speicher dazukam, und dreimal fiel es erst in der vollen
+        Suite auf -- mit einer Fehlermeldung, die nach einem Fehler im Code aussah
+        (`'_PollerAttrappe' object has no attribute ...`). Eine Attrappe, die bei jeder
+        Erweiterung nachgepflegt werden muss, prueft irgendwann etwas anderes als die
+        Produktion; sie ruft jetzt diese Methode.
+        """
+        # Die zuletzt gemeldete Bruegge-Position je cid -- fuer den Sekundenstrom an die
+        # Karte. NUR im Speicher, und das ist die Pointe: Die Zeile steht ohnehin schon in
+        # `bruegge_positions` (der Endpunkt schreibt sie), aber sie jede Sekunde von dort zu
+        # LESEN waere eine Abfrage je Sekunde fuer Daten, die eine Funktion weiter oben
+        # bereits in der Hand hatte.
+        #
+        # Ein Prozess, ein Poller: Der Container startet EINEN uvicorn-Worker (Dockerfile,
+        # CMD ohne --workers). Bei mehreren waere dieser Speicher je Worker eigen, und ein
+        # SSE-Client am falschen Worker sähe nichts -- wer das aendert, verlegt den Strom auf
+        # die Datenbank.
+        self._bruegge_live: dict[int, dict] = {}
+        # Die Friesen aus dem letzten Poll-Zyklus, unveraendert wie in `live_positions`.
+        #
+        # ⭐ DAS IST DER GRUND, WARUM DER KNIEBRETT-ENDPUNKT OHNE DATENBANK AUSKOMMT
+        # (GitHub-Issue #23): Er braucht die Kandidaten nur, um ein gemeldetes Rufzeichen
+        # einer cid zuzuordnen und die Position gegen den VATSIM-Stand zu pruefen. Genau
+        # diese Zeilen hatte der Poller eine Funktion weiter oben ohnehin in der Hand
+        # (`get_live_positions`) -- sie im Sekundentakt erneut zu LESEN waere eine Abfrage
+        # je Meldung und je Kniebrett, fuer Daten, die sich alle 15 s aendern.
+        #
+        # Derselbe Gedanke wie bei `_bruegge_live` und `traffic_snapshot`, nur in der
+        # Gegenrichtung: Dort geht etwas aus dem Speicher hinaus, hier kommt etwas herein.
+        self.friesen_snapshot: list[dict] = []
+        self.friesen_snapshot_ts: float = 0.0
+        # cid -> monotonic: wann hat das EIGENE Kniebrett dieses Piloten zuletzt eine
+        # gueltige Meldung geschickt -- UNABHAENGIG davon, ob sie den Vorrang gewonnen hat.
+        #
+        # ⚠ WARUM DAS NICHT IN `_bruegge_live` STEHT, obwohl es dort naheliegt: Weil sich
+        # dort zwei Fragen in die Quere kommen. Der Eintrag beantwortet "wessen Punkt wird
+        # gezeigt?", und den gewinnt die Bruegge (s. `kniebrett_position_merken`). Der Hebel
+        # fragt etwas anderes: "liefert das Kniebrett ueberhaupt?" Beides aus derselben
+        # Zeile lesen zu wollen hat die zwei Regeln gegenseitig aufgehoben -- im Flug
+        # gemessen am 15.09.2026: Solange die Bruegge lief, sah der Hebel nie einen
+        # Kniebrett-Melder und drosselte deshalb nie.
+        #
+        # Ein Feld IM Eintrag hilft auch nicht: `bruegge_position_merken` baut bei jeder
+        # Meldung ein frisches Dict, das Feld waere eine Sekunde spaeter weg.
+        self._kniebrett_versuch: dict[int, float] = {}
+        # Fremdverkehr, den ein Kniebrett gemeldet hat -- Schluessel ist das RUFZEICHEN.
+        #
+        # ⚠ Warum nicht die cid wie bei den Friesen: Auf der Karte gibt es fuer Fremdverkehr
+        # keine. `/api/traffic` entfernt sie ausdruecklich, bevor die Liste den Server
+        # verlaesst ("dient nur dazu, den Anfragenden selbst aussortieren zu koennen"). Der
+        # Browser fuehrt seinen Fremdverkehr deshalb ohnehin nach Rufzeichen
+        # (`_verkehrRoh` in index.html) -- und genau dorthin geht dieser Strom.
+        self._kniebrett_fremd: dict[str, dict] = {}
+
+    def kniebrett_fremd_merken(self, cs: str, eintrag: dict) -> bool:
+        """Eine gemeldete FREMDverkehrs-Position vormerken (Schluessel: Rufzeichen).
+
+        Ohne Vorrangregel, und das ist kein Versehen: Fremdverkehr hat keine eigene Quelle,
+        die man bevorzugen koennte -- keine Bruegge, kein eigenes Kniebrett. Sehen ihn zwei
+        Kniebretter, ist die zweite Meldung schlicht die neuere, und die gilt.
+        """
+        cs = str(cs or "").upper()
+        if not cs:
+            return False
+        try:
+            lat = float(eintrag["lat"])
+            lon = float(eintrag["lon"])
+        except (KeyError, TypeError, ValueError):
+            return False
+        self._kniebrett_fremd[cs] = {
+            "cs": cs,
+            "lat": lat,
+            "lon": lon,
+            "hdg": round(float(eintrag.get("hdg") or 0.0), 1),
+            "gs": round(float(eintrag.get("gs") or 0.0), 1),
+            "alt": None if eintrag.get("alt") is None else round(float(eintrag["alt"])),
+            "ts": time.monotonic(),
+        }
+        return True
+
     def kniebrett_meldet_fuer(self, cid: int) -> bool:
         """Meldet das EIGENE Kniebrett dieses Piloten gerade? (GitHub-Issue #23)
 
@@ -1056,9 +1103,19 @@ class VatsimPoller:
         for cid in [c for c, t in self._kniebrett_versuch.items()
                     if (jetzt - t) >= self.BRUEGGE_FRIST_S]:
             del self._kniebrett_versuch[cid]
-        if not self._bruegge_live:
+        for cs in [c for c, e in self._kniebrett_fremd.items()
+                   if (jetzt - e["ts"]) >= self.BRUEGGE_FRIST_S]:
+            del self._kniebrett_fremd[cs]
+        if not self._bruegge_live and not self._kniebrett_fremd:
             return
+        # Fremdverkehr geht im SELBEN Ereignis mit, nicht in einem zweiten: Eine Meldung je
+        # Sekunde ist der Vertrag, und ein zweiter Strom waere eine zweite Stelle, an der
+        # etwas ausfallen kann. Das Feld fehlt, solange niemand Fremdverkehr meldet -- so
+        # kostet die Stufe nichts, wenn sie niemand eingeschaltet hat.
+        fremd = [{k: v for k, v in e.items() if k != "ts"}
+                 for e in self._kniebrett_fremd.values()]
         self.broadcast_sse({
+            **({"fremd": fremd} if fremd else {}),
             "type": "bruegge",
             # `melder` bleibt hier: Wer wen sieht, geht niemanden etwas an, der den Punkt
             # nur zeichnet. Was mitgeht, ist die ART der Quelle (`q`) -- und die ist keine

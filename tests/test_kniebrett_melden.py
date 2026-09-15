@@ -67,10 +67,13 @@ class _PollerAttrappe(VatsimPoller):
     """
 
     def __init__(self, friesen=None):        # bewusst ohne super().__init__()
-        self._bruegge_live = {}
-        self._kniebrett_versuch = {}
+        # ⭐ Die Live-Speicher NICHT einzeln nachbauen, sondern vom echten Poller anlegen
+        # lassen. Dreimal ist hier einer vergessen worden, sobald er dazukam -- und jedes Mal
+        # sah der Fehlschlag aus wie ein Fehler im Code statt in der Attrappe.
+        self._live_speicher_anlegen()
         self.friesen_snapshot = list(friesen or [])
         self.friesen_snapshot_ts = time.time()
+        self.traffic_snapshot = []
 
 
 @pytest.fixture()
@@ -1100,3 +1103,108 @@ class TestBrueggeAusTakt:
         env.client.cookies.set(ADMIN_COOKIE, make_admin_token(SECRET, "pw"))
         assert env.client.post("/api/admin/bruegge/takt",
                                json={"takt_s": 900}).status_code == 200
+
+
+# ---------------------------------------------------------------------------------------
+#  14. Die vierte Stufe: auch Fremdverkehr (Nutzervorgabe 15.09.2026)
+# ---------------------------------------------------------------------------------------
+#
+# „aus, eigene, Friesen, fremd" -- vier Stufen, weiterhin eine Rangfolge. Der Fremdverkehr
+# kommt zuletzt, weil er die Menge treibt: Friesen sind eine Handvoll, Fremdverkehr im
+# Umkreis können vierzig sein, und der Sekundenstrom geht an jede offene Karte.
+#
+# ⚠ Für Fremdverkehr gibt es keine cid auf der Karte: `/api/traffic` entfernt sie
+# ausdrücklich, bevor die Liste den Server verlässt. Die Ablage läuft deshalb über das
+# RUFZEICHEN -- genau so, wie die Karte ihren Fremdverkehr ohnehin führt (`_verkehrRoh`).
+
+FREMDER_CS = "DEABC"          # kein Friese -- steht in traffic_snapshot, nicht in live_positions
+
+
+def _traffic_snapshot():
+    """So, wie `snapshot_other_traffic` ihn baut: kurze Feldnamen, cid dabei."""
+    return [{"cid": 9001, "cs": FREMDER_CS, "lat": LAT + 0.002, "lon": LON + 0.002,
+             "alt": 500, "gs": 0, "hdg": 210, "ac": "C172", "dep": "", "arr": ""}]
+
+
+class TestVierteStufeFremd:
+    def test_die_stufe_steht_ueber_alle(self):
+        from app.database import KNIEBRETT_MODI, kniebrett_rang
+        assert KNIEBRETT_MODI == ("aus", "eigene", "alle", "fremd")
+        assert kniebrett_rang("fremd") > kniebrett_rang("alle")
+
+    def test_bei_alle_wird_fremdverkehr_NICHT_uebernommen(self, env):
+        """Die Abgrenzung nach unten -- sonst wäre die neue Stufe wirkungslos."""
+        env.poller.traffic_snapshot = _traffic_snapshot()
+        _modus_setzen(env, "alle")
+        r = _melden(env, [_flugzeug(cs=FREMDER_CS, lat=LAT + 0.002, lon=LON + 0.002)])
+        assert r.json()["uebernommen"] == 0
+
+    def test_bei_fremd_schon(self, env):
+        env.poller.traffic_snapshot = _traffic_snapshot()
+        _modus_setzen(env, "fremd")
+        r = _melden(env, [_flugzeug(cs=FREMDER_CS, lat=LAT + 0.002, lon=LON + 0.002)])
+        assert r.json()["modus"] == "fremd"
+        assert r.json()["uebernommen"] == 1
+        assert FREMDER_CS in env.poller._kniebrett_fremd
+
+    def test_friesen_gehen_bei_fremd_weiterhin_ihren_weg(self, env):
+        """Die Stufe erweitert, sie ersetzt nicht: Ein Friese landet weiter unter seiner cid
+        in der gemeinsamen Ablage, nicht im Fremdverkehrs-Verzeichnis."""
+        env.poller.traffic_snapshot = _traffic_snapshot()
+        _modus_setzen(env, "fremd")
+        _melden(env, [_flugzeug()])
+        assert FREMD in env.poller._bruegge_live
+        assert FREMD_CS not in env.poller._kniebrett_fremd
+
+    def test_ein_unbekanntes_rufzeichen_wird_auch_hier_verworfen(self, env):
+        """Er muss auf VATSIM stehen -- sonst könnte ein Client beliebige Flugzeuge erfinden."""
+        env.poller.traffic_snapshot = _traffic_snapshot()
+        _modus_setzen(env, "fremd")
+        r = _melden(env, [_flugzeug(cs="XXNOPE", lat=LAT, lon=LON)])
+        assert r.json()["uebernommen"] == 0
+
+    def test_auch_fremdverkehr_wird_plausibilisiert(self, env):
+        """Dieselbe Schranke wie bei den Friesen -- gegen seinen VATSIM-Stand."""
+        env.poller.traffic_snapshot = _traffic_snapshot()
+        _modus_setzen(env, "fremd")
+        r = _melden(env, [_flugzeug(cs=FREMDER_CS, lat=LAT + 2.0, lon=LON)])
+        assert r.json()["uebernommen"] == 0
+
+    def test_der_fremdverkehr_verfaellt_wie_alles_andere(self, env, monkeypatch):
+        import app.poller as poller_modul
+        env.poller.traffic_snapshot = _traffic_snapshot()
+        _modus_setzen(env, "fremd")
+        _melden(env, [_flugzeug(cs=FREMDER_CS, lat=LAT + 0.002, lon=LON + 0.002)])
+        t0 = env.poller._kniebrett_fremd[FREMDER_CS]["ts"]
+        monkeypatch.setattr(poller_modul.time, "monotonic", lambda: t0 + 30.0)
+        env.poller.bruegge_strom_senden()
+        assert env.poller._kniebrett_fremd == {}
+
+    def test_der_strom_traegt_das_rufzeichen_nicht_die_cid(self, env):
+        """Auf der Karte gibt es für Fremdverkehr keine cid -- `/api/traffic` entfernt sie."""
+        gesendet = []
+        env.poller.broadcast_sse = lambda m: gesendet.append(m)
+        env.poller.traffic_snapshot = _traffic_snapshot()
+        _modus_setzen(env, "fremd")
+        _melden(env, [_flugzeug(cs=FREMDER_CS, lat=LAT + 0.002, lon=LON + 0.002)])
+        env.poller.bruegge_strom_senden()
+        assert gesendet, "nichts gesendet"
+        fremd = gesendet[0].get("fremd") or []
+        assert fremd and fremd[0]["cs"] == FREMDER_CS
+        assert "cid" not in fremd[0]
+
+    def test_die_karte_arbeitet_den_fremdverkehr_ein(self):
+        stelle = _INDEX.index("function _kniebrettFremdEinarbeiten(")
+        block = _INDEX[stelle:_INDEX.index("\n}", stelle)]
+        # In dieselbe Tabelle, aus der die Fremdverkehrs-Ebene ohnehin ihre Marker bewegt --
+        # kein zweiter Zeichenweg.
+        assert "_verkehrRoh[e.cs] =" in block
+        # Nur, wer schon einen Marker hat: Ein Rohwert ohne Marker bewegt nichts.
+        assert "if (!_verkehrMarker[e.cs]) continue;" in block
+        # Und im Kniebrett gar nicht -- dort trägt das Sim-Matching.
+        assert "_PANEL_MODUS" in block
+
+    def test_und_der_strom_wird_dafuer_ueberhaupt_gelesen(self):
+        stelle = _INDEX.index("msg.type === 'bruegge'")
+        block = _INDEX[stelle:stelle + 1200]
+        assert "_kniebrettFremdEinarbeiten(msg.fremd)" in block
