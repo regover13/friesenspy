@@ -140,3 +140,87 @@ def test_dlopen_laeuft_nicht_im_netzthread():
     q = quelltext("xplane/bruegge.cpp")
     block = q[q.index("PLUGIN_API int XPluginStart"):]
     assert block.index("netz_bereit(") < block.index("netz_start()")
+
+
+# ---------------------------------------------------------------------------------------
+# Issue #38 -- die Bruegge schwieg, und niemand konnte sehen warum (15.09.2026)
+# ---------------------------------------------------------------------------------------
+
+def test_der_takt_ueberlebt_den_weltwechsel_nicht():
+    """DIE bestaetigte Ursache von Issue #38.
+
+    Beim Weltwechsel setzt `dispatch` alles zurueck -- `g_sekunden`, `g_spur_anzahl`,
+    `g_vor_gueltig`, `g_lage_gueltig`. Der TAKT stand als einziger nicht in dieser Liste.
+    Wer einmal auf 900 s gedrosselt war (Ausschalter im Admin), kam damit nur ueber einen
+    NEUSTART DES SIMULATORS zurueck: Der Schalter war eine Einbahnstrasse. Gemessen am
+    15.09.2026: 30 Minuten null Meldungen, waehrend das Kniebrett im selben Simulator 793
+    schickte.
+
+    Geprueft wird der Block des Weltwechsels, nicht die ganze Datei -- `g_takt_s = 1` steht
+    auch in der Deklaration, und ueber die ganze Datei gesucht waere der Test blind."""
+    q = quelltext("msfs/bruegge.cpp")
+    block = q[q.index("EV_SIMSTART || e->uEventID == EV_FLUGGELADEN"):]
+    block = block[:block.index("break;")]
+    assert "g_takt_s = 1" in block, "der Takt bleibt beim Weltwechsel stehen -- s. Issue #38"
+
+
+def test_ein_toter_vertrag_ueberlebt_den_weltwechsel_doch():
+    """Die Ausnahme zur Regel darueber, und sie ist keine Formsache.
+
+    Ein `426` heisst, dass der Server diese Protokollfassung nicht mehr liest. Das aendert
+    kein Flugwechsel. Ohne `g_vertrag_tot` finge die Bruegge nach jedem Weltwechsel wieder
+    an, im Sekundentakt in einen Vertrag zu reden, den die Gegenseite gekuendigt hat."""
+    q = quelltext("msfs/bruegge.cpp")
+    block = q[q.index("EV_SIMSTART || e->uEventID == EV_FLUGGELADEN"):]
+    block = block[:block.index("break;")]
+    assert "g_vertrag_tot" in block, "der Weltwechsel weckt auch einen gekuendigten Vertrag"
+    assert "g_vertrag_tot = true" in q[q.index("status == 426"):][:400], \
+        "426 setzt die Sperre gar nicht"
+
+
+def test_die_bruegge_sagt_dass_sie_lebt():
+    """Sie war das EINZIGE Modul im Simulator ohne eine Zeile im Log.
+
+    CampOut, GoFish und Flow melden alle ihr `SimConnect connected`; die Bruegge schwieg,
+    auch wenn sie lief. Deshalb liess sich `laeuft, meldet aber nicht` von `gar nicht
+    geladen` nicht unterscheiden, und die Suche nach 88 stummen Minuten dauerte Stunden
+    statt Sekunden.
+
+    Die Meldung muss VOR dem ersten `SimConnect_Open` stehen. Das ist keine Kosmetik: Bliebe
+    der Simulator im Open haengen oder stuerzte dort ab, waere die Zeile davor das einzige,
+    was ueberhaupt von der Bruegge im Log stuende.
+
+    ⚠ Ein frueherer Anlauf suchte nur `log_zeile` irgendwo vor `kennung_laden_oder_erzeugen`.
+    Der war BLIND: Die Fehlschlag-Meldungen stehen auch dort, also blieb er gruen, als die
+    Startzeile zur Probe entfernt wurde (gemessen 15.09.2026)."""
+    q = quelltext("msfs/bruegge.cpp")
+    assert "log_zeile" in q, "kein einziges Lebenszeichen im Quelltext"
+    init = q[q.index("void module_init"):]
+    vor_open = init[:init.index("SimConnect_Open")]
+    assert "log_zeile" in vor_open, "die Bruegge meldet sich erst, nachdem sie etwas versucht hat"
+    assert "BRUEGGE_VERSION" in vor_open, "die Startzeile nennt die Fassung nicht"
+
+
+def test_ein_gescheitertes_simconnect_open_ist_nicht_mehr_stumm():
+    """Vorher stand dort ein nacktes `return`: Das Modul blieb geladen und tat den Rest der
+    Sitzung nichts -- von aussen genau das Bild, das gemessen wurde."""
+    q = quelltext("msfs/bruegge.cpp")
+    init = q[q.index("void module_init"):]
+    block = init[:init.index("kennung_laden_oder_erzeugen")]
+    assert block.count("SimConnect_Open") >= 1
+    assert "log_zeile" in block, "der Fehlschlag laeuft weiterhin stumm ins Leere"
+    assert re.search(r"for\s*\(.*versuch", block), "es gibt keinen zweiten Versuch"
+
+
+def test_die_logzeilen_fluten_das_log_nicht():
+    """Die Bruegge meldet im Sekundentakt -- eine Zeile je Meldung waeren 3600 in der Stunde.
+
+    Deshalb haengt jede wiederkehrende Ausgabe an einer AENDERUNG: der Takt an seinem
+    Wechsel, die Ablehnung an `g_letzter_status`. Faellt eine dieser Bedingungen weg, ist
+    das Log nach einer Stunde unlesbar -- und damit wertlos fuer genau den Fall, fuer den
+    es gebaut wurde."""
+    q = quelltext("msfs/bruegge.cpp")
+    takt = q[q.index('json_zahl(json, "naechste_frage_in_s"'):]
+    takt = takt[:takt.index("g_gilt_bis_s")]
+    assert "!= g_takt_s" in takt, "der Takt wird bei jeder Antwort geloggt, nicht nur beim Wechsel"
+    assert "g_letzter_status" in q, "die Ablehnung wird in jedem Takt geloggt"

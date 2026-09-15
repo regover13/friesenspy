@@ -487,6 +487,35 @@ nicht.
 > Kommt sie nicht, ist jede weitere Messung sinnlos — dann erst das Laden klären.
 > Die Gegenprobe ist schnell: In `.../Community/friesenbruegge` müssen `manifest.json` und
 > `layout.json` mit `7b` („`{`") beginnen, nicht mit `ef bb bf`.
+>
+> ### ⭐ Und seit dem 15.09.2026 braucht der Bau dafür keinen Simulator mehr
+>
+> **Die drei Build-Fallen stehen alle in der Import- und Exporttabelle der fertigen `.wasm`.**
+> Sie sind damit in Sekunden messbar, statt erst nach einem Neustart in der DevMode-Konsole:
+>
+> ```
+> python friesenbruegge/msfs/wasm_pruefen.py <pfad>/bruegge.wasm
+> ```
+>
+> | Falle | woran sie in der Datei zu erkennen ist |
+> |---|---|
+> | `/GS-` fehlt | Import `env::__stack_chk_fail` |
+> | `--export-table` fehlt | kein Export vom Typ `table` |
+> | `--allow-undefined` fehlt | die SimConnect-Funktionen fehlen unter den `env::`-Importen |
+>
+> `bauen.ps1` ruft das selbst auf und **bricht ab**, statt ein totes Modul abzulegen. Beides
+> ist am 15.09.2026 gegen absichtlich falsch gebaute Module geprüft worden — ein Prüfer, der
+> nie anschlägt, ist schlimmer als keiner.
+>
+> ⚠ **Der vierte Fall ist kein Flag:** Zieht neuer Code einen wasi-Import herein, den die
+> MSFS-Laufzeit nicht kennt (`poll_oneoff` etwa, über ein `sleep`), stirbt das Modul wie bei
+> Falle 1. Deshalb listet das Skript **alle** Importe — sie mit denen des letzten grünen Baus
+> zu vergleichen, ist die eigentliche Prüfung. Die Logausgaben der 1.11.0 kamen so ohne einen
+> einzigen neuen Import durch (21 vorher, 21 nachher).
+>
+> **Am 15.09.2026 war all das negativ** — kein BOM, keine der drei Fallen, 64 Einträge in der
+> `layout.json` ohne eine einzige Größenabweichung. Das Paket war in Ordnung; die Ursache war
+> eine andere (s. Issue #38 und den Abschnitt zum Takt).
 
 ```
 MSFS 2024 starten  →  Flug laden  →  vPilot verbinden (FRS49 oder FRS49N)

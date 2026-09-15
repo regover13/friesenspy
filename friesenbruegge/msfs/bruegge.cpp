@@ -46,16 +46,45 @@
 #endif
 
 #include <cstdio>
+#include <cstdarg>
 #include <cstring>
 #include <cstdlib>
 
 #include "../json.h"
 
 // ---------------------------------------------------------------------------------------
+// Die Lebensäußerung
+// ---------------------------------------------------------------------------------------
+//
+// Bis zum 15.09.2026 stand hier NICHTS -- die Brügge war das einzige Modul im Simulator
+// ohne eine einzige Zeile im Log. Im Log des Nutzers meldeten sich CampOut, GoFish und Flow
+// jeweils beim Verbinden; die Brügge schwieg, auch wenn sie lief. Deshalb hat die Suche nach
+// dem Grund für 88 stumme Minuten Stunden gedauert statt Sekunden: Es gab kein Merkmal, an
+// dem sich „läuft, meldet aber nicht" von „gar nicht geladen" unterscheiden ließ.
+//
+// ⚠ `stderr`, NICHT `printf`: stdout ist gepuffert, und ein Modul, das beim Verbinden
+// scheitert, kommt nie an die Stelle, die den Puffer leeren würde -- ausgerechnet die
+// wichtigste Zeile ginge verloren. `stderr` ist nach C-Standard ungepuffert; das `fflush`
+// steht trotzdem da, weil „ungepuffert" für die MSFS-Laufzeit nirgends zugesichert ist.
+//
+// Der Zeile wird vom Simulator ohnehin `[bruegge.wasm]` vorangestellt. Das eigene Präfix
+// steht daneben, damit eine herausgegriffene Zeile auch ohne den Modulnamen zuzuordnen ist --
+// dasselbe Muster wie `[GF][INFO]` bei GoFish.
+static void log_zeile(const char* format, ...) {
+    char zeile[256];
+    va_list rest;
+    va_start(rest, format);
+    std::vsnprintf(zeile, sizeof(zeile), format, rest);
+    va_end(rest);
+    std::fprintf(stderr, "[FriesenBruegge] %s\n", zeile);
+    std::fflush(stderr);
+}
+
+// ---------------------------------------------------------------------------------------
 // Feste Größen
 // ---------------------------------------------------------------------------------------
 
-#define BRUEGGE_VERSION   "1.10.0"
+#define BRUEGGE_VERSION   "1.11.0"
 #define BRUEGGE_URL       "https://friesenspy.devprops.de/api/bruegge/melden"
 #define KENNUNG_DATEI     "\\work\\friesenbruegge.kennung"
 
@@ -241,6 +270,13 @@ static char    g_kennung[40] = {0};
 // Schreiben das eigene, asynchrone Lesen ueberholen (s. kennung_laden_oder_erzeugen).
 static bool    g_kennung_fest = false;
 static int     g_takt_s = 1;              // was der Server zuletzt vorgegeben hat
+// Hat der Server die Protokollfassung abgelehnt (426)? Dann ist der Vertrag tot, und das
+// bleibt er -- auch über einen Flugwechsel hinweg. Jede andere Drosselung darf eine neue
+// Welt dagegen hinter sich lassen, s. den Weltwechsel in `dispatch`.
+static bool    g_vertrag_tot = false;
+// Der zuletzt GEMELDETE Ablehnungsgrund -- 0 heißt „der Server nimmt an". Er dient allein
+// dem Log: Ohne ihn stünde jede Sekunde dieselbe Zeile darin.
+static int     g_letzter_status = 0;
 static DWORD   g_seit_meldung = 0;
 static FsNetworkRequestId g_laufend = 0;  // 0 = keine Anfrage offen
 static DWORD   g_gilt_bis_s = 300;        // wie lange `soll` ohne neue Auskunft gilt
@@ -980,6 +1016,13 @@ static void antwort_lesen(const char* json) {
     double takt = json_zahl(json, "naechste_frage_in_s", (double)g_takt_s);
     if (takt < 1.0) takt = 1.0;
     if (takt > 900.0) takt = 900.0;
+    // NUR bei Änderung ins Log -- im Regeltakt wären es 3600 Zeilen in der Stunde. Die
+    // Änderung selbst ist dagegen genau die Auskunft, die am 15.09.2026 gefehlt hat: Eine
+    // Drosselung auf 900 s sieht von außen aus wie ein totes Modul, und niemand konnte
+    // sehen, dass der Server sie angeordnet hatte.
+    if ((int)takt != g_takt_s) {
+        log_zeile("Der Server setzt den Takt von %d s auf %d s.", g_takt_s, (int)takt);
+    }
     g_takt_s = (int)takt;
 
     // Wie lange der Sollzustand ohne neue Auskunft gilt. Ohne diese Zahl entschiede jede der
@@ -1017,6 +1060,11 @@ static void anfrage_fertig(FsNetworkRequestId id, int status, void*) {
     if (status == 426) {
         // Protokollfassung zu alt: aufraeumen und anhalten. Weiterzureden hiesse, in einem
         // Vertrag zu reden, den auf der anderen Seite niemand mehr liest.
+        if (!g_vertrag_tot) {
+            log_zeile("Der Server lehnt die Protokollfassung ab (426). Die Bruegge haelt sich "
+                      "zurueck (Takt 900 s) -- es hilft nur ein neues Paket.");
+        }
+        g_vertrag_tot = true;
         g_takt_s = 900;
         return;
     }
@@ -1025,7 +1073,21 @@ static void anfrage_fertig(FsNetworkRequestId id, int status, void*) {
         return;
     }
     // 0 gilt mit, falls die Laufzeit doch ein Fehlerkennzeichen liefert statt eines Status.
-    if (!(status == 0 || (status >= 200 && status < 300))) return;
+    if (!(status == 0 || (status >= 200 && status < 300))) {
+        // Nur beim WECHSEL ins Log. Eine Ablehnung hält im Regeltakt sekundenlang an --
+        // etwa solange der Pilot nicht auf VATSIM verbunden ist, was der Normalfall und
+        // kein Fehler ist. Jede Sekunde eine Zeile wäre Rauschen; die eine Zeile beim
+        // Wechsel sagt, ab wann der Server ablehnt und ab wann wieder nicht.
+        if (status != g_letzter_status) {
+            log_zeile("Der Server lehnt ab (HTTP %d). Die Bruegge meldet weiter.", status);
+            g_letzter_status = status;
+        }
+        return;
+    }
+    if (g_letzter_status != 0) {
+        log_zeile("Der Server nimmt wieder an (vorher HTTP %d).", g_letzter_status);
+        g_letzter_status = 0;
+    }
 
     unsigned long n = fsNetworkHttpRequestGetDataSize(id);
     unsigned char* daten = fsNetworkHttpRequestGetData(id);
@@ -1065,6 +1127,10 @@ static void anfrage_fertig(FsNetworkRequestId id, int status, void*) {
 static void anfrage_bewachen() {
     if (g_laufend == 0) return;
     if (++g_laufend_seit <= 30) return;
+    // Der Wächter schlägt an -- eine Anfrage hat 30 s lang keine Antwort bekommen. Das
+    // gehört ins Log, weil es die einzige Stelle ist, an der ein Netzproblem sichtbar wird:
+    // Die Brügge redet danach einfach weiter, als wäre nichts gewesen.
+    log_zeile("Keine Antwort binnen 30 s -- Anfrage verworfen, es geht weiter.");
     fsNetworkHttpCancelRequest(g_laufend);
     g_laufend = 0;
     g_laufend_seit = 0;
@@ -1165,6 +1231,29 @@ void CALLBACK dispatch(SIMCONNECT_RECV* pData, DWORD, void*) {
             g_spur_anzahl = 0;
             g_vor_gueltig = false;
             g_lage_gueltig = false;
+
+            // ⚠ UND DER TAKT. Bis zum 15.09.2026 stand er als einziger NICHT in dieser
+            // Liste, und das war die bestätigte Ursache von Issue #38: Wer einmal auf 900 s
+            // gedrosselt war -- durch den Ausschalter im Admin --, kam nur über einen
+            // NEUSTART DES SIMULATORS zurück. Der Schalter war damit eine Einbahnstraße:
+            // Abschalten wirkte sofort, das Wiedereinschalten erfuhr die Brügge frühestens
+            // eine Viertelstunde später, und wer dazwischen den Flug wechselte, fing wieder
+            // von vorn an. Am 15.09.2026 wurden so 30 Minuten lang null Meldungen gemessen,
+            // während das Kniebrett im selben Simulator 793 schickte.
+            //
+            // Eine neue Welt ist ein frischer Anfang -- die Brügge fragt sofort, und die
+            // Antwort trägt den Takt, der jetzt gilt (`naechste_frage_in_s`). Sie umgeht
+            // damit nichts: Steht der Schalter weiter auf „aus", ist sie nach EINER Meldung
+            // wieder gedrosselt.
+            //
+            // Die Ausnahme ist der tote Vertrag. Ein `426` heißt, dass der Server diese
+            // Fassung nicht mehr liest; das ändert kein Flugwechsel, und in einem Vertrag,
+            // den die Gegenseite gekündigt hat, soll sie nicht wieder anfangen zu reden.
+            if (!g_vertrag_tot && g_takt_s != 1) {
+                log_zeile("Neue Welt -- Takt von %d s zurueck auf 1 s.", g_takt_s);
+                g_takt_s = 1;
+                g_seit_meldung = 0;
+            }
             // Eine neue Welt. Die gesetzten Objekte ueberleben den Wechsel zwar (gemessen
             // 11.09.2026), gehoeren aber zur alten Lage des Piloten -- der Server schickt
             // beim naechsten Takt, was HIER stehen soll.
@@ -1282,7 +1371,43 @@ void CALLBACK dispatch(SIMCONNECT_RECV* pData, DWORD, void*) {
 }
 
 extern "C" MSFS_CALLBACK void module_init(void) {
-    if (SimConnect_Open(&g_sim, "FriesenBruegge", nullptr, 0, 0, 0) != S_OK) return;
+    log_zeile("Fassung %s (%s) startet -- verbinde mit SimConnect...",
+              BRUEGGE_VERSION, SIMULATOR_NAME);
+
+    // ⚠ MEHR ALS DIESE DREI VERSUCHE IST NICHT BAUBAR -- und das ist keine Bequemlichkeit.
+    //
+    // Die Übergabe vom 15.09.2026 verlangte „bei Fehlschlag im Sekundentakt erneut
+    // versuchen". Dafür bräuchte es einen Taktgeber, und den hat ein reines WASM-Modul
+    // ausschließlich über SimConnect selbst (`EV_SEKUNDE`): Scheitert `SimConnect_Open`,
+    // gibt es keine Schleife mehr, in der ein zweiter Versuch stattfinden könnte.
+    // Nachgesehen am 15.09.2026 im SDK (`C:\MSFS 2024 SDK\WASM\include\MSFS`):
+    // `MSFS_Events.h` kennt nur Key-Events, einen Frame- oder Timer-Callback für Module
+    // gibt es in keinem der 21 Header. Ein `sleep` zwischen den Versuchen scheidet
+    // ebenfalls aus -- es blockierte den Simulator-Thread mitten im Ladevorgang und zöge
+    // mit `poll_oneoff` einen wasi-Import herein, den die MSFS-Laufzeit womöglich nicht
+    // kennt (genau die Falle, an der `__stack_chk_fail` das Modul vor dem Start tötet).
+    //
+    // Was bleibt, sind Sofortversuche gegen einen vorübergehenden Fehlschlag -- und vor
+    // allem die Logzeile darunter. DIE ist der eigentliche Gewinn: Vorher war ein
+    // gescheitertes `Open` von einem nie geladenen Modul nicht zu unterscheiden.
+    bool verbunden = false;
+    for (int versuch = 1; versuch <= 3 && !verbunden; ++versuch) {
+        HRESULT hr = SimConnect_Open(&g_sim, "FriesenBruegge", nullptr, 0, 0, 0);
+        if (hr == S_OK) {
+            verbunden = true;
+            if (versuch > 1) log_zeile("SimConnect verbunden (im %d. Versuch).", versuch);
+            break;
+        }
+        log_zeile("SimConnect_Open fehlgeschlagen, Versuch %d von 3 (hr=0x%08lX).",
+                  versuch, (unsigned long)hr);
+    }
+    if (!verbunden) {
+        log_zeile("AUFGEGEBEN -- ohne SimConnect gibt es keinen Takt, in dem ein weiterer "
+                  "Versuch stattfinden koennte. Die Bruegge bleibt diese Sitzung lang stumm; "
+                  "es hilft nur ein Neustart des Simulators.");
+        return;
+    }
+    log_zeile("SimConnect verbunden.");
 
     kennung_laden_oder_erzeugen();
 
@@ -1326,6 +1451,12 @@ extern "C" MSFS_CALLBACK void module_init(void) {
     SimConnect_SubscribeToSystemEvent(g_sim, EV_FLUGGELADEN, "FlightLoaded");
 
     SimConnect_CallDispatch(g_sim, dispatch, nullptr);
+
+    // Die Zeile, an der sich „läuft" von „geladen, tut aber nichts" unterscheiden lässt.
+    // Die Kennung geht mit, weil sie auf der Serverseite die Brügge benennt -- steht sie
+    // hier, lässt sich eine Meldung im Container-Log ohne Umweg diesem Simulator zuordnen.
+    log_zeile("bereit -- Takt %d s, Kennung %s, meldet an %s",
+              g_takt_s, g_kennung[0] ? g_kennung : "(noch keine)", BRUEGGE_URL);
 }
 
 extern "C" MSFS_CALLBACK void module_deinit(void) {

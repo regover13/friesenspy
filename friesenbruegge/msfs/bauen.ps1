@@ -89,3 +89,26 @@ Write-Output "uebersetzt: $obj"
     $obj
 if ($LASTEXITCODE -ne 0) { throw "Linken fehlgeschlagen ($LASTEXITCODE)" }
 Write-Output "gelinkt:    $wasm  ($((Get-Item $wasm).Length) Bytes)"
+
+# ---- 3. Sich selbst pruefen ----------------------------------------------
+# Die drei Fallen oben stehen alle in der Import-/Exporttabelle der fertigen Datei -- sie
+# sind also hier messbar und nicht erst nach einem Neustart des Simulators. Genau daran hing
+# am 15.09.2026 die halbe Fehlersuche: Ob das Modul sauber gebaut war, liess sich nicht
+# feststellen, ohne MSFS zu starten und in der DevMode-Konsole nachzusehen.
+#
+# Fehlt Python, WARNT das hier nur -- ein gebautes Modul ist ein gebautes Modul, und ein
+# fehlendes Pruefwerkzeug soll den Bau nicht scheitern lassen.
+$pruefer = "$hier\wasm_pruefen.py"
+$python = (Get-Command python -ErrorAction SilentlyContinue).Source
+if (-not $python) {
+    Write-Warning "python nicht gefunden -- die drei Build-Fallen sind UNGEPRUEFT."
+} elseif (-not (Test-Path $pruefer)) {
+    Write-Warning "wasm_pruefen.py fehlt -- die drei Build-Fallen sind UNGEPRUEFT."
+} else {
+    $bericht = & $python $pruefer $wasm
+    $bericht | Select-String -Pattern 'FALLE|Importe|Exporte' | ForEach-Object { Write-Output "  $_" }
+    if ($bericht -match '<<<') {
+        $bericht | Select-String -Pattern '<<<' | ForEach-Object { Write-Output $_ }
+        throw "Das Modul wuerde im Simulator nicht laufen -- s. die Zeilen mit '<<<' oben."
+    }
+}
