@@ -1,5 +1,15 @@
 [
   {
+    "version": "14.49.1",
+    "date": "2026-09-15",
+    "highlight": false,
+    "title": "Zwei Quellen für denselben Punkt streiten sich nicht mehr",
+    "items": [
+      "🔀 Wer FriesenBrügge und Kniebrett gleichzeitig laufen hat, hatte zwei Quellen für dieselbe Position — und es gewann schlicht die, die zuletzt gemeldet hatte, im Sekundentakt abwechselnd. Jetzt hat die FriesenBrügge den Vortritt: Sie liest zusätzlich die Höhe über Grund und ob das Flugzeug am Boden steht, was das Kniebrett nicht mitliefert. Hört sie auf zu melden, übernimmt das Kniebrett nach drei Sekunden.",
+      "🎛️ Im Admin standen bei „einzelne Piloten begrenzen\" alle 64 Mitglieder zur Auswahl, obwohl vier ein Kniebrett angemeldet haben. Jetzt stehen dort die, um die es geht — mit dem Datum, wann ihr Kniebrett zuletzt angemeldet war, und ergänzt um jeden, der gerade meldet."
+    ]
+  },
+  {
     "version": "14.49.0",
     "date": "2026-09-15",
     "highlight": false,
