@@ -501,7 +501,8 @@ class TestSenderImQuelltext:
         Server überhaupt eine cid hat."""
         stelle = _INDEX.index("function _verkehrZusammenfuehren()")
         ende = _INDEX.index("function _zuordnungDiagnose(")
-        assert "_kbVorratMerken(v.cs, s);" in _INDEX[stelle:ende]
+        # Seit der vierten Stufe trägt der Aufruf mit, OB es ein Friese ist.
+        assert "_kbVorratMerken(v.cs, s, true);" in _INDEX[stelle:ende]
 
     def test_der_sender_startet_erst_mit_bekannter_cid(self):
         assert "if (_PANEL_MODUS && _meineCid != null) _kbStarten();" in _INDEX
@@ -1208,3 +1209,26 @@ class TestVierteStufeFremd:
         stelle = _INDEX.index("msg.type === 'bruegge'")
         block = _INDEX[stelle:stelle + 1200]
         assert "_kniebrettFremdEinarbeiten(msg.fremd)" in block
+
+    def test_der_sender_merkt_sich_auch_fremdverkehr(self):
+        """⚠ Ohne das wäre die ganze Stufe wirkungslos: Der Server nähme Fremdverkehr an,
+        aber der Client schickte nie welchen. `_kbVorratMerken` stand zuerst NUR im
+        Friesen-Zweig -- die Serverseite war fertig und die Funktion trotzdem tot."""
+        stelle = _INDEX.index("function _verkehrZusammenfuehren()")
+        ende = _INDEX.index("function _zuordnungDiagnose(")
+        block = _INDEX[stelle:ende]
+        assert "_kbVorratMerken(v.cs, s, true);" in block      # Friese
+        assert "_kbVorratMerken(v.cs, s, false);" in block     # Fremdverkehr
+
+    def test_und_der_sender_trennt_die_beiden_stufen(self):
+        """`alle` = nur Friesen, `fremd` = auch die anderen. Der Server setzt dasselbe noch
+        einmal durch; hier geht es darum, bei vierzig Flugzeugen im Umkreis gar nicht erst
+        eine große Nutzlast zu bauen."""
+        stelle = _INDEX.index("function _kbNutzlast()")
+        block = _INDEX[stelle:_INDEX.index("\n}", stelle)]
+        assert "if (!e.friese && _kbModus !== 'fremd') continue;" in block
+
+    def test_der_vorrat_haelt_die_unterscheidung_fest(self):
+        stelle = _INDEX.index("function _kbVorratMerken(")
+        block = _INDEX[stelle:_INDEX.index("\n}", stelle)]
+        assert "friese: !!istFriese" in block

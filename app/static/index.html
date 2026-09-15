@@ -6357,7 +6357,7 @@ function _verkehrZusammenfuehren() {
       // ... und dieselben Werte fuer die Meldung ans FriesenSpy vormerken (Issue #23).
       // HIER und nur hier: An dieser Stelle steht die Zuordnung fest, und sie steht fuer
       // einen FRIESEN -- fuer den hat der Server eine cid, an der ein Punkt haengen kann.
-      _kbVorratMerken(v.cs, s);
+      _kbVorratMerken(v.cs, s, true);
       continue;
     }
     const e = { lat: s.lat, lon: s.lon, alt: s.alt, hdg: s.hdg, gs: s.gs,
@@ -6377,6 +6377,10 @@ function _verkehrZusammenfuehren() {
       // Sim-Eintrag und sein VATSIM-Partner. Weiter unten ist aus `_key` nicht mehr
       // abzulesen, wie er zustande kam: Ein reiner VATSIM-Eintrag traegt dort denselben.
       e._zugeordnet = true;
+      // ... und fuer die Meldung vormerken (Schalterstufe `fremd`, Issue #23). Auch hier
+      // gilt: nur MIT Zuordnung, denn erst sie bringt das Rufzeichen. Ein Sim-Objekt ohne
+      // VATSIM-Partner hat keines -- die Rohdaten von GET_AIR_TRAFFIC tragen `cs: ''`.
+      _kbVorratMerken(v.cs, s, false);
       // KEIN Rueckfall auf die VATSIM-Geschwindigkeit, wenn der Simulator 0 meldet.
       //
       // Genau das hatte ich kurzzeitig eingebaut, weil "0 kt an einem bewegten Flugzeug" nach
@@ -6451,9 +6455,13 @@ let _kbGesendet = Object.create(null);
 // `_verkehrZusammenfuehren` gefuellt -- dort und nur dort steht die Zuordnung fest.
 let _kbVorrat = Object.create(null);
 
-function _kbVorratMerken(cs, s) {
+function _kbVorratMerken(cs, s, istFriese) {
   if (!_PANEL_MODUS || !cs) return;
   _kbVorrat[cs] = {
+    // Friese oder Fremdverkehr? Die Stufe `alle` meldet nur Friesen, erst `fremd` nimmt
+    // die anderen mit -- und das entscheidet sich HIER, wo beides bekannt ist. Weiter
+    // unten steht im Vorrat nur noch ein Rufzeichen.
+    friese: !!istFriese,
     lat: s.lat, lon: s.lon,
     alt: (s.alt == null) ? null : Number(s.alt),
     hdg: Number(s.hdg) || 0,
@@ -6547,10 +6555,15 @@ function _kbNutzlast() {
   // Im Modus "eigene" verhaelt sich das Kniebrett wie eine FriesenBruegge: Es meldet nur
   // sich selbst. Der Server setzt dasselbe noch einmal durch -- hier geht es darum, gar
   // nicht erst zu senden, was ohnehin verworfen wuerde.
-  if (_kbModus === 'alle') {
+  if (_kbModus === 'alle' || _kbModus === 'fremd') {
     for (const cs in _kbVorrat) {
       if (eigen && cs === eigen.cs) continue;
       const e = _kbVorrat[cs];
+      // `alle` heisst: alle erkannten FRIESEN. Fremdverkehr geht erst ab `fremd` mit --
+      // der Server setzt dasselbe noch einmal durch, hier geht es darum, gar nicht erst
+      // zu senden, was ohnehin verworfen wuerde (bei vierzig Flugzeugen im Umkreis ist
+      // das der Unterschied zwischen einer kleinen und einer grossen Nutzlast).
+      if (!e.friese && _kbModus !== 'fremd') continue;
       alle.push({ cs: cs, lat: e.lat, lon: e.lon, alt: e.alt, hdg: e.hdg, gs: e.gs,
                   vs: e.vs, gnd: e.gnd });
     }
