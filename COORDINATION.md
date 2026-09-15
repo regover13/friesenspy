@@ -71,8 +71,30 @@ genau wie beim Wind ab 2.1.0.
 „Brügge vor Kniebrett" bleibt richtig. Erst danach sind beide Quellen gleichwertig — das ist
 Punkt 5 und 6 der Server-Liste.
 
-⚠ **Das Paket ist noch NICHT auf der Download-Seite.** Es liegt gebaut im Community-Ordner
-und wartet auf den Kontrollstart im Simulator.
+### ✅ NACHTRAG, 20:00 Uhr — erledigt, geprüft und ausgeliefert
+
+**Der obige Auftrag ist gegenstandslos: Die Server-Sitzung hat ihn um 18:44 selbst erledigt**
+(`f9f5e37`) und dabei drei Stellen gefunden statt der zwei, die hier standen — `_simPos`,
+`bruegge_position_merken` und der alte Brügge-Vorrang. Der Endpunkt nahm `agl`/`gnd` ohnehin
+schon entgegen.
+
+**Die Feldnamen sind damit Vertrag** (`alt_agl_ft`, `vs_ft_min`, `am_boden`). Sie hier auf
+die kürzeren der Kniebrett-Nutzlast umzustellen war angefangen und ist **zurückgenommen
+worden**: Die Gegenseite war schneller und liest bereits diese Namen. Wer sie ändert, ändert
+beide Seiten gleichzeitig oder gar nicht.
+
+**Kontrollstart bestanden** (MSFS 2024, 1.11.0): Modul geladen, `SimConnect verbunden`,
+Takt 1 s. Im Log stand danach der Weltwechsel-Fix im Echtbetrieb — „Neue Welt -- Takt von
+10 s zurueck auf 1 s" — und ein HTTP 502 (ein Deploy), von dem sich die Brügge selbst
+erholte, mit genau zwei Logzeilen statt einer Flut.
+
+**Beide Pakete sind auf der Download-Seite** (15.09.2026, 20:00 Uhr), byte-identisch
+gegengeprüft (sha256 lokal = Server):
+
+| Datei | Fassung |
+|---|---|
+| `friesenbruegge.zip` | **1.11.0** |
+| `friesenspy-efb.zip` | **2.3.0** |
 
 ---
 
