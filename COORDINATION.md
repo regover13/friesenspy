@@ -6,6 +6,35 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## ⚠ 2026-09-15 — ZWEI SITZUNGEN IM SELBEN ARBEITSBAUM
+
+Aufgefallen beim Deploy von #23: `~/projects/friesenspy` wird von **beiden** Sitzungen
+gleichzeitig benutzt. Das ist kein theoretisches Risiko, es hat dreimal an einem Nachmittag
+zugeschlagen:
+
+- Eine volle Testsuite (7 Minuten) lief zweimal in Fehlschläge, weil währenddessen fremde
+  Änderungen an `app/CHANGELOG.json`, `app/static/index.html` und `tests/test_bruegge_karte.py`
+  gespeichert wurden. Beide Tests waren allein grün — die Fehlschläge hatten mit dem Code
+  nichts zu tun (`test_version`, `test_bruegge_karte`).
+- Die Versionsnummer wanderte während eines einzigen Commits von 14.46.0 über 14.48.0 auf
+  14.49.0. Ein vorbereiteter Changelog-Eintrag war zweimal überholt, bevor er committet war.
+- Beim Commit lagen **fremde gestagte Dateien** im Index. Ein `git add -A` hätte die Arbeit
+  der anderen Sitzung mitgenommen, halbfertig und unter fremdem Betreff.
+
+**Regeln, bis jemand getrennte Arbeitsbäume einrichtet:**
+
+1. **Niemals `git add -A`.** Nur die eigenen Dateien einzeln nennen — der Index kann fremde
+   Einträge enthalten.
+2. **`app/CHANGELOG.json` gehört dem, der als Nächstes committet.** Wer einen Eintrag
+   vorbereitet, schreibt ihn unmittelbar vor dem Commit, nicht davor.
+3. **Ein Suite-Fehlschlag in `test_version`, `test_bruegge_karte`, `test_vr_panel` oder
+   `test_kutter_eventloop` ist erst dann ein Befund, wenn er ALLEIN auch rot ist.** Diese
+   Tests lesen Quelldateien als Text.
+4. Besser wäre ein eigener Klon je Sitzung (`git worktree add`). Das ist hier nicht
+   umgesetzt.
+
+---
+
 ## 2026-09-15 (abends) — #23 ist GEBAUT, liegt auf einem Zweig und ist abgeschaltet
 
 **Wer:** die #23-Sitzung (Server). Zweig `kniebrett-meldet-gebiet`, **nicht** nach `main`
@@ -67,6 +96,18 @@ denselben Weg geht:
 
 Dazu zwei Kleinigkeiten: fehlende `alt` wurde als 0 ft gelesen (Panel-Pakete vor 1.4.0
 schicken keine), und `hdg`/`gs` gingen ungeklemmt in den Sekundenstrom.
+
+### Nachtrag 15.09. — Brügge UND Kniebrett gleichzeitig war nicht entschieden
+
+Nutzerfrage: „Was ist mit aktiver Brügge und aktivem Kniebrett? Was gewinnt?" Antwort war:
+**der Zufall.** `bruegge_position_merken` prüft gar nichts, `kniebrett_position_merken` ließ
+gleiche Güte durch — beide melden im Sekundentakt, also gewann der Letzte, im Wechsel.
+Sichtbar geworden wäre es an `agl`/`gnd` (die Brügge liefert sie, das Kniebrett nicht) und an
+der Quellenangabe im Kartenfenster.
+
+**Jetzt gewinnt die Brügge**, weil sie die reichere Quelle ist; verstummt sie, übernimmt das
+Kniebrett nach 3 s. `bruegge_position_merken` bleibt dabei unangetastet — die Regel steht
+ausschließlich auf der Kniebrett-Seite, damit die parallele Sitzung nichts davon merkt.
 
 ### ⚠ Vor dem Einschalten: nginx von Hand nachziehen
 

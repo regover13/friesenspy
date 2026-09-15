@@ -1341,6 +1341,30 @@ def test_kompass_zeigt_seinen_zustand_wie_der_pfeil():
     assert 'class="kompass-sued"' in INDEX
 
 
+def _marker_argumente(quelle: str):
+    """Die Argumentliste jedes `L.marker(...)`-Aufrufs, über Zeilenumbrüche hinweg.
+
+    Ein Regex taugt dafür nicht: `L\\.marker\\((.*?)\\)` endet an der ersten schließenden
+    Klammer und damit mitten im ersten verschachtelten Aufruf; mit `re.S` und einem
+    Zeilenende als Anker greift er dafür über den nächsten Aufruf hinweg und zählt vier, wo
+    drei stehen (beides am 15.09.2026 vorgeführt). Klammern muss man zählen.
+    """
+    aus = []
+    i = quelle.find("L.marker(")
+    while i >= 0:
+        start = i + len("L.marker(")
+        tiefe, j = 1, start
+        while j < len(quelle) and tiefe:
+            if quelle[j] == "(":
+                tiefe += 1
+            elif quelle[j] == ")":
+                tiefe -= 1
+            j += 1
+        aus.append(quelle[start:j - 1])
+        i = quelle.find("L.marker(", j)
+    return aus
+
+
 def test_flugzeuge_drehen_mit_der_karte():
     """Bei Track-up MUSS das Flugzeugsymbol mitdrehen -- seine Richtung ist die Aussage.
 
@@ -1354,8 +1378,14 @@ def test_flugzeuge_drehen_mit_der_karte():
     Bewegung gehalten (und genau davor warnt der Kommentar an setIcon in updateMap)."""
     assert INDEX.count("rotateWithView: true") == 3, \
         "alle drei Marker-Arten (VATSIM, Sim, Fremdverkehr) brauchen die Option"
-    for stelle in ("icon: makeAircraftIcon(hdg), rotateWithView: true",):
-        assert stelle in INDEX
+    # Und zwar an JEDEM Flugzeug-Marker, nicht bloss dreimal irgendwo. Hier stand die Probe
+    # als woertliche Suche nach "icon: makeAircraftIcon(hdg), rotateWithView: true" -- sie
+    # traf genau eine der drei Stellen und brach, sobald eine Zeile umbrach (15.09.2026).
+    # Jetzt haengt sie am Aufruf statt an der Formatierung.
+    flugzeuge = [a for a in _marker_argumente(INDEX) if "makeAircraftIcon(" in a]
+    assert len(flugzeuge) == 3, f"3 Flugzeug-Marker erwartet, {len(flugzeuge)} gefunden"
+    for m in flugzeuge:
+        assert "rotateWithView: true" in m, m
 
 
 def test_eigenes_flugzeug_auch_ohne_vatsim():

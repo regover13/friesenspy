@@ -123,6 +123,7 @@ from app.database import (
     KNIEBRETT_MODI,
     kniebrett_rang,
     kniebrett_modi_alle,
+    kniebrett_piloten,
     kniebrett_modus_setzen,
     get_panel_prefs,
     set_panel_prefs,
@@ -2118,8 +2119,16 @@ async def admin_kniebrett(request: Request):
                                        str(_KNIEBRETT_TAKT_VORGABE_S)))
         except (TypeError, ValueError):
             takt = _KNIEBRETT_TAKT_VORGABE_S
-        piloten = [{"cid": cid, "modus": m}
-                   for cid, m in sorted(kniebrett_modi_alle(conn).items())]
+        modi = kniebrett_modi_alle(conn)
+        piloten = [{"cid": cid, "modus": m} for cid, m in sorted(modi.items())]
+        # Zur Auswahl steht, wer ein Kniebrett HAT -- nicht die ganze Pilotenliste. Dazu, wer
+        # bereits einen Eintrag hat: Seine Geraetebindung kann laengst geloest sein, der
+        # Eintrag gilt trotzdem weiter und muss ohne Umweg zuruecknehmbar bleiben.
+        auswahl = kniebrett_piloten(conn)
+        bekannt = {p["cid"] for p in auswahl}
+        for cid in modi:
+            if cid not in bekannt:
+                auswahl.append({"cid": cid, "name": None, "geraete": 0, "zuletzt": None})
     finally:
         conn.close()
     # Wer gerade wen versorgt -- die Frage, die man sonst nirgends beantwortet bekommt: Auf
@@ -2137,8 +2146,16 @@ async def admin_kniebrett(request: Request):
                           else ("selbst" if int(e["melder"]) == int(cid) else "kniebrett"),
                 "alter_s": round(jetzt - e["ts"], 1),
             })
+    # Wer gerade MELDET, gehoert auch zur Auswahl -- er kann sein Geraet ohne dauerhafte
+    # Bindung benutzen ("Kniebrett dauerhaft anmelden?" abgelehnt) und stuende dann in
+    # `panel_devices` nicht. Das ist genau der Pilot, bei dem man den Schalter braucht.
+    for z in live:
+        m = z.get("melder")
+        if m is not None and int(m) not in {p["cid"] for p in auswahl}:
+            auswahl.append({"cid": int(m), "name": None, "geraete": 0, "zuletzt": None})
     return {"modus": modus, "takt_s": max(1, min(_KNIEBRETT_TAKT_MAX_S, takt)),
             "takt_max_s": _KNIEBRETT_TAKT_MAX_S, "piloten": piloten,
+            "auswahl": auswahl,
             "live": sorted(live, key=lambda x: x["cid"]), "modi": list(KNIEBRETT_MODI)}
 
 

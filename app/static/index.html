@@ -12472,9 +12472,18 @@ function _eigenesFlugzeugZeichnen() {
     vatsimMarker.setLatLng([_simPos.lat, _simPos.lon]);
     // Auch der Kurs kommt aus dem Sim: Sonst zeigt das Symbol in die Richtung von vor bis
     // zu 15 Sekunden, waehrend es an der richtigen Stelle steht.
-    if (vatsimMarker._fsHeading !== hdg) {
-      vatsimMarker.setIcon(makeAircraftIcon(hdg));
+    //
+    // Und die Farbe: Hier stehen wir hinter `_simPosFrisch()`, der Punkt ist also
+    // sekundengenau -- fest `true`, nicht ueber `_punktIstSekundengenau`. Das ist keine
+    // Abkuerzung, sondern der Unterschied zwischen "ist es so?" und "wissen wir es?":
+    // `_meinCallsign()` liest aus `liveData`, und wer ohne FRS-Rufzeichen fliegt, steht dort
+    // nicht. Der Merker MUSS mitgeprueft werden -- `updateMap` legt diesen Marker an, bevor
+    // der Simulator sich meldet, und ruehrt ihn danach nicht mehr an (`!demSim`). Haengt die
+    // Farbe allein am Kurs, bliebe ein geradeaus fliegendes Flugzeug blau.
+    if (vatsimMarker._fsHeading !== hdg || vatsimMarker._fsGenau !== true) {
+      vatsimMarker.setIcon(makeAircraftIcon(hdg, false, true));
       vatsimMarker._fsHeading = hdg;
+      vatsimMarker._fsGenau = true;
     }
     // Und das Schild ebenso. Es stand hier NICHT, und der Fehler war im Flug sofort sichtbar
     // (Nutzer-Fund 16.08.2026): Position und Kurs liefen im Sekundentakt, Hoehe und
@@ -12500,8 +12509,11 @@ function _eigenesFlugzeugZeichnen() {
   // Offline (oder noch nicht im VATSIM-Strom): eigener Marker.
   const beschriftung = _eigenLabel();
   if (!_eigenerSimMarker) {
+    // Ohne VATSIM daneben gibt es ueberhaupt keine zweite Quelle, gegen die man vergleichen
+    // koennte -- dieser Marker IST der Simulator. Tuerkis ohne Vorbehalt.
     _eigenerSimMarker = L.marker([_simPos.lat, _simPos.lon],
-                                 { icon: makeAircraftIcon(hdg), rotateWithView: true })
+                                 { icon: makeAircraftIcon(hdg, false, true),
+                                   rotateWithView: true })
       .bindPopup('<div class="popup-callsign">DEIN FLUGZEUG</div>'
                + '<div class="popup-row">Quelle: <span>Simulator</span></div>', { maxWidth: 240 })
       .bindTooltip(beschriftung,
@@ -12514,7 +12526,7 @@ function _eigenesFlugzeugZeichnen() {
   }
   _eigenerSimMarker.setLatLng([_simPos.lat, _simPos.lon]);
   if (_eigenerSimMarker._fsHeading !== hdg) {
-    _eigenerSimMarker.setIcon(makeAircraftIcon(hdg));
+    _eigenerSimMarker.setIcon(makeAircraftIcon(hdg, false, true));
     _eigenerSimMarker._fsHeading = hdg;
   }
   if (_eigenerSimMarker._fsLabel !== beschriftung) {
@@ -12722,10 +12734,18 @@ function _istEigenesFlugzeug(callsign) {
  * geloescht, sobald der Simulator ihn nicht mehr liefert. Die Frist daneben
  * (`_simVerkehrFrisch`) faengt den anderen Fall ab: Die Bruecke zum Simulator reisst ab,
  * ohne dass noch jemand aufraeumen koennte.
+ *
+ * Und ein dritter Weg, der keine Zuordnung braucht: **das eigene Flugzeug**. Seine Position
+ * kommt aus `_simPos`, also direkt aus dem Simulator, ohne Netzweg und ohne dass irgendwer
+ * raten muesste, wer da fliegt -- es ist der genaueste Punkt der ganzen Karte. Dass es
+ * trotzdem blau blieb, waehrend jeder zugeordnete Nachbar tuerkis wurde, war schlicht eine
+ * Luecke: Die Farbe sagt, wie genau die Karte ein Flugzeug kennt, und genauer als das eigene
+ * kennt sie keines. `_istEigenesFlugzeug` traegt die Frist (`_simPosFrisch`) schon in sich.
  */
 function _punktIstSekundengenau(callsign) {
   if (_brueggeFrisch(callsign)) return true;
-  return !!(_friesenSimWerte[callsign] && _simVerkehrFrisch());
+  if (_friesenSimWerte[callsign] && _simVerkehrFrisch()) return true;
+  return _istEigenesFlugzeug(callsign);
 }
 
 function _markerGehoertDemSim(callsign) {

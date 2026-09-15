@@ -10484,6 +10484,27 @@ def kniebrett_modus_setzen(conn: sqlite3.Connection, cid: int, modus: str | None
     )
 
 
+def kniebrett_piloten(conn: sqlite3.Connection) -> list[dict]:
+    """Wer hat ueberhaupt ein Kniebrett? ``[{cid, name, geraete, zuletzt}]``.
+
+    ⭐ **Die Grundmenge fuer den Schalter je Pilot -- und sie ist NICHT die Pilotenliste.**
+    Von 64 Piloten haben vier ein Kniebrett gebunden (Stand 15.09.2026). Eine Auswahl mit
+    allen 64 zwingt den Admin, unter sechzig Namen die vier zu finden, die den Schalter
+    ueberhaupt etwas angeht -- und sie legt nahe, dass die anderen sechzig etwas meldeten.
+
+    `last_seen_at` kommt aus der Geraetebindung und sagt, wann das Kniebrett zuletzt
+    ANGEMELDET war -- nicht, wann es zuletzt gemeldet hat. Wer gerade meldet, steht im
+    Prozessspeicher (s. `_bruegge_live`), und der Endpunkt legt ihn daneben.
+    """
+    rows = conn.execute(
+        "SELECT pd.cid, p.name, COUNT(*) AS geraete, MAX(pd.last_seen_at) AS zuletzt "
+        "FROM panel_devices pd LEFT JOIN pilots p ON p.cid = pd.cid "
+        "GROUP BY pd.cid ORDER BY zuletzt DESC"
+    ).fetchall()
+    return [{"cid": int(r[0]), "name": r[1], "geraete": int(r[2]), "zuletzt": r[3]}
+            for r in rows]
+
+
 def kniebrett_modi_alle(conn: sqlite3.Connection) -> dict[int, str]:
     """Alle abweichenden Piloten auf einmal -- ``{cid: modus}``.
 

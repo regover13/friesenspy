@@ -1,5 +1,15 @@
 [
   {
+    "version": "14.49.0",
+    "date": "2026-09-15",
+    "highlight": false,
+    "title": "Dein eigenes Flugzeug ist im Kniebrett jetzt auch türkis",
+    "items": [
+      "🩵 Seit gestern zeigt Türkis an, welche Flugzeuge dein Simulator selbst erkannt hat — ausgerechnet deins blieb dabei blau. Das war eine Lücke und keine Absicht: Deine Position kommt ohnehin direkt aus dem Simulator, ohne Netzweg und ohne dass irgendwer raten müsste, wer da fliegt. Genauer kennt die Karte kein Flugzeug. Jetzt trägt es dieselbe Farbe wie jeder erkannte Nachbar.",
+      "🔌 Das gilt auch ohne VATSIM: Fliegst du offline, hat dein Flugzeug gar keine zweite Quelle, gegen die man vergleichen könnte — der Punkt ist dann der Simulator selbst."
+    ]
+  },
+  {
     "version": "14.48.0",
     "date": "2026-09-15",
     "highlight": false,

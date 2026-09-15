@@ -2479,6 +2479,15 @@ die eigene Brügge des Piloten. Zwei Regeln:
 1. **Die nähere Quelle gewinnt.** Eine Brügge und das eigene Kniebrett lesen die Position
    direkt aus dem Simulator *des Piloten*; ein fremdes Kniebrett sieht ihn über vPilot. Eine
    Fremdmeldung überschreibt deshalb keine frische Selbstmeldung.
+
+   ⭐ **Hat ein Pilot BEIDES aktiv, gewinnt die FriesenBrügge.** Nicht aus Höflichkeit
+   gegenüber dem älteren Verfahren: Sie liest per SimConnect und liefert `alt_agl_ft` und
+   `am_boden` mit; die Positionsbrücke des Kniebretts kennt beides für das eigene Flugzeug
+   nicht (dafür bräuchte es `PLANE ALT ABOVE GROUND` und damit ein neues EFB-Paket). Ohne
+   diese Regel überschrieben sich die zwei im Sekundentakt gegenseitig — es gewänne, wer
+   zuletzt kam, und `agl`, `gnd` und die Quellenangabe im Kartenfenster sprängen jede Sekunde
+   hin und her. Verstummt die Brügge, übernimmt das Kniebrett nach `KNIEBRETT_ZUSCHLAG_S`
+   = 3 s.
 2. **Unter gleich guten Fremdmeldern behält der erste den Zuschlag**, solange er frisch
    meldet (`VatsimPoller.KNIEBRETT_ZUSCHLAG_S` = 3 s). Sonst schrieben fünf Kniebretter
    fünfmal je Sekunde denselben Punkt, und der letzte gewänne zufällig.

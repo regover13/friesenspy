@@ -45,11 +45,14 @@ global.L = { divIcon: function (o) { return o; } };
 global._brueggeWerte = Object.create(null);
 global._friesenSimWerte = Object.create(null);
 global._simVerkehrFrischWert = true;
+global._eigenes = null;
 function _brueggeFrisch(cs) {
   const b = global._brueggeWerte[cs];
   return !!(b && (Date.now() - b.ts) < 10000);
 }
 function _simVerkehrFrisch() { return global._simVerkehrFrischWert; }
+// Im Original prueft es `_simPosFrisch()` gleich mit -- die Frist steckt also schon drin.
+function _istEigenesFlugzeug(cs) { return global._eigenes === cs; }
 
 __QUELLTEXT__
 
@@ -112,6 +115,17 @@ def test_reisst_die_bruecke_zum_simulator_ab_faellt_die_farbe_zurueck():
       global._friesenSimWerte['FRS49'] = { alt: 1500, gs: 92 };
       global._simVerkehrFrischWert = false;
       assert.strictEqual(_punktIstSekundengenau('FRS49'), false);
+    """)
+
+
+def test_das_eigene_flugzeug_ist_immer_sekundengenau():
+    """Es braucht keine Zuordnung: Seine Position kommt aus `_simPos`, also direkt aus dem
+    Simulator. Genauer kennt die Karte kein Flugzeug -- und trotzdem blieb es bis zum
+    15.09.2026 blau, waehrend jeder zugeordnete Nachbar tuerkis wurde."""
+    _node("""
+      global._eigenes = 'FRS49';
+      assert.strictEqual(_punktIstSekundengenau('FRS49'), true);
+      assert.strictEqual(_punktIstSekundengenau('FRS12'), false);
     """)
 
 
@@ -186,6 +200,20 @@ def test_die_zuordnung_wird_am_eintrag_festgehalten():
     block = INDEX[INDEX.index("function _verkehrZusammenfuehren("):]
     block = block[:block.index("\n}\n")]
     assert "_zugeordnet = true" in block
+
+
+def test_das_eigene_flugzeug_wird_auch_wirklich_tuerkis_gezeichnet():
+    """`_punktIstSekundengenau` allein genuegt hier nicht: `updateMap` legt diesen Marker an,
+    bevor der Simulator sich meldet, und ruehrt ihn danach nicht mehr an (`!demSim`). Die
+    Farbe muss also aus `_eigenesFlugzeugZeichnen` kommen -- und der Merker MIT in die
+    Bedingung, sonst bliebe ein geradeaus fliegendes Flugzeug blau.
+    """
+    block = INDEX[INDEX.index("function _eigenesFlugzeugZeichnen("):]
+    block = block[:block.index("\n}\n")]
+    assert "makeAircraftIcon(hdg, false, true)" in block
+    assert "_fsGenau !== true" in block
+    # Kein Aufruf mehr ohne die Farbangabe -- jeder davon zeichnete blau.
+    assert "makeAircraftIcon(hdg)" not in block
 
 
 def test_der_saum_wechselt_auch_ohne_kursaenderung():

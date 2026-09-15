@@ -911,6 +911,24 @@ class VatsimPoller:
             alt_guete = vorhanden.get("guete", self.QUELLE_SELBST)
             if alt_guete > guete:
                 return False
+            # ⭐ BEIDES AKTIV: Die FriesenBruegge gewinnt fuer die eigene Position.
+            #
+            # Der Fall war bis zum 15.09.2026 nicht entschieden, sondern zufaellig -- beide
+            # melden im Sekundentakt, `bruegge_position_merken` prueft gar nichts, und hier
+            # kam eine gleiche Guete durch. Es gewann also, wer zuletzt kam, im Wechsel.
+            #
+            # Entschieden wird zugunsten der Bruegge, und zwar nicht aus Hoeflichkeit
+            # gegenueber dem aelteren Verfahren: Sie liest per SimConnect und liefert
+            # `alt_agl_ft` und `am_boden` mit. Die Positionsbruecke des Kniebretts kennt
+            # beides fuer das eigene Flugzeug nicht (dafuer braeuchte es
+            # `PLANE ALT ABOVE GROUND` und damit ein neues EFB-Paket). Im Wechselbetrieb
+            # waeren diese Felder jede Sekunde zwischen echtem Wert und leer gesprungen --
+            # und die Quellenangabe im Kartenfenster gleich mit.
+            #
+            # Eine Bruegge-Zeile traegt kein `melder`: Sie meldet ausschliesslich sich selbst.
+            if (vorhanden.get("melder") is None
+                    and (time.monotonic() - vorhanden["ts"]) < self.KNIEBRETT_ZUSCHLAG_S):
+                return False
             if (alt_guete == guete == self.QUELLE_FREMD
                     and vorhanden.get("melder") not in (None, int(melder_cid))
                     and (time.monotonic() - vorhanden["ts"]) < self.KNIEBRETT_ZUSCHLAG_S):

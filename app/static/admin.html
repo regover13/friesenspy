@@ -1522,9 +1522,11 @@
               Für den Fall, dass es bei <i>einem</i> klemmt. Der globale Schalter oben bleibt
               dabei die Obergrenze: Steht er auf <i>nur eigene</i>, meldet auch ein Pilot mit
               <i>alle</i> nur sich selbst. Kein Eintrag heißt „folgt dem globalen Wert“.
+              <br>Zur Auswahl steht, <b>wer ein Kniebrett hat</b> — nicht die ganze
+              Mitgliederliste. Dahinter steht, wann es zuletzt angemeldet war.
             </p>
             <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;">
-              <select id="kb-pilot" style="min-width:230px;padding:6px;"></select>
+              <select id="kb-pilot" style="min-width:290px;padding:6px;"></select>
               <select id="kb-pilot-modus" style="padding:6px;">
                 <option value="aus">aus</option>
                 <option value="eigene">nur eigene Position</option>
@@ -2313,6 +2315,21 @@
         const tw = document.getElementById('kb-takt-wert');
         if (tw) tw.textContent = _kbStand.takt_s;
 
+        const sel = document.getElementById('kb-pilot');
+        if (sel) {
+          const gewaehlt = sel.value;
+          const liste = _kbStand.auswahl || [];
+          sel.innerHTML = liste.length
+            ? '<option value="">Kniebrett wählen …</option>' + liste.map(function (k) {
+                // Wann das Kniebrett zuletzt ANGEMELDET war -- nicht, wann es zuletzt
+                // gemeldet hat. Wer gerade meldet, steht in der Tabelle darunter.
+                const wann = k.zuletzt ? (' · zuletzt ' + String(k.zuletzt).slice(0, 10)) : '';
+                return '<option value="' + k.cid + '">' + kbName(k.cid) + wann + '</option>';
+              }).join('')
+            : '<option value="">Niemand hat ein Kniebrett angemeldet</option>';
+          sel.value = gewaehlt;
+        }
+
         const pb = document.getElementById('kb-piloten');
         if (pb) {
           pb.innerHTML = (_kbStand.piloten && _kbStand.piloten.length)
@@ -2391,21 +2408,17 @@
         kbPilotSetzen(cid, document.getElementById('kb-pilot-modus').value);
       });
 
-      // Die Pilotenliste holt dieses Panel selbst statt `_bgPiloten` mitzubenutzen: Die
+      // Die Namensliste holt dieses Panel selbst statt `_bgPiloten` mitzubenutzen: Die
       // Brügge-Schliessung laedt sie in ihrer eigenen Reihenfolge, und eine Abhaengigkeit
       // davon waere ein leeres Auswahlfeld, sobald dort jemand etwas umstellt.
+      //
+      // ⚠ Sie fuellt aber NICHT die Auswahl -- die kommt aus `/api/admin/kniebrett` und
+      // enthaelt nur, wer ein Kniebrett hat. Von 64 Piloten waren das am 15.09.2026 VIER.
       (async function () {
         try {
           const r = await fetch('/api/admin/pilots', { credentials: 'same-origin' });
           if (r.ok) _kbPiloten = await r.json();
-        } catch (e) { /* dann bleibt die Auswahl leer, der Rest funktioniert */ }
-        const sel = document.getElementById('kb-pilot');
-        if (sel) {
-          sel.innerHTML = '<option value="">Pilot wählen …</option>' +
-            (_kbPiloten || []).map(function (p) {
-              return '<option value="' + p.cid + '">' + kbName(p.cid) + '</option>';
-            }).join('');
-        }
+        } catch (e) { /* dann stehen im Auswahlfeld nur die CIDs, der Rest funktioniert */ }
         kbLaden();
       })();
       setInterval(kbLaden, 10000);

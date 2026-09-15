@@ -683,3 +683,120 @@ class TestSenderNachFehlschlag:
         # und `eigene` mit jedem je gesehenen Flugzeug weiter.
         assert block.index("delete _kbVorrat[cs]") < block.index("if (_kbModus === 'aus')")
         assert "delete _kbGesendet[cs]" in block
+
+
+# ---------------------------------------------------------------------------------------
+#  9. Brügge UND Kniebrett gleichzeitig -- wer gewinnt? (Nutzerfrage, 15.09.2026)
+# ---------------------------------------------------------------------------------------
+#
+# ⚠ Der Fall war vorher NICHT entschieden, sondern zufällig: Beide melden im Sekundentakt,
+# `bruegge_position_merken` prüft gar nichts, und `kniebrett_position_merken` ließ bei
+# gleicher Güte durch. Es gewann also, wer zuletzt kam -- im Wechsel, jede Sekunde.
+#
+# Sichtbar wäre das an der Quellenangabe im Kartenfenster geworden (mal „FriesenBrügge", mal
+# „Kniebrett"), und `agl`/`gnd` wären zwischen echtem Wert und leer gesprungen: Die Brügge
+# liest per SimConnect und liefert beides, die Positionsbrücke des Kniebretts nicht.
+#
+# Deshalb: **Für die eigene Position gewinnt die Brügge.** Sie ist die reichere Quelle.
+
+class TestBrueggeUndKniebrettZugleich:
+    def _bruegge_meldet(self, env, cid=MELDER):
+        env.poller.bruegge_position_merken(cid, {
+            "lat": LAT, "lon": LON, "kurs": 90.0, "gs_kt": 0.0,
+            "alt_msl_ft": 500.0, "alt_agl_ft": 12.0, "am_boden": True})
+
+    def test_die_eigene_bruegge_gewinnt_gegen_das_eigene_kniebrett(self, env):
+        _modus_setzen(env, "eigene")
+        self._bruegge_meldet(env)
+        r = _melden(env, [_flugzeug(cs=MELDER_CS, lat=LAT, lon=LON, hdg=270.0)])
+        assert r.json()["uebernommen"] == 0
+        assert env.poller._bruegge_live[MELDER]["hdg"] == 90.0
+
+    def test_und_ihre_zusatzwerte_bleiben_erhalten(self, env):
+        """Das ist der eigentliche Grund für die Regel: Das Kniebrett kennt für die eigene
+        Position weder AGL noch „am Boden" -- die Positionsbrücke liefert sie nicht. Ein
+        Wechsel im Sekundentakt ließe beide Felder flackern."""
+        _modus_setzen(env, "eigene")
+        self._bruegge_meldet(env)
+        _melden(env, [_flugzeug(cs=MELDER_CS, lat=LAT, lon=LON)])
+        e = env.poller._bruegge_live[MELDER]
+        assert e["agl"] == 12 and e["gnd"] is True
+
+    def test_verstummt_die_bruegge_uebernimmt_das_kniebrett(self, env, monkeypatch):
+        """Sonst wäre die Regel ein Ausschalter: Wer den Simulator verlässt und das Tablet
+        offen behält, verschwände, obwohl eine Quelle weiter meldet."""
+        import app.poller as poller_modul
+        _modus_setzen(env, "eigene")
+        self._bruegge_meldet(env)
+        t0 = env.poller._bruegge_live[MELDER]["ts"]
+        monkeypatch.setattr(poller_modul.time, "monotonic", lambda: t0 + 4.0)
+        r = _melden(env, [_flugzeug(cs=MELDER_CS, lat=LAT, lon=LON, hdg=270.0)])
+        assert r.json()["uebernommen"] == 1
+        assert env.poller._bruegge_live[MELDER]["hdg"] == 270.0
+
+    def test_ein_fremdes_kniebrett_kommt_gegen_die_bruegge_ohnehin_nicht_an(self, env):
+        """Die schon vorher geltende Regel, hier nur noch einmal neben der neuen."""
+        _modus_setzen(env, "alle")
+        self._bruegge_meldet(env, cid=FREMD)
+        _melden(env, [_flugzeug(hdg=270.0)])
+        assert env.poller._bruegge_live[FREMD]["hdg"] == 90.0
+
+
+# ---------------------------------------------------------------------------------------
+#  10. Zur Auswahl steht, wer ein Kniebrett HAT (Nutzerfrage, 15.09.2026)
+# ---------------------------------------------------------------------------------------
+#
+# Die erste Fassung bot alle Piloten an -- am 15.09.2026 waren das **64**, von denen **vier**
+# ein Kniebrett gebunden hatten. Das zwingt den Admin, unter sechzig Namen die vier zu finden,
+# die der Schalter überhaupt etwas angeht, und legt nahe, die anderen sechzig meldeten etwas.
+
+class TestAuswahlNurKniebretter:
+    def _geraet(self, env, cid, device="dev-abc123", zuletzt="2026-09-15T08:00:00Z"):
+        conn = get_connection(env.db)
+        try:
+            conn.execute(
+                "INSERT INTO panel_devices (device_id, cid, name, created_at, last_seen_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (device, cid, "Tablet", "2026-09-01T00:00:00Z", zuletzt))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _admin(self, env):
+        from app.auth import ADMIN_COOKIE, make_admin_token
+        env.client.cookies.set(ADMIN_COOKIE, make_admin_token(SECRET, "pw"))
+        return env.client
+
+    def test_ohne_gebundenes_geraet_steht_niemand_zur_auswahl(self, env):
+        """Und zwar auch dann nicht, wenn es Piloten gibt — die Auswahl ist keine
+        Mitgliederliste."""
+        assert self._admin(env).get("/api/admin/kniebrett").json()["auswahl"] == []
+
+    def test_wer_ein_kniebrett_hat_steht_drin(self, env):
+        self._geraet(env, MELDER)
+        a = self._admin(env).get("/api/admin/kniebrett").json()["auswahl"]
+        assert [k["cid"] for k in a] == [MELDER]
+        assert a[0]["geraete"] == 1 and a[0]["zuletzt"] == "2026-09-15T08:00:00Z"
+
+    def test_wer_bereits_einen_eintrag_hat_bleibt_waehlbar(self, env):
+        """Seine Gerätebindung kann längst gelöst sein — der Eintrag gilt trotzdem weiter und
+        muss ohne Umweg zurücknehmbar bleiben."""
+        _modus_setzen(env, "aus", cid=FREMD)
+        a = self._admin(env).get("/api/admin/kniebrett").json()["auswahl"]
+        assert FREMD in [k["cid"] for k in a]
+
+    def test_wer_gerade_meldet_steht_auch_drin(self, env):
+        """Ein Pilot kann das Kniebrett benutzen, ohne das Gerät dauerhaft zu binden — dann
+        steht er in `panel_devices` nicht. Genau bei ihm braucht man den Schalter."""
+        _modus_setzen(env, "alle")
+        _melden(env, [_flugzeug()])
+        a = self._admin(env).get("/api/admin/kniebrett").json()["auswahl"]
+        assert MELDER in [k["cid"] for k in a]
+
+    def test_die_oberflaeche_fuellt_die_auswahl_nicht_aus_der_pilotenliste(self):
+        """Die Bindung an den Code, nicht an den Kommentar: Im Block, der das Auswahlfeld
+        füllt, darf `/api/admin/pilots` nicht vorkommen."""
+        stelle = _ADMIN.index("const sel = document.getElementById('kb-pilot');")
+        block = _ADMIN[stelle:stelle + 900]
+        assert "_kbStand.auswahl" in block
+        assert "/api/admin/pilots" not in block
