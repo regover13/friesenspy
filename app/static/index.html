@@ -8166,7 +8166,16 @@ function connectSSE() {
     sseSource = null;
   }
 
-  sseSource = new EventSource('/api/sse');
+  // ⚠ `kb=1` IST KEIN BEIWERK — die Gegenstelle steht in `app/main.py` in
+  // `_event_generator` (`nur_friesen`). Damit sagt das Kniebrett dem Server: schick mir das
+  // Feld `fremd` gar nicht erst. Es würde es ohnehin verwerfen (`_kniebrettFremdEinarbeiten`
+  // steigt bei `_PANEL_MODUS` sofort aus), und der Weg dorthin führt über die
+  // Netzverbindung des Simulators — bis zu 40 Einträge je Sekunde für nichts (Issue #39).
+  //
+  // Wer den Parameter hier entfernt, bekommt den Fremdverkehr im Strom zurück, ohne dass
+  // irgendetwas ihn anzeigt. Wer ihn im Kniebrett doch auswerten will, muss BEIDE Seiten
+  // anfassen — `tests/test_kniebrett_strom_filter.py` bindet sie aneinander.
+  sseSource = new EventSource('/api/sse' + (_PANEL_MODUS ? '?kb=1' : ''));
 
   sseSource.onopen = () => {
     setSSEStatus('connected');

@@ -1168,6 +1168,28 @@ Die Prüfung sitzt in `_event_generator` (`app/main.py`) und nutzt `is_visible_t
 werden: unterdrückte Meldungen verlassen den Server nicht. Die Kategorie-Schalter im Panel
 (`localStorage`, Vorgabe alle an) filtern zusätzlich, aber nur nach Geschmack.
 
+**Dritter Ereignistyp: `bruegge`** (seit v14.36.0) — der Sekundenstrom. Er trägt die
+Positionen, die aus einer FriesenBrügge oder einem Kniebrett kommen, und optional das Feld
+`fremd` mit dem erkannten Fremdverkehr. Einzelheiten unter `POST /api/kniebrett/melden`.
+
+**`?kb=1` — das Kniebrett bestellt den Fremdverkehr ab** (seit v14.49.4, GitHub-Issue #39).
+`app/static/index.html` hängt den Parameter an, wenn `_PANEL_MODUS` gilt; `_event_generator`
+entfernt daraufhin das Feld `fremd` aus jeder `bruegge`-Nachricht. Der Grund ist die Menge:
+Bis zu 40 Einträge je Sekunde gingen über die Netzverbindung des Simulators — und wurden im
+Kniebrett sofort verworfen, weil dort das Sim-Matching trägt
+(`_kniebrettFremdEinarbeiten` steigt bei `_PANEL_MODUS` aus).
+
+⚠ **Das kostet nur Echtzeit, nicht Sichtbarkeit.** Der fremde Verkehr kommt im Kniebrett
+weiter über `/api/traffic` an (15-Sekunden-Takt), und was der eigene Simulator darstellt, ist
+dort ohnehin sekundengenau. Die Friesen-Positionen im Feld `data` sind unberührt — gefiltert
+wird ein Feld, nicht die Nachricht.
+
+Die beiden Enden hängen aneinander und stehen in verschiedenen Sprachen;
+`tests/test_kniebrett_strom_filter.py` bindet sie zusammen, damit eine einseitige Änderung
+auffällt. Ungefiltert bleibt der Strom für alle anderen Karten — er ist dort die einzige
+Echtzeitquelle. Ob er bei einem großen Event auch ortsbezogen gefiltert gehört, ist mit
+Abwägung in Issue #39 festgehalten und bewusst **nicht** gebaut.
+
 Alle 30 Sekunden wird ein SSE-Kommentar gesendet um Proxy-Timeouts zu verhindern:
 
 ```
@@ -2453,6 +2475,8 @@ die Reihenfolge ist eine Rangfolge:
 Flugzeuge im Umkreis können vierzig sein — und der Sekundenstrom geht an **jede** offene
 Karte, nicht nur an die des Melders. Wer die Stufe einschaltet, entscheidet damit über die
 Last aller Zuschauer.
+Seit v14.49.4 nehmen **Kniebretter** das Feld nicht mehr entgegen (`?kb=1` an `/api/sse`,
+s. dort) — sie verwarfen es ohnehin. Die Last der Websites bleibt.
 
 **Für Fremdverkehr läuft die Ablage über das RUFZEICHEN**, nicht über die cid
 (`VatsimPoller._kniebrett_fremd`, Kürzel `cs` im Strom). Der Grund steht in `/api/traffic`:

@@ -3062,6 +3062,20 @@ async def _event_generator(request: Request, poller: VatsimPoller):
       Geschmack, DIESE Prüfung ist der Schutz und gehört deshalb auf den Server.
     """
     settings = get_settings()
+    # ⚠ HIER HÄNGT DAS KNIEBRETT DRAN — die Gegenstelle steht in `app/static/index.html`
+    # bei `new EventSource(…)`; such dort nach `kb=1`. Wer eines von beiden ändert, muss das
+    # andere mitändern; `tests/test_kniebrett_strom_filter.py` bindet die beiden Enden
+    # aneinander, damit das auffällt.
+    #
+    # Das Kniebrett bekommt das Feld `fremd` NICHT (GitHub-Issue #39). Es verwirft es ohnehin
+    # (`_kniebrettFremdEinarbeiten` steigt bei `_PANEL_MODUS` sofort aus), weil im Cockpit das
+    # Sim-Matching trägt — bis hierher ging es aber über die Netzverbindung des Simulators.
+    # Bis zu 40 Einträge je Sekunde, rund 1,6 KB, für nichts.
+    #
+    # ⚠ Das kostet nur ECHTZEIT, nicht Sichtbarkeit: Der Fremdverkehr kommt im Kniebrett
+    # weiter über `/api/traffic` an, nur eben im 15-Sekunden-Takt. Was der eigene Simulator
+    # darstellt, ist dort ohnehin sekundengenau — dafür sorgt das Sim-Matching ohne Strom.
+    nur_friesen = request.query_params.get("kb") == "1"
     claims = verify_user_token(request.cookies.get(USER_COOKIE, ""), settings.SECRET_KEY)
     try:
         # Die CID steht im Token je nach Herkunft als Zahl ODER als Zeichenkette. Ungecastet
@@ -3102,6 +3116,10 @@ async def _event_generator(request: Request, poller: VatsimPoller):
                             "geliefert" if sichtbar else "verworfen (Sichtbarkeit)")
                 if not sichtbar:
                     continue
+            elif nur_friesen and data.get("type") == "bruegge" and "fremd" in data:
+                # Ein neues dict, kein `del`: Dieselbe Nachricht liegt in JEDER Queue — wer
+                # sie hier ändert, ändert sie auch für die Karten, die den Fremdverkehr wollen.
+                data = {k: v for k, v in data.items() if k != "fremd"}
             yield f"data: {json.dumps(data)}\n\n"
     finally:
         poller.unsubscribe_sse(queue)

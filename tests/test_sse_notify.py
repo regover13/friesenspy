@@ -39,8 +39,11 @@ class _FakeRequest:
     Nachschub, bevor er den Keepalive schickt.
     """
 
-    def __init__(self, cookies: dict | None = None, runden: int = 1):
+    def __init__(self, cookies: dict | None = None, runden: int = 1,
+                 query_params: dict | None = None):
         self.cookies = cookies or {}
+        # `_event_generator` liest daraus `kb=1` (Kniebrett, s. test_kniebrett_strom_filter).
+        self.query_params = query_params or {}
         self._uebrig = runden
 
     async def is_disconnected(self) -> bool:

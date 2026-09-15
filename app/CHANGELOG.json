@@ -1,5 +1,15 @@
 [
   {
+    "version": "14.49.4",
+    "date": "2026-09-16",
+    "highlight": false,
+    "title": "Das Kniebrett bekommt nur noch, was es auch anzeigt",
+    "items": [
+      "📡 Der sekundengenaue Strom geht an jede offene Karte gleichzeitig — und seit der Fremdverkehr mitfährt, können darin bis zu vierzig zusätzliche Flugzeuge stehen. Im Kniebrett wurden sie alle verworfen: Dort kommt der Verkehr ohnehin aus dem Simulator selbst, und der weiß es besser. Die Daten hatten da aber schon den ganzen Weg über die Netzverbindung des Simulators hinter sich. Jetzt sagt das Kniebrett gleich beim Verbinden, dass es sie nicht braucht.",
+      "🔍 Sichtbar ändert sich dadurch nichts: Der fremde Verkehr steht weiter auf der Karte im Cockpit, und was der eigene Simulator darstellt, bleibt dort sekundengenau."
+    ]
+  },
+  {
     "version": "14.49.3",
     "date": "2026-09-15",
     "highlight": false,
