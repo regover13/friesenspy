@@ -278,6 +278,18 @@ belassen es bei einer einfachen Hash-Aktualitätsprüfung.").
 - **`aip_charts`, `aip_ground_charts` und `aip_chart_vorschlaege` sind stillgelegt, aber
   nicht gelöscht.** Sie tragen die Daten, aus denen die Migration liest. Ein `DROP` ist eine
   eigene, bewusste Entscheidung — erst wenn der neue Stand geprüft ist.
+- **Ihre Bilddateien liegen seit dem 15.09.2026 nicht mehr auf dem Server.**
+  `/opt/friesenspy/data/aip/` (236 MB, 455 Dateien) und `aip_ground/` (88 MB, 175 Dateien)
+  waren toter Bestand: Kein Endpunkt und keine Codestelle liest daraus, und über zwei Wochen
+  nginx-Log wurden ausschließlich `/aip-chart-dfs/` (671×) und `/aip-chart-roh/` (114×)
+  abgerufen. Sie liegen jetzt als `/root/friesenspy-aip-alt-2026-09-15.tar.gz` (331 MB, 0600,
+  630 Dateien gegengezählt). **Die Tabellen selbst sind unangetastet** — die Entscheidung oben
+  steht weiter offen, nur eben ohne die Bilder daneben.
+- **Die `.roh.png` in `aip_dfs/` sind KEIN Müll, auch wenn sie oft byte-identisch zur
+  bearbeiteten Fassung sind.** `scripts/blatt_raster.py` liest genau sie, und
+  `docs/flugplatzkarten-passen.md` baut den ganzen Ablauf darauf auf. Von den 1754 PNG-Dateien
+  des Bestands hatten am 15.09.2026 nur 688 einen eindeutigen Inhalt — wer daraus auf
+  Verschwendung schließt, räumt das Werkzeug der Karten-Passung weg.
 - **Keine Datenbank-Transaktion darf einen Netzabruf umspannen.** Der Wochenlauf committete
   anfangs erst am Ende und hielt damit eine Schreibtransaktion über hunderte DFS-Abrufe
   offen. In WAL bleiben Leser unberührt, andere **Schreiber** nicht: `save_prefile_sigs` im
@@ -376,6 +388,32 @@ belassen es bei einer einfachen Hash-Aktualitätsprüfung.").
   abruf 3,10 s · db 0,40 s …`, ab 2 s Gesamtlaufzeit). Sie misst Wanduhr, nicht Rechenzeit:
   Ein blockierter Event-Loop zeigt sich als Wartezeit in einem *fremden* Abschnitt — die
   Aufschlüsselung sagt, wo gewartet wurde, und benennt damit nicht zwingend den Schuldigen.
+
+## Platzbedarf und Last auf dem Server (Stand 15.09.2026)
+
+**707 MB**, davon 611 MB `aip_dfs/` und 97 MB Datenbank. Vorher waren es 1,1 GB; die Differenz
+sind die beiden archivierten Verzeichnisse und 17 MB alter DB-Stände vom Juni
+(`friesenspy.backup_20260612`, zwei `prereboot`-Kopien vom 26.06.), die jetzt als
+`/root/friesenspy-alte-db-staende-2026-09-15.tar.gz` liegen.
+
+**Die Datenbank wuchs zuletzt um 1,5 MB am Tag** — gemessen an den entpackten
+OneDrive-Sicherungen, nicht geschätzt: 84,4 MB (07.09.) → 87,7 (11.09.) → 96,5 (15.09.).
+**Der größere Teil davon ist aber Nachholarbeit, kein Dauerzustand.** In
+`statsim_position_history` kamen in diesen acht Tagen 80.222 Zeilen dazu, also 10.000 am Tag —
+nach Zeitstempel gehören davon nur rund 1.100 zum laufenden Betrieb. Der Rest sind Flüge aus
+2025, die der Cache rückwirkend nachfüllt: Von 6.881 Flügen in `statsim_cache` waren 5.078
+gecacht. Ist der Rest durch (~25 MB, bei diesem Tempo etwa vier Wochen), fällt die Rate auf
+rund **0,6 MB am Tag**.
+
+**`position_history` wird bewusst nie aufgeräumt** (`poller.py`, der `_daily_cleanup`-Job ist
+auskommentiert; `cleanup_old_history(days=365)` liegt einsatzbereit daneben). Das sind 3.530
+Zeilen und 480 kB am Tag, rund 175 MB im Jahr. Am 15.09.2026 ausdrücklich bestätigt: **so
+lassen** — alte Spuren sind hier ein Merkmal, kein Ballast, und die Platte hat 151 GB frei.
+
+**CPU: 5,2 % eines Kerns im Wochenmittel** (Netdata, `cgroup_friesenspy-friesenspy-1.cpu`:
+4,85 % user + 0,35 % system). Damit liegt FriesenSpy auf Rang 3 der Container — weit hinter
+`condor-condor-server-1` (99 %) und `netdata` (26 %). Das Container-Log ist mit 121 kB
+unauffällig und seit dem 13.09.2026 ohnehin auf 5 × 20 MB gedeckelt.
 
 ## Blockzeit (stehende Regeln — IMMER einhalten)
 
