@@ -6,6 +6,42 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-15 (abends) — Die vierte Stufe steht: `fremd` (Server-Sitzung)
+
+`KNIEBRETT_MODI` ist jetzt `(aus, eigene, alle, fremd)`. Berührt: `app/database.py`,
+`app/main.py`, `app/poller.py`, `app/static/index.html`, `app/static/admin.html`,
+`docs/api.md`, `tests/test_kniebrett_melden.py`. Volle Suite **2736 grün** (gemeinsam mit
+Kniebrett 2.3.0 und Brügge 1.11.0 der lokalen Sitzung).
+
+**Fremdverkehr läuft über das RUFZEICHEN, nicht über die cid** (`_kniebrett_fremd`) — die
+Karte führt ihn ohnehin so (`_verkehrRoh`), und `/api/traffic` entfernt die cid, bevor die
+Liste den Server verlässt.
+
+⚠ **Zwei Fehler, die beide erst beim Nachfragen auffielen — und beide sahen fertig aus:**
+
+1. **Der Lasthebel griff gar nicht.** Die Vorrangregel gibt der Brügge den Eintrag in
+   `_bruegge_live`, und der Hebel schaute in genau diesen Eintrag, um zu entscheiden, ob das
+   Kniebrett meldet. Solange die Brügge lief, sah er dort nie einen Kniebrett-Melder. Zwei
+   Regeln, eine Variable, gegenseitige Aufhebung. Jetzt eigenes Verzeichnis
+   (`_kniebrett_versuch`), gesetzt **vor** der Vorrangprüfung.
+2. **Die Stufe `fremd` war halb gebaut.** Serverseite fertig, Admin-Schalter da, alle Tests
+   grün — und der Client hätte nie einen Fremdverkehr geschickt, weil `_kbVorratMerken` nur
+   im Friesen-Zweig stand. Aufgefallen bei der Frage, ob deployt werden kann.
+
+**Die Lehre aus beiden:** Eine Funktion, deren beide Hälften getrennt gebaut werden, ist erst
+fertig, wenn jemand den Weg von Ende zu Ende nachzieht. Grüne Tests auf beiden Seiten sagen
+darüber nichts.
+
+**Nebenbei behoben:** Die Live-Speicher des Pollers liegen in `_live_speicher_anlegen()` an
+einer Stelle, die Test-Attrappe ruft sie. Dreimal war beim Hinzufügen eines Speichers genau
+das vergessen worden.
+
+**Und `COORDINATION.md` selbst repariert:** In der Warnung vor der Nullbyte-Falle standen
+**zwei echte NUL-Bytes** — die Warnung war in die eigene Falle getappt. Die Datei galt
+dadurch als binär (`file` sagte „data"), `grep` schwieg ohne `-a`.
+
+---
+
 ## 2026-09-15 (abends) — Kniebrett 2.3.0 sendet drei Werte, die niemand liest
 
 **Für die Server-Sitzung: vier Zeilen fehlen in `app/static/index.html`.** Eine lokale
@@ -631,10 +667,10 @@ Blick ablesbar, statt in einer Tabelle.
 - **Punkt 1 (WASM löst Community-Titel auf?)** — die Karte hilft beim Ablesen: Eine `robbe`,
   die rot bleibt, während sie im `soll` steht, ist genau dieser Fall.
 
-⚠ **Die Nullbyte-Falle hat heute zum zweiten Mal zugeschlagen:** `' '` in einem
+⚠ **Die Nullbyte-Falle hat heute zum zweiten Mal zugeschlagen:** `'\0'` in einem
 Python-Heredoc wird beim Schreiben zum echten NUL-Byte in der `.cpp`. Der Compiler warnt nur
 (`-Wnull-character`), gebaut wird trotzdem. Repariert per Byte-Ersetzung. Wer C-Quelltext per
-Skript schreibt: hinterher `grep -c $' '` prüfen.
+Skript schreibt: hinterher `grep -c $'\0'` prüfen.
 
 ---
 
