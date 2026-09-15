@@ -2385,6 +2385,160 @@ oder unplausibel), `426` (Protokollfassung neuer als dieser Server).
 
 ---
 
+## POST /api/kniebrett/melden
+
+Das **MSFS-Kniebrett meldet sein Gebiet** (GitHub-Issue #23, seit 15.09.2026): nicht die
+eigene Position allein, sondern **alle Friesen, die es erkannt hat**. Bei einem
+FriesenFlieger-Freitag deckt damit ein einziger offener Bildschirm das ganze Feld ab.
+
+**Der Unterschied zur FriesenBrügge in einer Zeile:**
+
+| | FriesenBrügge | Kniebrett |
+|---|---|---|
+| meldet | **einen** Piloten (sich selbst) | **alle in Reichweite** (gemessen bis 92 km) |
+| Identität | Server rät sie aus der Position | liegt fertig vor, aus VATSIM |
+| Anmeldung | keine (WASM-Modul im Simulator) | die Sitzung des Piloten (`_current_cid`) |
+| Ablage | `bruegge_positions` + Prozessspeicher | **nur** Prozessspeicher |
+
+**Warum es keine Kennung gibt und kein Positionsmatching auf dem Server.** Das angemeldete
+Kniebrett *weiß*, wen es meldet: seine eigene CID über die Sitzung, die fremden Rufzeichen
+aus dem Matching, das es ohnehin rechnet (`_verkehrZusammenfuehren` in `index.html` führt
+Sim-Verkehr und VATSIM-Verkehr zusammen). Der ganze schwierige Teil der Brügge — Schranken,
+Vorsprungsregel, Verstoßzähler, Kennungsvergabe — entfällt hier.
+
+⚠ **Ein Irrweg, der sich hier aufdrängt:** Die Rohdaten von `GET_AIR_TRAFFIC` tragen kein
+Rufzeichen (`cs: ''`), kein Muster (`ac: ''`) und melden durchgehend `gs: 0`, gelegentlich
+`alt: 100000`. Wer nur die ansieht, hält das Vorhaben für unmöglich. **Die Identität entsteht
+erst im Matching.**
+
+**Request**
+
+```json
+{
+  "protokoll": 1,
+  "flugzeuge": [
+    {"cs": "FRS49", "lat": 53.78227, "lon": 7.92593, "alt": 1200.0, "gs": 95.0,
+     "hdg": 210.4, "vs": 480, "gnd": false, "agl": 980.0}
+  ]
+}
+```
+
+`cs` ist das Rufzeichen aus VATSIM, alles andere kommt aus dem Simulator. `vs` (ft/min) ist
+**keine Zugabe**: Ohne sie fällt die Höhenschranke auf ihre Untergrenze zurück, und ein
+steigendes Flugzeug weicht zwangsläufig von seiner bis zu 29 s alten VATSIM-Höhe ab — genau
+daran ist die Brügge-Zuordnung im ersten Flug gerissen (11.09.2026).
+
+**Gemeldet werden nur Friesen.** Für alle anderen hat der Server keine CID, und Ablage wie
+Sekundenstrom hängen an ihr; Fremdverkehr zeichnet die Karte ohnehin aus `/api/traffic`. Dazu
+kommt die Messung vom 14.09.2026: Friesen wurden **5 von 5** erkannt (sie sind über
+`liveData` vollständig bekannt), Fremdverkehr nur teilweise (DFIPS 1 von 2, DEKLR 0 von 2).
+
+**Response**
+
+```json
+{"protokoll": 1, "modus": "alle", "naechste_frage_in_s": 1, "uebernommen": 3, "verworfen": 1}
+```
+
+⭐ **`modus` ist der Ausschalter, und er wirkt hier — nicht im Client.** Drei Zustände, und
+die Reihenfolge ist eine Rangfolge:
+
+| `modus` | was das Kniebrett melden darf |
+|---|---|
+| `aus` | nichts |
+| `eigene` | nur die eigene Position (es verhält sich dann wie eine FriesenBrügge) |
+| `alle` | alle erkannten Friesen |
+
+Eingestellt wird **global** (`app_settings.kniebrett_melden_modus`, Vorgabe `aus`) und **je
+Pilot** (Tabelle `kniebrett_melden`). Der wirksame Wert ist das **Minimum** aus beiden: Die
+globale Einstellung ist ein Deckel, kein Vorschlag — sonst könnte ein einzelner Pilot-Eintrag
+die Notbremse aushebeln, die für den Fall da ist, dass es im Betrieb klemmt. Kein Eintrag in
+`kniebrett_melden` heißt „folgt dem globalen Wert" und ist damit etwas anderes als `alle`.
+
+**Ein Client, der die Abschaltung übergeht, belastet den Server nicht:** Bei `aus` wird
+verworfen, bevor die Kandidatenliste überhaupt gebildet wird, und bei `eigene` fällt jeder
+fremde Eintrag heraus. Der Client sendet zwar weniger, entscheiden tut er nichts.
+
+⚠ **`aus` ist ein langer Takt (900 s), keine 0.** Dieselbe Überlegung wie bei
+`_bruegge_takt`: Ein Kniebrett, das gar keine Antwort mehr bekäme, könnte Abschaltung nicht
+von Netzausfall unterscheiden — und das **Wiedereinschalten** braucht denselben Weg. Fragt
+niemand mehr, erfährt auch niemand, dass es wieder erlaubt ist.
+
+**Keine Datenbank im Meldeweg.** Die Meldung geht in den Prozessspeicher des Pollers
+(`VatsimPoller.kniebrett_position_merken` → `_bruegge_live`), aus dem der Sekundenstrom die
+Karten ohnehin speist; `bruegge_positionen_holen` wird nirgends aufgerufen. Fünf Kniebretter
+mit je zehn erkannten Flugzeugen wären sonst 50 Schreibvorgänge je Sekunde, größtenteils
+redundant, weil mehrere dieselben Flugzeuge sehen. Auch die **Kandidaten** kommen ohne
+Abfrage: `VatsimPoller.friesen_snapshot` hält den Stand aus dem letzten Poll-Zyklus, den der
+Poller ohnehin in der Hand hatte. Gelesen wird nur die Einstellung, und die höchstens alle
+10 Sekunden — **die Abschaltung wirkt deshalb bis zu zehn Sekunden verzögert.**
+
+⭐ **Wessen Meldung gilt, wird EINMAL entschieden, nicht je Meldung.** Beim
+FriesenFlieger-Freitag sehen mehrere Kniebretter dieselben Flugzeuge, dazu meldet vielleicht
+die eigene Brügge des Piloten. Zwei Regeln:
+
+1. **Die nähere Quelle gewinnt.** Eine Brügge und das eigene Kniebrett lesen die Position
+   direkt aus dem Simulator *des Piloten*; ein fremdes Kniebrett sieht ihn über vPilot. Eine
+   Fremdmeldung überschreibt deshalb keine frische Selbstmeldung.
+2. **Unter gleich guten Fremdmeldern behält der erste den Zuschlag**, solange er frisch
+   meldet (`VatsimPoller.KNIEBRETT_ZUSCHLAG_S` = 3 s). Sonst schrieben fünf Kniebretter
+   fünfmal je Sekunde denselben Punkt, und der letzte gewänne zufällig.
+
+   ⚠ **Das Fenster ist bewusst kürzer als die Verfallsfrist.** Dieselben 10 s zu nehmen liegt
+   nahe und war der Fehler: Verstummt der erste Melder — Tablet zu, Flugzeug aus seinem
+   Umkreis heraus —, hielte die Sperre einen zweiten, der weiter meldet, volle zehn Sekunden
+   draußen. Der Strom schickt in dieser Zeit jede Sekunde den letzten Stand weiter: Ein
+   fliegendes Flugzeug stünde auf allen Karten still.
+
+`uebernommen`/`verworfen` sind die Gegenprobe dazu: Ein Kniebrett, das lauter Nullen
+zurückbekommt, meldet Flugzeuge, die schon jemand anders besser kennt.
+
+⚠ **`bruegge_belegte_cids` wird hier NICHT angefasst.** Diese Sperre ist gegen *verwechselte*
+Identitäten gebaut — zwei Brüggen, die sich um denselben Piloten streiten — und nicht gegen
+mehrere Quellen für dieselbe, richtig erkannte CID. Über denselben Endpunkt zu melden hieße,
+sie dafür aufzuweichen und den Schutz zu verlieren, der gerade erst eingezogen wurde.
+
+**Plausibilisiert wird trotzdem.** Hier meldet ein Client über **Dritte**, und das ist eine
+andere Vertrauenslage als bei der Brügge: `bruegge.bleibt_plausibel` prüft jeden Eintrag
+kinematisch gegen den VATSIM-Stand. Ohne das könnte ein angemeldeter Pilot jeden anderen auf
+der Karte verschieben.
+
+⚠ **Die Schranke wächst dabei NICHT mit dem, was der Melder behauptet** — und darin liegt der
+eigentliche Unterschied zur Brügge. `schranke_m` rechnet aus der Geschwindigkeit *der Meldung*;
+bei der Brügge ist das richtig, denn sie meldet sich selbst und hätte nichts davon, ihr eigenes
+Toleranzfenster aufzublasen. Hier bestimmte der Melder damit, wie weit er einen **fremden**
+Piloten von dessen VATSIM-Stand wegschieben darf: Mit `gs: 1000, vs: 99999` waren das gemessen
+33 km und 40 000 ft — und weil der erste Fremdmelder den Zuschlag behält, blieb der Punkt dort
+stehen. Deshalb ist der VATSIM-Wert die Grundlage und die Meldung nur ein Zuschlag
+(`_KNIEBRETT_GS_RESERVE_KT` = 60 kt, `_KNIEBRETT_VS_MAX_FT_MIN` = 4000 ft/min); `hdg` und `gs`
+werden zusätzlich in ihren Wertebereich geklemmt, bevor sie in den Sekundenstrom gehen.
+
+**Fehlt `alt`, wird die Höhe nicht geprüft** (statt gegen 0 ft): Panel-Pakete vor 1.4.0
+schicken keine, und eine Meldung aus der Luft still zu verwerfen sähe aus wie „meldet eben
+nicht".
+
+**Der Sender** sitzt in `app/static/index.html` (Block „DAS KNIEBRETT MELDET SEIN GEBIET"),
+läuft **nur im Panel-Modus** und schickt nur, was sich geändert hat — aber spätestens alle
+`_KB_WIEDERHOLEN_MS` = 4 s auch das Unveränderte, sonst ließe der Server ein stehendes
+Flugzeug nach 10 s verfallen. Ein **neues EFB-Paket braucht es dafür nicht**: Die Zahlen
+liegen bereits in der Seite.
+
+**Rate-Limit:** eigene nginx-Zone `friesenspy_kniebrett` (180 r/m, burst 60) und eine eigene
+`location = /api/kniebrett/melden`. ⚠ **Der Deploy rollt nginx NICHT aus** — die Vhost-Datei
+auf dem Server ist unversioniert und muss von Hand nachgezogen werden, *bevor* der Schalter
+umgelegt wird. Ohne sie läge der Takt im 120-r/m-Topf der ganzen
+Website — genau die Falle, die am 14.09.2026 bei der Brügge zugeschnappt ist (67 Meldungen
+mit HTTP 429), und dort fuhr nicht einmal ein Browser daneben.
+
+**Fehler:** `413` (Meldung zu groß), `400` (kaputtes JSON). Ohne Anmeldung gibt es kein
+`modus` außer `aus`; steht das Board-Login scharf, hält bereits das Login-Gate die Anfrage an
+— der Endpunkt steht bewusst **nicht** in der Allowlist, anders als `/api/bruegge/melden`,
+das gar keine Anmeldung haben *kann*.
+
+Mehr als `_KNIEBRETT_MAX_FLUGZEUGE` = 40 Einträge werden **gekappt, nicht abgewiesen**: Ein zu
+langes Paket ist kein Grund, auch den gültigen Anfang wegzuwerfen.
+
+---
+
 ## Admin: Brügge
 
 Alle brauchen eine Admin-Sitzung.
@@ -2464,3 +2618,30 @@ angezeigte Version gar nicht erst von der ausgelieferten abweichen.
 
 ⚠ **Beide Dateien liegen von Hand im Volume neben der Datenbank — kein Deploy fasst sie an**
 (dieselbe Falle wie beim EFB-ZIP). `paket.ps1 -Hochladen` erledigt es, je Simulator einmal.
+
+---
+
+## Admin: Kniebrett
+
+Alle brauchen eine Admin-Sitzung. Der Schalter zu `POST /api/kniebrett/melden` — zwei Ebenen,
+dieselben drei Zustände.
+
+| Endpunkt | Zweck |
+|---|---|
+| `GET /api/admin/kniebrett` | `modus`, `takt_s`, die Pilot-Ausnahmen **und** `live`: wer gerade wen versorgt. Die letzte Zahl beantwortet die Frage, die man sonst nirgends beantwortet bekommt — auf der Karte sieht man den Punkt, nicht seine Quelle |
+| `POST /api/admin/kniebrett/modus` | Global stellen: `aus` \| `eigene` \| `alle`. **Das ist die Notbremse**: einmal auf `aus`, und binnen zehn Sekunden meldet niemand mehr — ohne Deploy und ohne dass jemand etwas neu installiert |
+| `POST /api/admin/kniebrett/pilot` | Einen einzelnen begrenzen: `cid` + `modus`. **Leerer `modus` löscht den Eintrag** und ist damit etwas anderes als `alle` — danach folgt der Pilot wieder dem globalen Wert, auch wenn der später heruntergedreht wird |
+| `POST /api/admin/kniebrett/takt` | Die Drossel: **1 bis 5 s**. ⚠ Nicht weiter — der Server lässt einen Punkt nach `bruegge.MELDUNG_FRIST_S` = 10 s verfallen; bei 15 s Takt lebte er 10 s und fiele 5 s auf VATSIM zurück, also ein sichtbarer Sprung alle 15 Sekunden. Eine Drossel macht die Anzeige gröber, sie lässt sie nicht blinken. Wer weiter drosseln will, schaltet ab |
+
+Der globale Wert ist ein **Deckel**: Steht er auf `eigene`, meldet auch ein Pilot mit
+Eintrag `alle` nur sich selbst. Anders herum wäre die Notbremse durch einen einzelnen
+Pilot-Eintrag aushebelbar.
+
+⚠ **Die Vorgabe ist `aus`**, und sie bleibt es, bis jemand hier etwas anderes einstellt. Das
+ist kein Zufall: Ein Pilot kann durch dieses Vorhaben sekundengenau gezeigt werden, **ohne
+selbst etwas installiert zu haben** — bei der Brügge ist die Installation die Einwilligung,
+hier meldet ein Dritter. Das ist Issue **#35** und eine Nutzerentscheidung, keine
+Bauentscheidung.
+
+---
+

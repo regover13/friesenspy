@@ -481,6 +481,19 @@ class VatsimPoller:
         # SSE-Client am falschen Worker sähe nichts -- wer das aendert, verlegt den Strom auf
         # die Datenbank.
         self._bruegge_live: dict[int, dict] = {}
+        # Die Friesen aus dem letzten Poll-Zyklus, unveraendert wie in `live_positions`.
+        #
+        # ⭐ DAS IST DER GRUND, WARUM DER KNIEBRETT-ENDPUNKT OHNE DATENBANK AUSKOMMT
+        # (GitHub-Issue #23): Er braucht die Kandidaten nur, um ein gemeldetes Rufzeichen
+        # einer cid zuzuordnen und die Position gegen den VATSIM-Stand zu pruefen. Genau
+        # diese Zeilen hatte der Poller eine Funktion weiter oben ohnehin in der Hand
+        # (`get_live_positions`) -- sie im Sekundentakt erneut zu LESEN waere eine Abfrage
+        # je Meldung und je Kniebrett, fuer Daten, die sich alle 15 s aendern.
+        #
+        # Derselbe Gedanke wie bei `_bruegge_live` und `traffic_snapshot`, nur in der
+        # Gegenrichtung: Dort geht etwas aus dem Speicher hinaus, hier kommt etwas herein.
+        self.friesen_snapshot: list[dict] = []
+        self.friesen_snapshot_ts: float = 0.0
         # Vollständige Prefile-Daten für die API (Liste von Dicts)
         self.last_prefiles: list = []
         # cid → (deptime, departure, arrival) für Änderungserkennung — None = erster Poll
@@ -843,6 +856,87 @@ class VatsimPoller:
             "ts": time.monotonic(),
         }
 
+    # ------------------------------------------------------------------
+    # Das Kniebrett meldet SEIN GEBIET (GitHub-Issue #23)
+    # ------------------------------------------------------------------
+    #
+    # Die Ablage ist dieselbe (`_bruegge_live`, Schluessel cid) -- und das ist kein
+    # Zusammenlegen zweier Dinge, sondern die richtige Modellierung: Auf der Karte steht je
+    # Pilot EIN Punkt, und die Frage ist nur, welche Quelle ihn gerade am besten kennt.
+    #
+    # ⚠ Anders als die Bruegge meldet ein Kniebrett ueber DRITTE. Damit stellt sich eine
+    # Frage, die es bei der Bruegge nicht gibt: Was, wenn mehrere Quellen dieselbe cid
+    # melden? Beim FriesenFlieger-Freitag ist das der Normalfall -- fuenf Kniebretter sehen
+    # dieselben zehn Flugzeuge, dazu meldet jeder Pilot mit Bruegge sich selbst.
+    #
+    # Entschieden wird EINMAL je cid statt N-mal geschrieben, nach zwei Regeln:
+
+    #: Wie nah ist die Quelle am Flugzeug? Eine Bruegge und das eigene Kniebrett lesen die
+    #: Position direkt aus dem Simulator DES PILOTEN. Ein fremdes Kniebrett sieht ihn ueber
+    #: vPilot -- dieselbe Zahl, aber einen Umweg weiter, und nur, solange er im geladenen
+    #: Umkreis ist.
+    QUELLE_SELBST = 2
+    QUELLE_FREMD = 1
+
+    #: So lange behaelt ein Fremdmelder den Zuschlag fuer eine cid.
+    #:
+    #: ⚠ **Bewusst kuerzer als die Verfallsfrist.** Naeheliegend waere, dieselben 10 s zu
+    #: nehmen -- und genau das war der Fehler: Verstummt der erste Melder (Tablet zu,
+    #: Flugzeug aus seinem Umkreis heraus), haelt die Sperre einen zweiten, der weiter
+    #: meldet, volle zehn Sekunden draussen. Der Strom schickt in dieser Zeit jede Sekunde
+    #: brav den letzten Stand weiter: Ein fliegendes Flugzeug steht auf allen Karten still.
+    #:
+    #: Drei Sekunden sind lang genug, damit nicht bei jeder Meldung gewechselt wird (das
+    #: waere das Flackern, gegen das der Zuschlag gebaut ist), und kurz genug, dass eine
+    #: Uebergabe vor dem Verfall stattfindet.
+    KNIEBRETT_ZUSCHLAG_S = 3.0
+
+    def kniebrett_position_merken(self, cid: int, eintrag: dict, melder_cid: int) -> bool:
+        """Eine vom Kniebrett gemeldete Position uebernehmen -- oder eben nicht.
+
+        Liefert ``True``, wenn sie gilt. ``False`` heisst: Eine bessere oder gleich gute
+        Quelle hat diese cid gerade in der Hand, und die Meldung ist damit erledigt -- ohne
+        Schreibvorgang, ohne Datenbank, ohne Streit.
+
+        Die zweite Regel ist die wichtigere fuer die Last: Unter GLEICH guten Fremdmeldern
+        behaelt der erste den Zuschlag, solange er frisch meldet. Sonst schrieben fuenf
+        Kniebretter fuenfmal je Sekunde denselben Punkt, und der letzte gewaenne zufaellig.
+        """
+        cid = int(cid)
+        guete = self.QUELLE_SELBST if int(melder_cid) == cid else self.QUELLE_FREMD
+        vorhanden = self._bruegge_live.get(cid)
+        if vorhanden is not None and (time.monotonic() - vorhanden["ts"]) < self.BRUEGGE_FRIST_S:
+            # Eine Zeile ohne `guete` stammt von einer Bruegge -- die meldet ausschliesslich
+            # sich selbst und ist damit per Definition eine Selbstmeldung.
+            alt_guete = vorhanden.get("guete", self.QUELLE_SELBST)
+            if alt_guete > guete:
+                return False
+            if (alt_guete == guete == self.QUELLE_FREMD
+                    and vorhanden.get("melder") not in (None, int(melder_cid))
+                    and (time.monotonic() - vorhanden["ts"]) < self.KNIEBRETT_ZUSCHLAG_S):
+                return False
+        try:
+            lat = float(eintrag["lat"])
+            lon = float(eintrag["lon"])
+        except (KeyError, TypeError, ValueError):
+            return False
+        self._bruegge_live[cid] = {
+            "cid": cid,
+            "lat": lat,
+            "lon": lon,
+            # Dieselbe Rundung wie bei der Bruegge -- der Strom traegt beides nebeneinander,
+            # und zwei Genauigkeiten fuer dieselbe Zahl waeren auf der Karte sichtbar.
+            "hdg": round(float(eintrag.get("hdg") or 0.0), 1),
+            "gs": round(float(eintrag.get("gs") or 0.0), 1),
+            "alt": None if eintrag.get("alt") is None else round(float(eintrag["alt"])),
+            "agl": None if eintrag.get("agl") is None else round(float(eintrag["agl"])),
+            "gnd": bool(eintrag.get("gnd")),
+            "ts": time.monotonic(),
+            "guete": guete,
+            "melder": int(melder_cid),
+        }
+        return True
+
     async def _bruegge_strom_schleife(self) -> None:
         """Den Sekundenstrom takten -- als eigene Schleife, NICHT als Scheduler-Job.
 
@@ -874,6 +968,18 @@ class VatsimPoller:
                 logger.exception("Bruegge-Sekundenstrom")
                 await asyncio.sleep(5.0)
 
+    @staticmethod
+    def _quelle_kuerzel(eintrag: dict) -> str:
+        """``b`` FriesenBruegge · ``e`` eigenes Kniebrett · ``k`` fremdes Kniebrett.
+
+        Ein Buchstabe statt eines Wortes: Der Strom geht jede Sekunde an jede offene Karte,
+        und er ist bewusst duenn (rund 60 Byte je Flieger).
+        """
+        melder = eintrag.get("melder")
+        if melder is None:
+            return "b"
+        return "e" if int(melder) == int(eintrag.get("cid", -1)) else "k"
+
     def bruegge_strom_senden(self) -> None:
         """Einmal je Sekunde: alle frischen Bruegge-Positionen an die offenen Karten.
 
@@ -891,7 +997,14 @@ class VatsimPoller:
             return
         self.broadcast_sse({
             "type": "bruegge",
-            "data": [{k: v for k, v in e.items() if k != "ts"}
+            # `melder` bleibt hier: Wer wen sieht, geht niemanden etwas an, der den Punkt
+            # nur zeichnet. Was mitgeht, ist die ART der Quelle (`q`) -- und die ist keine
+            # Zugabe, sondern eine Korrektur: Das Kartenfenster schrieb bisher an JEDEN
+            # sekundengenauen Punkt "Quelle: FriesenBrügge". Sobald ein Kniebrett fremde
+            # Piloten mitmeldet, waere das eine glatte Falschaussage ueber jemanden, der
+            # gar nichts installiert hat.
+            "data": [{**{k: v for k, v in e.items() if k not in ("ts", "guete", "melder")},
+                      "q": self._quelle_kuerzel(e)}
                      for e in self._bruegge_live.values()],
         })
 
@@ -1294,6 +1407,11 @@ class VatsimPoller:
 
                 # 3. Push SSE update
                 live_positions = get_live_positions(conn)
+                # Denselben Stand fuer den Kniebrett-Endpunkt vormerken (s. friesen_snapshot).
+                # Eine Kopie der Liste, nicht der Zeilen: Die Dicts werden nirgends veraendert,
+                # und eine tiefe Kopie waere bei jedem Zyklus Arbeit ohne Gegenwert.
+                self.friesen_snapshot = list(live_positions)
+                self.friesen_snapshot_ts = time.time()
 
                 # Neu gesehene Flugzeugtypen: Zuladung automatisch recherchieren + vorbefüllen
                 # (Admin kann die Werte jederzeit überschreiben; source='llm' kennzeichnet sie).

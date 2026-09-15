@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.47.0",
+    "date": "2026-09-15",
+    "highlight": false,
+    "title": "Das Kniebrett kann melden, wen es sieht — vorerst abgeschaltet",
+    "items": [
+      "📋 Wer im Simulator das Kniebrett offen hat, sieht die Flugzeuge um sich herum auf die Sekunde genau — der Simulator weiß es besser als VATSIM, das nur alle 15 Sekunden meldet. Dieses Wissen blieb bisher im Tablet. Das Kniebrett kann es jetzt zurückmelden, und zwar nicht nur die eigene Position, sondern alle erkannten Friesen in Reichweite: gemessen bis 92 Kilometer weit. Bei einem gemeinsamen Flug deckt damit ein einziger offener Bildschirm das ganze Feld ab.",
+      "🔌 Ausgeliefert ist die Funktion, eingeschaltet ist sie nicht. Sie hat drei Stufen — aus, nur die eigene Position, alle erkannten Friesen —, und sie steht auf „aus\". Der Grund ist eine Frage, die noch offen ist und dem Nutzer gehört, nicht der Technik: Ein Pilot kann dadurch sekundengenau gezeigt werden, ohne selbst etwas installiert zu haben. Umstellen lässt es sich im Admin, global und für einzelne Piloten, und es wirkt binnen zehn Sekunden — ohne dass jemand etwas neu installieren muss.",
+      "🧰 Für das Kniebrett selbst ändert sich nichts: kein neues EFB-Paket, keine Verteilung. Die Zahlen liegen ohnehin schon in der Seite."
+    ]
+  },
+  {
     "version": "14.46.0",
     "date": "2026-09-15",
     "highlight": false,

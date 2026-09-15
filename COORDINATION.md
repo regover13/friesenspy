@@ -6,6 +6,75 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-15 (abends) — #23 ist GEBAUT, liegt auf einem Zweig und ist abgeschaltet
+
+**Wer:** die #23-Sitzung (Server). Zweig `kniebrett-meldet-gebiet`, **nicht** nach `main`
+gemerget — ein Push auf `main` deployt sofort, und #35 ist nicht entschieden.
+
+**Was:** `POST /api/kniebrett/melden` (additiv, eigener Block in `app/main.py` **vor** dem
+Brügge-Block), Sender in `app/static/index.html`, Schalter im Admin, eigene nginx-Zone.
+Vollständig in [`docs/api.md`](docs/api.md), Abschnitt „POST /api/kniebrett/melden".
+
+### Die Grenze ist eingehalten
+
+`/api/bruegge/melden`, `_bruegge_zuordnen`, `app/bruegge.py` und `bruegge_belegte_cids` sind
+**unberührt** (`git diff` zeigt dort keine Zeile). Aus `app/bruegge.py` wird nur *gelesen*:
+`kandidaten_bilden`, `bleibt_plausibel`, `MELDUNG_FRIST_S`.
+
+### Drei Stellen, an denen sich die Zweige trotzdem berühren könnten
+
+| Datei | was diese Sitzung getan hat |
+|---|---|
+| `app/poller.py` | **neu:** `friesen_snapshot` (Kandidaten ohne DB), `kniebrett_position_merken`, `_quelle_kuerzel`. **geändert:** eine Zeile in `bruegge_strom_senden` (Filter + neues Feld `q`) und eine im Poll-Zyklus (Snapshot füllen) |
+| `app/static/index.html` | **neu:** Sender-Block. **geändert:** eine Zeile in `_verkehrZusammenfuehren` (`_kbVorratMerken`), `_brueggeStromEinarbeiten` nimmt `q` mit, `buildPopupHtml` beschriftet die Quelle über `_quelleName`, Legendenzeile |
+| `app/CHANGELOG.json` | Eintrag **14.46.0** ganz oben |
+
+⚠ **Warum das Popup angefasst wurde, obwohl es nicht im Auftrag stand:** Es schrieb an jeden
+türkisen Punkt „Quelle: FriesenBrügge". Sobald ein Kniebrett *fremde* Piloten meldet, ist das
+eine Falschaussage über jemanden, der gar nichts installiert hat. Der Strom trägt dafür jetzt
+ein Kürzel `q` (`b` Brügge, `e` eigenes Kniebrett, `k` fremdes Kniebrett) — **ohne** die CID
+des Melders: Wer wen sieht, geht die Karte nichts an.
+
+### Was NICHT passiert, solange niemand etwas umstellt
+
+`app_settings.kniebrett_melden_modus` hat die Vorgabe **`aus`**. Selbst ein versehentlicher
+Deploy ändert damit nichts am Verhalten der Karte — der Schalter ist die Auslieferung, nicht
+der Merge.
+
+### Fünf Funde aus dem Fable-Review, alle behoben und durch Tests gebunden
+
+Sie stehen hier, weil zwei davon **allgemein** sind und die nächste ähnliche Arbeit sonst
+denselben Weg geht:
+
+1. ⭐ **Eine Prüfung, die mit den Zahlen des Prüflings rechnet, prüft nichts.** `schranke_m`
+   nimmt die Geschwindigkeit *aus der Meldung* — bei der Brügge richtig (sie meldet sich
+   selbst), hier falsch: Der Melder bestimmte damit selbst, wie weit er einen **fremden**
+   Piloten verschieben darf. Gemessen: `gs: 1000, vs: 99999` ließ 33 km und 40 000 ft
+   Abweichung durch, und der erste Fremdmelder behält den Zuschlag. Jetzt ist der VATSIM-Wert
+   die Grundlage, die Meldung nur ein gedeckelter Zuschlag.
+2. ⭐ **Ein Zeitfenster, das zwei Dinge zugleich regelt, regelt eines davon falsch.** Der
+   Zuschlag für einen Fremdmelder lief über dieselben 10 s wie der Verfall. Verstummt der
+   erste Melder, hielt die Sperre einen zweiten volle zehn Sekunden draußen — während der
+   Strom jede Sekunde den alten Punkt weiterschickte. Eigenes Fenster: 3 s.
+3. Der Takt war bis 900 s stellbar, die Verfallsfrist liegt bei 10 s: Ab 11 s hätte der
+   Punkt geblinkt. Obergrenze jetzt 5 s, und das steht an der Prüfung, nicht im Schieber.
+4. Die eigene Meldung schickte `vs: 0` (`_simPos` trägt keine Rate) — ab ~620 ft/min wäre
+   sie verworfen worden, und ein fremdes Kniebrett hätte die CID übernommen. Die Rangfolge
+   der Quellen stand damit auf dem Kopf. Der Sender rechnet die Rate jetzt selbst.
+5. Der Client merkte sich Gesendetes **vor** der Antwort. Nach einem 429 galt ein Punkt als
+   gesendet, der nie ankam — und ein stehendes Flugzeug, das nur von der Wiederholung lebt,
+   verschwand von der Karte.
+
+Dazu zwei Kleinigkeiten: fehlende `alt` wurde als 0 ft gelesen (Panel-Pakete vor 1.4.0
+schicken keine), und `hdg`/`gs` gingen ungeklemmt in den Sekundenstrom.
+
+### ⚠ Vor dem Einschalten: nginx von Hand nachziehen
+
+`deploy.yml` rollt **kein** nginx aus. Die Zone `friesenspy_kniebrett` und die
+`location = /api/kniebrett/melden` stehen nur im Repo; auf dem Server ist die Vhost-Datei
+unversioniert. Wer den Schalter umlegt, ohne sie nachzuziehen, legt den Sekundentakt in den
+120-r/m-Topf der ganzen Website — genau der Fall vom 14.09.2026.
+
 ## 2026-09-15 — #23 geht an eine Server-Sitzung: Grenze und Vorgabe
 
 **Wer:** eine noch zu startende Sitzung (Cloud oder lokal), Vorgabe vom Nutzer.

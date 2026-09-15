@@ -971,6 +971,19 @@ _BRUEGGE_MIGRATIONS = [
     )""",
 ]
 
+_KNIEBRETT_MIGRATIONS = [
+    # Der Schalter je Pilot (GitHub-Issue #23). Eine eigene Tabelle statt einer Spalte an
+    # `pilot_visibility`: Dort geht es um BENACHRICHTIGUNGEN (online/prefile/ts), hier um
+    # eine Datenquelle. Die beiden zusammenzulegen hiesse, `VISIBILITY_SERVICES` um einen
+    # Eintrag zu erweitern, der kein Service ist -- und genau diese Frage ist als #35 offen
+    # und gehoert dem Nutzer, nicht dieser Tabelle.
+    """CREATE TABLE IF NOT EXISTS kniebrett_melden (
+        cid        INTEGER PRIMARY KEY,
+        modus      TEXT NOT NULL,      -- aus | eigene | alle
+        updated_at TEXT
+    )""",
+]
+
 _VISIBILITY_MIGRATIONS = [
     # services: JSON-Liste der Services, für die die Sichtbarkeits-Einschränkung gilt
     # (NULL = alle — Backward-Compat für Zeilen vor dieser Spalte).
@@ -1155,6 +1168,11 @@ def init_db(db_path: str) -> None:
             except sqlite3.OperationalError:
                 pass
         for stmt in _AIP_CHARTS_MIGRATIONS:
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass
+        for stmt in _KNIEBRETT_MIGRATIONS:
             try:
                 conn.execute(stmt)
             except sqlite3.OperationalError:
@@ -10413,3 +10431,65 @@ def delete_progress_snapshots(conn: sqlite3.Connection, kind: str) -> int:
     Anzahl gelöschter Zeilen."""
     cur = conn.execute("DELETE FROM progress_snapshot WHERE kind=?", (kind,))
     return cur.rowcount
+
+
+# ---------------------------------------------------------------------------
+# Das Kniebrett meldet sein Gebiet (GitHub-Issue #23)
+# ---------------------------------------------------------------------------
+#
+# Drei Zustaende, und die Reihenfolge ist eine Rangfolge: Wer weniger darf, darf auch
+# nichts von dem, was darueber steht.
+#
+#   aus     -- gar nicht melden
+#   eigene  -- nur die eigene Position (das Kniebrett verhaelt sich wie eine FriesenBruegge)
+#   alle    -- alle im Matching erkannten Flugzeuge
+#
+# Der Rang macht die globale Einstellung zu einem DECKEL und nicht zu einem Vorschlag:
+# Der wirksame Modus ist das Minimum aus global und je Pilot. Waere es anders, koennte ein
+# einzelner Pilot-Eintrag die Notbremse aushebeln, die fuer den Fall da ist, dass es im
+# Betrieb klemmt.
+KNIEBRETT_MODI = ("aus", "eigene", "alle")
+
+
+def kniebrett_rang(modus: str | None) -> int:
+    """``aus`` → 0, ``eigene`` → 1, ``alle`` → 2. Unbekanntes ist ``aus``.
+
+    Unbekanntes NICHT auf ``alle`` abzubilden ist Absicht: Ein Tippfehler in der Einstellung
+    soll nichts oeffnen, sondern schliessen.
+    """
+    try:
+        return KNIEBRETT_MODI.index(str(modus))
+    except ValueError:
+        return 0
+
+
+def kniebrett_modus_setzen(conn: sqlite3.Connection, cid: int, modus: str | None) -> None:
+    """Den Modus fuer EINEN Piloten festlegen -- ``None``/``""`` entfernt den Eintrag.
+
+    Ein fehlender Eintrag heisst "folgt dem globalen Wert" und ist damit etwas anderes als
+    ``alle``: Wer die globale Einstellung spaeter herunterdreht, nimmt den Piloten mit.
+    Dieselbe Unterscheidung wie bei `nicht_gefunden` in den AIP-Kartenblaettern -- die
+    Abwesenheit eines Eintrags ist kein Status.
+    """
+    if not modus:
+        conn.execute("DELETE FROM kniebrett_melden WHERE cid = ?", (int(cid),))
+        return
+    if modus not in KNIEBRETT_MODI:
+        raise ValueError(f"unbekannter Modus: {modus!r}")
+    conn.execute(
+        "INSERT INTO kniebrett_melden (cid, modus, updated_at) VALUES (?, ?, ?) "
+        "ON CONFLICT(cid) DO UPDATE SET modus = excluded.modus, "
+        "    updated_at = excluded.updated_at",
+        (int(cid), modus, _now_utc()),
+    )
+
+
+def kniebrett_modi_alle(conn: sqlite3.Connection) -> dict[int, str]:
+    """Alle abweichenden Piloten auf einmal -- ``{cid: modus}``.
+
+    EINE Abfrage statt einer je Meldung: Der Endpunkt laeuft im Sekundentakt und haelt das
+    Ergebnis kurz im Speicher (s. `_kniebrett_einstellungen` in app/main.py). Es sind eine
+    Handvoll Zeilen; sie einzeln zu holen waere teurer als alles zusammen.
+    """
+    rows = conn.execute("SELECT cid, modus FROM kniebrett_melden").fetchall()
+    return {int(r[0]): str(r[1]) for r in rows}
