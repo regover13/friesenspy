@@ -818,6 +818,21 @@ class VatsimPoller:
             lon = float(lage["lon"])
         except (KeyError, TypeError, ValueError):
             return
+        # ⭐ ZURUECKTRETEN, wenn eine BESSERE Quelle diese cid gerade in der Hand hat.
+        #
+        # ⚠ Hier stand bis zum 15.09.2026 nichts -- die Bruegge schrieb bedingungslos. Das
+        # war richtig, solange sie die reichste Quelle war; seit ein Kniebrett mit Paket
+        # 2.3.0 dieselben Werte liefert und ueber der Bruegge steht
+        # (`QUELLE_KNIEBRETT_VOLL`), macht es die neue Rangfolge zunichte: Sie haette den
+        # besseren Eintrag eine Sekunde spaeter ueberbuegelt, und beide haetten sich im
+        # Sekundentakt abgewechselt -- genau das Flackern, das die Rangfolge verhindern soll.
+        #
+        # Verstummt das Kniebrett, faellt die Sperre nach `KNIEBRETT_ZUSCHLAG_S` von selbst.
+        vorhanden = self._bruegge_live.get(int(cid))
+        if (vorhanden is not None
+                and vorhanden.get("guete", 0) > self.QUELLE_SELBST
+                and (time.monotonic() - vorhanden["ts"]) < self.KNIEBRETT_ZUSCHLAG_S):
+            return
         self._bruegge_live[int(cid)] = {
             "cid": int(cid),
             "lat": lat,
@@ -852,6 +867,22 @@ class VatsimPoller:
     #: Position direkt aus dem Simulator DES PILOTEN. Ein fremdes Kniebrett sieht ihn ueber
     #: vPilot -- dieselbe Zahl, aber einen Umweg weiter, und nur, solange er im geladenen
     #: Umkreis ist.
+    #: Ein eigenes Kniebrett, dessen Meldung ALLE Werte traegt -- Hoehe ueber Grund und
+    #: "am Boden" (EFB-Paket ab 2.3.0).
+    #:
+    #: ⭐ **Warum es damit VOR der Bruegge steht** (Nutzerentscheidung 15.09.2026): Bis dahin
+    #: hatte sie den Vortritt, und zwar aus genau EINEM Grund -- nur sie las
+    #: `PLANE ALT ABOVE GROUND` und `SIM ON GROUND`. Seit das Panel beides mitschickt, faellt
+    #: die Begruendung weg, und die verbleibenden Argumente sprechen fuers Kniebrett:
+    #:
+    #:   * Es KENNT den Piloten (Sitzung), die Bruegge laesst ihn den Server aus der Position
+    #:     HERLEITEN -- daher die Verwechslungen vom 14.09.2026.
+    #:   * Es kostet den Server keinen Datenbankzugriff, die Bruegge fuenf plus Matching.
+    #:
+    #: ⚠ Entschieden wird an der MELDUNG, nicht an einer Versionsnummer: Wer ein aelteres
+    #: Paket fliegt, schickt die Werte nicht -- fuer ihn bleibt die Bruegge die reichere
+    #: Quelle, ohne dass jemand eine Liste pflegen muesste.
+    QUELLE_KNIEBRETT_VOLL = 3
     QUELLE_SELBST = 2
     QUELLE_FREMD = 1
 
@@ -880,7 +911,12 @@ class VatsimPoller:
         Kniebretter fuenfmal je Sekunde denselben Punkt, und der letzte gewaenne zufaellig.
         """
         cid = int(cid)
-        guete = self.QUELLE_SELBST if int(melder_cid) == cid else self.QUELLE_FREMD
+        if int(melder_cid) != cid:
+            guete = self.QUELLE_FREMD
+        elif eintrag.get("agl") is not None and eintrag.get("gnd") is not None:
+            guete = self.QUELLE_KNIEBRETT_VOLL
+        else:
+            guete = self.QUELLE_SELBST
         # ⭐ ZUERST den Versuch vermerken, dann erst ueber den Vorrang entscheiden. Die
         # Reihenfolge ist der ganze Fix: Eine abgewiesene Selbstmeldung ist trotzdem der
         # Beweis, dass das Kniebrett liefert.
@@ -908,7 +944,13 @@ class VatsimPoller:
             # und die Quellenangabe im Kartenfenster gleich mit.
             #
             # Eine Bruegge-Zeile traegt kein `melder`: Sie meldet ausschliesslich sich selbst.
+            # ⚠ `guete <= alt_guete` ist seit dem 15.09.2026 nötig: Vorher fragte diese
+            # Stelle nur „hält die Brügge den Eintrag?" und nicht „ist sie auch besser?".
+            # Mit `QUELLE_KNIEBRETT_VOLL` gibt es jetzt eine Meldung, die über ihr steht --
+            # ohne diese Bedingung hätte die Brügge sie weiterhin ausgesperrt, und die
+            # ganze neue Rangfolge wäre wirkungslos geblieben.
             if (vorhanden.get("melder") is None
+                    and guete <= alt_guete
                     and (time.monotonic() - vorhanden["ts"]) < self.KNIEBRETT_ZUSCHLAG_S):
                 return False
             if (alt_guete == guete == self.QUELLE_FREMD

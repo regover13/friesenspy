@@ -1232,3 +1232,96 @@ class TestVierteStufeFremd:
         stelle = _INDEX.index("function _kbVorratMerken(")
         block = _INDEX[stelle:_INDEX.index("\n}", stelle)]
         assert "friese: !!istFriese" in block
+
+
+# ---------------------------------------------------------------------------------------
+#  15. Die Rangfolge dreht sich — aber nur für vollständige Meldungen (Punkt 6)
+# ---------------------------------------------------------------------------------------
+#
+# Bis zum 15.09.2026 hatte die FriesenBrügge bei gleichzeitigem Betrieb den Vortritt, und
+# zwar aus EINEM Grund: Sie las `PLANE ALT ABOVE GROUND` und `SIM ON GROUND`, das EFB-Panel
+# nicht. Seit Paket 2.3.0 tut es das auch.
+#
+# Damit fällt die Begründung weg, und die verbleibenden Argumente sprechen fürs Kniebrett:
+# Es kennt die Identität des Piloten über die Sitzung, ohne zu raten -- die Brügge lässt sie
+# den Server aus der Position herleiten, was schon zu Verwechslungen geführt hat. Und es
+# kostet den Server keinen einzigen Datenbankzugriff, die Brügge fünf plus Matching.
+#
+# ⚠ ABER NUR, WENN DIE WERTE WIRKLICH MITKOMMEN. Ein Pilot mit älterem Paket schickt sie
+# nicht -- für ihn bleibt die Brügge die reichere Quelle. Das entscheidet sich an der
+# MELDUNG, nicht an einer Versionsnummer: Was da ist, zählt.
+
+class TestRangfolgeNachVollstaendigkeit:
+    def _bruegge_meldet(self, env, cid=MELDER):
+        env.poller.bruegge_position_merken(cid, {
+            "lat": LAT, "lon": LON, "kurs": 90.0, "gs_kt": 0.0,
+            "alt_msl_ft": 500.0, "alt_agl_ft": 12.0, "am_boden": True})
+
+    def _kniebrett_voll(self, cs=MELDER_CS, **mehr):
+        e = _flugzeug(cs=cs, lat=LAT, lon=LON, hdg=270.0)
+        e.update({"agl": 15.0, "gnd": True, "vs": 0.0})
+        e.update(mehr)
+        return e
+
+    def test_ein_vollstaendiges_kniebrett_gewinnt_gegen_die_bruegge(self, env):
+        _modus_setzen(env, "eigene")
+        self._bruegge_meldet(env)
+        r = _melden(env, [self._kniebrett_voll()])
+        assert r.json()["uebernommen"] == 1
+        assert env.poller._bruegge_live[MELDER]["hdg"] == 270.0
+        assert env.poller._bruegge_live[MELDER]["agl"] == 15
+
+    def test_ein_altes_paket_verliert_weiterhin(self, env):
+        """Ohne AGL und „am Boden" ist die Brügge nach wie vor die reichere Quelle."""
+        _modus_setzen(env, "eigene")
+        self._bruegge_meldet(env)
+        e = _flugzeug(cs=MELDER_CS, lat=LAT, lon=LON, hdg=270.0)   # kein agl, kein gnd
+        r = _melden(env, [e])
+        assert r.json()["uebernommen"] == 0
+        assert env.poller._bruegge_live[MELDER]["hdg"] == 90.0
+
+    def test_und_die_bruegge_ueberschreibt_das_vollstaendige_nicht_mehr(self, env):
+        """⚠ Der Fall, der die Regel sonst wirkungslos machte: `bruegge_position_merken`
+        schrieb bedingungslos. Sie hätte den besseren Eintrag eine Sekunde später einfach
+        überbügelt -- und beide hätten sich im Sekundentakt abgewechselt."""
+        _modus_setzen(env, "eigene")
+        _melden(env, [self._kniebrett_voll()])
+        self._bruegge_meldet(env)
+        assert env.poller._bruegge_live[MELDER]["hdg"] == 270.0
+
+    def test_verstummt_das_kniebrett_uebernimmt_die_bruegge(self, env, monkeypatch):
+        """Sonst wäre der Vorrang ein Ausschalter für die Brügge."""
+        import app.poller as poller_modul
+        _modus_setzen(env, "eigene")
+        _melden(env, [self._kniebrett_voll()])
+        t0 = env.poller._bruegge_live[MELDER]["ts"]
+        monkeypatch.setattr(poller_modul.time, "monotonic", lambda: t0 + 4.0)
+        self._bruegge_meldet(env)
+        assert env.poller._bruegge_live[MELDER]["hdg"] == 90.0
+
+    def test_ein_fremdes_kniebrett_gewinnt_auch_vollstaendig_nicht(self, env):
+        """Die Rangfolge dreht sich nur für die SELBSTmeldung. Ein fremdes Kniebrett sieht
+        den Piloten über vPilot -- eine Quelle weiter weg, egal wie vollständig sie ist."""
+        _modus_setzen(env, "alle")
+        self._bruegge_meldet(env, cid=FREMD)
+        e = self._kniebrett_voll(cs=FREMD_CS, lat=LAT + 0.001, lon=LON + 0.001)
+        _melden(env, [e])
+        assert env.poller._bruegge_live[FREMD]["hdg"] == 90.0
+
+    def test_die_seite_reicht_die_drei_werte_durch(self):
+        """Ohne diesen Schritt wäre die ganze Regel wirkungslos: Das Panel sendet sie, aber
+        `_simPos` hat sie bis zum 15.09.2026 verworfen."""
+        stelle = _INDEX.index("_simPos = { lat: lat, lon: lon,")
+        block = _INDEX[max(0, stelle - 900):stelle + 600]
+        assert "d.alt_agl_ft" in block and "d.am_boden" in block and "d.vs_ft_min" in block
+        sender = _INDEX.index("function _kbEigenes()")
+        sblock = _INDEX[sender:_INDEX.index("\n}", sender)]
+        assert "agl:" in sblock and "gnd:" in sblock
+
+    def test_null_bleibt_null_und_wird_nicht_zu_false(self):
+        """`gnd: false` hieße „steht nicht am Boden", `null` heißt „das Paket weiß es nicht".
+        Die Unterscheidung IST die Regel -- wer sie einebnet, gibt jedem alten Paket den
+        Vorrang, den es nicht verdient."""
+        sender = _INDEX.index("function _kbEigenes()")
+        sblock = _INDEX[sender:_INDEX.index("\n}", sender)]
+        assert "gnd: (_simPos.gnd == null) ? null : !!_simPos.gnd" in sblock

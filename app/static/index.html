@@ -6509,11 +6509,18 @@ function _kbEigenes() {
   if (!_simPos || (Date.now() - _simPos.ts) >= _SIM_POS_MAX_ALTER_MS) return null;
   const cs = _meinCallsign();
   if (!cs) return null;
-  const vs = Math.round(_kbEigenVs());
+  // Die gemessene Steigrate schlaegt die geschaetzte -- aber nur, wenn sie da ist (Paket
+  // ab 2.3.0). Sonst bleibt es bei der Schaetzung aus zwei Hoehen.
+  const vs = (_simPos.vs != null) ? Math.round(_simPos.vs) : Math.round(_kbEigenVs());
   return { cs: cs, lat: _simPos.lat, lon: _simPos.lon,
            alt: (_simPos.alt == null) ? null : Number(_simPos.alt),
+           // ⚠ `null` durchreichen, nicht in `false` bzw. 0 uebersetzen: Der Server
+           // unterscheidet daran ein altes Paket von einem, das den Wert wirklich kennt --
+           // und entscheidet danach, ob das Kniebrett Vorrang vor der Bruegge hat.
+           agl: (_simPos.agl == null) ? null : Number(_simPos.agl),
+           gnd: (_simPos.gnd == null) ? null : !!_simPos.gnd,
            hdg: Number(_simPos.hdg) || 0, gs: Number(_simPos.gs) || 0,
-           vs: vs, gnd: false };
+           vs: vs };
 }
 
 function _kbUnveraendert(a, b) {
@@ -9037,9 +9044,22 @@ function _initPanelShellKanal() {
         // blendet die Anzeige aus; 0 kt ist dagegen eine gueltige Aussage (Windstille).
         const wRi = (d.windRi == null) ? null : Number(d.windRi);
         const wKt = (d.windKt == null) ? null : Number(d.windKt);
+        // ⭐ Hoehe ueber Grund, Steigrate und "am Boden" -- erst ab Paket 2.3.0. Sie tragen
+        // die Namen des Protokolls (`alt_agl_ft`, `vs_ft_min`, `am_boden`), damit sie
+        // unveraendert bis zum Server durchgereicht werden koennen.
+        //
+        // ⚠ `null` heisst "das Paket ist aelter und schickt sie nicht" und ist etwas
+        // anderes als 0 -- am Boden ist AGL naemlich 0, und eine Steigrate von 0 ist eine
+        // gueltige Aussage. An genau dieser Unterscheidung haengt seit dem 15.09.2026 der
+        // Vorrang zwischen Kniebrett und FriesenBruegge (s. `kniebrett_position_merken`).
+        const agl = (d.alt_agl_ft == null) ? null : Number(d.alt_agl_ft);
+        const vs  = (d.vs_ft_min  == null) ? null : Number(d.vs_ft_min);
         _simPos = { lat: lat, lon: lon,
                     hdg: Number(d.hdg) || 0, gs: Number(d.gs) || 0,
                     alt: isFinite(alt) ? alt : null,
+                    agl: (agl != null && isFinite(agl)) ? agl : null,
+                    vs:  (vs  != null && isFinite(vs))  ? vs  : null,
+                    gnd: (d.am_boden == null) ? null : !!d.am_boden,
                     windRi: isFinite(wRi) ? wRi : null,
                     windKt: isFinite(wKt) ? wKt : null,
                     ts: Date.now() };

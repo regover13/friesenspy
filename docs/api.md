@@ -2505,14 +2505,35 @@ die eigene Brügge des Piloten. Zwei Regeln:
    direkt aus dem Simulator *des Piloten*; ein fremdes Kniebrett sieht ihn über vPilot. Eine
    Fremdmeldung überschreibt deshalb keine frische Selbstmeldung.
 
-   ⭐ **Hat ein Pilot BEIDES aktiv, gewinnt die FriesenBrügge.** Nicht aus Höflichkeit
-   gegenüber dem älteren Verfahren: Sie liest per SimConnect und liefert `alt_agl_ft` und
-   `am_boden` mit; die Positionsbrücke des Kniebretts kennt beides für das eigene Flugzeug
-   nicht (dafür bräuchte es `PLANE ALT ABOVE GROUND` und damit ein neues EFB-Paket). Ohne
-   diese Regel überschrieben sich die zwei im Sekundentakt gegenseitig — es gewänne, wer
-   zuletzt kam, und `agl`, `gnd` und die Quellenangabe im Kartenfenster sprängen jede Sekunde
-   hin und her. Verstummt die Brügge, übernimmt das Kniebrett nach `KNIEBRETT_ZUSCHLAG_S`
-   = 3 s.
+   ⭐ **Hat ein Pilot BEIDES aktiv, entscheidet die VOLLSTÄNDIGKEIT der Meldung** — seit
+   dem 15.09.2026, und die Regel hat sich dabei umgedreht:
+
+   | Quelle | Rang |
+   |---|---|
+   | eigenes Kniebrett **mit** `agl` und `gnd` (EFB-Paket ab 2.3.0) | **3** |
+   | FriesenBrügge | 2 |
+   | eigenes Kniebrett **ohne** diese Werte (älteres Paket) | 2 |
+   | fremdes Kniebrett | 1 |
+
+   Vorher gewann immer die Brügge, und zwar aus genau **einem** Grund: Nur sie las
+   `PLANE ALT ABOVE GROUND` und `SIM ON GROUND`. Seit das Panel beides mitschickt, fällt die
+   Begründung weg — und die verbleibenden Argumente sprechen fürs Kniebrett: Es **kennt** den
+   Piloten über die Sitzung, statt ihn den Server aus der Position **herleiten** zu lassen
+   (daher die Verwechslungen vom 14.09.2026), und es kostet keinen Datenbankzugriff, die
+   Brügge fünf plus Matching.
+
+   ⚠ **Entschieden wird an der MELDUNG, nicht an einer Versionsnummer.** Wer ein älteres
+   Paket fliegt, schickt die Werte nicht — für ihn bleibt die Brügge die reichere Quelle,
+   ohne dass jemand eine Liste pflegen müsste. Deshalb reicht die Seite `agl`/`gnd` als
+   `null` durch, statt sie in `0`/`false` zu übersetzen: Am Boden **ist** AGL null, und das
+   ist etwas anderes als „das Paket weiß es nicht".
+
+   ⚠ **`bruegge_position_merken` tritt dafür zurück**, wenn eine bessere Quelle die cid
+   frisch in der Hand hat. Vorher schrieb sie bedingungslos — sie hätte den besseren Eintrag
+   eine Sekunde später überbügelt, und beide hätten sich im Sekundentakt abgewechselt.
+
+   Verstummt die jeweils bessere Quelle, fällt die Sperre nach `KNIEBRETT_ZUSCHLAG_S` = 3 s
+   von selbst.
 2. **Unter gleich guten Fremdmeldern behält der erste den Zuschlag**, solange er frisch
    meldet (`VatsimPoller.KNIEBRETT_ZUSCHLAG_S` = 3 s). Sonst schrieben fünf Kniebretter
    fünfmal je Sekunde denselben Punkt, und der letzte gewänne zufällig.
