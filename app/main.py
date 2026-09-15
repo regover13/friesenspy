@@ -1203,6 +1203,22 @@ async def kniebrett_melden(request: Request):
         else:
             # Eine bessere oder gleich gute Quelle hat diese cid gerade in der Hand.
             verworfen += 1
+    # ⚠ NUR ZUR DIAGNOSE, und nur solange die Frage offen ist: Kommt ueberhaupt etwas an?
+    #
+    # Am 15.09.2026 meldete ein Panel nachweislich 5 zugeordnete Fremdflugzeuge (panel_diag,
+    # kind='zuordnung'), und im Sekundenstrom kam davon nichts an. Von aussen war die
+    # Strecke dazwischen nicht einsehbar: Die Antwortgroessen im nginx-Log verwischt gzip,
+    # und der Meldungsinhalt steht nirgends. Drei Ursachen wurden daraufhin GERATEN und
+    # waren alle falsch.
+    #
+    # Einmal je Minute genuegt -- bei Sekundentakt waere es sonst eine Zeile je Sekunde und
+    # je Kniebrett, genau das Rauschen, gegen das der nginx-Filter der Bruegge gebaut wurde.
+    if secrets.randbelow(60) == 0:
+        _logger.info(
+            "Kniebrett %s meldet %s Flugzeug(e) [%s] -- modus=%s uebernommen=%s verworfen=%s",
+            melder, len(flugzeuge),
+            ",".join(str(f.get("cs") or "?") for f in flugzeuge[:8] if isinstance(f, dict)),
+            modus, uebernommen, verworfen)
     return _kniebrett_antwort(modus, takt, uebernommen, verworfen)
 
 
