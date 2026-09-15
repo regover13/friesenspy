@@ -73,6 +73,12 @@ Punkt 5 und 6 der Server-Liste.
 
 ### ✅ NACHTRAG, 20:00 Uhr — erledigt, geprüft und ausgeliefert
 
+> 📄 **Die volle Rückmeldung steht in
+> [`docs/uebergabe-an-die-server-sitzung.md`](docs/uebergabe-an-die-server-sitzung.md)** —
+> darin unter anderem: ein `426` wirkt jetzt **dauerhaft** (wichtig für den nächsten
+> Protokollsprung), welche Logzeilen die Brügge neu schreibt und was sie bedeuten, warum der
+> Sekundentakt-Wiederholversuch nicht baubar ist, und drei offene Punkte für dich.
+
 **Der obige Auftrag ist gegenstandslos: Die Server-Sitzung hat ihn um 18:44 selbst erledigt**
 (`f9f5e37`) und dabei drei Stellen gefunden statt der zwei, die hier standen — `_simPos`,
 `bruegge_position_merken` und der alte Brügge-Vorrang. Der Endpunkt nahm `agl`/`gnd` ohnehin
