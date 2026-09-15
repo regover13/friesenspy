@@ -6,6 +6,83 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## ⚠ 2026-09-15 — ZWEI SITZUNGEN IM SELBEN ARBEITSBAUM (dieser Eintrag schon zweimal verloren)
+
+`~/projects/friesenspy` wird von beiden Sitzungen gleichzeitig benutzt. Das hat an einem
+Nachmittag **fünfmal** zugeschlagen:
+
+- **Drei volle Testläufe à 7–8 Minuten** liefen in Fehlschläge, weil währenddessen fremde
+  Änderungen gespeichert wurden (`CHANGELOG.json`, `index.html`, `test_bruegge_karte.py`).
+  Alle betroffenen Tests waren **allein grün**.
+- Die Versionsnummer wanderte während eines einzigen Commits von 14.46.0 über 14.48.0 auf
+  14.49.0. Ein vorbereiteter Changelog-Eintrag war zweimal überholt, bevor er committet war.
+- Beim Commit lagen **fremde gestagte Dateien** im Index. Ein `git add -A` hätte die Arbeit
+  der anderen Sitzung mitgenommen, halbfertig und unter fremdem Betreff.
+- Umgekehrt genauso: Ein Commit der anderen Sitzung nahm **sieben fremde Dateien** mit,
+  vollständig, aber ohne ein Wort dazu im Betreff.
+- **Dieser Abschnitt hier ist zweimal aus der Datei verschwunden**, ohne dass ein Commit ihn
+  entfernt hätte — überschrieben im Arbeitsbaum, vermutlich durch ein `Write` statt eines
+  `Edit`.
+
+**Regeln, bis jemand getrennte Arbeitsbäume einrichtet:**
+
+1. **Niemals `git add -A`.** Nur eigene Dateien einzeln nennen; besser `git commit -- <pfade>`,
+   das umgeht auch einen fremd gefüllten Index.
+2. **`app/CHANGELOG.json` gehört dem, der als Nächstes committet.** Wer einen Eintrag
+   vorbereitet, schreibt ihn unmittelbar vor dem Commit.
+3. **Gemeinsame Dateien wie diese hier nur mit `Edit` anfassen, nie mit `Write`** — ein
+   Vollüberschreiben verliert lautlos, was seit dem Einlesen dazugekommen ist.
+4. **Ein Suite-Fehlschlag in `test_version`, `test_bruegge_karte`, `test_vr_panel` oder
+   `test_kutter_eventloop` ist erst dann ein Befund, wenn er ALLEIN auch rot ist.**
+5. Besser wäre ein eigener Klon je Sitzung (`git worktree add`). Nicht umgesetzt.
+
+---
+
+## 2026-09-15 (nachmittags) — ⚠ EIN EINGRIFF IN `bruegge_melden`, mit Ansage
+
+**Die Grenze aus dem #23-Eintrag ist an EINER Stelle bewusst überschritten worden**
+(Nutzeranweisung vom 15.09.2026). Betroffen ist `bruegge_melden` in `app/main.py`, genau ein
+Block direkt **hinter** der `cid is None`-Prüfung:
+
+```python
+_p = getattr(request.app.state, "poller", None)
+_kb_meldet = getattr(_p, "kniebrett_meldet_fuer", None)
+if _kb_meldet is not None and _kb_meldet(cid):
+    takt = max(takt, _BRUEGGE_TAKT_MIT_KNIEBRETT_S)
+```
+
+**Was es tut:** Meldet das *eigene* Kniebrett eines Piloten, bekommt seine Brügge 5 s statt
+1 s. Die teurere Seite (fünf DB-Aufrufe plus Positionsmatching gegen keinen) soll dann nicht
+auch noch im Sekundentakt fragen.
+
+**Was es NICHT anfasst:** `_bruegge_zuordnen`, `app/bruegge.py`, `bruegge_belegte_cids`, die
+Antwortstruktur, `soll`, `steht`, die Kennungsvergabe.
+
+⚠ **Die Stelle ist wichtig:** Der erste Anlauf stand *vor* der `cid is None`-Prüfung und riss
+in der vollen Suite zehn fremde Brügge-Tests mit — `kniebrett_meldet_fuer(None)` wirft.
+Einzeln waren alle grün, weil dort kein Poller im App-Zustand steht.
+
+**Beim Rebase:** Der Block darf verschoben oder anders gelöst werden, solange die Wirkung
+bleibt — gebunden durch
+`tests/test_kniebrett_melden.py::TestBrueggeDarfSchweigen::test_der_hebel_greift_im_bruegge_endpunkt_selbst`.
+
+---
+
+## 2026-09-15 (nachmittags) — Der Aus-Takt war überall 900 s, und das war falsch
+
+`_KNIEBRETT_TAKT_AUS_S` ist von 900 auf **60** gesenkt. Die 900 stammen von der Brügge und
+bedenken nur eine Richtung: Abschalten wirkt sofort, das **Wiedereinschalten** erfährt der
+Client erst bei seiner nächsten Frage. Im Betrieb hieß das: Der Schalter stand längst wieder
+auf „an", und nichts geschah — eine Viertelstunde Fehlersuche, die zuerst der neuen
+Vorrangregel angelastet wurde.
+
+**Für die Brügge steht dieselbe Änderung aus** — siehe
+[#38](https://github.com/regover13/friesenspy/issues/38), wo sie nach einer 900-s-Drossel in
+30 Minuten überhaupt nicht zurückgekehrt ist. Ihr Endpunkt gehört der anderen Sitzung,
+deshalb nur das Issue.
+
+---
+
 ## 2026-09-15 — Die 502er der FriesenBrügge waren Deploys, nicht ihr Endpunkt (Issue #37)
 
 **Wer:** die 502-Sitzung (Server). Berührt: `Dockerfile` (CMD), `docs/deployment.md`,
@@ -124,32 +201,6 @@ nächsten Mal wieder erfunden werden müsste.
 
 ---
 
-## 2026-09-15 (nachmittags) — ⚠ EIN EINGRIFF IN `bruegge_melden`, mit Ansage
-
-**Die Grenze aus dem Eintrag weiter unten ist an EINER Stelle bewusst überschritten worden**
-(Nutzeranweisung vom 15.09.2026). Betroffen ist `bruegge_melden` in `app/main.py`, und zwar
-genau ein Block von drei Zeilen direkt nach `_bruegge_zuordnen`:
-
-```python
-_p = getattr(request.app.state, "poller", None)
-if _p is not None and _p.kniebrett_meldet_fuer(cid):
-    takt = max(takt, _BRUEGGE_TAKT_MIT_KNIEBRETT_S)
-```
-
-**Was es tut:** Meldet das *eigene* Kniebrett eines Piloten, bekommt seine Brügge einen Takt
-von 5 s statt 1 s. Es ist der Lasthebel, der aus der Messung folgt — diese Meldung kostet
-fünf DB-Aufrufe plus Positionsmatching, die des Kniebretts keinen.
-
-**Was es NICHT anfasst:** `_bruegge_zuordnen`, `app/bruegge.py`, `bruegge_belegte_cids`, die
-Antwortstruktur, `soll`, `steht`, die Kennungsvergabe. Der Block steht *hinter* der Zuordnung
-und ändert nur eine Zahl, die ohnehin in jede Antwort geht.
-
-**Beim Rebase:** Wer in `bruegge_melden` arbeitet, wird diesen Block sehen. Er darf verschoben
-oder anders gelöst werden, solange die Wirkung bleibt — gebunden ist sie durch
-`tests/test_kniebrett_melden.py::TestBrueggeDarfSchweigen::test_der_hebel_greift_im_bruegge_endpunkt_selbst`.
-
----
-
 ## 2026-09-15 (nachmittags) — Zwei Befunde an der Brügge, beide als Issue
 
 Aus dem Probeflug mit Kniebrett, beide **nicht** von dieser Sitzung behoben (ihr Endpunkt und
@@ -167,35 +218,6 @@ ihr Modul gehören der anderen):
 **Dieselbe Falle steckte im Kniebrett-Schalter** (`_KNIEBRETT_TAKT_AUS_S` war aus Gewohnheit
 ebenfalls 900) und ist dort auf **60** gesenkt. Wer die Brügge nachzieht, findet die
 Begründung in #38.
-
----
-
-## ⚠ 2026-09-15 — ZWEI SITZUNGEN IM SELBEN ARBEITSBAUM
-
-Aufgefallen beim Deploy von #23: `~/projects/friesenspy` wird von **beiden** Sitzungen
-gleichzeitig benutzt. Das ist kein theoretisches Risiko, es hat dreimal an einem Nachmittag
-zugeschlagen:
-
-- Eine volle Testsuite (7 Minuten) lief zweimal in Fehlschläge, weil währenddessen fremde
-  Änderungen an `app/CHANGELOG.json`, `app/static/index.html` und `tests/test_bruegge_karte.py`
-  gespeichert wurden. Beide Tests waren allein grün — die Fehlschläge hatten mit dem Code
-  nichts zu tun (`test_version`, `test_bruegge_karte`).
-- Die Versionsnummer wanderte während eines einzigen Commits von 14.46.0 über 14.48.0 auf
-  14.49.0. Ein vorbereiteter Changelog-Eintrag war zweimal überholt, bevor er committet war.
-- Beim Commit lagen **fremde gestagte Dateien** im Index. Ein `git add -A` hätte die Arbeit
-  der anderen Sitzung mitgenommen, halbfertig und unter fremdem Betreff.
-
-**Regeln, bis jemand getrennte Arbeitsbäume einrichtet:**
-
-1. **Niemals `git add -A`.** Nur die eigenen Dateien einzeln nennen — der Index kann fremde
-   Einträge enthalten.
-2. **`app/CHANGELOG.json` gehört dem, der als Nächstes committet.** Wer einen Eintrag
-   vorbereitet, schreibt ihn unmittelbar vor dem Commit, nicht davor.
-3. **Ein Suite-Fehlschlag in `test_version`, `test_bruegge_karte`, `test_vr_panel` oder
-   `test_kutter_eventloop` ist erst dann ein Befund, wenn er ALLEIN auch rot ist.** Diese
-   Tests lesen Quelldateien als Text.
-4. Besser wäre ein eigener Klon je Sitzung (`git worktree add`). Das ist hier nicht
-   umgesetzt.
 
 ---
 

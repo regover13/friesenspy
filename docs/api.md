@@ -2509,12 +2509,12 @@ die eigene Brügge des Piloten. Zwei Regeln:
 `uebernommen`/`verworfen` sind die Gegenprobe dazu: Ein Kniebrett, das lauter Nullen
 zurückbekommt, meldet Flugzeuge, die schon jemand anders besser kennt.
 
-⭐ **Und der eigentliche Lasthebel ist ein anderer als der Vorrang: Wer darf schweigen?**
+⭐ **Der eigentliche Lasthebel ist aber ein anderer als der Vorrang: Wer darf schweigen?**
 Meldet das **eigene** Kniebrett eines Piloten, bekommt seine FriesenBrügge in ihrer Antwort
 einen Takt von `_BRUEGGE_TAKT_MIT_KNIEBRETT_S` = 5 s statt 1 s
-(`VatsimPoller.kniebrett_meldet_fuer`). Dort geht es darum, wessen Punkt gilt — hier darum,
-dass die teure Seite gar nicht erst anklopft: Die Brügge-Meldung kostet fünf DB-Aufrufe plus
-Positionsmatching, die des Kniebretts keinen.
+(`VatsimPoller.kniebrett_meldet_fuer`). Beim Vorrang geht es darum, wessen Punkt gilt — hier
+darum, dass die teurere Seite gar nicht erst anklopft: Die Brügge-Meldung kostet **fünf
+DB-Aufrufe plus Positionsmatching**, die des Kniebretts **keinen**.
 
 Ihre Objekte gelten 300 s, sie verliert dabei also nichts, und `soll` geht weiter mit — der
 Hebel drosselt, er schaltet nicht ab.
@@ -2526,6 +2526,11 @@ die Auflösung seiner Spur von jemandem abhängig zu machen, der jederzeit wegfl
 ⚠ **Und der Schritt ist bewusst klein.** Eine Brügge ist am 15.09.2026 nach einer Drossel auf
 900 s in 30 Minuten nicht zurückgekehrt (#38). Bei 5 s ist der schlimmste Fall eine gröbere
 Spur, nie eine leere.
+
+⚠ **Die Prüfung steht HINTER `cid is None`** — davor gibt es noch keine cid, und
+`kniebrett_meldet_fuer(None)` wirft. Der erste Anlauf stand davor und riss in der vollen
+Suite zehn fremde Brügge-Tests mit; einzeln waren alle grün, weil dort kein Poller im
+App-Zustand steht.
 
 ⚠ **`bruegge_belegte_cids` wird hier NICHT angefasst.** Diese Sperre ist gegen *verwechselte*
 Identitäten gebaut — zwei Brüggen, die sich um denselben Piloten streiten — und nicht gegen
