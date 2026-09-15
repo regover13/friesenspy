@@ -6,6 +6,69 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-15 — Türkis gilt jetzt auch im Kniebrett (v14.48.0 und v14.49.0)
+
+**Wer:** die EFB-Farbsitzung (Server), direkt nach `main` gepusht und ausgeliefert.
+
+**Was:** Türkis stand bisher für „die FriesenBrügge dieses Piloten meldet gerade". Im
+Kniebrett kam die Farbe deshalb nie vor — der Brügge-Strom erreicht das Panel nicht
+(`_brueggeStromEinarbeiten`), dort trägt das Sim-Matching. Die Aussage der Farbe ist
+unverändert („sekundengenau, und es steht fest, wer das ist"), es führen nur jetzt **drei**
+Wege dorthin, gebündelt in **`_punktIstSekundengenau(callsign)`**:
+
+| Weg | Bedingung | wo er gilt |
+|---|---|---|
+| FriesenBrügge / fremdes Kniebrett | `_brueggeFrisch` | nur Website |
+| Sim-Matching hat zugeordnet | `_friesenSimWerte[cs] && _simVerkehrFrisch()` | nur Kniebrett |
+| das eigene Flugzeug | `_istEigenesFlugzeug` (trägt `_simPosFrisch` in sich) | nur Kniebrett |
+
+**Fremdverkehr bekommt nur den SAUM**, nicht die Fläche: `.aircraft-marker-fremd-sim`
+(`rgba(118,239,230,0.95)`, das Symbol-Türkis `#19d3c5` auf L=70 % aufgehellt). Die Fläche
+trägt die Zugehörigkeit Friese/Fremder und darf keine zweite Bedeutung bekommen.
+
+### Berührte Stellen — relevant für jeden, der an der Karte arbeitet
+
+| Datei | was sich geändert hat |
+|---|---|
+| `app/static/index.html` | **neu:** `_punktIstSekundengenau`, CSS `.aircraft-marker-fremd-sim`, Legendenzeile `.karten-legende-sim` (nur `html.vr-panel`). **geändert:** `makeAircraftIcon` (3. Parameter heißt jetzt `sekundengenau` und wirkt auch bei `fremd`), `_verkehrZusammenfuehren` (setzt `e._zugeordnet`), `_verkehrZeichnen`, `_naviTakt`, `updateMap`, `_eigenesFlugzeugZeichnen` |
+| Marker-Merker | **`_fsBruegge` heißt jetzt `_fsGenau`**, beim Fremdverkehr kommt `_fsZugeordnet` dazu |
+| `tests/test_sim_zuordnung_karte.py` | neu, 18 Tests |
+
+⚠ **Der Merker muss immer MIT in die Icon-Bedingung**, nicht nur der Kurs. Zweimal an einem
+Tag dieselbe Falle: Ein Marker wechselt die Genauigkeit, ohne dass sich der Kurs rührt —
+beim Fremdverkehr, weil ein nur-VATSIM-Flugzeug beim späteren Auftauchen im Simulator seinen
+Schlüssel behält, und beim eigenen Flugzeug, weil `updateMap` es anlegt, bevor der Simulator
+sich meldet, und es danach nie wieder anfasst (`!demSim`). Wer `setIcon` an `_fsHeading`
+allein hängt, lässt ein geradeaus fliegendes Flugzeug in der falschen Farbe stehen.
+
+⚠ **`_eigenesFlugzeugZeichnen` setzt `true` fest, nicht `_punktIstSekundengenau`.** Das ist
+Absicht: `_meinCallsign()` liest aus `liveData`, und wer ohne FRS-Rufzeichen fliegt, steht
+dort nicht. Hinter `_simPosFrisch()` ist der Punkt sekundengenau — ob wir den Piloten
+benennen können, ist eine andere Frage.
+
+### Nebenbefund: ein Quelltext-Test, der nur ein Drittel prüfte
+
+`test_flugzeuge_drehen_mit_der_karte` suchte wörtlich nach
+`"icon: makeAircraftIcon(hdg), rotateWithView: true"`. Das traf **einen** der drei
+Flugzeug-Marker; die anderen beiden waren nie geprüft, und der Test brach, sobald eine Zeile
+umbrach. **Ein Regex taugt hier nicht:** `L\.marker\((.*?)\)` endet an der ersten
+schließenden Klammer und damit mitten im verschachtelten Aufruf; mit `re.S` und einem
+Zeilenende als Anker greift er über den nächsten Aufruf hinweg und zählt vier, wo drei
+stehen (beides vorgeführt). `_marker_argumente` in `tests/test_vr_panel.py` zählt jetzt
+Klammern. Wer einen Quelltext-Test an einen Aufruf binden will, nimmt es sich zum Vorbild.
+
+### Zum Changelog-Eintrag, damit es nicht rätselhaft bleibt
+
+`v14.49.0` wurde committet, während der 14.48.1-Eintrag der parallelen Sitzung uncommittet
+im selben Arbeitsbaum lag. Um ihn weder zu veröffentlichen noch zu verlieren, ging der
+eigene Eintrag **über den Index** auf `HEAD` (`git hash-object -w` +
+`git update-index --cacheinfo`), während der Arbeitsbaum beide behielt. Der `git diff` der
+anderen Sitzung zeigte danach genau ihren Block — sie hat ihn als `14.49.1` nachgezogen.
+Das ist der saubere Handgriff für genau diesen Fall; er steht hier, weil er sonst beim
+nächsten Mal wieder erfunden werden müsste.
+
+---
+
 ## ⚠ 2026-09-15 — ZWEI SITZUNGEN IM SELBEN ARBEITSBAUM
 
 Aufgefallen beim Deploy von #23: `~/projects/friesenspy` wird von **beiden** Sitzungen
