@@ -6,6 +6,45 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-15 — Die 502er der FriesenBrügge waren Deploys, nicht ihr Endpunkt (Issue #37)
+
+**Wer:** die 502-Sitzung (Server). Berührt: `Dockerfile` (CMD), `docs/deployment.md`,
+`app/CHANGELOG.json` (14.49.3), neu `tests/test_deploy_shutdown.py`. **`app/main.py` nicht
+angefasst** — der Brügge-Endpunkt bleibt, wie er ist.
+
+**Die Diagnose im Issue war falsch, und zwar die naheliegende.** Dort stand als Spur, der
+Endpunkt mache seine SQLite-Arbeit auf dem Event-Loop. Gemessen ergibt sich etwas anderes:
+
+| Befund | Zahl |
+|---|---|
+| Upstream-Fehler 14./15.09. gesamt | 839 |
+| davon im Fenster eines Deploys | **839 (100 %)** |
+| außerhalb | **0** |
+
+Bei 41 Deploys decken die Fenster rund 8 % der Zeit ab — bei zufälliger Verteilung wären
+also ~70 Treffer zu erwarten gewesen, nicht alle. **Im Normalbetrieb hat der Endpunkt keine
+einzige 502 erzeugt.** nginx nennt auch nie einen Timeout, sondern `Connection reset by
+peer` — ein blockierter Event-Loop sähe anders aus (er ließe warten, nicht abbrechen).
+
+**Die wirkliche Ursache:** uvicorn wartet beim Beenden auf das Ende aller laufenden
+Antworten. `/api/sse` liefert einen Stream, der nie endet — eine offene SSE-Verbindung hielt
+den alten Container fest, bis Docker nach 10 s `SIGKILL` schickte. Isoliert gemessen, selbes
+Image, eine Verbindung: **30,5 s und Exit 137** ohne Zeitlimit, **1,8 s und Exit 0** mit.
+Behoben mit `--timeout-graceful-shutdown 3` im CMD.
+
+### Was das für die Arbeit an der Brügge heißt
+
+- **Der Endpunkt braucht keine Rettung mehr.** Die drei Richtungen im Issue (Kandidaten aus
+  dem Poller-Speicher, Schreibvorgänge bündeln, Threadpool) lösen ein Problem, das es nicht
+  gibt. Wer sie trotzdem angeht, tut es aus Sauberkeit — und muss dann selbst belegen, dass
+  sich etwas Messbares verbessert. Die Atomarität (`belegt`) wäre dabei weiterhin in Gefahr.
+- **Der Vergleich „Brügge 53 zu Kniebrett 0" trägt nicht.** Er misst nicht die Endpunkte,
+  sondern wer in Deploy-Fenstern gerade meldete.
+- **Es bleiben ~7 Sekunden Ausfall je Deploy** (App-Start). Wer im Sekundentakt meldet,
+  merkt sie. Also weiterhin: nicht deployen, während jemand fliegt.
+
+---
+
 ## 2026-09-15 — Türkis gilt jetzt auch im Kniebrett (v14.48.0 und v14.49.0)
 
 **Wer:** die EFB-Farbsitzung (Server), direkt nach `main` gepusht und ausgeliefert.

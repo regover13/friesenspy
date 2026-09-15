@@ -44,6 +44,28 @@ EXPOSE 8091
 # (beim ersten Anlauf am 2026-08-19 genau so passiert). 172.16.0.0/12 deckt
 # alle Docker-Netze ab und bleibt gueltig, wenn ein Netz neu angelegt wird
 # und eine andere Nummer bekommt.
+#
+# --timeout-graceful-shutdown seit 2026-09-15 (GitHub-Issue #37):
+# uvicorn wartet beim Beenden auf das Ende aller laufenden Antworten. /api/sse
+# liefert einen endlosen Stream -- eine einzige offene SSE-Verbindung haelt den
+# Container deshalb fest, bis Docker nach seiner Gnadenfrist (10 s, Default)
+# SIGKILL schickt. Gemessen mit diesem Image und einer offenen Verbindung:
+#
+#   ohne die Option            30,5 s bis zum Stopp, Exit 137 (SIGKILL)
+#   mit der Option (1 s)        1,8 s bis zum Stopp, Exit 0
+#   ohne SSE-Verbindung         0,7 s bis zum Stopp, Exit 0
+#
+# Das waren die ersten 10 der 16-20 Sekunden, die ein Deploy die Website
+# unerreichbar macht -- und jede dieser Sekunden ist fuer die FriesenBruegge
+# eine verlorene Meldung. Der zweite Gewinn ist der Exit-Code: Ohne die Option
+# wird die App bei JEDEM Deploy mitten im Schreiben nach SQLite abgeschossen.
+#
+# Warum 3 und nicht 1: Eine normale Anfrage wird hier in rund 4 ms beantwortet
+# (gemessen am 15.09.2026 gegen /health). 3 Sekunden lassen also jeder echten
+# Anfrage Raum, sauber zu Ende zu gehen, und kappen nur die Dauerstroeme. Der
+# Wert muss unter Dockers Gnadenfrist bleiben, sonst kommt SIGKILL zuerst und
+# die Option bleibt wirkungslos (dagegen wacht tests/test_deploy_shutdown.py).
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8091", \
      "--log-level", "info", \
+     "--timeout-graceful-shutdown", "3", \
      "--proxy-headers", "--forwarded-allow-ips", "127.0.0.1,172.16.0.0/12"]

@@ -10,6 +10,40 @@ Jeder Push auf `main` triggert den CI/CD-Pipeline:
 
 Der Container läuft als non-root User `friesenspy` (UID 1001).
 
+## Was ein Deploy kostet — und warum das HTTP 502 erzeugt
+
+Ein Deploy ersetzt den Container. In dem Fenster dazwischen antwortet niemand, und nginx
+meldet dem Aufrufer **HTTP 502**. Das ist kein Fehler, sondern der Neustart selbst — wer
+502er auswertet, muss sie abziehen.
+
+Gemessen am 15.09.2026 über zwei Tage: **Alle 839 Upstream-Fehler lagen im Fenster eines
+Deploys, kein einziger daneben** (41 Deploys, davon 25 mit laufenden Clients). Die Größe
+des Fensters ist jedes Mal dieselbe:
+
+| Abschnitt | vor dem 15.09.2026 | seither |
+|---|---|---|
+| alter Container beendet sich | ~10 s (endete mit **SIGKILL**) | ~3 s, sauber |
+| neuer Container startet die App | ~7 s | ~7 s |
+| **Summe** | **16–20 s** | **~10 s** |
+
+Die 10 Sekunden waren Dockers Gnadenfrist: uvicorn wartet beim Beenden auf das Ende aller
+laufenden Antworten, und `/api/sse` liefert einen Stream, der nie endet. Eine einzige offene
+SSE-Verbindung hielt den Container deshalb fest, bis `SIGKILL` kam — die App wurde also bei
+**jedem** Deploy mitten im Schreiben nach SQLite abgeschossen. Behoben mit
+`--timeout-graceful-shutdown 3` im `CMD` des Dockerfiles; die Begründung steht dort
+ausführlich, bewacht wird es von `tests/test_deploy_shutdown.py`.
+
+⚠ **`stop_grace_period` in `docker-compose.yml` zu erhöhen wäre der falsche Griff** — das
+verlängert nur das Warten, statt es zu beenden.
+
+**Die verbleibenden ~7 Sekunden sind der App-Start** (FSE-Bestand mit 23.780 Plätzen,
+6.121 Meldepunkte, Platzrunden). Sie sind noch offen; ein Deploy ohne Ausfall bräuchte einen
+zweiten Container, und dem steht die gemeinsame SQLite-Datei im Weg.
+
+**Wer im Sekundentakt meldet, merkt das als Erster.** Für die FriesenBrügge ist jede dieser
+Sekunden eine verlorene Meldung — ihr Punkt auf der Karte friert so lange ein. Deshalb gilt:
+**nicht in den laufenden Betrieb deployen**, wenn jemand fliegt.
+
 ## Manuell auf dem VPS
 
 ```bash
