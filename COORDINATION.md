@@ -6,7 +6,47 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
-## 2026-09-15 (spät) — Die Rangfolge ist gedreht (Punkt 6, Server-Sitzung)
+## 2026-09-16 (nachts) — Alle sieben Punkte durch, im Flug geprüft
+
+Die Liste aus #23 ist abgearbeitet und **am fliegenden Simulator belegt**, nicht nur getestet.
+Volle Suite **2756 grün**.
+
+### Was der Probeflug an Fehlern gefunden hat, die keine Suite fand
+
+Vier davon, und alle nach demselben Muster: **eine Funktion, deren Hälften getrennt gebaut
+werden, sieht auf beiden Seiten fertig aus.**
+
+| | gefunden durch |
+|---|---|
+| Der Sender schickte **gar keinen** Fremdverkehr (`_kbVorratMerken` nur im Friesen-Zweig) | die Frage „können wir deployen?" |
+| `app/static/index.html` **verwarf** `agl`/`gnd`, die das Panel längst sendet | Nachsehen vor dem Bau der Rangfolge |
+| Höhe und Fahrt des Fremdverkehrs hingen am 15-s-Abruf | „auf dem Tablet laufend Änderungen, auf der Website nicht" |
+| Der Kurs ging nicht mit — die Flugzeuge flogen **seitwärts** | „die Flugzeuge bewegen sich teilweise seitlich" |
+
+Dazu eine **Regression**: `_kniebrett_versuch` wurde nur bei `QUELLE_SELBST` gesetzt; als mit
+Punkt 6 die Stufe `QUELLE_KNIEBRETT_VOLL` dazukam, fiel ausgerechnet die vollständige Meldung
+durch, und der Lasthebel griff nicht mehr. **Die Tests haben es nicht gesehen — sie arbeiten
+alle mit Meldungen ohne `agl`/`gnd`**, also mit dem Fall, den es seit Paket 2.3.0 gar nicht
+mehr gibt.
+
+### Und eine Diagnose, die selbst falsch gebaut war
+
+Um das Raten zu beenden, kam eine Logzeile „was meldet ein Kniebrett wirklich?" — als
+Stichprobe, jede sechzigste Meldung. Weil der Sender nur **Änderungen** schickt, sind bei
+einem stehenden Flugzeug drei von vier Meldungen leer. Sie hat dreimal „meldet nichts"
+angezeigt, während im Strom sieben Flugzeuge standen.
+
+**Eine Messung, die überwiegend den uninteressanten Fall trifft, sieht aus wie ein Befund.**
+Sie loggt jetzt nur noch Meldungen mit Inhalt.
+
+### Offen
+
+Nichts aus dieser Liste. Die Brügge kehrt nach dem Abschalten in **20 Sekunden** zurück
+(gemessen) — #38 ist damit erledigt, Ursache war eine fehlende `layout.json` im Paket.
+
+---
+
+## 2026-09-15 (spät) — Die Rangfolge ist gedreht (Punkt 6, Server-Sitzung)## 2026-09-15 (spät) — Die Rangfolge ist gedreht (Punkt 6, Server-Sitzung)
 
 `QUELLE_KNIEBRETT_VOLL = 3` steht jetzt über der Brügge — **aber nur für Meldungen, die
 `agl` UND `gnd` tragen**:

@@ -2461,9 +2461,16 @@ führt ihren Fremdverkehr deshalb ohnehin nach Rufzeichen (`_verkehrRoh`), und g
 geht der Strom. Kandidaten und Plausibilitätsprüfung kommen aus
 `VatsimPoller.traffic_snapshot`, also wieder **ohne Datenbank**.
 
-Eine Vorrangregel gibt es hier nicht, und das ist kein Versehen: Fremdverkehr hat keine
-eigene Quelle, die man bevorzugen könnte — keine Brügge, kein eigenes Kniebrett. Sehen ihn
-zwei Kniebretter, ist die zweite Meldung schlicht die neuere.
+Eine **Güte** gibt es hier nicht: Fremdverkehr hat keine eigene Quelle, die man bevorzugen
+könnte — keine Brügge, kein eigenes Kniebrett. Einen **Zuschlag** aber schon: Der erste
+Melder behält ihn, solange er frisch meldet (`KNIEBRETT_ZUSCHLAG_S` = 3 s).
+
+⚠ **Hier stand zuerst „die zweite Meldung ist schlicht die neuere, und die gilt".** Das war
+zu kurz gedacht: Zwei Tablets sehen dasselbe Flugzeug an leicht **verschiedenen** Stellen,
+weil vPilot in jedem Simulator eigenständig zwischen den VATSIM-Meldungen interpoliert. Ohne
+Zuschlag springt der Punkt im Sekundentakt zwischen beiden Positionen hin und her — genau das
+Flackern, gegen das die Regel bei den Friesen existiert. **Dass es keine Güte gibt, heißt
+nicht, dass jeder jederzeit überschreiben darf.**
 
 Eingestellt wird **global** (`app_settings.kniebrett_melden_modus`, Vorgabe `aus`) und **je
 Pilot** (Tabelle `kniebrett_melden`). Der wirksame Wert ist das **Minimum** aus beiden: Die
