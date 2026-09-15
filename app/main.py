@@ -1217,7 +1217,12 @@ async def kniebrett_melden(request: Request):
         _logger.info(
             "Kniebrett %s meldet %s Flugzeug(e) [%s] -- modus=%s uebernommen=%s verworfen=%s",
             melder, len(flugzeuge),
-            ",".join(str(f.get("cs") or "?") for f in flugzeuge[:8] if isinstance(f, dict)),
+            # ⚠ `cs` kommt vom CLIENT. Ungefiltert ins Log geschrieben koennte er mit
+            # Zeilenumbruechen eigene Logzeilen erfinden -- und das Log ist hier das
+            # Beweismittel, mit dem wir Fehler suchen. Nur Zeichen, die ein Rufzeichen
+            # haben darf.
+            ",".join(re.sub(r"[^A-Za-z0-9_-]", "", str(f.get("cs") or "?"))[:10]
+                     for f in flugzeuge[:8] if isinstance(f, dict)),
             modus, uebernommen, verworfen)
     return _kniebrett_antwort(modus, takt, uebernommen, verworfen)
 

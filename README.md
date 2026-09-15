@@ -510,7 +510,7 @@ Das **Kniebrett** ist FriesenSpy als eigene App im EFB-Tablet des **Microsoft Fl
 - **Keine Umlaute.** Dort steht `ae`, `oe`, `ue` und `ss`. Die Anzeige-Engine des Simulators bringt genau eine Schrift mit, die nichts jenseits des englischen Alphabets kennt, und nimmt auch keine mitgelieferte an (geprüft). Lesbarer Text war uns wichtiger als richtige Rechtschreibung.
 - **Tabellen stehen als Karten untereinander.** Im Tablet lässt sich nichts seitwärts schieben — keine Scrollleiste, kein Ziehen, kein Mausrad. Als Tabelle wäre die rechte Hälfte unerreichbar.
 
-Nicht im Kniebrett: der **Lautsprecher** zum Mithören (es gibt keinen Browser, in dem sich der Link öffnen ließe) und das **Herunterziehen zum Aktualisieren**. Erscheint nach einem Update noch der alte Stand: Tablet einmal schließen und wieder öffnen — oben erscheint dann „Neue Version — neu laden".
+Nicht im Kniebrett: der **Lautsprecher** zum Mithören (es gibt keinen Browser, in dem sich der Link öffnen ließe) und das **Herunterziehen zum Aktualisieren**. Erscheint nach einem Update noch der alte Stand: oben erscheint der Hinweis **„Neue Version — neu laden"**, und der Knopf daneben holt sie. Ein Sim-Neustart ist dafür **nicht** nötig — den brauchen nur die Community-Pakete FriesenBrügge und EFB, weil MSFS die ausschließlich beim Start liest.
 
 > **Klemmt etwas?** Ab ins Forum, am besten mit der Angabe, was du zuletzt gemacht hast. Das Panel meldet von sich aus technische Messwerte zurück (keine persönlichen Daten, keine Positionen) — damit lässt sich meist nachvollziehen, was passiert ist, ohne dass du etwas mitschneiden musst.
 
