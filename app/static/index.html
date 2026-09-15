@@ -2612,6 +2612,24 @@
       color: #19d3c5;
     }
 
+    /* Fremdverkehr, den das Sim-Matching einem VATSIM-Piloten zugeordnet hat: dieselbe
+       Silhouette, dieselbe Groesse, dieselbe dunkle Flaeche -- nur der Saum wechselt von
+       Weiss auf ein helles Tuerkis.
+
+       Warum nicht die FLAECHE wie bei den Friesen: Die dunkle Flaeche mit hellem Saum ist
+       das Erkennungszeichen des Fremdverkehrs (s. .aircraft-marker-fremd), und sie traegt
+       die Trennung zu den Friesen mit. Faerbte man sie tuerkis, saehe ein zugeordnetes
+       fremdes Flugzeug aus wie ein Friese -- die Farbe truege dann zwei Bedeutungen.
+       Der Saum ist die freie Stelle: Er ist ohnehin nur Kontrastmittel und sagt bisher
+       nichts.
+
+       Heller als das Symbol-Tuerkis #19d3c5 (auf L=70 % aufgehellt), weil ein Saum den
+       gleichen Zweck wie vorher erfuellen muss: das dunkle Symbol von einer dunklen Karte
+       abzuheben. Ein Saum in der vollen Sattfarbe waere dafuer zu dunkel. */
+    .aircraft-marker-fremd-sim {
+      filter: drop-shadow(0 0 2px rgba(118,239,230,0.95));
+    }
+
     /* Dieselbe Farbe im Popup, damit die Zeile „FriesenBrügge" und das Symbol auf der Karte
        als dieselbe Aussage zu erkennen sind. */
     .popup-bruegge { color: #19d3c5; }
@@ -2661,6 +2679,13 @@
        fuehrt ein Link ins Leere (kein Browser, der ihn oeffnen koennte, s. Fusszeile),
        deshalb bleibt die Zeile dort weg statt auf ein totes Versprechen zu zeigen. */
     html.vr-panel .karten-legende-bruegge { display: none; }
+    /* ... und an ihrer Stelle steht im Kniebrett die Zeile, die DORT gilt: Tuerkis kommt
+       da nicht aus dem Bruegge-Strom (der erreicht das Panel gar nicht, s.
+       `_brueggeStromEinarbeiten`), sondern aus dem Sim-Matching im eigenen Simulator.
+       Umgekehrt hat die Website kein Sim-Matching -- deshalb zwei Zeilen und nicht eine
+       mit zwei Vorbehalten. */
+    .karten-legende > li.karten-legende-sim { display: none; }
+    html.vr-panel .karten-legende > li.karten-legende-sim { display: flex; }
     /* Unterueberschriften der Legende: dieselbe neutrale Behandlung wie die
        Gruppen-Ueberschriften beim Kutter (.kutter-grp-section), NICHT die Klickbar-Farbe
        Blau (var(--green)) -- eine Ueberschrift ist kein Link. Hier stand vorher genau dieser
@@ -4355,6 +4380,13 @@
               <li><strong>bis zu 15 s</strong>, bis die Karte den Stand von uns holt</li>
             </ul>
             Zwischen zwei Meldungen wird die Position aus Kurs und Fahrt fortgerechnet — die Symbole gleiten deshalb, statt alle 15 Sekunden zu springen. Der eingezeichnete Track bleibt davon unberührt, dort stehen nur echte Messpunkte.</span>
+        </li>
+        <li class="karten-legende-sim">
+          <span class="karten-legende-doppelicon">
+            <span class="aircraft-marker aircraft-marker-bruegge karten-legende-flz"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.25 2.2c0-.5.34-.9.75-.9s.75.4.75.9v6.05h8.4c.45 0 .8.36.8.8v1.1c0 .44-.35.8-.8.8h-8.4v5.3l3.1 1.5c.3.15.5.45.5.8v.95l-4.35-1.1-4.35 1.1v-.95c0-.35.2-.65.5-.8l3.1-1.5v-5.3H2.85c-.45 0-.8-.36-.8-.8v-1.1c0-.44.35-.8.8-.8h8.4z"/></svg></span>
+            <span class="aircraft-marker aircraft-marker-fremd aircraft-marker-fremd-sim karten-legende-flz"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1.6c-.85 0-1.4 1.3-1.4 3.1v3.4L2.2 12.6v2.1l8.4-2.5v4.3l-2.5 1.7v1.6l3.9-1.1 3.9 1.1v-1.6l-2.5-1.7v-4.3l8.4 2.5v-2.1l-8.4-4.5V4.7c0-1.8-.55-3.1-1.4-3.1z"/></svg></span>
+          </span>
+          <span><strong>Türkis</strong> — dein Simulator hat dieses Flugzeug selbst gesehen und dem Piloten zugeordnet. Seine Position wird dann jede Sekunde gemessen statt bis zu 35 Sekunden alt von VATSIM übernommen; das ist die genaueste Anzeige, die es in FriesenSpy gibt. Beim Fremdverkehr bleibt das Symbol dunkel und nur sein <strong>Saum</strong> wird türkis — welche Fläche ein Flugzeug hat, sagt weiterhin, ob es ein Friese ist. Verliert der Simulator ein Flugzeug aus den Augen, fällt es wieder auf VATSIM zurück.</span>
         </li>
         <li class="karten-legende-bruegge">
           <span class="aircraft-marker aircraft-marker-bruegge karten-legende-flz"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.25 2.2c0-.5.34-.9.75-.9s.75.4.75.9v6.05h8.4c.45 0 .8.36.8.8v1.1c0 .44-.35.8-.8.8h-8.4v5.3l3.1 1.5c.3.15.5.45.5.8v.95l-4.35-1.1-4.35 1.1v-.95c0-.35.2-.65.5-.8l3.1-1.5v-5.3H2.85c-.45 0-.8-.36-.8-.8v-1.1c0-.44.35-.8.8-.8h8.4z"/></svg></span>
@@ -6339,6 +6371,12 @@ function _verkehrZusammenfuehren() {
       e.dep = v.dep;
       e.arr = v.arr;
       e._key = v.cs;
+      // Sichtbar machen, DASS hier zwei Quellen zusammengefunden haben: Der Saum des Symbols
+      // wechselt dafuer auf Tuerkis (s. makeAircraftIcon). Das Merkmal steht hier und nicht
+      // beim Zeichnen, weil nur an dieser Stelle beides zugleich bekannt ist -- der
+      // Sim-Eintrag und sein VATSIM-Partner. Weiter unten ist aus `_key` nicht mehr
+      // abzulesen, wie er zustande kam: Ein reiner VATSIM-Eintrag traegt dort denselben.
+      e._zugeordnet = true;
       // KEIN Rueckfall auf die VATSIM-Geschwindigkeit, wenn der Simulator 0 meldet.
       //
       // Genau das hatte ich kurzzeitig eingebaut, weil "0 kt an einem bewegten Flugzeug" nach
@@ -7076,10 +7114,17 @@ function _verkehrZeichnen(liste) {
     const beschriftung = _verkehrLabel(e);
     const popup = _verkehrPopup(e);
     const vorhanden = _verkehrMarker[cs];
+    // Hat das Sim-Matching diesem Symbol eine Identitaet gegeben? Dann Saum in Tuerkis.
+    //
+    // Der Merker muss MIT geprueft werden, nicht nur der Kurs: Ein Flugzeug, das nur VATSIM
+    // kennt, behaelt beim spaeteren Auftauchen im Simulator seinen Schluessel (das Rufzeichen)
+    // -- derselbe Marker wechselt also die Zuordnung, ohne dass sich der Kurs ruehren muss.
+    const zugeordnet = !!e._zugeordnet;
     if (vorhanden) {
-      if (vorhanden._fsHeading !== hdg) {
-        vorhanden.setIcon(makeAircraftIcon(hdg, true));
+      if (vorhanden._fsHeading !== hdg || vorhanden._fsZugeordnet !== zugeordnet) {
+        vorhanden.setIcon(makeAircraftIcon(hdg, true, zugeordnet));
         vorhanden._fsHeading = hdg;
+        vorhanden._fsZugeordnet = zugeordnet;
       }
       if (vorhanden._fsLabel !== beschriftung) {
         vorhanden.setTooltipContent(beschriftung);
@@ -7092,12 +7137,15 @@ function _verkehrZeichnen(liste) {
         vorhanden._fsPopup = popup;
       }
     } else {
-      const m = L.marker([e.lat, e.lon], { icon: makeAircraftIcon(hdg, true), rotateWithView: true })
+      const m = L.marker([e.lat, e.lon],
+                         { icon: makeAircraftIcon(hdg, true, zugeordnet),
+                           rotateWithView: true })
         .bindPopup(popup, { maxWidth: 220 })
         .bindTooltip(beschriftung, { permanent: true, direction: 'bottom', offset: [0, 2],
                                      className: 'traffic-label traffic-label-fremd', opacity: 1 })
         .addTo(_verkehrGruppe);
       m._fsHeading = hdg;
+      m._fsZugeordnet = zugeordnet;
       m._fsLabel = beschriftung;
       m._fsPopup = popup;
       _verkehrMarker[cs] = m;
@@ -12298,15 +12346,16 @@ function _naviTakt(sofort) {
     const kurs = Math.round(Number(roh.hdg) || 0);
     // Die Farbe gehoert MIT hierher, nicht zu updateMap: Sie muss auch dann wechseln, wenn
     // sich am Kurs nichts aendert -- und vor allem beim ZURUECK-Wechsel. Endet der
-    // Bruegge-Strom (Simulator geschlossen, Netz weg), ruehrt updateMap das Symbol unter
-    // Umstaenden nie wieder an, und es bliebe in der Farbe stehen, die eine Genauigkeit
-    // behauptet, die es nicht mehr gibt. Dieser Takt laeuft ueber jeden Marker, jede
-    // Sekunde; er ist die einzige Stelle, die das zuverlaessig sieht.
-    const brueggeJetzt = _brueggeFrisch(cs);
-    if (mapMarkers[cs]._fsHeading !== kurs || mapMarkers[cs]._fsBruegge !== brueggeJetzt) {
-      mapMarkers[cs].setIcon(makeAircraftIcon(kurs, false, brueggeJetzt));
+    // Bruegge-Strom (Simulator geschlossen, Netz weg) oder verliert das Sim-Matching im
+    // Kniebrett seine Zuordnung, ruehrt updateMap das Symbol unter Umstaenden nie wieder an,
+    // und es bliebe in der Farbe stehen, die eine Genauigkeit behauptet, die es nicht mehr
+    // gibt. Dieser Takt laeuft ueber jeden Marker, jede Sekunde; er ist die einzige Stelle,
+    // die das zuverlaessig sieht.
+    const genauJetzt = _punktIstSekundengenau(cs);
+    if (mapMarkers[cs]._fsHeading !== kurs || mapMarkers[cs]._fsGenau !== genauJetzt) {
+      mapMarkers[cs].setIcon(makeAircraftIcon(kurs, false, genauJetzt));
       mapMarkers[cs]._fsHeading = kurs;
-      mapMarkers[cs]._fsBruegge = brueggeJetzt;
+      mapMarkers[cs]._fsGenau = genauJetzt;
     }
   }
 
@@ -12655,6 +12704,30 @@ function _istEigenesFlugzeug(callsign) {
   return !!meins && meins === callsign;
 }
 
+/**
+ * Steht dieser Friese gerade sekundengenau auf der Karte -- und steht fest, DASS er es ist?
+ *
+ * Zwei Wege fuehren dorthin, und sie schliessen einander aus:
+ *
+ *   * **Website:** seine eigene FriesenBruegge (oder das Kniebrett eines anderen Piloten)
+ *     meldet ihn ueber den Sekundenstrom. `_brueggeFrisch` ist die Frist dafuer.
+ *   * **Kniebrett:** das Sim-Matching hat sein Flugzeug im eigenen Simulator erkannt und
+ *     einem VATSIM-Piloten zugeordnet (`_verkehrZusammenfuehren`, Schritt 4). Der Strom
+ *     kommt hier gar nicht erst an (s. `_brueggeStromEinarbeiten`), `_brueggeFrisch` ist
+ *     also im Panel immer `false` -- ohne diese zweite Haelfte blieb im Kniebrett jeder
+ *     Friese blau, obwohl seine Position dort die beste der ganzen App ist.
+ *
+ * `_friesenSimWerte` traegt genau die Zuordnung und nichts sonst: Es wird ausschliesslich
+ * fuer einen ZUGEORDNETEN Friesen geschrieben und von `_paarungenAufraeumen` wieder
+ * geloescht, sobald der Simulator ihn nicht mehr liefert. Die Frist daneben
+ * (`_simVerkehrFrisch`) faengt den anderen Fall ab: Die Bruecke zum Simulator reisst ab,
+ * ohne dass noch jemand aufraeumen koennte.
+ */
+function _punktIstSekundengenau(callsign) {
+  if (_brueggeFrisch(callsign)) return true;
+  return !!(_friesenSimWerte[callsign] && _simVerkehrFrisch());
+}
+
 function _markerGehoertDemSim(callsign) {
   // Ein Friese, den der Simulator gerade liefert und dem eine Zuordnung sicher gelungen ist
   // (s. _verkehrZusammenfuehren). Fuer ihn gilt dasselbe wie fuer das eigene Flugzeug: Der
@@ -12948,7 +13021,17 @@ const _FLUGZEUG_PFAD_FREMD =
   'M12 1.6c-.85 0-1.4 1.3-1.4 3.1v3.4L2.2 12.6v2.1l8.4-2.5v4.3l-2.5 1.7v1.6l3.9-1.1 3.9 1.1' +
   'v-1.6l-2.5-1.7v-4.3l8.4 2.5v-2.1l-8.4-4.5V4.7c0-1.8-.55-3.1-1.4-3.1z';
 
-function makeAircraftIcon(heading, fremd, bruegge) {
+/**
+ * `sekundengenau` heisst: Dieser Punkt kommt aus einem Simulator statt von VATSIM, UND es
+ * steht fest, wer dort fliegt. Beim Friesen ist das seine FriesenBruegge oder -- im
+ * Kniebrett -- die geglueckte Zuordnung des Sim-Matchings; beim Fremdverkehr immer die
+ * Zuordnung (der Parameter hiess bis zum 15.09.2026 `bruegge` und galt nur fuer Friesen).
+ *
+ * Die Aussage ist in beiden Faellen dieselbe, die Darstellung nicht: Beim Friesen wechselt
+ * die FLAECHE auf Tuerkis, beim Fremdverkehr nur der SAUM. Warum, steht am Stylesheet
+ * (.aircraft-marker-fremd-sim).
+ */
+function makeAircraftIcon(heading, fremd, sekundengenau) {
   const hdg = Number(heading) || 0;
   const px = fremd ? _FLUGZEUG_PX_FREMD : _FLUGZEUG_PX;
   const pfad = fremd ? _FLUGZEUG_PFAD_FREMD : _FLUGZEUG_PFAD;
@@ -12957,8 +13040,10 @@ function makeAircraftIcon(heading, fremd, bruegge) {
   // Friese, er ist nur genauer zu sehen. Die Silhouette unterscheidet weiter Friesen von
   // Fremdverkehr -- daran darf die Quelle nichts aendern, sonst traegt ein Zeichen zwei
   // Bedeutungen.
-  const klasse = fremd ? 'aircraft-marker aircraft-marker-fremd'
-               : (bruegge ? 'aircraft-marker aircraft-marker-bruegge' : 'aircraft-marker');
+  const klasse = fremd
+    ? ('aircraft-marker aircraft-marker-fremd'
+       + (sekundengenau ? ' aircraft-marker-fremd-sim' : ''))
+    : (sekundengenau ? 'aircraft-marker aircraft-marker-bruegge' : 'aircraft-marker');
   return L.divIcon({
     className: '',
     html: `<div class="${klasse}" style="transform: rotate(${hdg}deg);">
@@ -13115,11 +13200,12 @@ function updateMap(pilots) {
       if (!demSim && vorhanden._fsHeading !== hdg) {
         vorhanden.setIcon(makeAircraftIcon(hdg));
         vorhanden._fsHeading = hdg;
-        // `!demSim` heisst hier zwangslaeufig: keine frische Bruegge (s.
-        // _markerGehoertDemSim). Den Merker trotzdem nachziehen -- sonst sieht der
+        // `!demSim` heisst hier zwangslaeufig: weder frische Bruegge noch Sim-Zuordnung
+        // (s. _markerGehoertDemSim -- es ist dieselbe Disjunktion wie in
+        // _punktIstSekundengenau). Den Merker trotzdem nachziehen -- sonst sieht der
         // Sekundentakt einen Unterschied, den es nicht gibt, und baut das Symbol noch
         // einmal auf.
-        vorhanden._fsBruegge = false;
+        vorhanden._fsGenau = false;
       }
       // Guenstig, solange das Popup zu ist: Leaflet merkt sich den Inhalt dann nur.
       vorhanden.setPopupContent(buildPopupHtml(p));
@@ -13141,9 +13227,9 @@ function updateMap(pilots) {
       // Marker-Drehung addieren -- ohne dass wir jedes Symbol bei jeder Kursaenderung neu
       // zeichnen muessten (das war die Alternative und haette die halbe Karte in Bewegung
       // gehalten). Ohne geladenes Plugin ist die Option schlicht unbekannt und wirkungslos.
-      const brueggeJetzt = _brueggeFrisch(p.callsign);
+      const genauJetzt = _punktIstSekundengenau(p.callsign);
       const marker = L.marker([p.latitude, p.longitude],
-                              { icon: makeAircraftIcon(hdg, false, brueggeJetzt),
+                              { icon: makeAircraftIcon(hdg, false, genauJetzt),
                                 rotateWithView: true })
         .bindPopup(buildPopupHtml(p), { maxWidth: 240 })
         // Das Label als Tooltip, NICHT im Icon: Der Marker dreht bei Track-up mit
@@ -13154,7 +13240,7 @@ function updateMap(pilots) {
                        className: 'traffic-label', opacity: 1 })
         .addTo(liveMap);
       marker._fsHeading = hdg;
-      marker._fsBruegge = brueggeJetzt;
+      marker._fsGenau = genauJetzt;
       marker._fsLabel = _verkehrLabel(_mitSimWerten(p));
       mapMarkers[p.callsign] = marker;
       // Ersten Track-Fetch triggern wenn Pilot neu erscheint

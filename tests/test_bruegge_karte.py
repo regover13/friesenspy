@@ -351,10 +351,15 @@ def test_vatsim_ueberschreibt_die_bruegge_nicht():
 
 def test_die_farbe_wechselt_im_sekundentakt():
     """Sie muss auch beim ZURÜCK-Wechsel greifen: Endet der Strom, rührt `updateMap` das
-    Symbol unter Umständen nie wieder an."""
+    Symbol unter Umständen nie wieder an.
+
+    Der Merker hieß bis zum 15.09.2026 `_fsBruegge`; er trägt seither auch die Zuordnung
+    des Sim-Matchings und heißt deshalb `_fsGenau` (s. `_punktIstSekundengenau`).
+    """
     block = INDEX[INDEX.index("function _naviTakt("):]
-    block = block[:block.index("\n// 2b.") if "\n// 2b." in block else len(block)]
-    assert "_fsBruegge" in block
+    block = block[:block.index("\n  // 2b.") if "\n  // 2b." in block else len(block)]
+    assert "_fsGenau" in block
+    assert "_punktIstSekundengenau" in block
 
 
 def test_die_bruegge_farbe_ist_im_stylesheet_erklaert():

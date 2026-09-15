@@ -1,5 +1,17 @@
 [
   {
+    "version": "14.48.0",
+    "date": "2026-09-15",
+    "highlight": false,
+    "title": "Im Kniebrett ist jetzt zu sehen, welche Flugzeuge der Simulator selbst erkannt hat",
+    "items": [
+      "🩵 Türkis stand bisher für „diese Position kommt sekundengenau aus einem Simulator\" — auf der Webseite. Ausgerechnet im Kniebrett, wo die Anzeige am genauesten ist, kam die Farbe nie vor: Dort arbeitet nicht die FriesenBrügge, sondern der eigene Simulator. Sobald das Kniebrett ein Flugzeug erkannt und einem Piloten zugeordnet hat, wird es jetzt türkis. Was man daran sieht, ist keine Kleinigkeit: Ein türkises Flugzeug steht auf den Meter dort, wo es wirklich ist, ein blaues bis zu 35 Sekunden daneben.",
+      "🖤 Auch der Fremdverkehr zeigt es an — aber anders: Sein Symbol bleibt dunkel, nur der Saum darum wird türkis. Die Fläche eines Flugzeugs sagt weiterhin, ob es ein Friese ist; hätte auch sie gewechselt, sähe ein fremdes Flugzeug plötzlich aus wie ein Vereinskamerad.",
+      "↩️ Verliert der Simulator ein Flugzeug aus den Augen, fällt es von allein wieder auf VATSIM zurück und wird wieder blau bzw. bekommt seinen hellen Saum. Die Farbe behauptet also nie eine Genauigkeit, die gerade nicht mehr da ist.",
+      "📖 Die Karten-Legende im Kniebrett erklärt beides an Ort und Stelle. Dort stand bisher gar keine Türkis-Zeile — die der Webseite verweist auf die Download-Seite der FriesenBrügge, und die gilt im Tablet nicht."
+    ]
+  },
+  {
     "version": "14.47.0",
     "date": "2026-09-15",
     "highlight": false,
