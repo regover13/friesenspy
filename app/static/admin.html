@@ -2439,7 +2439,9 @@
         const takt = document.getElementById('bg-takt');
         if (takt && d.takt_s <= 15) { takt.value = d.takt_s; }
         const wert = document.getElementById('bg-takt-wert');
-        if (wert) wert.textContent = d.takt_s >= 900 ? 'aus' : d.takt_s;
+        // Alles oberhalb des Schiebereglers (1-15 s) ist "aus" -- egal ob 60 oder ein
+        // alter 900er-Wert, der noch in den Einstellungen steht.
+        if (wert) wert.textContent = d.takt_s > 15 ? 'aus' : d.takt_s;
 
         const mb = document.getElementById('bg-melder');
         if (mb) {
@@ -2534,7 +2536,11 @@
       const sp = document.getElementById('bg-takt-speichern');
       if (sp) sp.addEventListener('click', function () { setzen(parseInt(takt.value, 10)); });
       const aus = document.getElementById('bg-takt-aus');
-      if (aus) aus.addEventListener('click', function () { setzen(900); });
+      // 60, nicht 900: Abschalten wirkt so oder so sofort, aber das WIEDEREINSCHALTEN
+      // erfaehrt die Bruegge erst bei ihrer naechsten Frage. Bei 900 waren das bis zu 15
+      // Minuten, in denen ein zurueckgestellter Schalter nichts tat (15.09.2026, im Betrieb
+      // erlebt und zuerst fuer einen Defekt gehalten).
+      if (aus) aus.addEventListener('click', function () { setzen(60); });
 
       const hin = document.getElementById('bg-soll-setzen');
       if (hin) hin.addEventListener('click', async function () {

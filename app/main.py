@@ -1229,6 +1229,21 @@ _BRUEGGE_TAKT_UNERKANNT_S = 3
 # zaehlt Tiere, nicht Baeren.
 _BRUEGGE_TAKT_VORGABE_S = 1          # Regeltakt, gemessen (s. Protokoll, Abschnitt 6)
 
+#: Der Takt, den "Ganz aus" im Admin setzt.
+#:
+#: ⚠ **60 und nicht mehr 900** (15.09.2026). Die 900 bedachten nur eine Richtung: Abschalten
+#: wirkt sofort, aber das WIEDEREINSCHALTEN erfaehrt die Bruegge erst bei ihrer naechsten
+#: Frage -- also bis zu 15 Minuten spaeter. Im Betrieb hiess das: Der Schalter stand laengst
+#: wieder auf "an", und niemand verstand, warum nichts geschah.
+#:
+#: Dasselbe war beim Kniebrett (`_KNIEBRETT_TAKT_AUS_S`) und ist dort schon behoben. Die Last
+#: spricht nicht dagegen: 60 Anfragen je Stunde und Bruegge gegen vier.
+#:
+#: ⚠ Das behebt Issue #38 NICHT -- dort kehrt eine Bruegge auch nach 88 Minuten nicht zurueck,
+#: was keine Taktzahl erklaert. Es verkuerzt nur die Strecke, auf der ein Schalter sich wie
+#: ein Defekt anfuehlt.
+_BRUEGGE_TAKT_AUS_S = 60
+
 #: Die Kennung, die JEDE MSFS-Bruegge vor dem 14.09.2026 erzeugte -- Modul-Adresse ⊕ `rand()`
 #: ohne `srand()`, in WASM auf jedem Rechner identisch. Steht hier, damit der Wert genau
 #: EINMAL im Quelltext vorkommt und nicht in Kommentaren verstreut.
@@ -2132,7 +2147,11 @@ async def admin_bruegge(request: Request):
 
 @app.post("/api/admin/bruegge/takt")
 async def admin_bruegge_takt(request: Request):
-    """Die Drossel stellen -- 1 bis 15 Sekunden, oder 900 fuer "aus"."""
+    """Die Drossel stellen -- 1 bis 15 Sekunden, oder `_BRUEGGE_TAKT_AUS_S` fuer "aus".
+
+    Die Obergrenze bleibt 900: Ein alter Wert, der noch in `app_settings` steht, soll weiter
+    gelten, statt beim naechsten Speichern abgewiesen zu werden.
+    """
     require_admin(request)
     body = await request.json()
     try:

@@ -68,6 +68,7 @@ class _PollerAttrappe(VatsimPoller):
 
     def __init__(self, friesen=None):        # bewusst ohne super().__init__()
         self._bruegge_live = {}
+        self._kniebrett_versuch = {}
         self.friesen_snapshot = list(friesen or [])
         self.friesen_snapshot_ts = time.time()
 
@@ -963,3 +964,139 @@ class TestBrueggeDarfSchweigen:
             assert r.json()["naechste_frage_in_s"] == main._BRUEGGE_TAKT_VORGABE_S
         finally:
             main.app.state.poller = env.poller
+
+    def _bruegge_meldet(self, env, cid=MELDER):
+        env.poller.bruegge_position_merken(cid, {
+            "lat": LAT, "lon": LON, "kurs": 90.0, "gs_kt": 0.0,
+            "alt_msl_ft": 500.0, "alt_agl_ft": 12.0, "am_boden": True})
+
+    def test_der_hebel_greift_auch_wenn_die_bruegge_den_eintrag_haelt(self, env):
+        """⚠ DER FALL, AN DEM DER HEBEL ZUERST GESCHEITERT IST (gemessen im Flug, 15.09.2026).
+
+        Zwei Regeln haben sich gegenseitig aufgehoben: Die Vorrangregel gibt der Brügge den
+        Eintrag (`melder` bleibt `None`), und der Hebel schaute in genau diesen Eintrag, um zu
+        entscheiden, ob das Kniebrett meldet. Solange die Brügge lief, sah er dort nie einen
+        Kniebrett-Melder -- und drosselte deshalb nie. Im Betrieb hieß das: Brügge und
+        Kniebrett meldeten beide im Sekundentakt, obwohl genau das verhindert werden sollte.
+
+        Die Frage „wessen Punkt gilt?" und die Frage „liefert das Kniebrett?" brauchen
+        getrennte Antworten."""
+        self._bruegge_meldet(env)                      # Brügge hält den Eintrag
+        _modus_setzen(env, "eigene")
+        r = _melden(env, [_flugzeug(cs=MELDER_CS, lat=LAT, lon=LON)])
+        # Die Meldung wird zu Recht NICHT übernommen -- die Brügge ist die reichere Quelle.
+        assert r.json()["uebernommen"] == 0
+        # Eine Brügge-Zeile trägt gar kein `melder` -- sie meldet ausschließlich sich selbst.
+        assert env.poller._bruegge_live[MELDER].get("melder") is None
+        # ... sie zählt aber trotzdem als "das Kniebrett liefert".
+        assert env.poller.kniebrett_meldet_fuer(MELDER) is True
+
+    def test_eine_abgewiesene_FREMDmeldung_zaehlt_weiterhin_nicht(self, env):
+        """Die Grenze bleibt: Nur die Selbstmeldung trägt den Hebel."""
+        self._bruegge_meldet(env, cid=FREMD)
+        _modus_setzen(env, "alle")
+        _melden(env, [_flugzeug()])                    # MELDER meldet FREMD mit
+        assert env.poller.kniebrett_meldet_fuer(FREMD) is False
+
+    def test_der_versuch_verfaellt_wie_eine_meldung(self, env, monkeypatch):
+        import app.poller as poller_modul
+        self._bruegge_meldet(env)
+        _modus_setzen(env, "eigene")
+        _melden(env, [_flugzeug(cs=MELDER_CS, lat=LAT, lon=LON)])
+        t0 = env.poller._bruegge_live[MELDER]["ts"]
+        monkeypatch.setattr(poller_modul.time, "monotonic", lambda: t0 + 30.0)
+        assert env.poller.kniebrett_meldet_fuer(MELDER) is False
+
+    def test_das_neue_verzeichnis_geht_nicht_in_den_strom(self, env):
+        """Wer wen sieht, geht die Karte nichts an -- dieselbe Regel wie für `melder`."""
+        gesendet = []
+        env.poller.broadcast_sse = lambda m: gesendet.append(m)
+        _modus_setzen(env, "eigene")
+        _melden(env, [_flugzeug(cs=MELDER_CS, lat=LAT, lon=LON)])
+        env.poller.bruegge_strom_senden()
+        assert gesendet
+        for e in gesendet[0]["data"]:
+            assert "kb_versuch" not in e and "melder" not in e and "guete" not in e
+
+    def test_das_verzeichnis_waechst_nicht_endlos(self, env, monkeypatch):
+        """⚠ Ohne diese Wache fiel es nicht auf: Alle Verhaltenstests sind grün, auch wenn
+        gar nicht aufgeräumt wird -- der Eintrag verfällt ja über die Zeit. Was bleibt, ist
+        ein Verzeichnis, das mit jeder cid wächst, die je gemeldet hat, und das erst bei
+        einem Neustart des Containers verschwindet."""
+        import app.poller as poller_modul
+        _modus_setzen(env, "eigene")
+        _melden(env, [_flugzeug(cs=MELDER_CS, lat=LAT, lon=LON)])
+        assert MELDER in env.poller._kniebrett_versuch
+
+        t0 = env.poller._kniebrett_versuch[MELDER]
+        monkeypatch.setattr(poller_modul.time, "monotonic", lambda: t0 + 30.0)
+        env.poller.bruegge_strom_senden()
+        assert env.poller._kniebrett_versuch == {}
+
+
+# ---------------------------------------------------------------------------------------
+#  13. Höhe und Fahrt am Schild gehören in den Sekundentakt (Nutzer-Fund im Flug, 15.09.2026)
+# ---------------------------------------------------------------------------------------
+#
+# „msl und speed werden nur alle paar sekunden (5~10s) aktualisiert" -- obwohl die frischen
+# Werte jede Sekunde ankommen. Die Aufteilung war schuld: `_naviTakt` bewegt den Marker jede
+# Sekunde, aber das Schild setzte allein `updateMap`, und die läuft auf drei langsamen Wegen
+# (SSE-Positionen im VATSIM-Takt, lokales Neuzeichnen alle 10 s, HTTP-Rückfall alle 15 s).
+#
+# Der Fehler steckt seit v13.5.0 drin und ist erst jetzt sichtbar geworden: Vorher betraf er
+# nur Piloten mit eigener Brügge, seit #23 jeden Friesen in Reichweite eines Kniebretts.
+
+class TestSchildImSekundentakt:
+    def test_der_takt_zieht_die_beschriftung_nach(self):
+        stelle = _INDEX.index("function _naviTakt(")
+        ende = _INDEX.index("\n}", _INDEX.index("_naviSchiebeMelden();", stelle))
+        block = _INDEX[stelle:ende]
+        assert "setTooltipContent(beschriftung)" in block
+        assert "_verkehrLabel(_mitSimWerten(pilot))" in block
+
+    def test_aber_nur_bei_echter_aenderung(self):
+        """`setTooltipContent` tauscht das DOM-Element -- ein unnötiger Tausch war im
+        Kniebrett schon einmal als Aufblitzen sichtbar."""
+        stelle = _INDEX.index("const beschriftung = _verkehrLabel(_mitSimWerten(pilot));")
+        block = _INDEX[stelle:stelle + 400]
+        assert "_fsLabel !== beschriftung" in block
+
+    def test_und_NICHT_ueber_updateMap(self):
+        """Die naheliegende Abkürzung wäre, `updateMap` im Sekundentakt zu rufen -- sie baut
+        Marker, Tracks, Popups und die halbe Liste neu auf. Genau davor warnt der Kommentar
+        am Brügge-Strom."""
+        stelle = _INDEX.index("function _naviTakt(")
+        ende = _INDEX.index("\n}", _INDEX.index("_naviSchiebeMelden();", stelle))
+        assert "updateMap(" not in _INDEX[stelle:ende]
+
+    def test_der_bruegge_strom_ruft_updateMap_weiterhin_nicht(self):
+        """Die Gegenprobe zur selben Regel an der anderen Stelle."""
+        stelle = _INDEX.index("msg.type === 'bruegge'")
+        block = _INDEX[stelle:stelle + 900]
+        assert "_brueggeStromEinarbeiten(msg.data)" in block
+        assert "updateMap(" not in block
+
+
+class TestBrueggeAusTakt:
+    """Dieselbe Falle wie beim Kniebrett, jetzt auch bei der Brügge geschlossen."""
+
+    def test_ganz_aus_setzt_keinen_viertelstunden_takt_mehr(self):
+        assert main._BRUEGGE_TAKT_AUS_S <= 60
+        assert main._BRUEGGE_TAKT_AUS_S >= 30
+
+    def test_der_admin_knopf_setzt_denselben_wert(self):
+        """Die Zahl im Knopf und die Konstante im Server dürfen nicht auseinanderlaufen --
+        sonst steht im Code eine Begründung für einen Wert, den niemand setzt."""
+        stelle = _ADMIN.index("getElementById('bg-takt-aus')")
+        # Bis zum Ende des Listeners lesen, nicht ein festes Zeichenfenster: Der Kommentar
+        # davor ist länger als jedes Fenster, das man "großzügig" nennen würde.
+        block = _ADMIN[stelle:_ADMIN.index("});", _ADMIN.index("addEventListener", stelle))]
+        assert f"setzen({main._BRUEGGE_TAKT_AUS_S})" in block
+
+    def test_ein_alter_900er_wert_gilt_weiterhin(self, env):
+        """Er steht vielleicht noch in den Einstellungen. Ihn beim nächsten Speichern
+        abzuweisen hieße, eine laufende Drossel unbedienbar zu machen."""
+        from app.auth import ADMIN_COOKIE, make_admin_token
+        env.client.cookies.set(ADMIN_COOKIE, make_admin_token(SECRET, "pw"))
+        assert env.client.post("/api/admin/bruegge/takt",
+                               json={"takt_s": 900}).status_code == 200

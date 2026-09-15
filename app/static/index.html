@@ -12357,6 +12357,32 @@ function _naviTakt(sofort) {
       mapMarkers[cs]._fsHeading = kurs;
       mapMarkers[cs]._fsGenau = genauJetzt;
     }
+
+    // ⭐ Und die BESCHRIFTUNG mitziehen -- aus demselben Grund wie die Farbe eine Zeile
+    // darueber: Sie muss sich auch dann aendern, wenn der Kurs gleich bleibt.
+    //
+    // ⚠ Hoehe und Fahrt kamen bis zum 15.09.2026 nur alle 10-15 Sekunden an, obwohl die
+    // frischen Werte jede Sekunde eintreffen und in `_brueggeWerte` liegen. Der Grund war
+    // die Aufteilung: Der Takt hier BEWEGT den Marker, aber das Schild setzte allein
+    // `updateMap` -- und die laeuft auf drei langsamen Wegen (SSE-Positionen im
+    // VATSIM-Takt, lokales Neuzeichnen alle 10 s, HTTP-Rueckfall alle 15 s). Auf der Karte
+    // sah man ein Flugzeug fluessig wandern, waehrend Hoehe und Fahrt daneben einfroren
+    // (Nutzer-Fund im Flug: "msl und speed werden nur alle paar sekunden aktualisiert").
+    //
+    // ⚠ NICHT `updateMap` im Sekundentakt rufen -- das ist die naheliegende und falsche
+    // Abkuerzung: Sie baut Marker, Tracks, Popups und die halbe Liste neu auf. Genau davor
+    // warnt der Kommentar am Bruegge-Strom. Hier wird nur der Text ersetzt, und auch der
+    // nur, wenn er sich wirklich geaendert hat: `setTooltipContent` tauscht das
+    // DOM-Element, und ein unnoetiger Tausch war im Kniebrett schon einmal als Aufblitzen
+    // sichtbar.
+    const pilot = _pilotZuCallsign(cs);
+    if (pilot) {
+      const beschriftung = _verkehrLabel(_mitSimWerten(pilot));
+      if (mapMarkers[cs]._fsLabel !== beschriftung) {
+        mapMarkers[cs].setTooltipContent(beschriftung);
+        mapMarkers[cs]._fsLabel = beschriftung;
+      }
+    }
   }
 
   // 2b. Fremdverkehr -- gleiche Rechnung, eigene Datenquelle. Auch hier gilt: Bewegt wird
@@ -12689,6 +12715,15 @@ function _simPosFrisch() {
  *
  * Das Original bleibt unangetastet: `p` steckt in liveData und wird anderswo weiterverwendet.
  */
+/** Der Datensatz eines Piloten aus `liveData`, oder null. Fuer den Sekundentakt. */
+function _pilotZuCallsign(cs) {
+  const liste = liveData || [];
+  for (let i = 0; i < liste.length; i++) {
+    if (liste[i].callsign === cs) return liste[i];
+  }
+  return null;
+}
+
 function _mitSimWerten(p) {
   const cs = p ? p.callsign : null;
   // Die Bruegge vor dem lokalen Sim-Verkehr, und das ist kein Geschmack: Beide sind

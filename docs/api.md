@@ -2512,7 +2512,18 @@ zurückbekommt, meldet Flugzeuge, die schon jemand anders besser kennt.
 ⭐ **Der eigentliche Lasthebel ist aber ein anderer als der Vorrang: Wer darf schweigen?**
 Meldet das **eigene** Kniebrett eines Piloten, bekommt seine FriesenBrügge in ihrer Antwort
 einen Takt von `_BRUEGGE_TAKT_MIT_KNIEBRETT_S` = 5 s statt 1 s
-(`VatsimPoller.kniebrett_meldet_fuer`). Beim Vorrang geht es darum, wessen Punkt gilt — hier
+(`VatsimPoller.kniebrett_meldet_fuer`).
+
+⚠ **Die Auskunft kommt aus einem EIGENEN Verzeichnis** (`_kniebrett_versuch`), nicht aus dem
+Eintrag in `_bruegge_live` — und das ist der Kern, nicht ein Detail. Im Eintrag stehen zwei
+Fragen, die sich beißen: Er beantwortet „wessen Punkt wird gezeigt?", und den gewinnt die
+Brügge. Der Hebel fragt aber „liefert das Kniebrett überhaupt?". Beides aus derselben Zeile
+zu lesen hat die zwei Regeln **gegenseitig aufgehoben**: Solange die Brügge lief, sah der
+Hebel dort nie einen Kniebrett-Melder und drosselte nie — im Flug gemessen am 15.09.2026,
+beide meldeten im Sekundentakt.
+
+Vermerkt wird der Versuch **vor** der Vorrangprüfung: Eine abgewiesene Selbstmeldung ist
+trotzdem der Beweis, dass das Kniebrett liefert. Beim Vorrang geht es darum, wessen Punkt gilt — hier
 darum, dass die teurere Seite gar nicht erst anklopft: Die Brügge-Meldung kostet **fünf
 DB-Aufrufe plus Positionsmatching**, die des Kniebretts **keinen**.
 

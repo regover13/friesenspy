@@ -494,6 +494,20 @@ class VatsimPoller:
         # Gegenrichtung: Dort geht etwas aus dem Speicher hinaus, hier kommt etwas herein.
         self.friesen_snapshot: list[dict] = []
         self.friesen_snapshot_ts: float = 0.0
+        # cid -> monotonic: wann hat das EIGENE Kniebrett dieses Piloten zuletzt eine
+        # gueltige Meldung geschickt -- UNABHAENGIG davon, ob sie den Vorrang gewonnen hat.
+        #
+        # ⚠ WARUM DAS NICHT IN `_bruegge_live` STEHT, obwohl es dort naheliegt: Weil sich
+        # dort zwei Fragen in die Quere kommen. Der Eintrag beantwortet "wessen Punkt wird
+        # gezeigt?", und den gewinnt die Bruegge (s. `kniebrett_position_merken`). Der Hebel
+        # fragt etwas anderes: "liefert das Kniebrett ueberhaupt?" Beides aus derselben
+        # Zeile lesen zu wollen hat die zwei Regeln gegenseitig aufgehoben -- im Flug
+        # gemessen am 15.09.2026: Solange die Bruegge lief, sah der Hebel nie einen
+        # Kniebrett-Melder und drosselte deshalb nie.
+        #
+        # Ein Feld IM Eintrag hilft auch nicht: `bruegge_position_merken` baut bei jeder
+        # Meldung ein frisches Dict, das Feld waere eine Sekunde spaeter weg.
+        self._kniebrett_versuch: dict[int, float] = {}
         # Vollständige Prefile-Daten für die API (Liste von Dicts)
         self.last_prefiles: list = []
         # cid → (deptime, departure, arrival) für Änderungserkennung — None = erster Poll
@@ -904,6 +918,11 @@ class VatsimPoller:
         """
         cid = int(cid)
         guete = self.QUELLE_SELBST if int(melder_cid) == cid else self.QUELLE_FREMD
+        # ⭐ ZUERST den Versuch vermerken, dann erst ueber den Vorrang entscheiden. Die
+        # Reihenfolge ist der ganze Fix: Eine abgewiesene Selbstmeldung ist trotzdem der
+        # Beweis, dass das Kniebrett liefert.
+        if guete == self.QUELLE_SELBST:
+            self._kniebrett_versuch[cid] = time.monotonic()
         vorhanden = self._bruegge_live.get(cid)
         if vorhanden is not None and (time.monotonic() - vorhanden["ts"]) < self.BRUEGGE_FRIST_S:
             # Eine Zeile ohne `guete` stammt von einer Bruegge -- die meldet ausschliesslich
@@ -971,12 +990,10 @@ class VatsimPoller:
         """
         if cid is None:
             return False
-        e = self._bruegge_live.get(int(cid))
-        if not e or e.get("melder") is None:
+        wann = self._kniebrett_versuch.get(int(cid))
+        if wann is None:
             return False
-        if int(e["melder"]) != int(cid):
-            return False
-        return (time.monotonic() - e["ts"]) < self.BRUEGGE_FRIST_S
+        return (time.monotonic() - wann) < self.BRUEGGE_FRIST_S
 
     async def _bruegge_strom_schleife(self) -> None:
         """Den Sekundenstrom takten -- als eigene Schleife, NICHT als Scheduler-Job.
@@ -1034,6 +1051,11 @@ class VatsimPoller:
         for cid in [c for c, e in self._bruegge_live.items()
                     if (jetzt - e["ts"]) >= self.BRUEGGE_FRIST_S]:
             del self._bruegge_live[cid]
+        # Dasselbe fuer die Kniebrett-Versuche: Sie haengen an keinem Eintrag und wuerden
+        # sonst mit jeder cid wachsen, die je gemeldet hat.
+        for cid in [c for c, t in self._kniebrett_versuch.items()
+                    if (jetzt - t) >= self.BRUEGGE_FRIST_S]:
+            del self._kniebrett_versuch[cid]
         if not self._bruegge_live:
             return
         self.broadcast_sse({
