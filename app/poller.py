@@ -1043,15 +1043,31 @@ class VatsimPoller:
         # (`_verkehrRoh` in index.html) -- und genau dorthin geht dieser Strom.
         self._kniebrett_fremd: dict[str, dict] = {}
 
-    def kniebrett_fremd_merken(self, cs: str, eintrag: dict) -> bool:
+    def kniebrett_fremd_merken(self, cs: str, eintrag: dict,
+                               melder_cid: int | None = None) -> bool:
         """Eine gemeldete FREMDverkehrs-Position vormerken (Schluessel: Rufzeichen).
 
-        Ohne Vorrangregel, und das ist kein Versehen: Fremdverkehr hat keine eigene Quelle,
-        die man bevorzugen koennte -- keine Bruegge, kein eigenes Kniebrett. Sehen ihn zwei
-        Kniebretter, ist die zweite Meldung schlicht die neuere, und die gilt.
+        Es gibt hier keine GUETE -- Fremdverkehr hat keine eigene Quelle, die man bevorzugen
+        koennte, keine Bruegge und kein eigenes Kniebrett. Wohl aber einen ZUSCHLAG: Der
+        erste Melder behaelt ihn, solange er frisch meldet.
+
+        ⚠ **Hier stand zuerst "die zweite Meldung ist schlicht die neuere, und die gilt".**
+        Das war zu kurz gedacht, und der Nutzer hat es bemerkt, bevor es jemand erlebt hat:
+        Zwei Tablets sehen dasselbe Flugzeug an leicht VERSCHIEDENEN Stellen -- vPilot
+        interpoliert in jedem Simulator eigenstaendig zwischen den VATSIM-Meldungen. Ohne
+        Zuschlag springt der Punkt im Sekundentakt zwischen beiden Positionen hin und her;
+        genau das Flackern, gegen das die Regel bei den Friesen existiert.
+
+        Dass es keine Guete gibt, heisst also nicht, dass jeder jederzeit ueberschreiben darf.
         """
         cs = str(cs or "").upper()
         if not cs:
+            return False
+        vorhanden = self._kniebrett_fremd.get(cs)
+        if (vorhanden is not None
+                and melder_cid is not None
+                and vorhanden.get("melder") not in (None, int(melder_cid))
+                and (time.monotonic() - vorhanden["ts"]) < self.KNIEBRETT_ZUSCHLAG_S):
             return False
         try:
             lat = float(eintrag["lat"])
@@ -1066,6 +1082,9 @@ class VatsimPoller:
             "gs": round(float(eintrag.get("gs") or 0.0), 1),
             "alt": None if eintrag.get("alt") is None else round(float(eintrag["alt"])),
             "ts": time.monotonic(),
+            # Wer ihn gemeldet hat -- nur fuer den Zuschlag. Geht NICHT in den Strom
+            # hinaus (s. `bruegge_strom_senden`): Wer wen sieht, geht die Karte nichts an.
+            "melder": None if melder_cid is None else int(melder_cid),
         }
         return True
 
@@ -1160,7 +1179,7 @@ class VatsimPoller:
         # Sekunde ist der Vertrag, und ein zweiter Strom waere eine zweite Stelle, an der
         # etwas ausfallen kann. Das Feld fehlt, solange niemand Fremdverkehr meldet -- so
         # kostet die Stufe nichts, wenn sie niemand eingeschaltet hat.
-        fremd = [{k: v for k, v in e.items() if k != "ts"}
+        fremd = [{k: v for k, v in e.items() if k not in ("ts", "melder")}
                  for e in self._kniebrett_fremd.values()]
         self.broadcast_sse({
             **({"fremd": fremd} if fremd else {}),

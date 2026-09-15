@@ -1414,3 +1414,52 @@ class TestRangfolgeNachVollstaendigkeit:
         block = _INDEX[stelle:_INDEX.index("\n  }", stelle)]
         assert "setIcon(makeAircraftIcon(kurs, true" in block
         assert "_fsHeading !== kurs" in block      # nur bei echter Änderung
+
+
+class TestMehrereTabletsAufFremdverkehr:
+    """⚠ Die Lücke, die der Nutzer gefunden hat, bevor sie jemand erlebt hat.
+
+    Für Friesen gibt es die Zuschlagsregel seit dem ersten Bau. Für Fremdverkehr habe ich
+    sie weggelassen und das sogar begründet: „Fremdverkehr hat keine eigene Quelle, die man
+    bevorzugen könnte." Das stimmt — daraus folgt aber nicht, dass jeder jederzeit
+    überschreiben darf.
+
+    Zwei Tablets sehen dasselbe Flugzeug an leicht verschiedenen Stellen: vPilot
+    interpoliert in jedem Simulator eigenständig zwischen den VATSIM-Meldungen. Ohne Regel
+    springt der Punkt im Sekundentakt zwischen beiden Positionen hin und her — genau das
+    Flackern, gegen das die Regel bei den Friesen existiert.
+    """
+
+    def _fremd(self, env):
+        env.poller.traffic_snapshot = _traffic_snapshot()
+        _modus_setzen(env, "fremd")
+
+    def test_der_erste_melder_behaelt_den_zuschlag(self, env):
+        self._fremd(env)
+        _melden(env, [_flugzeug(cs=FREMDER_CS, lat=LAT + 0.002, lon=LON + 0.002, hdg=270.0)])
+        _melden(env, [_flugzeug(cs=FREMDER_CS, lat=LAT + 0.002, lon=LON + 0.002, hdg=90.0)],
+                cid=DRITT)
+        assert env.poller._kniebrett_fremd[FREMDER_CS]["hdg"] == 270.0
+
+    def test_derselbe_melder_darf_natuerlich_weiter(self, env):
+        """Sonst wäre die Regel eine Sperre gegen den eigenen Sekundentakt."""
+        self._fremd(env)
+        _melden(env, [_flugzeug(cs=FREMDER_CS, lat=LAT + 0.002, lon=LON + 0.002, hdg=270.0)])
+        _melden(env, [_flugzeug(cs=FREMDER_CS, lat=LAT + 0.002, lon=LON + 0.002, hdg=280.0)])
+        assert env.poller._kniebrett_fremd[FREMDER_CS]["hdg"] == 280.0
+
+    def test_verstummt_der_erste_uebernimmt_der_zweite(self, env, monkeypatch):
+        import app.poller as poller_modul
+        self._fremd(env)
+        _melden(env, [_flugzeug(cs=FREMDER_CS, lat=LAT + 0.002, lon=LON + 0.002, hdg=270.0)])
+        t0 = env.poller._kniebrett_fremd[FREMDER_CS]["ts"]
+        monkeypatch.setattr(poller_modul.time, "monotonic", lambda: t0 + 4.0)
+        _melden(env, [_flugzeug(cs=FREMDER_CS, lat=LAT + 0.002, lon=LON + 0.002, hdg=90.0)],
+                cid=DRITT)
+        assert env.poller._kniebrett_fremd[FREMDER_CS]["hdg"] == 90.0
+
+    def test_das_fenster_ist_dasselbe_wie_bei_den_friesen(self):
+        """Eine zweite Zahl für denselben Begriff wäre eine zweite Stelle, an der sie
+        auseinanderlaufen kann."""
+        from app.poller import VatsimPoller
+        assert VatsimPoller.KNIEBRETT_ZUSCHLAG_S < VatsimPoller.BRUEGGE_FRIST_S

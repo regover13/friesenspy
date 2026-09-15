@@ -1145,7 +1145,7 @@ async def kniebrett_melden(request: Request):
             # ⭐ Ein FREMDES Flugzeug: kein Friese, also keine cid und keine Vorrangfrage.
             # Geprueft wird trotzdem dasselbe -- er muss auf VATSIM stehen, und seine
             # gemeldete Lage muss zu seinem VATSIM-Stand passen.
-            if _kniebrett_fremd_uebernehmen(poller, cs, e, fremde[cs]):
+            if _kniebrett_fremd_uebernehmen(poller, cs, e, fremde[cs], melder):
                 uebernommen += 1
             else:
                 verworfen += 1
@@ -1233,7 +1233,7 @@ async def kniebrett_melden(request: Request):
     return _kniebrett_antwort(modus, takt, uebernommen, verworfen)
 
 
-def _kniebrett_fremd_uebernehmen(poller, cs: str, e: dict, stand) -> bool:
+def _kniebrett_fremd_uebernehmen(poller, cs: str, e: dict, stand, melder: int) -> bool:
     """Ein gemeldetes fremdes Flugzeug pruefen und vormerken.
 
     ``stand`` ist sein VATSIM-Wert ``(lat, lon, alt_ft, gs_kt)`` aus dem Schnappschuss.
@@ -1266,7 +1266,7 @@ def _kniebrett_fremd_uebernehmen(poller, cs: str, e: dict, stand) -> bool:
         return False
     return merken(cs, {"lat": lat, "lon": lon,
                        "hdg": _kniebrett_zahl(e.get("hdg")) % 360.0, "gs": gs,
-                       "alt": alt if hat_alt else None})
+                       "alt": alt if hat_alt else None}, melder)
 
 
 def _kniebrett_zahl(wert) -> float:
