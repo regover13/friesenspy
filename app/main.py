@@ -1441,25 +1441,6 @@ async def bruegge_melden(request: Request):
         # Ab jetzt gilt die zugeteilte auch hier -- `steht` und die Ablage haengen daran.
         kennung = kennung or (zugeteilt or "")
 
-        # ⭐ WER DARF SCHWEIGEN? -- Meldet das EIGENE Kniebrett dieses Piloten, darf seine
-        # Bruegge langsamer fragen (GitHub-Issue #23).
-        #
-        # Das ist der eigentliche Lasthebel, und er ist ein ANDERER als die Vorrangregel im
-        # Poller: Dort geht es darum, wessen Punkt gilt -- hier darum, dass die teure Seite
-        # gar nicht erst anklopft. Gemessen: Diese Meldung kostet fuenf DB-Aufrufe plus das
-        # Positionsmatching, die des Kniebretts keinen. Melden beide denselben Piloten, ist
-        # die Bruegge-Anfrage im Sekundentakt Arbeit ohne Ergebnis -- ihr Punkt wird ohnehin
-        # ueberschrieben.
-        #
-        # ⚠ SCHLIMMSTENFALLS WIRD DIE SPUR GROEBER, NIE LEER. Am 15.09.2026 ist eine Bruegge
-        # nach einer Drossel auf 900 s in 30 Minuten nicht zurueckgekehrt (Issue #38) --
-        # warum, ist offen. Fuenf Sekunden sind deshalb bewusst ein KLEINER Schritt: Selbst
-        # wenn sie darin haengen bliebe, meldet sie weiter, nur seltener. Ein Takt in der
-        # Groessenordnung von Minuten waere an dieser Stelle unverantwortlich, solange der
-        # Rueckweg nicht geklaert ist.
-        _p = getattr(request.app.state, "poller", None)
-        if _p is not None and _p.kniebrett_meldet_fuer(cid):
-            takt = max(takt, _BRUEGGE_TAKT_MIT_KNIEBRETT_S)
         if cid is None:
             # Ohne Zuordnung geschieht NICHTS -- keine Anzeige, keine Ablage, keine Objekte.
             # Die Pruefung steht damit vor allem Teuren; ein Pilot, der den Simulator laufen
@@ -1474,6 +1455,28 @@ async def bruegge_melden(request: Request):
             return _bruegge_antwort(
                 _BRUEGGE_TAKT_UNERKANNT_S if kandidaten_da else _BRUEGGE_TAKT_OHNE_VATSIM_S,
                 gilt_bis=0, fassung=fassung if isinstance(fassung, int) else None)
+
+        # ⭐ WER DARF SCHWEIGEN? -- Meldet das EIGENE Kniebrett dieses Piloten, darf seine
+        # Bruegge langsamer fragen (GitHub-Issue #23).
+        #
+        # Das ist der eigentliche Lasthebel, und er ist ein ANDERER als die Vorrangregel im
+        # Poller: Dort geht es darum, wessen Punkt gilt -- hier darum, dass die teure Seite
+        # gar nicht erst anklopft. Gemessen: Diese Meldung kostet fuenf DB-Aufrufe plus das
+        # Positionsmatching, die des Kniebretts keinen.
+        #
+        # ⚠ ER STEHT HINTER DER `cid is None`-PRUEFUNG, und das ist keine Stilfrage: Davor
+        # gibt es noch keine cid, und `kniebrett_meldet_fuer(None)` wirft. Der erste Anlauf
+        # stand oben und ist in der vollen Suite mit zehn fremden Brueggen-Tests
+        # hochgegangen -- EINZELN waren sie gruen, weil dort kein Poller gesetzt ist. Genau
+        # dafuer laeuft die volle Suite.
+        #
+        # ⚠ SCHLIMMSTENFALLS WIRD DIE SPUR GROEBER, NIE LEER. Am 15.09.2026 ist eine Bruegge
+        # nach einer Drossel auf 900 s in 30 Minuten nicht zurueckgekehrt (Issue #38) --
+        # warum, ist offen. Fuenf Sekunden sind deshalb bewusst ein KLEINER Schritt.
+        _p = getattr(request.app.state, "poller", None)
+        _kb_meldet = getattr(_p, "kniebrett_meldet_fuer", None)
+        if _kb_meldet is not None and _kb_meldet(cid):
+            takt = max(takt, _BRUEGGE_TAKT_MIT_KNIEBRETT_S)
 
         # ⭐ Die Lage nur uebernehmen, wenn sie zur Zuordnung passt (`lage_gilt`). Im
         # Verstoss-Fenster steht die Zuordnung, die Position aber nicht -- dann behaelt die

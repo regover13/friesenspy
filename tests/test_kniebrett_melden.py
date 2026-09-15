@@ -924,3 +924,42 @@ class TestBrueggeDarfSchweigen:
         # 3. ... und ihre Objekte bekommt sie weiterhin: Der Hebel drosselt, er schaltet
         #    nicht ab. Ein leeres `soll` hier hieße, dass sie alles abräumt.
         assert "soll" in r.json()
+
+    def test_eine_bruegge_ohne_zuordnung_bringt_den_hebel_nicht_zum_absturz(self, env):
+        """⚠ Der Fall, an dem der erste Anlauf gescheitert ist: Vor der Zuordnung gibt es
+        keine cid, und `kniebrett_meldet_fuer(None)` warf einen TypeError. In der vollen
+        Suite sind daran **zehn fremde Brügge-Tests** hochgegangen — einzeln waren sie grün,
+        weil dort kein Poller im App-Zustand steht. Hier steht einer."""
+        lage = {"lat": 0.0, "lon": 0.0, "alt_msl_ft": 0.0, "gs_kt": 0.0, "kurs": 0.0,
+                "vs_ft_min": 0.0, "am_boden": True}
+        r = env.client.post("/api/bruegge/melden",
+                            json={"protokoll": 2, "simulator": "msfs2024",
+                                  "kennung": "cccc3333dddd4444", "lage": lage})
+        assert r.status_code == 200
+        assert r.json()["soll"] == []      # niemand passt -- die Ablehnung, nicht ein Fehler
+
+    def test_und_ein_poller_ohne_die_methode_auch_nicht(self, env):
+        """Ein zweiter Riegel: Nicht jede Poller-Attrappe im Projekt kennt jede Methode.
+        Dasselbe Muster wie beim `getattr` für `bruegge_position_merken`."""
+        from types import SimpleNamespace
+        # Eine Attrappe, die den REST kann, aber die neue Methode nicht -- genau der Fall
+        # einer älteren Poller-Nachbildung. (Ein völlig leerer Namespace bräche schon an
+        # `bruegge_position_merken`, und das ist fremder Code, nicht dieser Riegel.)
+        main.app.state.poller = SimpleNamespace(
+            bruegge_position_merken=lambda *a, **k: None)
+        try:
+            conn = get_connection(env.db)
+            try:
+                conn.execute("INSERT OR REPLACE INTO forum_callsign (callsign, cid, updated_at) "
+                             "VALUES (?, ?, ?)", (MELDER_CS, MELDER, "2026-09-15T00:00:00Z"))
+                conn.commit()
+            finally:
+                conn.close()
+            r = env.client.post("/api/bruegge/melden", json={
+                "protokoll": 2, "simulator": "msfs2024", "kennung": "eeee5555ffff6666",
+                "lage": {"lat": LAT, "lon": LON, "alt_msl_ft": 500.0, "gs_kt": 0.0,
+                         "kurs": 210.0, "vs_ft_min": 0.0, "am_boden": True}})
+            assert r.status_code == 200
+            assert r.json()["naechste_frage_in_s"] == main._BRUEGGE_TAKT_VORGABE_S
+        finally:
+            main.app.state.poller = env.poller

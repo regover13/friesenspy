@@ -969,6 +969,8 @@ class VatsimPoller:
         drosseln hiesse, die Aufloesung seiner Spur von jemandem abhaengig zu machen, der
         jederzeit wegfliegen kann. Nur seine eigene Selbstmeldung traegt.
         """
+        if cid is None:
+            return False
         e = self._bruegge_live.get(int(cid))
         if not e or e.get("melder") is None:
             return False
