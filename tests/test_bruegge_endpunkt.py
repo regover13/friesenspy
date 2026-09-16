@@ -1240,6 +1240,74 @@ def test_bei_genau_einem_titel_ist_auch_das_einzelergebnis_eindeutig(klient, tmp
     assert z["fehler"] == "NAME_UNRECOGNIZED"
 
 
+def test_ein_fehlschlag_verschont_die_abgeschalteten_titel(klient, tmp_path):
+    """Geschrieben wird nur über das, was auch hinausging (Issue #41).
+
+    Bis v14.49.4 zählte die Eindeutigkeitsprüfung die **aktiven** Titel, das `UPDATE` traf
+    dann aber `WHERE art = ? AND simulator = ?` — also jede Zeile der Art, auch die auf
+    `aus`. Eine Art mit einem aktiven und zwei abgeschalteten Titeln legte bei EINEM
+    Fehlschlag alle drei stillenden und trug in zwei nie probierte Zeilen einen fremden
+    Fehler ein. Am 16.09.2026 dreimal beobachtet.
+    """
+    db = str(tmp_path / "t.db")
+    _friese_anlegen(db)
+    _katalog_anlegen(db, [("xplane12", "nur_der.obj", "tier_gross", "aktiv"),
+                          ("xplane12", "schon_aus.obj", "tier_gross", "aus"),
+                          ("xplane12", "auch_aus.obj", "tier_gross", "aus"),
+                          (*_gegenpart("xplane12"), "tier_gross", "aktiv")])
+    _soll_und_melden(klient, [{"id": "t1", "zustand": "fehlgeschlagen",
+                               "fehler": "NAME_UNRECOGNIZED"}])
+
+    zeilen = {z["titel"]: z for z in _katalog_lesen(db, "tier_gross")}
+    assert zeilen["nur_der.obj"]["ergebnis"] == "fehlgeschlagen"
+    for titel in ("schon_aus.obj", "auch_aus.obj"):
+        assert zeilen[titel]["ergebnis"] is None, (
+            f"{titel} wurde nie ausgeliefert und kann nicht gescheitert sein")
+        assert zeilen[titel]["fehler"] is None
+
+
+def test_auch_beim_durchprobieren_zaehlt_nur_was_ausgeliefert_wurde(klient, tmp_path):
+    """`alle=True` meint die ganze Art — aber probiert wurde trotzdem nur das Aktive.
+
+    Eine abgeschaltete Zeile verliert dadurch nichts: Ihr `status` steht ohnehin auf `aus`.
+    Sie behält lediglich ihr eigenes altes Ergebnis, statt eines aus einem Lauf zu erben,
+    an dem sie nicht teilgenommen hat.
+    """
+    db = str(tmp_path / "t.db")
+    _friese_anlegen(db)
+    _katalog_anlegen(db, [("xplane12", "a.obj", "tier_gross", "aktiv"),
+                          ("xplane12", "b.obj", "tier_gross", "aktiv"),
+                          ("xplane12", "schon_aus.obj", "tier_gross", "aus"),
+                          ("msfs2024", "Deer", "tier_gross", "aktiv")])
+    _soll_und_melden(klient, [{"id": "t1", "zustand": "fehlgeschlagen",
+                               "fehler": "KEIN_MODELL_MEHR"}])
+
+    zeilen = {z["titel"]: z for z in _katalog_lesen(db, "tier_gross")}
+    assert zeilen["a.obj"]["ergebnis"] == "fehlgeschlagen"
+    assert zeilen["b.obj"]["ergebnis"] == "fehlgeschlagen"
+    assert zeilen["schon_aus.obj"]["ergebnis"] is None
+    assert zeilen["schon_aus.obj"]["status"] == "aus", "und bleibt, was sie war"
+
+
+def test_ein_gelungener_versuch_traegt_sich_nicht_in_fremde_zeilen_ein(klient, tmp_path):
+    """Die andere Hälfte von Issue #41 — sie legt nichts stillen, behauptet aber etwas.
+
+    Bei `steht` bekam jede Zeile der Art ein „funktioniert", auch eine abgeschaltete, die
+    nie ausgeliefert wurde. Wer sie später im Admin wieder anschaltet, sieht ein
+    Prüfergebnis, das es nie gab.
+    """
+    db = str(tmp_path / "t.db")
+    _friese_anlegen(db)
+    _katalog_anlegen(db, [("xplane12", "nur_der.obj", "tier_gross", "aktiv"),
+                          ("xplane12", "schon_aus.obj", "tier_gross", "aus"),
+                          (*_gegenpart("xplane12"), "tier_gross", "aktiv")])
+    _soll_und_melden(klient, [{"id": "t1", "zustand": "steht", "hoehe_ft": 12.5}])
+
+    zeilen = {z["titel"]: z for z in _katalog_lesen(db, "tier_gross")}
+    assert zeilen["nur_der.obj"]["ergebnis"] == "steht"
+    assert zeilen["schon_aus.obj"]["ergebnis"] is None
+
+
 def test_ein_gelungener_versuch_wird_vermerkt_aber_aendert_den_status_nicht(klient, tmp_path):
     """`steht` ist eine Beobachtung, keine Entscheidung.
 

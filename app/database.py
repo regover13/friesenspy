@@ -2692,6 +2692,9 @@ def bruegge_katalog_ergebnis_melden(conn: sqlite3.Connection, simulator: str, ar
         falsch stillgelegter Titel wäre schlimmer als eine Lücke, denn man sieht ihm nicht
         an, dass er zu Unrecht aus ist.
 
+    In beiden Fällen wird ausschließlich über **aktive** Zeilen geschrieben — nur die gehen
+    an eine Brügge hinaus (``bruegge_titel_fuer``), nur die können probiert worden sein.
+
     Alles darüber hinaus bräuchte den Titel in der Rückmeldung und damit ein Client-Release
     an alle Piloten.
 
@@ -2716,11 +2719,27 @@ def bruegge_katalog_ergebnis_melden(conn: sqlite3.Connection, simulator: str, ar
     # ⚠ Geschrieben wird auf die Zeile des MELDENDEN Simulators, nicht auf die des Topfes.
     # Sonst legte eine MSFS-2020-Bruegge Titel still, die in 2024 einwandfrei laufen -- der
     # Topf fasst beide zusammen, der Bestand tut es nicht.
+    #
+    # ⚠⚠ UND NUR AUF AKTIVE ZEILEN -- bis v14.49.4 fehlte dieser Filter. Gezaehlt wurde ueber
+    # die aktiven, geschrieben auf JEDE Zeile der Art: auch auf die, die auf `aus` stehen und
+    # deshalb nie ausgeliefert wurden. Eine Art mit einem aktiven und drei abgeschalteten
+    # Titeln legte bei EINEM Fehlschlag alle vier still, und bei `steht` bekam ein nie
+    # probierter Titel ein "funktioniert" eingetragen. Am 16.09.2026 beim Messen der
+    # Flugzeugtitel dreimal beobachtet (Issue #41).
+    #
+    # Der Filter gilt fuer BEIDE Faelle, auch fuer `alle=True`. Dort ist das Ergebnis zwar
+    # fuer die ganze Art gemeint, aber probiert werden kann nur, was hinausging -- und eine
+    # abgeschaltete Zeile verliert nichts: Ihr `status` steht ohnehin schon auf `aus`, sie
+    # behaelt lediglich ihr eigenes altes Ergebnis statt eines geerbten.
+    #
+    # Folge im Randfall: Liegt der einzige aktive Titel des Topfes im ANDEREN Simulator
+    # (2020er Zeile, 2024er Bruegge), trifft das UPDATE nichts und `rowcount` ist 0. Das ist
+    # gewollt -- es gibt dort keine Zeile, die der Versuch meinen koennte.
     cur = conn.execute(
         "UPDATE bruegge_katalog SET ergebnis = ?, fehler = ?, geprueft_am = ?, "
         "    geprueft_in = ?, hoehe_ft = COALESCE(?, hoehe_ft), "
         "    status = CASE WHEN ? = 'fehlgeschlagen' THEN 'aus' ELSE status END "
-        "WHERE art = ? AND simulator = ?",
+        "WHERE art = ? AND simulator = ? AND status = 'aktiv'",
         (ergebnis, (str(fehler)[:120] if fehler else None), _now_utc(),
          simulator, hoehe_ft, ergebnis, art, simulator),
     )

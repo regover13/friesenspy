@@ -1639,24 +1639,22 @@ async def bruegge_melden(request: Request):
         # jemand nachweislich installiert.
         #
         # Eingetragen wird als `quelle='gemeldet'` und OHNE Ergebnis: Dass jemand das
-        # Flugzeug fliegt, heisst nicht, dass es sich als Objekt setzen laesst -- die Mi-2
-        # scheiterte am selben Tag mit `EXCEPTION_22`, obwohl ihr Besitzer sie flog. Das
-        # Ergebnis entsteht erst beim ersten Setzversuch.
-        # ⚠ NUR ZUR DIAGNOSE, und nur solange die Frage offen ist: Kommt `TITLE` fuer das
-        # EIGENE Flugzeug ueberhaupt an? Die Bruegge zaehlt mit, wie oft der SimConnect-
-        # Callback feuerte und wie oft er leer war (s. `fz_rufe` in bruegge.cpp).
+        # Flugzeug fliegt, heisst nicht, dass es sich als Objekt setzen laesst. Das Ergebnis
+        # entsteht erst beim ersten Setzversuch.
         #
-        #   0 Rufe          -> die Datendefinition greift nicht
-        #   Rufe == leer    -> sie greift, aber TITLE ist fuer USER nicht gefuellt
-        #   Rufe > leer     -> sie funktioniert, der Fehler liegt danach
+        # ⚠ Als Beleg dafuer stand hier bis zum 16.09.2026, die Mi-2 sei mit `EXCEPTION_22`
+        # gescheitert, obwohl ihr Besitzer sie flog. Das ist gemessen falsch (Issue #40, am
+        # fliegenden Simulator): Alle drei bisher gemeldeten Titel setzen sich, auch
+        # `Digital Aeronautics Mi-2 Hoplite - Czech Air Force`. Gescheitert ist der
+        # BASISNAME `Digital Aeronautics Mi-2 Hoplite` aus `common/config/aircraft.cfg` --
+        # ein Eintrag der Modular-Struktur, den niemand fliegen kann und den auch niemand
+        # gemeldet hat. Die Zurueckhaltung oben bleibt trotzdem richtig: Die Meldung belegt,
+        # dass der Titel INSTALLIERT ist, nicht dass SimConnect ihn als Objekt annimmt.
         #
-        # Einmal je Minute genuegt -- bei Sekundentakt waere es sonst eine Logzeile je
-        # Sekunde und je Pilot.
-        _rufe = body.get("fz_rufe")
-        if _rufe is not None and secrets.randbelow(60) == 0:
-            _logger.info("Bruegge %s: TITLE-Callback %s mal, davon %s leer, Titel=%r",
-                         kennung or "?", _rufe, body.get("fz_leer"),
-                         str(body.get("flugzeug") or "")[:60])
+        # Die Zaehler `fz_rufe`/`fz_leer` der Bruegge sind mit demselben Stand entfallen --
+        # sie sollten klaeren, ob `TITLE` fuer das eigene Flugzeug ueberhaupt ankommt. Es
+        # kommt an, und der Wert taugt. Aeltere Bruegge senden die Felder weiter; sie werden
+        # hier schlicht nicht mehr gelesen.
 
         flugzeug = str(body.get("flugzeug") or "")[:200].strip()
         if flugzeug and simulator:

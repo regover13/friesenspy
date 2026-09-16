@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.50.2",
+    "date": "2026-09-16",
+    "highlight": false,
+    "title": "Ein Fehlschlag legt nicht mehr Titel still, die gar nicht dabei waren",
+    "items": [
+      "🏷 Die FriesenBrügge meldet nach jedem Versuch zurück, ob das Objekt im Simulator wirklich dasteht. Dieses Ergebnis schrieb der Katalog bisher auf alle Titel der Art — auch auf die abgeschalteten, die gar nicht erst mitgefahren waren. Eine Art mit einem eingeschalteten und drei ausgeschalteten Titeln legte damit bei einem einzigen Fehlschlag alle vier still.",
+      "✅ Umgekehrt genauso: Ein gelungener Versuch trug in abgeschaltete Titel ein „funktioniert“ ein, das niemand je ausprobiert hatte. Wer einen solchen Titel später wieder anschaltet, sah ein Prüfergebnis, das es nie gab. Jetzt gilt beides nur noch für das, was auch hinausgegangen ist.",
+      "🔭 Gefunden beim Vermessen der Flugzeugtitel am fliegenden Simulator, dort dreimal hintereinander beobachtet."
+    ]
+  },
+  {
     "version": "14.50.1",
     "date": "2026-09-16",
     "highlight": false,

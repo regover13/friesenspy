@@ -284,12 +284,13 @@ static char    g_flugzeug[256] = {0};
 // (s. den Callback).
 #define FLUGZEUG_MELDUNGEN 150
 static int     g_flugzeug_offen = 0;          // solange > 0, geht der Titel mit
-// ⚠ NUR ZUR DIAGNOSE, und sie war noetig: Am 14.09.2026 kam der Titel nicht an, und aus der
-// Ferne war nicht zu unterscheiden, ob der Callback gar nicht feuert oder ob er feuert und
-// nichts liefert. Das sind zwei voellig verschiedene Fehler -- der eine sitzt in der
-// Datendefinition, der andere im Lesen der Rohdaten.
-static int     g_flugzeug_rufe = 0;           // wie oft der Callback kam
-static int     g_flugzeug_leer = 0;           // ... und davon mit leerem Titel
+// ⚠ HIER STANDEN `g_flugzeug_rufe`/`g_flugzeug_leer` -- entfernt am 16.09.2026. Sie
+// zaehlten, wie oft der TITLE-Callback kam und wie oft er leer war, weil aus der Ferne nicht
+// zu unterscheiden war, ob die Datendefinition gar nicht greift oder ob sie greift und
+// nichts liefert. Die Frage ist beantwortet: Der Callback feuert, der Titel kommt an, und
+// der gemeldete Wert laesst sich als Objekt setzen (am Simulator gemessen, Issue #40).
+// Mit ihnen sind die Protokollfelder `fz_rufe`/`fz_leer` entfallen; der Server liest sie
+// nicht mehr.
 static double  g_vor_lat = 0.0, g_vor_lon = 0.0;
 static bool    g_vor_gueltig = false;
 
@@ -619,12 +620,6 @@ static void meldung_bauen(char* puffer, size_t groesse) {
         j.feld("flugzeug");    j.text(g_flugzeug);            j.komma();
         --g_flugzeug_offen;
     }
-    // Die Diagnose dazu: 0 Rufe heisst, die Datendefinition greift gar nicht. Rufe ohne
-    // Inhalt heissen, sie greift -- aber der Titel steht nicht dort, wo ich ihn lese.
-    // Zwei Zahlen je Meldung, die den Unterschied sichtbar machen.
-    j.feld("fz_rufe");  j.ganzzahl((long)g_flugzeug_rufe);  j.komma();
-    j.feld("fz_leer");  j.ganzzahl((long)g_flugzeug_leer);  j.komma();
-
     // ⚠ HIER STAND `kann` -- entfernt mit Protokollfassung 2 (14.09.2026).
     //
     // Es zaehlte auf, welche Arten die Bruegge beherrscht, und wurde aus `g_gattungen[]`
@@ -1333,8 +1328,6 @@ void CALLBACK dispatch(SIMCONNECT_RECV* pData, DWORD, void*) {
         }
         if (d->dwRequestID == REQ_FLUGZEUG) {
             const char* t = (const char*)&d->dwData;
-            ++g_flugzeug_rufe;
-            if (t[0] == 0) ++g_flugzeug_leer;
             // Nur wenn er sich geaendert hat -- sonst wuerde jede Sekunde neu gemeldet.
             if (t[0] != '\0' && std::strncmp(t, g_flugzeug, sizeof(g_flugzeug) - 1) != 0) {
                 std::snprintf(g_flugzeug, sizeof(g_flugzeug), "%s", t);
