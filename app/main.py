@@ -1703,6 +1703,30 @@ async def bruegge_melden(request: Request):
 #: braucht ein Client-Release und muss die alte Schreibweise trotzdem weiter annehmen.
 _BRUEGGE_ART_ERSCHOEPFT = ("KEIN_TITEL_GING", "KEIN_MODELL_MEHR")
 
+#: Meldungen, aus denen NICHTS ueber den Titel folgt -- sie beschreiben einen Zwischenzustand
+#: oder den Server selbst, kein Urteil.
+#:
+#: ⚠ `NOCH_NICHT_GESETZT` meldet die X-Plane-Bruegge, SOLANGE DIE INSTANZ NOCH NICHT EXISTIERT
+#: (friesenbruegge/xplane/bruegge.cpp:538) -- also bei JEDEM Objekt einmal, gleich nach dem
+#: Anfordern. Bis zum 16.09.2026 wurde daraus `status = 'aus'`. Der Nutzer setzte eine
+#: `flagge` in X-Plane und bekam `GATTUNG_UNBEKANNT`; die Datei `flagpole_20m_1.obj` lag
+#: dabei einwandfrei auf der Platte. Dasselbe traf `kran`.
+#:
+#: ⚠⚠ `GATTUNG_UNBEKANNT` ist heikler, denn es SCHLIESST EINEN KREIS. Die Bruegge meldet es,
+#: wenn sie zu einer angeforderten Art keine Titel bekommen hat -- eine Aussage ueber den
+#: SERVER, nicht ueber den Titel:
+#:
+#:     Titel `aus` -> Art nicht mehr beidseitig -> Server liefert keine Titel
+#:                 -> Bruegge meldet GATTUNG_UNBEKANNT -> Titel bleibt `aus`
+#:
+#: An `rauch_hellblau` beobachtet: von Hand reaktiviert, beim naechsten Setzversuch sofort
+#: wieder abgeschaltet. Aus diesem Kreis kommt man von Hand nie heraus.
+#:
+#: ⚠ Getroffen hat es die KNAPPSTEN Arten: `bruegge_katalog_ergebnis_melden` schreibt bei
+#: `alle=False` nur, wenn die Art in diesem Topf genau EINEN aktiven Titel hat. Arten mit
+#: mehreren Titeln waren zufaellig geschuetzt.
+_BRUEGGE_KEIN_URTEIL = ("NOCH_NICHT_GESETZT", "GATTUNG_UNBEKANNT")
+
 
 def _bruegge_katalog_lernen(conn, simulator: str | None, cid: int, steht: list) -> None:
     """Aus der Rueckmeldung lernen, was sich in welchem Simulator setzen laesst.
@@ -1734,6 +1758,10 @@ def _bruegge_katalog_lernen(conn, simulator: str | None, cid: int, steht: list) 
         zustand = str(eintrag.get("zustand") or "")
         fehler = str(eintrag.get("fehler") or "") or None
         if zustand == "fehlgeschlagen":
+            # Erst die Frage, ob hier ueberhaupt etwas zu lernen ist: Ein Objekt, das noch
+            # nicht geladen ist, sagt nichts ueber seinen Titel (s. _BRUEGGE_KEIN_URTEIL).
+            if fehler in _BRUEGGE_KEIN_URTEIL:
+                continue
             # Alle Titel durch? Dann gilt es fuer die ganze Art in diesem Simulator.
             # Sonst nur, wenn die Art dort ohnehin nur einen Titel hat.
             alle = fehler in _BRUEGGE_ART_ERSCHOEPFT
