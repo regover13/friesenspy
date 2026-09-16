@@ -1,5 +1,18 @@
 [
   {
+    "version": "14.52.0",
+    "date": "2026-09-16",
+    "highlight": false,
+    "title": "Eine veraltete FriesenBrügge sagt es dir jetzt selbst",
+    "items": [
+      "🌉 Die FriesenBrügge meldet seit jeher mit, welche Fassung sie ist — nur hat der Server diese Angabe bisher weggeworfen. Jetzt merkt er sie sich, und wenn deine Fassung älter ist als das Paket auf der Download-Seite, steht unten rechts ein kleiner Hinweis mit beiden Nummern und der Adresse. Auf der Website und im Kniebrett.",
+      "🛩 Dasselbe für das Kniebrett-Paket: Auf der Website siehst du jetzt auch, wenn dein EFB-Paket nicht mehr das neueste ist — im Tablet selbst sagte es dir das schon länger.",
+      "🤫 Warum das nicht die FriesenBrügge selbst tut: Sie kann im Cockpit nichts anzeigen. Sie schreibt nur ins Log des Simulators, und das liest im Flug niemand — ein Hinweis, den man in sie einbaut, erreicht außerdem nur den, der schon aktualisiert hat.",
+      "✋ Ein Klick auf das × legt den Hinweis weg; bei der nächsten neuen Fassung meldet er sich wieder. Wer noch nie gesagt hat, welche Fassung er fährt, wird nicht verdächtigt — ein Hinweis auf Verdacht wäre schlimmer als keiner.",
+      "🔧 Im Admin steht die Fassung jetzt neben jedem Melder, veraltete mit Warnzeichen."
+    ]
+  },
+  {
     "version": "14.51.0",
     "date": "2026-09-16",
     "highlight": false,

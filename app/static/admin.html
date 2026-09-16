@@ -1591,8 +1591,8 @@
 
           <div class="table-wrap" style="margin-bottom:14px;">
             <table>
-              <thead><tr><th>Pilot</th><th>Simulator</th><th>Position</th><th>zuletzt</th></tr></thead>
-              <tbody id="bg-melder"><tr><td colspan="4" class="empty-hint">Lädt …</td></tr></tbody>
+              <thead><tr><th>Pilot</th><th>Simulator</th><th>Fassung</th><th>Position</th><th>zuletzt</th></tr></thead>
+              <tbody id="bg-melder"><tr><td colspan="5" class="empty-hint">Lädt …</td></tr></tbody>
             </table>
           </div>
 
@@ -2507,11 +2507,22 @@
                   : alt_s < 3600 ? ' (vor ' + Math.round(alt_s / 60) + ' min)'
                   : ' (vor ' + Math.round(alt_s / 3600) + ' h)';
                 const blass = (m.frisch === false) ? ' style="opacity:.5;"' : '';
+                // ⭐ WELCHE FASSUNG FLIEGT DA? Beide Brügge senden es seit jeher mit; bis zum
+                // 16.09.2026 hat der Server es weggeworfen. Ein leeres Feld heisst „hat noch
+                // nicht gemeldet" und NICHT „alt" — deshalb steht dort ein Strich und keine
+                // Warnung. `fassung_veraltet` entscheidet der Server, damit Admin, Website und
+                // Kniebrett dieselbe Antwort geben.
+                const fassung = !m.bruegge_version ? '—'
+                  : m.fassung_veraltet
+                    ? '<span style="color:#e2a93b;" title="aktuell ist ' +
+                      (m.fassung_aktuell || '?') + '">' + m.bruegge_version + ' ⚠</span>'
+                    : m.bruegge_version;
                 return '<tr' + blass + '><td>' + (m.callsign || m.name || m.cid) + '</td><td>' +
-                       (m.simulator || '—') + '</td><td class="mono">' + pos +
+                       (m.simulator || '—') + '</td><td class="mono">' + fassung +
+                       '</td><td class="mono">' + pos +
                        '</td><td>' + (m.gesehen_am || '—') + wieAlt + '</td></tr>';
               }).join('')
-            : '<tr><td colspan="4" class="empty-hint">Niemand meldet gerade.</td></tr>';
+            : '<tr><td colspan="5" class="empty-hint">Niemand meldet gerade.</td></tr>';
         }
 
         const sb = document.getElementById('bg-soll');

@@ -2038,6 +2038,48 @@
       min-width: 44px;
     }
 
+    /* HINWEIS AUF EINE VERALTETE FASSUNG (Brügge und Kniebrett-Paket, v14.51.0)
+       ==========================================================================
+       Warum das ueberhaupt hier steht und nicht im Simulator: Die FriesenBruegge kann dem
+       Piloten NICHTS anzeigen. Sie schreibt nach `stderr` (MSFS) bzw. `XPLMDebugString`
+       (X-Plane), und das sieht im Flug niemand -- selbst ihre eingebaute 426-Warnung ist
+       damit faktisch stumm. Ein Hinweis IN der Bruegge erreicht zudem nur den, der schon
+       aktualisiert hat, also gerade nicht den, um den es geht.
+
+       Bleiben Website und Kniebrett. Der Kasten steht deshalb in BEIDEN, mit demselben
+       Aussehen wie `.panel-paket-hinweis` -- er sagt dasselbe ueber eine andere Fassung, und
+       zwei verschiedene Gestaltungen fuer dieselbe Sache waeren nur verwirrend. Unten rechts
+       statt links, damit beide nebeneinander stehen koennen, ohne sich zu decken. */
+    .fassung-hinweis {
+      position: fixed;
+      bottom: 14px;
+      right: 14px;
+      z-index: 999997;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      max-width: calc(100vw - 28px);
+      background: var(--bg-panel);
+      border: 1px solid var(--text-dim);
+      color: var(--text-dim);
+      font-family: var(--text-display);
+      font-size: 0.75rem;
+      letter-spacing: 0.04em;
+      padding: 8px 12px;
+    }
+    .fassung-hinweis[hidden] { display: none; }
+    .fassung-hinweis button {
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      font-size: 1.1rem;
+      line-height: 1;
+      padding: 0 2px;
+      cursor: pointer;
+      min-height: 44px;
+      min-width: 44px;
+    }
+
     /* ===================================================================
        VEREINHEITLICHTE KOPF-/TAB-LEISTE (nur MSFS-EFB-Panel, v11.15.0)
        ===================================================================
@@ -8981,6 +9023,75 @@ function _paketHinweisPruefen() {
   });
 }
 
+// -----------------------------------------------------------------------------------------
+// VERALTETE FASSUNGEN -- der Hinweis, den der Pilot sonst nirgends bekommt (v14.51.0)
+// -----------------------------------------------------------------------------------------
+//
+// ⭐ **Die FriesenBrügge kann selbst nichts sagen.** Sie schreibt nach `stderr` (MSFS) bzw.
+// `XPLMDebugString` (X-Plane) -- im Flug sieht das niemand. Und was man IN sie einbaut,
+// erreicht nur den, der schon aktualisiert hat. Der Hinweis muss also von hier kommen.
+//
+// Der Server entscheidet `veraltet`, nicht diese Seite: Admin, Website und Kniebrett sollen
+// dieselbe Antwort geben, und nur der Server weiß, welches Archiv auf der Platte liegt.
+const _FASSUNG_HINWEIS_KEY = 'friesenspy_fassung_hinweis';
+
+/**
+ * Was ist veraltet -- und lohnt es einen Hinweis?
+ *
+ * ⚠ Das Kniebrett-Paket kommt hier NUR auf der Website zur Sprache. Im Panel hat es seinen
+ * eigenen Hinweis (`_paketHinweisPruefen`) aus einer genaueren Quelle: dort meldet die Hülle
+ * die tatsächlich laufende Fassung, während diese Liste sagt, was ein Gerät ZULETZT gemeldet
+ * hat. Beide Kästen nebeneinander wären dieselbe Nachricht zweimal.
+ */
+function _fassungenPruefen() {
+  const kasten = document.getElementById('fassung-hinweis');
+  if (!kasten) return;
+  const imPanel = document.documentElement.classList.contains('vr-panel');
+  fetch('/api/me/fassungen', { credentials: 'same-origin' })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (d) {
+      if (!d) return;
+      const teile = [];
+      // Nur die zuletzt gesehene Brügge je Simulator -- die Kennung wechselt bei jedem
+      // Sim-Start (s. bruegge_zuordnung_setzen), ältere Zeilen sind Karteileichen und
+      // stünden hier als Dauerwarnung für eine Fassung, die längst ersetzt ist.
+      const gesehen = {};
+      (d.bruegge && d.bruegge.meine || []).forEach(function (b) {
+        const sim = b.simulator || '?';
+        if (gesehen[sim]) return;
+        gesehen[sim] = true;
+        if (b.veraltet) {
+          teile.push('FriesenBrügge ' + b.version + ' → ' + b.aktuell
+                     + ' (' + sim + ')');
+        }
+      });
+      if (!imPanel) {
+        (d.kniebrett && d.kniebrett.meine || []).forEach(function (k) {
+          if (k.veraltet && teile.length < 3) {
+            teile.push('Kniebrett-Paket ' + (k.version || 'vor 2.0.0')
+                       + ' → ' + d.kniebrett.aktuell);
+          }
+        });
+      }
+      if (!teile.length) return;
+      // Einmal weggeklickt gilt für GENAU diesen Stand; kommt eine neue Fassung heraus,
+      // ändert sich der Schlüssel und der Hinweis meldet sich wieder.
+      const stand = teile.join(' | ');
+      if (_prefLies(_FASSUNG_HINWEIS_KEY) === stand) return;
+      const text = document.getElementById('fassung-hinweis-text');
+      if (text) text.textContent = stand + ' — friesenspy.devprops.de/download';
+      kasten.dataset.stand = stand;
+      kasten.hidden = false;
+    }).catch(function () { /* ohne Anmeldung oder ohne Netz gibt es nichts zu sagen */ });
+}
+
+function _fassungHinweisWeg() {
+  const kasten = document.getElementById('fassung-hinweis');
+  if (!kasten) return;
+  kasten.hidden = true;
+  if (kasten.dataset.stand) _prefSchreib(_FASSUNG_HINWEIS_KEY, kasten.dataset.stand);
+}
+
 function _paketHinweisWeg() {
   const kasten = document.getElementById('panel-paket-hinweis');
   if (kasten) kasten.hidden = true;
@@ -14997,6 +15108,13 @@ const _prefsPromise = _prefVomServerHolen().then(function () {
   }
 }).catch(() => {});
 
+// Veraltete Fassungen melden -- ERST nach den Merkern, sonst ist unbekannt, ob dieser Stand
+// schon weggeklickt wurde, und der Kasten blitzte bei jedem Aufbau kurz auf (derselbe Fund
+// wie beim Paket-Hinweis). Und hinter `_prefsPromise`, nicht davor: Ein `const` ist vor
+// seiner Zeile nicht ansprechbar, und ein Zugriff von weiter oben legte die ganze Seite lahm.
+// Einmal je Seitenaufbau genügt -- die gemeldete Fassung ändert sich nicht im Minutentakt.
+_prefsPromise.then(_fassungenPruefen).catch(() => {});
+
 // ==========================================================================
 //  NEUE-VERSION-HINWEIS (nur MSFS-EFB-Panel)
 // ==========================================================================
@@ -15499,6 +15617,13 @@ function _ziehAktualisierenBinden() {
      schwebenden Elemente hier: Was Coherent GT beim Aufbau des Dokuments bekommt, zeichnet
      es zuverlaessig; nachtraeglich Eingesetztes nicht immer (s. Glocke in _initPanelTopbar).
      Steht AUSSERHALB von #app, sonst kappte dessen z-index:1 jeden Nachfahren auf Rang 1. -->
+<!-- Kein Verweis, sondern Text: Im Kniebrett laesst sich nichts herunterladen, die Adresse
+     muss man am PC eintippen (dieselbe Ueberlegung wie beim Paket-Hinweis daneben). -->
+<div id="fassung-hinweis" class="fassung-hinweis" hidden>
+  <span id="fassung-hinweis-text"></span>
+  <button type="button" onclick="_fassungHinweisWeg()" aria-label="Hinweis ausblenden"><svg class="icon"><use href="#icon-x" xlink:href="#icon-x"/></svg></button>
+</div>
+
 <div id="panel-paket-sperre" class="panel-paket-sperre">
   <h2>Kniebrett-Paket ist veraltet</h2>
   <p>Diese Fassung kann sich den Simulator nicht merken. Deshalb beginnt jeder Start mit

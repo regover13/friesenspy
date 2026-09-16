@@ -661,6 +661,9 @@ CREATE TABLE IF NOT EXISTS bruegge_zuordnung (
     zugeordnet_am TEXT NOT NULL,
     gesehen_am   TEXT,
     verstoesse   INTEGER NOT NULL DEFAULT 0,   -- in Folge; ab PAARUNG_LOESEN_TAKTE geloest
+    -- Die Fassung der Bruegge, wie sie sie selbst meldet. NULL heisst "hat noch nicht
+    -- gemeldet", nicht "alt" -- der Vergleich gegen das hinterlegte Paket steht in main.py.
+    bruegge_version TEXT,
     -- Die zuletzt gemeldete Position -- gebraucht, um einen SPRUNG zu erkennen (Ladevorgang,
     -- Slew, Flugwechsel). Ohne sie liefe der Match gegen Seattle, wenn ein Simulator gerade
     -- startet, und der Track bekaeme einen Sprung ueber 8.000 km.
@@ -933,6 +936,15 @@ _BRUEGGE_MIGRATIONS = [
     # groessten ist (im ersten Flug als einzelner Aussetzer gemessen).
     "ALTER TABLE bruegge_zuordnung ADD COLUMN vs_spitze_ft_min REAL",
     "ALTER TABLE bruegge_zuordnung ADD COLUMN vs_spitze_am TEXT",
+    # 16.09.2026: WELCHE FASSUNG FLIEGT DA EIGENTLICH?
+    #
+    # Beide Bruegge senden ihre Version seit jeher mit (`bruegge_version`, MSFS wie X-Plane) --
+    # der Server hat sie bis hierher WEGGEWORFEN. Damit liess sich nicht einmal beantworten,
+    # wer mit einer alten Fassung unterwegs ist, geschweige denn ihn darauf hinweisen. Und ein
+    # Hinweis MUSS von aussen kommen: Die Bruegge selbst kann dem Piloten nichts zeigen, sie
+    # schreibt nur ins Log (stderr bzw. XPLMDebugString), und alles, was man in sie einbaut,
+    # erreicht ohnehin nur den, der schon aktualisiert hat.
+    "ALTER TABLE bruegge_zuordnung ADD COLUMN bruegge_version TEXT",
     # Die Sonden-Idee (12.09.2026): OnGround=1 je Objekt verlangen koennen.
     "ALTER TABLE bruegge_soll ADD COLUMN auf_boden INTEGER NOT NULL DEFAULT 0",
     # Wo ein Titel GEPRUEFT wurde -- nicht zu verwechseln mit `simulator` (wo er gefunden
@@ -1625,6 +1637,20 @@ def list_panel_devices(conn: sqlite3.Connection) -> list[dict]:
     rows = conn.execute(
         "SELECT device_id, cid, name, created_at, last_seen_at, paket_version "
         "FROM panel_devices ORDER BY COALESCE(last_seen_at, created_at) DESC"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def list_panel_devices_fuer(conn: sqlite3.Connection, cid: int) -> list[dict]:
+    """Die gebundenen Geraete DIESES Piloten (neueste zuerst).
+
+    Fuer den Hinweis, den der Pilot selbst sieht. Die Geraete-ID bleibt hier drin -- der
+    Endpunkt kuerzt sie, so wie es die Admin-Uebersicht tut (sie ist ein Zugangsschluessel).
+    """
+    rows = conn.execute(
+        "SELECT device_id, cid, name, created_at, last_seen_at, paket_version "
+        "FROM panel_devices WHERE cid = ? ORDER BY COALESCE(last_seen_at, created_at) DESC",
+        (int(cid),),
     ).fetchall()
     return [dict(r) for r in rows]
 
@@ -2815,6 +2841,36 @@ def bruegge_zuordnung_bestaetigen(conn: sqlite3.Connection, kennung: str,
     )
 
 
+def bruegge_version_merken(conn: sqlite3.Connection, kennung: str,
+                           version: str | None) -> None:
+    """Welche Fassung diese Bruegge meldet (kein commit).
+
+    Geschrieben wird nur, wenn etwas mitkommt: Eine Meldung ohne Feld ist eine alte Bruegge,
+    und die soll die zuletzt bekannte Fassung nicht loeschen -- sonst saehe ein Ausfall des
+    Feldes aus wie ein Geraet, das nie gemeldet hat. Dasselbe Muster wie
+    ``touch_panel_device`` beim Kniebrett.
+    """
+    v = (version or "").strip()[:40]
+    if not kennung or not v:
+        return
+    conn.execute("UPDATE bruegge_zuordnung SET bruegge_version = ? WHERE kennung = ?",
+                 (v, kennung))
+
+
+def bruegge_fassungen_fuer(conn: sqlite3.Connection, cid: int) -> list[dict]:
+    """Die Brueggen DIESES Piloten mit ihrer gemeldeten Fassung -- neueste Meldung zuerst.
+
+    Grundlage des Hinweises, den der Pilot auf der Website und im Kniebrett sieht. Mehrere
+    Zeilen sind der Regelfall und kein Fehler: Die Kennung haelt in MSFS nicht ueber einen
+    Sim-Neustart, also zieht jede Sitzung eine neue (s. ``bruegge_zuordnung_setzen``). Wer
+    beide Simulatoren benutzt, hat ohnehin zwei.
+    """
+    rows = conn.execute(
+        "SELECT kennung, simulator, bruegge_version, gesehen_am FROM bruegge_zuordnung "
+        "WHERE cid = ? ORDER BY gesehen_am DESC", (int(cid),)).fetchall()
+    return [dict(r) for r in rows]
+
+
 def bruegge_vs_spitze_merken(conn: sqlite3.Connection, kennung: str,
                              vs_ft_min: float) -> None:
     """Die groesste Steig-/Sinkrate festhalten -- aber nur, wenn sie groesser ist (kein commit).
@@ -3530,6 +3586,11 @@ def bruegge_uebersicht(conn: sqlite3.Connection, frisch_s: int = 120) -> list[di
 
     Zeigt auch Doppelmeldungen: Zwei Kennungen auf derselben CID stehen als zwei Zeilen da.
 
+    **`bruegge_version` ist die Fassung, die die Bruegge selbst meldet** (seit 16.09.2026
+    gespeichert). ``None`` heisst "hat noch nicht gemeldet", nicht "alt" -- ob sie veraltet
+    ist, entscheidet der Vergleich gegen das hinterlegte Paket, und der steht in main.py, weil
+    nur dort bekannt ist, welches Archiv auf der Platte liegt.
+
     **Jede Zeile traegt `frisch`** -- ob die letzte Meldung juenger als `frisch_s` ist.
     Dieselbe Ueberlegung wie `hoechstalter_s` in `bruegge_steht_alle`: *Das Fehlen einer
     Meldung ist kein Zustand.* Ohne das Feld stand FRS61s Position von sieben Stunden zuvor
@@ -3541,6 +3602,7 @@ def bruegge_uebersicht(conn: sqlite3.Connection, frisch_s: int = 120) -> list[di
     """
     rows = conn.execute(
         "SELECT z.kennung, z.cid, z.simulator, z.zugeordnet_am, z.gesehen_am, z.verstoesse, "
+        "       z.bruegge_version, "
         "       p.lat, p.lon, p.gs_kt, p.am_boden, p.gemeldet_am, "
         "       (SELECT callsign FROM live_positions l WHERE l.cid = z.cid) AS callsign, "
         "       (SELECT name FROM pilots pi WHERE pi.cid = z.cid) AS name "

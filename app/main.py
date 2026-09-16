@@ -89,6 +89,7 @@ from app.database import (
     bind_panel_device,
     touch_panel_device,
     list_panel_devices,
+    list_panel_devices_fuer,
     friesen_in_der_luft,
     cid_ist_authentifiziert,
     bruegge_belegte_cids,
@@ -103,6 +104,8 @@ from app.database import (
     bruegge_uebersicht,
     bruegge_aufraeumen,
     bruegge_katalog_ergebnis_melden,
+    bruegge_version_merken,
+    bruegge_fassungen_fuer,
     bruegge_soll_fuer,
     bruegge_soll_setzen,
     bruegge_arten_anforderbar,
@@ -1614,6 +1617,18 @@ async def bruegge_melden(request: Request):
         if _poller is not None and lage_gilt:
             _poller.bruegge_position_merken(cid, lage)
 
+        # ⭐ WELCHE FASSUNG FLIEGT DA? -- beide Bruegge senden es seit jeher mit, und bis zum
+        # 16.09.2026 hat der Server es weggeworfen. Ohne diese Zeile laesst sich nicht einmal
+        # sagen, WER veraltet unterwegs ist.
+        #
+        # ⚠ Der Hinweis darauf kann nur von aussen kommen -- ueber die Website und das
+        # Kniebrett (`/api/meine-fassungen`). Die Bruegge selbst kann dem Piloten nichts
+        # zeigen: Sie schreibt nach `stderr` bzw. `XPLMDebugString`, und das sieht im Flug
+        # niemand. Und alles, was man IN sie einbaut, erreicht nur den, der schon
+        # aktualisiert hat -- also gerade nicht den, um den es geht.
+        if kennung:
+            bruegge_version_merken(conn, kennung, body.get("bruegge_version"))
+
         # Die Gegenrichtung: Was steht WIRKLICH? Ohne diese Zeile erfaehrt der Server nie, ob
         # ein Objekt tatsaechlich dasteht -- er schriebe eine Station in `soll`, die Bruegge
         # scheiterte still, und ein Pilot floege hin und faende nichts. Das Protokoll sieht
@@ -2299,7 +2314,20 @@ async def admin_bruegge(request: Request):
         # `soll` und `steht` gehoeren zusammen ausgeliefert und nicht in zwei Abfragen: Der
         # Admin will genau den VERGLEICH sehen -- angefordert gegen tatsaechlich dastehend.
         # Ein Objekt, das in `soll` steht und in `steht` fehlt, ist der interessante Fall.
-        return {"takt_s": _bruegge_takt(conn), "melder": bruegge_uebersicht(conn),
+        # ⭐ Welche Fassung fliegt da? Die Zahl kommt aus dem hinterlegten Archiv selbst,
+        # damit die angezeigte gar nicht erst von der ausgelieferten abweichen kann -- dieselbe
+        # Ueberlegung wie bei `_bruegge_paket_info`. `veraltet` wird HIER entschieden und nicht
+        # im Frontend, damit Admin, Website und Kniebrett dieselbe Antwort bekommen.
+        aktuell = {sim: _bruegge_paket_info(sim).get("version") for sim in ("msfs", "xplane")}
+        melder = bruegge_uebersicht(conn)
+        for m in melder:
+            soll = aktuell.get(_bruegge_paket_zu(m.get("simulator")))
+            m["fassung_aktuell"] = soll
+            m["fassung_veraltet"] = bool(
+                m.get("bruegge_version") and soll
+                and _version_kleiner(m["bruegge_version"], soll))
+        return {"takt_s": _bruegge_takt(conn), "melder": melder,
+                "fassung_aktuell": aktuell,
                 "soll": bruegge_soll_alle(conn), "steht": bruegge_steht_alle(conn)}
     finally:
         conn.close()
@@ -2666,6 +2694,80 @@ async def app_version():
     einmal gebraucht -- ihn im Minutentakt mitzuschleppen, nur um eine Versionsnummer zu
     vergleichen, waere Verschwendung. Diese Antwort kostet keine Datenbankabfrage."""
     return {"version": VERSION}
+
+
+#: Welcher Simulator aus welchem Paket kommt. Die Bruegge meldet `msfs2020`/`msfs2024`/
+#: `xplane12`, die Pakete heissen `msfs` und `xplane` -- MSFS 2020 und 2024 teilen sich eins.
+def _bruegge_paket_zu(simulator: str | None) -> str:
+    return "xplane" if str(simulator or "") == "xplane12" else "msfs"
+
+
+@app.get("/api/me/fassungen")
+async def meine_fassungen(request: Request):
+    """Welche Fassungen fliegt DIESER Pilot -- und sind sie noch aktuell?
+
+    ⭐ **Der einzige Kanal, der ihn wirklich erreicht.** Die FriesenBrügge kann dem Piloten
+    nichts anzeigen: Sie schreibt nach ``stderr`` (MSFS) bzw. ``XPLMDebugString`` (X-Plane),
+    und das sieht im Flug niemand -- selbst die vorhandene 426-Warnung („es hilft nur ein
+    neues Paket") ist deshalb faktisch stumm. Ein Hinweis IN der Brügge hülfe zudem nur dem,
+    der schon aktualisiert hat, also gerade nicht dem, um den es geht. Bleiben Website und
+    Kniebrett — und beide fragen hier.
+
+    ``aktuell`` kommt aus dem hinterlegten Archiv selbst (``_bruegge_paket_info`` /
+    ``_efb_package_version``), nicht aus einer gepflegten Konstante: Eine Zahl, die jemand
+    von Hand nachziehen müsste, wäre nach dem ersten vergessenen Nachziehen schlechter als
+    keine.
+
+    Ohne Anmeldung gibt es nichts zu sagen -- dann ist die Antwort leer, aber kein Fehler:
+    Die Seite fragt bei jedem Aufbau, und ein 401 im Protokoll wäre ein Fehlalarm.
+    """
+    settings = get_settings()
+    try:
+        cid = _current_cid(request, settings)
+    except Exception:
+        cid = None
+
+    aktuell_bruegge = {sim: _bruegge_paket_info(sim).get("version")
+                       for sim in ("msfs", "xplane")}
+    aktuell_panel = _efb_package_version(_efb_zip_path(settings))
+    leer = {"bruegge": {"aktuell": aktuell_bruegge, "meine": []},
+            "kniebrett": {"aktuell": aktuell_panel, "meine": []}}
+    if cid is None:
+        return leer
+
+    conn = get_connection(settings.DB_PATH)
+    try:
+        bruegge = []
+        for z in bruegge_fassungen_fuer(conn, cid):
+            soll = aktuell_bruegge.get(_bruegge_paket_zu(z["simulator"]))
+            bruegge.append({
+                "kennung": z["kennung"],
+                "simulator": z["simulator"],
+                "version": z["bruegge_version"],
+                "gesehen_am": z["gesehen_am"],
+                # `None` heisst hier NICHT „veraltet": Eine Bruegge, die noch nie gemeldet
+                # hat, kann auch die neueste sein. Wir wissen es schlicht nicht, und einen
+                # Hinweis auf Verdacht auszugeben verbrennt das Vertrauen in alle anderen.
+                "veraltet": (_version_kleiner(z["bruegge_version"], soll)
+                             if (z["bruegge_version"] and soll) else False),
+                "aktuell": soll,
+            })
+        kniebrett = []
+        for d in list_panel_devices_fuer(conn, cid):
+            kniebrett.append({
+                "geraet": d["device_id"][:12],      # gekuerzt -- sie ist ein Zugangsschluessel
+                "name": d["name"],
+                "version": d["paket_version"],
+                "last_seen_at": d["last_seen_at"],
+                # Beim Kniebrett sagt die Abwesenheit dagegen doch etwas: Erst ab Paket 2.0.0
+                # wird ueberhaupt gemeldet, ein stummes Geraet ist also aelter -- aber nur,
+                # wenn das hinterlegte Paket selbst schon melden koennte (s. dort).
+                "veraltet": _paket_ist_veraltet(d["paket_version"], aktuell_panel),
+            })
+        return {"bruegge": {"aktuell": aktuell_bruegge, "meine": bruegge},
+                "kniebrett": {"aktuell": aktuell_panel, "meine": kniebrett}}
+    finally:
+        conn.close()
 
 
 @app.post("/api/push/subscribe")

@@ -505,6 +505,8 @@ Das **Kniebrett** ist FriesenSpy als eigene App im EFB-Tablet des **Microsoft Fl
 
 **Paketversion:** Erforderlich ist mindestens **2.0.0** — ältere Pakete zeigen statt der App nur noch den Hinweis, wo die neue Fassung liegt (sie können sich den Simulator nicht merken, jeder Start begänne mit einer Anmeldung). Die **Windanzeige** braucht **2.1.0**; mit einem älteren Paket bleibt sie einfach aus. Welche Version wo läuft, steht in der Geräteübersicht im Admin.
 
+**Veraltete Fassungen melden sich von selbst.** Fliegst du mit einer FriesenBrügge oder einem Kniebrett-Paket, für das es längst etwas Neueres gibt, erscheint unten rechts ein kleiner Hinweis mit beiden Nummern und der Adresse zum Herunterladen — auf der Website und im Tablet. Ein Klick auf das × legt ihn weg; bei der nächsten neuen Fassung meldet er sich wieder. Er erscheint nur, wenn deine Fassung wirklich älter ist: Hat eine Brügge noch nie gesagt, welche Fassung sie fährt, wird sie deshalb nicht verdächtigt.
+
 **Was das Kniebrett zusätzlich kann:**
 - **Verkehr aus dem Simulator** — auf der Karte kommt der fremde Verkehr direkt aus dem Sim: **jede Sekunde gemessen** statt zwischen zwei VATSIM-Meldungen geschätzt, und auch **ohne VATSIM-Verbindung**. Geparkte Maschinen bleiben weg, rollende sind ausdrücklich dabei. Details zur Zusammenführung beider Quellen stehen oben im [Karte-Tab](#️-karte).
 - **Eigenes Flugzeug ohne VATSIM** — Kompass und Moving Map funktionieren allein aus dem Simulator; es genügt zu fliegen.
