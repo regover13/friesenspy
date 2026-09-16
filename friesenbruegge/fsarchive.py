@@ -81,6 +81,29 @@ STANDARD = (Path(os.environ.get("LOCALAPPDATA", "")) / "Packages"
 # sie ohne weiteres Zutun.
 TITELDATEIEN = ("sim.cfg", "aircraft.cfg")
 
+#: `title=` in einer Konfigurationsdatei -- DERSELBE Ausdruck wie in `katalog_sammeln.py`.
+#:
+#: ⚠⚠ Hier stand bis zum 16.09.2026 ein EIGENER, und er las falsch:
+#:
+#:     r"(?im)^\s*title\s*=\s*(.+?)\s*$"   nimmt alles bis Zeilenende
+#:
+#: Danach wurden nur die aeusseren Anfuehrungszeichen abgestreift. Aus
+#: `title = "Boat01 Modular Bottom Livery" ; Variation name` wurde damit der Titel
+#: `Boat01 Modular Bottom Livery" ; Variation name` -- mit Schlusszeichen und Kommentar.
+#: Vier solche Zeilen standen im Katalog und scheiterten mit EXCEPTION_22; der Fehlschlag
+#: war echt, der Titel war nie einer.
+#:
+#: Aufgefallen ist es erst beim Durchsehen der Fehlschlaege nach dem vollstaendigen
+#: Pruflauf -- monatelang sah im Katalog niemand hin.
+#:
+#: ⚠ Wer dasselbe zweimal parst, parst es irgendwann verschieden. Deshalb wird der Ausdruck
+#: importiert und nicht abgeschrieben; `tests/test_fsarchive_titel.py` bindet beide gegen
+#: dieselben Zeilen und prueft ausserdem, dass es WIRKLICH derselbe ist.
+try:
+    from katalog_sammeln import TITEL          # Regelfall: beide liegen nebeneinander
+except ImportError:                             # als Werkzeug direkt aufgerufen
+    TITEL = re.compile(r'^\s*title\s*=\s*"?([^";\r\n]+)', re.IGNORECASE | re.MULTILINE)
+
 
 def lies(pfad: Path):
     """``(Kopf, [(Eintrag, Datenanfang, Rohdaten)])`` — oder ``(None, [])``."""
@@ -131,9 +154,8 @@ def titel_aus(pfad: Path) -> list[tuple[str, str]]:
         roh = inhalt(e, anfang, d)
         if not roh:
             continue
-        for t in re.findall(r"(?im)^\s*title\s*=\s*(.+?)\s*$",
-                            roh.decode("utf-8", "replace")):
-            raus.append((e["path"], t.strip('"')))
+        for t in TITEL.findall(roh.decode("utf-8", "replace")):
+            raus.append((e["path"], t.strip()))
     return raus
 
 
