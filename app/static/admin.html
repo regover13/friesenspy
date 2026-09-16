@@ -1678,6 +1678,48 @@
           </div>
 
           <!-- ================================================================================
+               DIE ARTEN — anlegen, ändern, löschen (16.09.2026)
+
+               Der Endpunkt gab es seit dem 14.09.2026, eine Bedienung dafür nicht: Der Admin
+               LAS die Liste (Auswahlfeld oben, Titelliste unten), angelegt wurde eine Art von
+               Hand in der Datenbank. Nutzerwunsch: „dann brauche ich eine Option, neue Arten
+               anzulegen, zu ändern und zu löschen (beim löschen passwort)".
+
+               ⚠ ABSCHALTEN IST DER NORMALFALL, LÖSCHEN DIE AUSNAHME. Die Zuordnung Titel →
+               Art steht nirgendwo sonst; bei `tier_gross` hingen daran zuletzt über hundert
+               Zeilen. Deshalb steht der Schalter vorn und gut erreichbar, das Löschen hinten
+               und hinter dem Passwort (`require_confirm`).
+               ================================================================================ -->
+          <div style="margin-top:22px;border-top:1px solid #1e2d3d;padding-top:16px;">
+            <div class="panel-title" style="font-size:0.95rem;"><span>🏷 Arten</span></div>
+            <p style="color:#8aa0b8;font-size:0.78rem;margin:4px 0 10px;">
+              Eine neue Art kostet eine Zeile — <b>kein Update der FriesenBrügge, kein
+              Deploy</b>. Welche Titel sie füllen, wird unten zugeordnet.
+              <span id="bg-a-zahlen" style="color:#cfe0f2;"></span>
+            </p>
+
+            <div class="bg-t-filter">
+              <input id="bg-a-neu-art" placeholder="neue Art, z. B. hochsitz"
+                     autocomplete="off" style="flex:0 1 220px;">
+              <input id="bg-a-neu-bedeutung" placeholder="Bedeutung — was ist das?"
+                     autocomplete="off">
+              <button class="btn btn-sm" id="bg-a-anlegen">Anlegen</button>
+            </div>
+
+            <div class="table-wrap" style="max-height:420px;overflow:auto;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Art</th><th>Bedeutung</th><th>Titel</th>
+                    <th>geht hinaus?</th><th></th>
+                  </tr>
+                </thead>
+                <tbody id="bg-arten"><tr><td colspan="5" class="empty-hint">Lädt …</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- ================================================================================
                DIE TITELLISTE — eine Liste, eine Wahrheit (14.09.2026)
 
                Hier steht der GESAMTE Bestand: 2935 Titel, die `katalog_sammeln.py` von der
@@ -2653,6 +2695,7 @@
       // Server und stehen nicht mehr im Quelltext.
       bgArtenLaden().then(function () { bgArtPicker(); bgTitelLaden(); });
       bgTitelBedienung();
+      bgArtenBedienung();
       bgPilotenLaden().then(bgCidPicker);
       bgLaden();
       setInterval(bgLaden, 10000);
@@ -2726,7 +2769,153 @@
         // Art ja gerade ihren ersten Titel zu.
         _bgArten = _bgArtenAlle.filter(function (a) { return a.anforderbar; });
         bgArtenFilterFuellen();
+        bgArtenZeichnen();
       } catch (e) { /* der Picker bleibt leer, die Eingabe funktioniert weiter */ }
+    }
+
+    // --- Arten anlegen, ändern, löschen -------------------------------------------------
+    //
+    // ⚠ EINE QUELLE, DREI ANSICHTEN: Dieselbe `_bgArtenAlle` speist das Auswahlfeld beim
+    // Hinstellen, die Zuordnung in der Titelliste UND diese Tabelle. Deshalb lädt jede
+    // Änderung hier `bgArtenLaden()` neu und nicht bloß die eigene Tabelle — sonst böte der
+    // Picker oben noch eine Art an, die es unten längst nicht mehr gibt.
+    function bgArtenZeichnen() {
+      const koerper = document.getElementById('bg-arten');
+      if (!koerper) return;
+      const zahlen = document.getElementById('bg-a-zahlen');
+      if (zahlen) {
+        zahlen.textContent = _bgArtenAlle.length + ' Arten · '
+          + _bgArtenAlle.filter(a => a.anforderbar).length + ' gehen hinaus';
+      }
+      if (!_bgArtenAlle.length) {
+        koerper.innerHTML = '<tr><td colspan="5" class="empty-hint">Noch keine Art.</td></tr>';
+        return;
+      }
+      koerper.innerHTML = _bgArtenAlle.map(bgArtZeile).join('');
+    }
+
+    function bgArtZeile(a) {
+      const aus = (a.art_status || 'aktiv') !== 'aktiv';
+      // „geht hinaus?" statt „Status": Ein Haken allein beantwortet die Frage nicht — eine
+      // eingeschaltete Art kann trotzdem gesperrt sein, weil ein Simulator nichts aus ihr
+      // setzen kann (die stehende Regel, s. `bruegge_arten_beidseitig`). `gesperrt_weil`
+      // kommt fertig vom Server; wer das hier selbst herleitet, lässt beide auseinanderlaufen.
+      const geht = a.anforderbar
+        ? '<span style="color:#5cb85c;">ja</span>'
+        : '<span style="color:#d9534f;" title="' + escA(a.gesperrt_weil || '') + '">nein</span>'
+          + ' <span style="color:#8aa0b8;font-size:0.74rem;">'
+          + escH(a.gesperrt_weil || '') + '</span>';
+      const beispiele = bgArtBeispiele(a);
+      return '<tr>'
+        + '<td><code>' + escH(a.art) + '</code>'
+          + (a.addon ? ' <span style="color:#f0ad4e;font-size:0.72rem;">Addon</span>' : '')
+          + '</td>'
+        // Die Bedeutung ist Freitext und wird beim Verlassen des Feldes gespeichert —
+        // ein eigener Speichern-Knopf je Zeile wäre eine Spalte mehr auf einer Tabelle,
+        // die ohnehin schon scrollt.
+        + '<td><input class="bg-a-bedeutung" data-art="' + escA(a.art) + '" value="'
+          + escA(a.bedeutung || '') + '" placeholder="was ist das?" '
+          + 'style="width:100%;min-width:160px;font-size:0.8rem;"></td>'
+        + '<td style="white-space:nowrap;">' + (a.aktiv || 0) + ' aktiv'
+          + '<span style="color:#8aa0b8;font-size:0.74rem;"> / ' + (a.titel_gesamt || 0) + '</span>'
+          + (beispiele ? '<div style="color:#8aa0b8;font-size:0.72rem;">' + escH(beispiele) + '</div>' : '')
+          + '</td>'
+        + '<td>' + geht + '</td>'
+        + '<td style="white-space:nowrap;">'
+          + '<button class="btn btn-sm" data-a-schalten="' + escA(a.art) + '">'
+          + (aus ? 'einschalten' : 'abschalten') + '</button> '
+          + '<button class="btn btn-sm btn-danger" data-a-loeschen="' + escA(a.art) + '"'
+          + ' title="Löscht die Art und nimmt ' + (a.titel_gesamt || 0)
+          + ' Titeln ihre Zuordnung">löschen</button>'
+          + '</td>'
+        + '</tr>';
+    }
+
+    /** POST auf `/api/admin/bruegge/arten` über `api()` — der kümmert sich um 401 und um
+     *  den Passwort-Step-up beim Löschen (403 `confirm_required`). */
+    async function bgArtSpeichern(nutzlast) {
+      const r = await api('POST', '/api/admin/bruegge/arten', nutzlast);
+      if (!r) return false;
+      if (!r.ok) { toast('Ging nicht: ' + (await r.text()), true); return false; }
+      await bgArtenLaden();
+      return true;
+    }
+
+    async function bgArtLoeschen(art) {
+      const a = _bgArtenAlle.find(x => x.art === art) || {};
+      const n = a.titel_gesamt || 0;
+      // ⚠ Die Folge muss VOR dem Klick dastehen, nicht danach: Die Zuordnung Titel → Art
+      // steht nirgendwo sonst. Ein Rückgängig gibt es nicht.
+      const ok = await confirmCritical(
+        'Art „' + art + '" löschen?',
+        n
+          ? n + ' Titel verlieren dadurch ihre Zuordnung (Rang und Status gehen mit). Die '
+            + 'Titel selbst bleiben im Katalog. Willst du die Art nur vorübergehend los, '
+            + 'nimm „abschalten" — das ist rückgängig zu machen, das hier nicht.'
+          : 'Die Art hat keine Titel. Es geht nichts verloren.',
+        'Löschen');
+      if (!ok) return;
+      if (await bgArtSpeichern({ art: art, loeschen: true })) {
+        toast('Art „' + art + '" gelöscht.');
+        bgTitelLaden();                 // die Zuordnungen unten sind jetzt leer
+      }
+    }
+
+    function bgArtenBedienung() {
+      const tab = document.getElementById('bg-arten');
+      if (!tab) return;
+
+      tab.addEventListener('click', function (e) {
+        const s = e.target.closest('[data-a-schalten]');
+        if (s) {
+          const a = _bgArtenAlle.find(x => x.art === s.dataset.aSchalten) || {};
+          bgArtSpeichern({ art: s.dataset.aSchalten,
+                           status: (a.art_status || 'aktiv') === 'aktiv' ? 'aus' : 'aktiv' });
+          return;
+        }
+        const l = e.target.closest('[data-a-loeschen]');
+        if (l) bgArtLoeschen(l.dataset.aLoeschen);
+      });
+
+      // Beim Verlassen des Feldes, und nur wenn sich wirklich etwas geändert hat: Sonst
+      // schriebe jeder Klick durch die Tabelle eine Zeile in die Datenbank.
+      tab.addEventListener('focusin', function (e) {
+        if (e.target.classList.contains('bg-a-bedeutung')) e.target.dataset.vorher = e.target.value;
+      });
+      tab.addEventListener('focusout', function (e) {
+        const el = e.target;
+        if (!el.classList.contains('bg-a-bedeutung')) return;
+        if (el.value === (el.dataset.vorher || '')) return;
+        bgArtSpeichern({ art: el.dataset.art, bedeutung: el.value });
+      });
+
+      const anlegen = document.getElementById('bg-a-anlegen');
+      const feld = document.getElementById('bg-a-neu-art');
+      const bed = document.getElementById('bg-a-neu-bedeutung');
+      async function neu() {
+        const art = (feld.value || '').trim().toLowerCase();
+        // Dieselbe Regel wie auf dem Server (`[a-z][a-z0-9_]*`) — hier nur, um den Weg zum
+        // Server zu sparen. Maßgeblich bleibt der Server; eine Prüfung, die es sich hier
+        // bequem macht, wäre eine zweite Wahrheit.
+        if (!/^[a-z][a-z0-9_]*$/.test(art)) {
+          toast('Klein, ohne Leerzeichen und Umlaute — z. B. `hochsitz`.', true);
+          feld.focus();
+          return;
+        }
+        if (_bgArtenAlle.some(x => x.art === art)) {
+          toast('Die Art „' + art + '" gibt es schon.', true);
+          return;
+        }
+        if (await bgArtSpeichern({ art: art, bedeutung: (bed.value || '').trim() })) {
+          toast('Art „' + art + '" angelegt — jetzt unten Titel zuordnen.');
+          feld.value = ''; bed.value = '';
+          feld.focus();
+        }
+      }
+      anlegen.addEventListener('click', neu);
+      [feld, bed].forEach(el => el.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); neu(); }
+      }));
     }
 
     /** „BlackBear, GrizzlyBear, SyrianBear“ -- die ersten drei aktiven Titel.

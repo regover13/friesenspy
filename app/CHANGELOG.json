@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.50.0",
+    "date": "2026-09-16",
+    "highlight": false,
+    "title": "Arten anlegen, ändern und löschen — im Admin statt in der Datenbank",
+    "items": [
+      "🏷 Eine Art ist das, was die FriesenBrügge im Simulator hinstellen soll — eine Robbe, ein Windrad, ein Feuerwehrauto. Anlegen ließ sich eine neue bisher nur von Hand in der Datenbank, obwohl der Rest längst im Admin liegt. Jetzt steht die Liste dort: anlegen, Bedeutung ändern, ein- und ausschalten.",
+      "🔒 Löschen fragt nach dem Passwort, alles andere nicht. Das ist kein Misstrauen, sondern der Unterschied zwischen umkehrbar und endgültig: Eine gelöschte Art nimmt allen ihren Titeln die Zuordnung mit, und die steht nirgendwo sonst. Wer eine Art nur vorübergehend los sein will, schaltet sie ab.",
+      "👀 Neben jeder Art steht, ob sie wirklich hinausgeht — und wenn nicht, warum. Eine eingeschaltete Art kann trotzdem gesperrt sein, weil einer der beiden Simulatoren nichts aus ihr darstellen kann; das stand bisher nur im Auswahlfeld beim Hinstellen."
+    ]
+  },
+  {
     "version": "14.49.4",
     "date": "2026-09-16",
     "highlight": false,

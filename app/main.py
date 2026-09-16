@@ -2144,6 +2144,16 @@ async def admin_art_setzen(request: Request):
     ⚠ ``{"art": "...", "loeschen": true}`` nimmt die Art weg und GIBT IHRE TITEL FREI -- die
     Katalogzeilen bleiben stehen, sie verlieren nur ihre Zuordnung. Wer eine Art wegnimmt,
     wollte die Bedeutung los, nicht die Objekte.
+
+    ⚠⚠ **Nur der Loeschzweig verlangt das Passwort erneut** (`require_confirm`, Nutzerwunsch
+    16.09.2026). Der Grund ist die Unumkehrbarkeit: Eine Zuordnung Titel -> Art steht
+    NIRGENDWO sonst, bei `tier_gross` waeren das ueber hundert auf einen Klick. Anlegen,
+    Umbenennen und Abschalten sind dagegen zurueckzunehmen -- und `status = 'aus'` ist der
+    Weg, der fast immer gemeint ist. Er bleibt deshalb bewusst der bequemere.
+
+    Die Pruefung steht IM Zweig und nicht oben bei `require_admin`: Sonst laege auch das
+    Anlegen hinter dem Passwort, und zwar unbemerkt, solange das Bestaetigungsfenster im
+    Browser noch offen ist (gebunden in tests/test_bruegge_arten_admin.py).
     """
     require_admin(request)
     body = await request.json()
@@ -2154,6 +2164,9 @@ async def admin_art_setzen(request: Request):
     conn = get_connection(get_settings().DB_PATH)
     try:
         if body.get("loeschen"):
+            # Vor dem ersten Schreiben -- ein Endpunkt, der erst loescht und dann 403 meldet,
+            # haette den Schaden schon angerichtet.
+            require_confirm(request)
             weg = bruegge_art_loeschen(conn, art)
             conn.commit()
             return {"ok": True, "geloescht": weg}
