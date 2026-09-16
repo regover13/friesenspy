@@ -5,7 +5,7 @@
     "highlight": false,
     "title": "Ein neu zugeordnetes Objekt wird jetzt beim ersten Mal übernommen",
     "items": [
-      "🏷 Im Admin ließ sich einem Objekt eine Art geben — und es kam trotzdem nicht im Simulator an. Man musste den Schalter daneben erst aus- und wieder einschalten, damit es wirkte. Der Grund: Ein frisch gemeldetes Objekt trug noch gar keinen Zustand, und beim Zuordnen wurde keiner gesetzt. Die Liste zeigte trotzdem „aktiv\" an, weil sie einen fehlenden Wert wie „aktiv\" darstellte. Beides zusammen ergab einen Fehler, den man nicht sehen konnte. Gefunden hat ihn der Nutzer im Betrieb.",
+      "🏷 Im Admin ließ sich einem Objekt eine Art geben — und es kam trotzdem nicht im Simulator an. Man musste den Schalter daneben erst aus- und wieder einschalten, damit es wirkte. Der Grund: Ein frisch gemeldetes Objekt trug noch gar keinen Zustand, und beim Zuordnen wurde keiner gesetzt. Die Liste zeigte trotzdem „aktiv\" an, weil sie einen fehlenden Wert wie „aktiv\" darstellte. Beides zusammen ergab einen Fehler, den man nicht sehen konnte. Gefunden hat ihn der Nutzer im Betrieb. Die Liste sagt jetzt außerdem „⚠ kein Wert“, wenn wirklich keiner da ist, statt einen fehlenden Wert als „aktiv“ auszugeben — ein fehlender Wert ist ein Befund und keine Einstellung.",
       "🎈 Die FriesenBrügge (Fassung 1.12.0) kann Objekte jetzt in der Luft halten. Ein Heißluftballon auf 3000 Fuß fiel bisher in fünfzehn Sekunden zu Boden — Flugzeugmodelle unterliegen im Simulator der Schwerkraft, anders als Windräder oder Robben. Jetzt steht er, wo er hingestellt wird. Das neue Paket liegt auf der Download-Seite."
     ]
   },

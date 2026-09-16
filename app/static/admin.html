@@ -3019,11 +3019,25 @@
         + _bgArtenAlle.map(a => '<option value="' + escA(a.art) + '"'
             + (a.art === z.art ? ' selected' : '') + '>' + escH(a.art) + '</option>').join('')
         + '</select>';
+      // ⚠ KEIN `z.status || 'aktiv'` MEHR (16.09.2026). Dieser Fallback hat einen Fehler
+      // ein halbes Jahr lang unsichtbar gemacht: Ein frisch zugeordneter Titel trug `null`,
+      // ausgeliefert wird aber nur `status = 'aktiv'` — die Zeile sah einwandfrei aus und
+      // der Titel ging nie hinaus. Gefunden hat es der Nutzer im Betrieb, nicht ein Test.
+      //
+      // `bruegge_katalog_setzen` füllt die Lücke jetzt an der Wurzel, hier kann also
+      // eigentlich nichts mehr fehlen. „Eigentlich" ist genau der Grund, warum die Zeile
+      // trotzdem ehrlich bleibt: Der nächste Weg in den Katalog (ein Skript, eine
+      // Migration, ein zweiter Endpunkt) läuft an dieser Füllung womöglich vorbei — und
+      // dann soll man es SEHEN und nicht wieder ein halbes Jahr suchen.
+      //
+      // Nicht auswählbar (`disabled`): „kein Wert" ist ein Befund, keine Einstellung.
       const statusWahl = z.art
         ? '<select class="bg-t-setzstatus" data-sim="' + escA(z.simulator)
           + '" data-titel="' + escA(z.titel) + '">'
+          + (z.status ? ''
+             : '<option value="" selected disabled>⚠ kein Wert</option>')
           + ['aktiv', 'aus'].map(w => '<option value="' + w + '"'
-              + (w === (z.status || 'aktiv') ? ' selected' : '') + '>' + w + '</option>').join('')
+              + (w === z.status ? ' selected' : '') + '>' + w + '</option>').join('')
           + '</select>'
         : '<span style="color:#8aa0b8;">—</span>';
       const rang = z.art

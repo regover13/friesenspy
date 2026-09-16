@@ -109,3 +109,38 @@ def test_ohne_art_entsteht_kein_status(conn):
     conn.commit()
     z = _status(conn)
     assert z["art"] is None and z["status"] is None
+
+
+class TestDieAnzeigeSchoenigtNichtMehr:
+    """Der Fallback `z.status || 'aktiv'` war die eigentliche Bosheit (16.09.2026).
+
+    Der Serverfix darüber sorgt dafür, dass bei einem zugeordneten Titel kein ``NULL`` mehr
+    entsteht. Der Fallback lief damit leer — **stand aber noch da** und hätte denselben
+    Dienst wieder getan, sobald anderswo eine Lücke aufgeht. Ein fehlender Wert soll zu
+    sehen sein, nicht zu „aktiv" gerundet werden (Nutzerentscheidung).
+    """
+
+    def _admin(self) -> str:
+        from pathlib import Path
+        return Path(__file__).resolve().parent.parent.joinpath(
+            "app", "static", "admin.html").read_text(encoding="utf-8")
+
+    def test_kein_stiller_fallback_mehr(self):
+        """⚠ Geprüft wird der CODE, nicht der Text.
+
+        Die erste Fassung suchte den Ausdruck in der ganzen Datei und wurde rot am
+        Kommentar, der ihn zitiert — ein Test, der die Begründung für einen Fix als den
+        Fehler selbst liest, zwingt dazu, die Begründung zu verstümmeln.
+        """
+        s = self._admin()
+        i = s.index("const statusWahl")
+        block = s[i:s.index("const rang", i)]
+        assert "|| 'aktiv'" not in block
+
+    def test_ein_fehlender_wert_wird_benannt(self):
+        """Und zwar nicht auswählbar: „kein Wert" ist ein Befund, keine Einstellung."""
+        s = self._admin()
+        i = s.index("const statusWahl")
+        block = s[i:i + 900]
+        assert "kein Wert" in block
+        assert "disabled" in block
