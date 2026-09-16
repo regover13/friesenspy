@@ -1,5 +1,17 @@
 [
   {
+    "version": "14.53.0",
+    "date": "2026-09-17",
+    "highlight": false,
+    "title": "Eine FriesenBrügge für MSFS 2020 und 2024 — und sie bleibt bei ihrem Piloten",
+    "items": [
+      "🌉 Die FriesenBrügge läuft jetzt in MSFS 2020 UND MSFS 2024 — ein Paket, ein Download, dieselbe Anleitung. Wer bisher mit MSFS 2020 fliegt und außen vor blieb, kann sie ab sofort mitnehmen (Fassung 1.14.0).",
+      "🧭 Deine FriesenBrügge bleibt bei dir. Bisher konnte sie, wenn du dich von VATSIM abmeldest und danach im Simulator weiterfliegst, einem anderen Friesen zugeschlagen werden — nämlich dann, wenn du zufällig auf einem Platz landest, auf dem gerade einer von uns steht. Das ist am 16.09. passiert. Jetzt merkt sich der Server, zu wem eine FriesenBrügge gehört: Passt die Position nicht mehr, ruht die Verbindung — sie wandert aber nicht zu jemand anderem.",
+      "🔑 Und sie erkennt dich nach einem Neustart des Simulators wieder, ohne dass du etwas tun musst. Das übernimmt jetzt der Server, damit dasselbe Modul in beiden Simulatoren laufen kann.",
+      "🎮 MSFS 2020 und MSFS 2024 zählen dabei getrennt: Wer beide benutzt, hat zwei FriesenBrüggen, die sich nicht mehr gegenseitig abmelden. Dasselbe gilt für X-Plane."
+    ]
+  },
+  {
     "version": "14.52.0",
     "date": "2026-09-16",
     "highlight": false,

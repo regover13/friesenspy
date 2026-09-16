@@ -981,6 +981,23 @@ _BRUEGGE_MIGRATIONS = [
         status      TEXT NOT NULL DEFAULT 'aktiv',
         angelegt_am TEXT
     )""",
+    # ------------------------------------------------------------------------------------
+    # 17.09.2026: EINE GELOESTE BINDUNG WIRD ERINNERT, NICHT VERGESSEN.
+    #
+    # `bruegge_zuordnung_loesen` hat die Zeile bis hierher GELOESCHT. Damit war die Kennung
+    # dem Server unbekannt und fuer jeden neu zu haben -- die naechste Meldung lief in die
+    # Erstzuordnung, als kaeme sie von einer frisch installierten Bruegge.
+    #
+    # Am 16.09.2026 ist genau das passiert: Nach dem VATSIM-Logoff fiel die Bindung, der
+    # Simulator lief weiter, und beim Wechsel auf einen Platz, auf dem ein ANDERER Friese
+    # stand, wurde dessen CID uebernommen. Nach allen Regeln korrekt -- in der Naehe, frei,
+    # eindeutig -- und trotzdem falsch.
+    #
+    # ⚠ Der Nutzer hat den Unterschied benannt, um den es geht: Die Bindung aufzugeben, weil
+    # die Position nicht mehr passt, ist richtig. Eine NEUE aufzunehmen, weil irgendeine
+    # Position zufaellig passt, ist etwas voellig anderes. `geloest_am` trennt die beiden:
+    # Die Zeile bleibt stehen und sagt weiter, WEM diese Kennung gehoert.
+    "ALTER TABLE bruegge_zuordnung ADD COLUMN geloest_am TEXT",
 ]
 
 _KNIEBRETT_MIGRATIONS = [
@@ -2816,9 +2833,26 @@ def bruegge_zuordnung_setzen(conn: sqlite3.Connection, kennung: str, cid: int,
     Zwei Bruegge gleichzeitig gibt es nicht -- das ist eine Nutzerentscheidung mit Begruendung
     (PROTOKOLL.md, Abschnitt 1): Man kann keine zwei Flugzeuge gleichzeitig bewegen, und es
     gibt nur eine VATSIM-Verbindung.
+
+    ⚠⚠ **DAS AUFRAEUMEN GILT JE SIMULATOR (17.09.2026).** Hier stand
+    ``WHERE cid = ? AND kennung <> ?`` ohne den Simulator -- und damit loeschte ein Wechsel
+    von MSFS zu X-Plane die Bindung des jeweils anderen.
+
+    Das ist kein Randfall, sondern der Alltag des Nutzers: *"Es geht um die Nutzung
+    verschiedener Simulatoren an einem Rechner. Das kann nicht ueber 24 Stunden lang gehen!
+    Die werden an einem Tag haeufiger gewechselt."* Und es hatte Folgen -- beim
+    Zurueckwechseln war die Kennung geloescht, die Bruegge lief in die Erstzuordnung, und
+    genau dort konnte ein fremder Pilot hereinrutschen.
+
+    Die beiden kommen sich auch nicht in die Quere: Jeder Simulator hat seinen eigenen
+    WASM-Sandkasten und damit seine eigene Kennung. Dass nicht ZWEI gleichzeitig melden,
+    sichert weiterhin `bruegge_belegte_cids` -- ueber die Frist, nicht ueber das Loeschen.
     """
-    conn.execute("DELETE FROM bruegge_zuordnung WHERE cid = ? AND kennung <> ?",
-                 (int(cid), kennung))
+    conn.execute(
+        "DELETE FROM bruegge_zuordnung "
+        "WHERE cid = ? AND kennung <> ? AND COALESCE(simulator, '') = COALESCE(?, '')",
+        (int(cid), kennung, simulator),
+    )
     now = _now_utc()
     conn.execute(
         "INSERT INTO bruegge_zuordnung (kennung, cid, simulator, zugeordnet_am, gesehen_am, "
@@ -2826,9 +2860,47 @@ def bruegge_zuordnung_setzen(conn: sqlite3.Connection, kennung: str, cid: int,
         "VALUES (?, ?, ?, ?, ?, 0) "
         "ON CONFLICT(kennung) DO UPDATE SET cid = excluded.cid, "
         "    simulator = excluded.simulator, zugeordnet_am = excluded.zugeordnet_am, "
-        "    gesehen_am = excluded.gesehen_am, verstoesse = 0",
+        "    gesehen_am = excluded.gesehen_am, verstoesse = 0, "
+        # Wieder gebunden -- die Erinnerung an das Loesen ist damit gegenstandslos.
+        "    geloest_am = NULL",
         (kennung, int(cid), simulator, now, now),
     )
+
+
+def bruegge_kennung_fuer(conn: sqlite3.Connection, cid: int,
+                         simulator: str | None) -> str | None:
+    """Die zuletzt fuer diese (CID, Simulator) vergebene Kennung -- oder ``None``.
+
+    ⭐ **DAMIT HAELT DIE KENNUNG WIEDER UEBER EINEN SIM-NEUSTART** -- auf dem Server statt
+    auf der Platte des Piloten.
+
+    Seit Bruegge 1.14.0 laeuft EIN Modul in MSFS 2020 und 2024, und dafuer musste die
+    Datei-API weichen (`MSFS_IO.h` fehlt dem 2020er SDK vollstaendig). Die Bruegge kann ihre
+    Kennung seither nicht mehr speichern; sie meldet nach jedem Start ohne.
+
+    Statt ihr dann eine NEUE zu wuerfeln, gibt der Server die alte zurueck. Das ist nicht der
+    zweitbeste Weg, sondern der passende: Er sieht alle Kennungen, und das Leitbild des
+    Protokolls sagt ohnehin *"Die Bruegge ist dumm. Alle Klugheit bleibt auf dem Server."*
+    Ein Client-Release kostet einen Windows-Build und eine Verteilung an 61 Piloten, ein
+    Server-Release einen Push.
+
+    ⚠ **Der Simulator gehoert in den Schluessel.** Ein Pilot wechselt an einem Tag mehrfach
+    zwischen MSFS und X-Plane; jede seiner Bruegge hat ihre eigene Kennung, und sie duerfen
+    sich nicht gegenseitig ueberschreiben. Ohne den Simulator bekaeme die X-Plane-Bruegge die
+    Kennung der MSFS-Bruegge und damit deren Vorgeschichte.
+
+    ⚠ **Und es ist kein Zugangsschluessel.** Wer eine fremde Kennung nennt, muss trotzdem die
+    oeffentliche VATSIM-Position dieses Piloten treffen -- er gewinnt also genau das, was er
+    auch ohne sie gewinnt: nichts (PROTOKOLL.md, "Identifikation, keine Authentifizierung").
+    Zurueckgegeben wird sie ohnehin erst NACH einem geglueckten Positionsmatch.
+    """
+    row = conn.execute(
+        "SELECT kennung FROM bruegge_zuordnung "
+        "WHERE cid = ? AND COALESCE(simulator, '') = COALESCE(?, '') "
+        "ORDER BY gesehen_am DESC LIMIT 1",
+        (int(cid), simulator),
+    ).fetchone()
+    return str(row[0]) if row else None
 
 
 def bruegge_zuordnung_bestaetigen(conn: sqlite3.Connection, kennung: str,
@@ -2912,8 +2984,32 @@ def bruegge_zuordnung_verstoss(conn: sqlite3.Connection, kennung: str) -> int:
 
 
 def bruegge_zuordnung_loesen(conn: sqlite3.Connection, kennung: str) -> None:
-    """Die Zuordnung faellt (kein commit). Die naechste Meldung beginnt von vorn."""
-    conn.execute("DELETE FROM bruegge_zuordnung WHERE kennung = ?", (kennung,))
+    """Die Zuordnung faellt -- die ERINNERUNG an sie bleibt (kein commit).
+
+    ⚠⚠ HIER STAND EIN `DELETE`, und das war die Luecke, durch die am 16.09.2026 eine Bruegge
+    zu einem fremden Piloten wurde.
+
+    Mit dem Loeschen war die Kennung dem Server unbekannt. Die naechste Meldung lief damit in
+    die Erstzuordnung -- vollstaendiger Positionsmatch gegen alle Friesen in der Luft, als
+    kaeme sie von einer frisch installierten Bruegge. Stand dabei zufaellig ein anderer
+    Friese in der Naehe, bekam er sie.
+
+    **Der Unterschied, den das Loeschen verwischt hat:** Eine Bindung aufzugeben, weil die
+    Position nicht mehr passt, ist richtig -- der Pilot ist ausgeloggt, die Zuordnung hat
+    ihren Gegenstand verloren. Eine NEUE aufzunehmen, weil irgendeine Position zufaellig
+    passt, ist etwas anderes. Die Zeile bleibt deshalb stehen und sagt weiter, wem diese
+    Kennung gehoert; `_bruegge_zuordnen` laesst sie danach nur noch zu DIESER CID
+    zurueckfinden.
+
+    `verstoesse` wird zurueckgesetzt: Die naechste Bindung faengt bei null an, sonst stuerbe
+    sie sofort wieder.
+
+    Endgueltig fort ist die Erinnerung erst mit `bruegge_aufraeumen` (24 h ohne Meldung).
+    """
+    conn.execute(
+        "UPDATE bruegge_zuordnung SET geloest_am = ?, verstoesse = 0 WHERE kennung = ?",
+        (_now_utc(), kennung),
+    )
 
 
 def bruegge_position_schreiben(conn: sqlite3.Connection, cid: int, lage: dict,

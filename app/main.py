@@ -93,6 +93,7 @@ from app.database import (
     friesen_in_der_luft,
     cid_ist_authentifiziert,
     bruegge_belegte_cids,
+    bruegge_kennung_fuer,
     bruegge_zuordnung_holen,
     bruegge_zuordnung_setzen,
     bruegge_zuordnung_bestaetigen,
@@ -1865,7 +1866,20 @@ def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
       2. Seine CID hat eine Zeile in `forum_callsign` -- der Nachweis des Forum-Logins.
       3. Die Position passt, nach den Regeln, die das Kniebrett schon benutzt.
     """
-    gemerkt = bruegge_zuordnung_holen(conn, kennung) if kennung else None
+    # ⭐ ZWEI DINGE AUS EINER ZEILE (17.09.2026): die geltende Bindung -- und die Erinnerung
+    # daran, wem diese Kennung gehoert hat, falls sie geloest wurde.
+    #
+    # `bruegge_zuordnung_loesen` loeschte die Zeile bis zum 16.09.2026. Damit war die Kennung
+    # dem Server unbekannt, die naechste Meldung lief in die Erstzuordnung, und ein zufaellig
+    # danebenstehender Friese bekam sie. `geloest_am` haelt die beiden Faelle auseinander:
+    #
+    #   geloest_am IS NULL   die Bindung GILT -- pruefen, nicht neu aushandeln
+    #   geloest_am gesetzt   sie gilt nicht mehr, aber die CID ist bekannt und BINDET
+    #                        (s. die Schranke unten bei der Erstzuordnung)
+    _zeile = bruegge_zuordnung_holen(conn, kennung) if kennung else None
+    gemerkt = _zeile if (_zeile and not _zeile.get("geloest_am")) else None
+    erinnert_cid = int(_zeile["cid"]) if _zeile else None
+
     kandidaten = bruegge.kandidaten_bilden(
         friesen_in_der_luft(conn, settings.CALLSIGN_PREFIX)
     )
@@ -1954,6 +1968,37 @@ def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
                                                 vs_wirksam)
         if treffer is not None:
             grund = f"{grund_offen} -- erst nach Ruecknahme der Sperre ({grund})"
+    # ⚠⚠ EINE ERINNERTE KENNUNG FINDET NUR ZU IHRER EIGENEN CID ZURUECK (17.09.2026).
+    #
+    # DER FALL, DER DAS ERZWUNGEN HAT (16.09.2026): Ein Pilot loggt sich von VATSIM ab und
+    # laesst den Simulator laufen. Die Bindung faellt zu Recht -- sie hat ihren Gegenstand
+    # verloren. Dann laedt er einen Flug auf einem Platz, auf dem gerade ein ANDERER Friese
+    # steht. Der Positionsmatch trifft diesen: in der Naehe, frei, eindeutig. Nach allen
+    # Regeln des Kniebretts korrekt -- und trotzdem wurde seine Bruegge zu einem fremden
+    # Piloten. Sie meldete dessen Position und haette dessen Objekte bekommen.
+    #
+    # ⭐ Der Unterschied, um den es geht (Nutzer, 16.09.2026): *"Das ist ein Grund, die
+    # Bindung aufzugeben. Aber kein Grund, eine 700 km entfernte aufzunehmen oder ueberhaupt
+    # in Betracht zu ziehen."* Loesen und Neubinden sind zwei Vorgaenge, und nur der erste
+    # folgt aus einer nicht mehr passenden Position.
+    #
+    # ⚠ WARUM DIE UEBRIGEN REGELN DAS NICHT FANGEN, und das ist der Kern: Naehe,
+    # Eindeutigkeit mit Vorsprung und die Belegt-Sperre stammen eins zu eins aus dem
+    # Kniebrett (app/bruegge.py:179) und greifen hier alle -- nur trifft im Kniebrett eine
+    # Fehlpaarung einen FREMDEN Punkt auf der Karte, hier aber den Melder selbst. Das
+    # Kniebrett muss seinen eigenen Piloten nie erraten; es weiss aus der Anmeldung, wer es
+    # ist. Die Kennung ist das Gegenstueck dazu -- und sie zu vergessen, sobald es einmal
+    # nicht passt, nimmt der Bruegge genau das, was das Kniebrett hat.
+    #
+    # Zurueck fuehrt der gewoehnliche Weg: Meldet sich der eigene Pilot wieder auf VATSIM und
+    # passt die Position, bindet dieselbe Zeile erneut (`bruegge_zuordnung_setzen` raeumt
+    # `geloest_am` weg). Endgueltig frei wird die Kennung mit `bruegge_aufraeumen`.
+    if treffer is not None and erinnert_cid is not None and treffer.cid != erinnert_cid:
+        _logger.info(
+            "Bruegge: Zuordnung ABGELEHNT -- Kennung gehoert zu %d, Treffer waere %d (%s)",
+            erinnert_cid, treffer.cid, grund)
+        return None, bool(kandidaten), None, False
+
     if treffer is None and kandidaten:
         # Nur wenn es ueberhaupt Friesen in der Luft gab -- sonst ist "niemand passt" der
         # Normalfall und faellt nicht auf. Mit Kandidaten ist es ein Hinweis, und ohne diese
@@ -1987,9 +2032,28 @@ def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
     # Der Moment ist der bestmoegliche -- und das ist gemessen, nicht gewaehlt: Der Pilot
     # steht gerade (Zuordnungs-Spec vom 16.08.2026, "Im Stand ist die Latenz
     # gegenstandslos"), die Zuordnung gelingt auf Meter. Genau dann bekommt er seine Kennung.
+    # ⭐ ERST NACHSEHEN, OB DIESER PILOT IN DIESEM SIMULATOR SCHON EINE HAT (17.09.2026).
+    #
+    # Seit Bruegge 1.14.0 laeuft EIN Modul in MSFS 2020 und 2024, und dafuer musste die
+    # Datei-API weichen -- `MSFS_IO.h` gibt es im 2020er SDK nicht, und ein WASM-Import ist
+    # statisch. Die Bruegge kann ihre Kennung seither nicht mehr speichern und meldet nach
+    # jedem Simulator-Start ohne.
+    #
+    # Wuerde der Server ihr jedes Mal eine frische wuerfeln, waere die Wiedererkennung
+    # dahin -- und mit ihr die Schranke oben, die eine Bruegge nur zu IHRER CID
+    # zurueckfinden laesst. Beides greift ineinander: Die Erinnerung nuetzt nichts, wenn die
+    # Kennung bei jedem Start eine andere ist.
+    #
+    # Der Moment ist sicher: Wir sind hier NACH dem geglueckten Positionsmatch und nach
+    # `cid_ist_authentifiziert`. Die Kennung wird also nicht auf Zuruf herausgegeben,
+    # sondern an jemanden, der bereits nachgewiesen hat, dass er an dieser Position steht.
+    #
+    # ⚠ Der Simulator gehoert in den Schluessel -- ein Pilot wechselt an einem Tag mehrfach
+    # zwischen MSFS und X-Plane, und jede seiner Bruegge hat ihre eigene Kennung.
     zugeteilt = None
     if not kennung:
-        kennung = zugeteilt = secrets.token_hex(8)
+        kennung = zugeteilt = (bruegge_kennung_fuer(conn, treffer.cid, simulator)
+                               or secrets.token_hex(8))
     bruegge_zuordnung_setzen(conn, kennung, treffer.cid, simulator)
     bruegge_zuordnung_bestaetigen(conn, kennung, lat, lon)
     bruegge_vs_spitze_merken(conn, kennung, vs_ft_min)
