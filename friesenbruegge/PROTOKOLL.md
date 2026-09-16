@@ -1428,13 +1428,32 @@ nicht" (Abschnitt 5).
 
 ## 10. Offen — vor dem Bau zu klären
 
-1. **Wird ein weit entfernt gesetztes Objekt gezeichnet, wenn der Pilot hinkommt?** Das
-   Anlegen gelingt bis 10.000 km, die Sichtbarkeit ist nur im Nahbereich belegt (200 m an
-   Land, 1,6 km auf dem Wasser). Die Antwort entscheidet, ob die Brügge einmal verteilen darf
-   oder unterwegs nachsetzen muss — und damit über den Takt aus Abschnitt 6. **Braucht einen
-   echten Flug.**
-2. **`OnGround` in WASM** (Abschnitt 7).
-3. **Überdauert eine X-Plane-Instanz das Entladen des Plugins?** Für den Zuschnitt belanglos,
-   weil die Brügge durchläuft — aber sauber zu wissen.
-4. **Die ⚠-Zeilen im Katalog** (Abschnitt 3): X-Plane-Objekte außer `SailBoat.obj` sind
-   nachgewiesen, aber nie gesetzt.
+**Stand 16.09.2026: Die Liste ist weitgehend abgearbeitet.** Sie stand hier, als die Brügge
+noch nicht flog; drei der vier Punkte sind seither im Simulator beantwortet worden. Sie
+bleiben als erledigt stehen, weil sonst niemand erkennt, dass die Frage je offen war — und
+weil die Antwort bei zwei von ihnen eine Betriebsentscheidung trägt.
+
+1. ~~**Wird ein weit entfernt gesetztes Objekt gezeichnet, wenn der Pilot hinkommt?**~~
+   ✅ **Ja, geflogen am 11.09.2026** (EDWG→EDWY, MSFS 2024): aus 44,7 km gesetzt, bei 22,1 km
+   zweifelsfrei gesehen. **Der Server darf einmal verteilen**, die Brügge muss unterwegs
+   nicht nachsetzen — das entlastet den Takt aus Abschnitt 6.
+   ⚠ Für **MSFS 2020 und X-Plane** ist derselbe Flug noch nicht gemacht; Anleitung in
+   `probe-msfs/FLUGTEST.md`.
+2. ~~**`OnGround` in WASM**~~ ✅ **umgesetzt** — der Server verlangt es je Objekt
+   (`auf_boden`, Abschnitt 7), beide Brügge setzen es. Am 14.09.2026 traf es zwischen 0,9 und
+   4,4 ft.
+3. **Überdauert eine X-Plane-Instanz das Entladen des Plugins?** Weiterhin offen. Für den
+   Zuschnitt belanglos, weil die Brügge durchläuft — aber sauber zu wissen.
+   (Nicht zu verwechseln mit dem Freigeben im Betrieb: Das tut die X-Plane-Brügge seit 1.3.0,
+   vorher war nach 24 verschiedenen Modellen Schluss.)
+4. ~~**Die ⚠-Zeilen im Katalog**~~ ✅ **erledigt am 16.09.2026** — der gesamte Katalog ist
+   einmal durch den Simulator gelaufen: 7065 Titel gesetzt und zurückgemeldet (X-Plane
+   2928/2928, MSFS 2024 4137). Vorher waren vier geprüft.
+   ⚠ „Zurückgemeldet" heißt **das Objekt existiert**, nicht **jemand hat es gesehen**. Im
+   Bild bestätigt sind weiterhin nur Windrad, Hirsch, Leuchtturm und der Seehund
+   (`MESSLISTE.md`).
+
+**Was die WASM-Frage angeht, die hier einmal alles blockierte** („`RequestDataOnSimObject`
+liefert `EXCEPTION 3`, damit kann ein WASM-Modul weder `lage` melden noch erkennen, ob ein
+Objekt noch steht"): Sie ist seit der ersten fliegenden Brügge gegenstandslos. Das Modul
+meldet beides, im Sekundentakt und im Betrieb.
