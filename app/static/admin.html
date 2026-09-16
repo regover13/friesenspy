@@ -1678,48 +1678,6 @@
           </div>
 
           <!-- ================================================================================
-               DIE ARTEN — anlegen, ändern, löschen (16.09.2026)
-
-               Der Endpunkt gab es seit dem 14.09.2026, eine Bedienung dafür nicht: Der Admin
-               LAS die Liste (Auswahlfeld oben, Titelliste unten), angelegt wurde eine Art von
-               Hand in der Datenbank. Nutzerwunsch: „dann brauche ich eine Option, neue Arten
-               anzulegen, zu ändern und zu löschen (beim löschen passwort)".
-
-               ⚠ ABSCHALTEN IST DER NORMALFALL, LÖSCHEN DIE AUSNAHME. Die Zuordnung Titel →
-               Art steht nirgendwo sonst; bei `tier_gross` hingen daran zuletzt über hundert
-               Zeilen. Deshalb steht der Schalter vorn und gut erreichbar, das Löschen hinten
-               und hinter dem Passwort (`require_confirm`).
-               ================================================================================ -->
-          <div style="margin-top:22px;border-top:1px solid #1e2d3d;padding-top:16px;">
-            <div class="panel-title" style="font-size:0.95rem;"><span>🏷 Arten</span></div>
-            <p style="color:#8aa0b8;font-size:0.78rem;margin:4px 0 10px;">
-              Eine neue Art kostet eine Zeile — <b>kein Update der FriesenBrügge, kein
-              Deploy</b>. Welche Titel sie füllen, wird unten zugeordnet.
-              <span id="bg-a-zahlen" style="color:#cfe0f2;"></span>
-            </p>
-
-            <div class="bg-t-filter">
-              <input id="bg-a-neu-art" placeholder="neue Art, z. B. hochsitz"
-                     autocomplete="off" style="flex:0 1 220px;">
-              <input id="bg-a-neu-bedeutung" placeholder="Bedeutung — was ist das?"
-                     autocomplete="off">
-              <button class="btn btn-sm" id="bg-a-anlegen">Anlegen</button>
-            </div>
-
-            <div class="table-wrap" style="max-height:420px;overflow:auto;">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Art</th><th>Bedeutung</th><th>Titel</th>
-                    <th>geht hinaus?</th><th></th>
-                  </tr>
-                </thead>
-                <tbody id="bg-arten"><tr><td colspan="5" class="empty-hint">Lädt …</td></tr></tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- ================================================================================
                DIE TITELLISTE — eine Liste, eine Wahrheit (14.09.2026)
 
                Hier steht der GESAMTE Bestand: 2935 Titel, die `katalog_sammeln.py` von der
@@ -1801,6 +1759,48 @@
               <span id="bg-t-seite" style="color:#cfe0f2;">–</span>
               <button class="btn btn-sm" id="bg-t-vor">→</button>
               <span style="color:#8aa0b8;margin-left:auto;" id="bg-t-treffer"></span>
+            </div>
+          </div>
+
+          <!-- ================================================================================
+               DIE ARTEN — anlegen, ändern, löschen (16.09.2026)
+
+               Der Endpunkt gab es seit dem 14.09.2026, eine Bedienung dafür nicht: Der Admin
+               LAS die Liste (Auswahlfeld beim Hinstellen, Titelliste darüber), angelegt wurde eine Art von
+               Hand in der Datenbank. Nutzerwunsch: „dann brauche ich eine Option, neue Arten
+               anzulegen, zu ändern und zu löschen (beim löschen passwort)".
+
+               ⚠ ABSCHALTEN IST DER NORMALFALL, LÖSCHEN DIE AUSNAHME. Die Zuordnung Titel →
+               Art steht nirgendwo sonst; bei `tier_gross` hingen daran zuletzt über hundert
+               Zeilen. Deshalb steht der Schalter vorn und gut erreichbar, das Löschen hinten
+               und hinter dem Passwort (`require_confirm`).
+               ================================================================================ -->
+          <div style="margin-top:22px;border-top:1px solid #1e2d3d;padding-top:16px;">
+            <div class="panel-title" style="font-size:0.95rem;"><span>🏷 ARTEN (Anlegen, Ändern, Löschen)</span></div>
+            <p style="color:#8aa0b8;font-size:0.78rem;margin:4px 0 10px;">
+              Eine neue Art kostet eine Zeile — <b>kein Update der FriesenBrügge, kein
+              Deploy</b>. Welche Titel sie füllen, wird unten zugeordnet.
+              <span id="bg-a-zahlen" style="color:#cfe0f2;"></span>
+            </p>
+
+            <div class="bg-t-filter">
+              <input id="bg-a-neu-art" placeholder="neue Art, z. B. hochsitz"
+                     autocomplete="off" style="flex:0 1 220px;">
+              <input id="bg-a-neu-bedeutung" placeholder="Bedeutung — was ist das?"
+                     autocomplete="off">
+              <button class="btn btn-sm" id="bg-a-anlegen">Anlegen</button>
+            </div>
+
+            <div class="table-wrap" style="max-height:420px;overflow:auto;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Art</th><th>Bedeutung</th><th>Titel</th>
+                    <th>geht hinaus?</th><th></th>
+                  </tr>
+                </thead>
+                <tbody id="bg-arten"><tr><td colspan="5" class="empty-hint">Lädt …</td></tr></tbody>
+              </table>
             </div>
           </div>
         </div>
