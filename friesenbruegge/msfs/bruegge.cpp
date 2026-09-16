@@ -181,12 +181,18 @@ enum {
     // danach ist diese Zeile entstanden -- ein Fehlversuch haette hier einen Build und eine
     // Verteilung an 61 Piloten gekostet.
     //
-    // ⚠⚠ ABER: EXTERN GEMESSEN IST NICHT AUS WASM GEMESSEN. Genau diese Luecke gibt es auf
-    // dieser Codebasis schon einmal, zwanzig Zeilen weiter unten nachzulesen: `OnGround=1`
-    // wirkt extern zuverlaessig und aus WASM heraus NICHT (11.09.2026). Die externe Messung
-    // beweist hier also nur, dass der Simulator die Ereignisse auf ein solches Objekt
-    // anwendet -- nicht, dass ein WASM-Modul sie senden darf. Solange das nicht im Flug mit
-    // DIESEM Modul belegt ist, ist 1.12.0 ein Versuch und keine Zusage.
+    // ⭐ **AUS WASM HERAUS IM FLUG BELEGT** (16.09.2026, 1.12.0): Derselbe
+    // `HotAirBalloon Passengers`, der ohne Freeze in 15 s auf Gelaendehoehe lag, stand
+    // 60 s lang auf exakt 3000,0 ft -- mit einem Windrad daneben als Kontrolle, ebenfalls
+    // 3000,0 ft.
+    //
+    // Das war nicht selbstverstaendlich und der Grund, warum diese Zeilen zuerst als
+    // Versuch ausgeliefert wurden: Genau diese Luecke gibt es auf dieser Codebasis schon,
+    // zwanzig Zeilen weiter unten nachzulesen -- `OnGround=1` wirkt extern zuverlaessig und
+    // aus WASM heraus NICHT (11.09.2026). Eine externe Messung beweist also nur, dass der
+    // Simulator die Ereignisse auf ein solches Objekt anwendet, nicht dass ein WASM-Modul
+    // sie senden darf. Bei Freeze gilt beides. Wer hier etwas aehnliches baut, misst wieder
+    // beide Seiten einzeln.
     EV_FREEZE_ALT  = 30,
     EV_FREEZE_LAGE = 31,
     EV_FREEZE_ORT  = 32,

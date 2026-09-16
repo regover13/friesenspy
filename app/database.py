@@ -3447,6 +3447,24 @@ def bruegge_katalog_setzen(conn: sqlite3.Connection, simulator: str, titel: str,
             # Ohne Art sind Rang und Status gegenstandslos. Sie stehen zu lassen hiesse,
             # eine Ordnung zu behaupten, zu der es nichts zu ordnen gibt.
             setz += ["rang = NULL", "status = NULL"]
+        elif status is ...:
+            # ⚠ DAS GEGENSTUECK ZUR ZEILE DARUEBER, und es hat lange gefehlt: MIT Art
+            # braucht es einen Status. Ausgeliefert wird ausschliesslich `status = 'aktiv'`
+            # (bruegge_titel_fuer, bruegge_arten_beidseitig, bruegge_arten_anforderbar) --
+            # ein frisch gemeldeter Titel hat aber NULL, und der Admin schickt beim
+            # Zuordnen nur `art`.
+            #
+            # Der Titel war damit stumm, und man konnte es nicht sehen: Die Anzeige zeigt
+            # `z.status || 'aktiv'`, NULL sah also aus wie „aktiv". Der Nutzer hat es im
+            # Betrieb gefunden (16.09.2026): „ich muss den status von aktiv auf aus und
+            # wieder auf aktiv wechseln, damit aktiv gespeichert wird."
+            #
+            # COALESCE und nicht schlicht 'aktiv': Die Luecke wird GEFUELLT, nichts
+            # ueberschrieben. `status = 'aus'` kommt aus einem gescheiterten Setzversuch
+            # (bruegge_katalog_ergebnis_melden) und ist eine Eigenschaft des TITELS, nicht
+            # der Zuordnung -- wer ihn einer anderen Art gibt, holt sich sonst einen
+            # nachweislich kaputten Titel durchs Umhaengen zurueck.
+            setz.append("status = COALESCE(status, 'aktiv')")
     if rang is not ...:
         setz.append("rang = ?"); werte.append(rang)
     if status is not ...:
