@@ -3,7 +3,21 @@
 **Der Vertrag zwischen dem FriesenSpy-Server und einer Brügge im Simulator.**
 Verbindlich für alle Umsetzungen — MSFS 2020, MSFS 2024, X-Plane 12.
 
-> Stand 14.09.2026 · Protokollfassung **2** · ✅ **im Flug abgenommen** — Server, MSFS **1.8.0** und X-Plane **1.2.0**
+> Stand 17.09.2026 · Protokollfassung **2** · ✅ **im Flug abgenommen** — Server, MSFS **1.14.0** und X-Plane **1.3.1**
+>
+> ⭐⭐ **Ein Modul für MSFS 2020 UND 2024** (17.09.2026, Brügge 1.14.0). Das 2024er Modul
+> importierte `fsIOOpen`/`fsIOWrite`/`fsIOClose` (die Datei-API für die Kennung) — ein WASM-
+> Import ist statisch, und `MSFS_IO.h` gibt es im 2020er SDK nicht. MSFS 2020 verwarf das
+> Modul deshalb bei der Validierung, lautlos, bevor eine Zeile lief. Ohne die Datei-API sind
+> es 19 Importe statt 23, eine echte Teilmenge, die in **beiden** Simulatoren aufgeht
+> (gegengeprüft: beide SDKs erzeugen ein bitgleiches Modul). **Im Flug gemessen** in beiden
+> Fassungen am 16./17.09.2026 — MSFS 2020 („KittyHawk" 11.0) und MSFS 2024 („SunRise" 12.2)
+> werden korrekt unterschieden (Abschnitt 5, SIMCONNECT_RECV_ID_OPEN).
+>
+> Der Preis: Die Kennung überlebt keinen Sim-Neustart mehr auf der Platte. Dafür hält sie
+> jetzt über den **Server** — er gibt bei leerer `kennung` die zuletzt für diese
+> (CID, Simulator) vergebene zurück, statt neu zu würfeln (Abschnitt 5). Kein
+> Client-Release kostet das, nur einen Server-Push.
 >
 > **Fassung 2 (14.09.2026):** Der Server schickt die Titel mit (`arten`), die Brügge führt
 > keine eigene Tabelle mehr — und `kann` fällt weg. Fassung 1 wird weiter bedient; die
@@ -1067,12 +1081,35 @@ oder die ältere verwerfen.
 **Abkürzung der Rechnung, keine Vollmacht.** Die Prüfung entfällt nicht, sie wird billiger:
 
 - Die Position muss **weiterhin** zur VATSIM-Meldung derselben CID passen. Tut sie das
-  wiederholt nicht, fällt die Zuordnung, und der nächste Match beginnt von vorn.
+  wiederholt nicht, fällt die Zuordnung.
 - Loggt die CID von VATSIM ab, fällt die Zuordnung sofort — ohne VATSIM geschieht ohnehin
   nichts.
 - Die Kennung allein reicht **nie**, um Positionen zu setzen. Wer eine fremde Kennung stiehlt,
   muss trotzdem die öffentliche VATSIM-Position dieses Piloten treffen — und gewinnt damit
   genau das, was er auch ohne sie gewinnt: nichts.
+
+⚠⚠ **„Der nächste Match beginnt von vorn" stand hier bis zum 17.09.2026 — und das war die
+Lücke, durch die eine Brügge am 16.09.2026 zu einem fremden Piloten wurde.**
+
+Ein Pilot loggt sich ab, der Simulator läuft weiter. Die Bindung fällt — richtig, sie hat
+ihren Gegenstand verloren. Lädt er danach einen Flug auf einem Platz, auf dem zufällig ein
+*anderer* Friese steht, trifft der volle Match diesen: in der Nähe, frei, eindeutig, nach
+genau den Regeln oben. Seine Brügge hätte fortan dessen Position gemeldet und dessen Objekte
+bekommen.
+
+**Der Unterschied, der das auflöst:** Eine Bindung aufzugeben, weil die Position nicht mehr
+passt, ist richtig. Eine **neue** aufzunehmen, weil irgendeine Position zufällig passt, ist
+etwas anderes — und keine Folge des ersten. Seit 17.09.2026 löscht eine gelöste Zuordnung
+ihre Zeile nicht mehr, sondern setzt `geloest_am`. Die Bindung ruht, die Erinnerung bleibt:
+Eine erinnerte Kennung findet danach nur noch zu **ihrer eigenen** CID zurück. Meldet sich
+der eigene Pilot wieder und passt die Position, bindet dieselbe Zeile erneut. Endgültig frei
+wird die Kennung erst nach 24 h ohne Meldung (`bruegge_aufraeumen`).
+
+**Warum das Kniebrett diesen Fehler nicht kennt, obwohl es dieselben Regeln benutzt:** Es
+muss seinen *eigenen* Piloten nie erraten — wer es ist, weiß es aus der Anmeldung. Eine
+Fehlpaarung trifft dort einen fremden Punkt auf der Karte. Die Brügge rät sich selbst; rät
+sie falsch, *ist* sie jemand anderes. Die Kennung ist ihr einziges Gegenstück zur
+`device_id`, und sie beim Lösen wegzuwerfen nahm ihr genau das.
 
 **Deshalb ist die Kennung kein Geheimnis** und braucht keinen Schutz, kein Ablaufdatum und
 keine Übertragungssicherung. Sie unterscheidet sich darin von der `device_id` des Kniebretts,
@@ -1377,6 +1414,15 @@ nur läuft sie jetzt auf Windows, macOS und Linux aus einem Quelltext. Am Vertra
 dadurch nichts; `hoehe_gemessen` bleibt wie beschrieben. Der Weg dorthin und was daran
 ungeprüft blieb, steht in
 [`docs/superpowers/specs/2026-09-13-bruegge-posix-design.md`](../docs/superpowers/specs/2026-09-13-bruegge-posix-design.md).
+
+**Die MSFS-Brügge steht seit dem 17.09.2026 auf 1.14.0** — ebenfalls dieselbe
+*Protokoll*fassung, aber ein Client-Umbau, der ein eigenes Kapitel verdient: Ein Modul bedient
+jetzt MSFS 2020 **und** 2024 aus einem Quelltext, statt zwei getrennt zu bauen. Am Vertrag
+ändert sich nichts — `simulator` trägt weiterhin `msfs2020` oder `msfs2024`, nur bestimmt die
+Brügge jetzt selbst zur Laufzeit (`SIMCONNECT_RECV_ID_OPEN`, `dwApplicationVersionMajor`),
+welcher Wert es ist, statt es beim Übersetzen festzulegen. Was das kostet und wie der Server
+es ausgleicht, steht oben im Kasten und unter „Die Kennung beschleunigt, sie autorisiert
+nicht" (Abschnitt 5).
 
 ---
 

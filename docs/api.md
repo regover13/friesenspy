@@ -2310,10 +2310,26 @@ Standardflugzeuge von MSFS 2024 sind gestreamt und stehen nirgends als Text auf 
 der laufende Simulator ist die einzige Quelle. Ohne Zuordnung wird nichts eingetragen.
 
 ⭐ **`kennung` darf leer sein** (seit 14.09.2026). Dann vergibt der Server eine und schickt
-sie in der Antwort mit; die Brügge speichert sie und liefert sie ab dann bei jeder Meldung
-mit. Grund: Die MSFS-Brügge erzeugte bis dahin auf **jedem** Rechner dieselbe
-(`9e3711c100000000` — Speicheradresse ⊕ `rand()` ohne `srand()`, in WASM beides konstant), und
-zwei Piloten auf einem Flugplatz verwechselten sich damit gegenseitig.
+sie in der Antwort mit. Grund: Die MSFS-Brügge erzeugte bis dahin auf **jedem** Rechner
+dieselbe (`9e3711c100000000` — Speicheradresse ⊕ `rand()` ohne `srand()`, in WASM beides
+konstant), und zwei Piloten auf einem Flugplatz verwechselten sich damit gegenseitig.
+
+⚠ **Seit Brügge 1.14.0 speichert die MSFS-Fassung die Kennung nicht mehr auf der Platte** —
+ein Modul bedient jetzt MSFS 2020 **und** 2024, und dafür musste die Datei-API weichen
+(`MSFS_IO.h` fehlt dem 2020er SDK vollständig; ein WASM-Import ist statisch, ein Modul, das
+sie nur *vielleicht* benutzt, macht MSFS 2020 das ganze Paket unbrauchbar). Sie meldet nach
+jedem Simulator-Start mit leerer `kennung`. Damit das trotzdem nach der ersten Meldung
+dieselbe bleibt, gibt der Server bei leerer `kennung` die zuletzt für diese (CID, Simulator)
+vergebene zurück, statt neu zu würfeln (`bruegge_kennung_fuer`) — die Wiedererkennung
+wandert vom Client auf den Server, passend zum Leitbild „Die Brügge ist dumm."
+
+⚠⚠ **Eine erinnerte Kennung findet nur zu ihrer eigenen CID zurück** (17.09.2026). Löst der
+Server eine Bindung (Partner ausgeloggt oder Position passt dauerhaft nicht mehr), bleibt die
+Zeile stehen — nur `geloest_am` wird gesetzt. Meldet dieselbe Kennung danach eine Position,
+die zu einer *anderen* CID passt, ist das **keine** Zuordnung. Der Fund dahinter: Eine
+Bindung aufzugeben, weil die Position nicht mehr passt, ist richtig; eine neue aufzunehmen,
+weil zufällig irgendeine Position passt, ist etwas anderes — und ohne diese Schranke konnte
+eine Brügge nach einem VATSIM-Logoff einem in der Nähe stehenden fremden Piloten zufallen.
 
 `steht` ist die Gegenrichtung: was tatsächlich im Simulator steht — ohne diesen Block erführe
 der Server nie, ob ein angefordertes Objekt existiert (bis zum 12.09.2026 wurde er
