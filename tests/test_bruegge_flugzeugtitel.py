@@ -12,8 +12,16 @@ Der Titel existiert nur im laufenden Simulator. Genau dort läuft die Brügge.
 **Und es ist die einzige Quelle, die ehrlich ist.** Am selben Tag wurden dreimal Objekte
 gesetzt, die nur auf einem Rechner existierten (Black Square Bonanza, Superspuds Vieh,
 Digital Aeronautics Mi-2) — der zweite Pilot bekam jedes Mal `EXCEPTION_22`. Dazu kam ein
-Titel, der aus der `aircraft.cfg` gelesen war und trotzdem nicht funktionierte: MSFS
-verlangt den Livery-Titel (`Mi-2 [passenger]`), nicht den Kopfzeilen-Namen.
+Titel, der aus einer `aircraft.cfg` gelesen war und trotzdem nicht funktionierte.
+
+⚠ **Am 16.09.2026 nachgemessen, und dabei hat sich die Erklärung geändert.** Hier stand,
+MSFS verlange „den Livery-Titel, nicht den Kopfzeilen-Namen". Genauer ist: Setzbar ist eine
+**wählbare Variante** — ein Preset oder eine vollständige Livery. Nicht setzbar ist der
+Basiseintrag der Modular-Struktur (`common/config/aircraft.cfg`), den man nicht einmal
+fliegen kann. Gemessen am fliegenden Simulator: `Mi-2 [passenger]` **und** der gemeldete
+`Digital Aeronautics Mi-2 Hoplite - Czech Air Force` stehen beide; `Digital Aeronautics Mi-2
+Hoplite` scheitert. Der Verzeichnislauf zieht diese Linie seitdem selbst
+(`katalog_sammeln._ist_basiseintrag`, s. `tests/test_katalog_sammeln_flugzeuge.py`).
 """
 
 import pytest

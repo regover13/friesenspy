@@ -112,15 +112,25 @@ FRS123 bekam jedes Mal `EXCEPTION_22`. Die Information stand die ganze Zeit im K
 | `flugzeug_klassik` | leer — kein Simulator bringt einen statischen Oldtimer mit |
 | `ballon` | MSFS 2024 hat einen Heißluftballon, aber **als Flugzeug** — er steht deshalb nicht im Katalog |
 
-**`katalog_sammeln.py` erfasst die Kategorie `Airplanes` weiterhin nicht** — es durchsucht in
-MSFS nur `SimObjects/{Animals,Boats,GroundVehicles,Landmarks,Misc}`, und die 14 Treffer unter
-`Airplanes` sind Sitze (`SEAT_*`). Jetzt, wo belegt ist, dass Flugzeuge sich setzen lassen,
-wäre die Erweiterung ein lohnender Lauf: Sie brächte die Standflugzeuge, die heute nur über
-den gemeldeten Titel des eigenen Flugzeugs in den Katalog finden.
+✅ **`katalog_sammeln.py` liest seit dem 16.09.2026 auch `aircraft.cfg`** — und damit
+überhaupt zum ersten Mal Flugzeugtitel. Hier stand bis dahin, das Skript durchsuche „nur
+`SimObjects/{Animals,Boats,GroundVehicles,Landmarks,Misc}`"; das war schon länger falsch, denn
+einen Kategorienfilter gibt es gar nicht mehr. Die Lücke saß beim **Dateinamen**: gesucht
+wurde `sim.cfg`, und Flugzeuge tragen ihren Titel in `aircraft.cfg`.
 
-> **Steht seit dem 15.09.2026 als [GitHub-Issue #34](https://github.com/regover13/friesenspy/issues/34)**
-> und damit nicht mehr auf dieser Liste — dort mit der `quelle`-Falle zusammen, die für den
-> Ballon besonders zählt: Ein Heißluftballon aus einem Payware-Paket nützt der Gruppe nichts.
+⚠ **Der Lauf nimmt dabei nicht jeden Titel mit.** Der Basiseintrag der Modular-Struktur
+(`common/config/aircraft.cfg`) scheitert im Simulator mit `EXCEPTION_22` — er ist keine
+wählbare Variante. Er bleibt draußen, wird aber am Ende des Laufs mit Zahl und Beispielen
+gemeldet; `--mit-basis` nimmt ihn markiert doch auf. Einzelheiten in `OBJEKTE.md`.
+
+> **Der Lauf muss auf dem Rechner des Piloten wiederholt werden**, sonst ändert sich am
+> Katalog nichts: `python katalog_sammeln.py` → `katalog.json` → `POST /api/admin/bruegge/katalog`.
+> Für **gestreamte** MSFS-2024-Flugzeuge bringt er weiterhin nichts (ihre `aircraft.cfg` liegt
+> im verschlüsselten Teil des Pakets) — dort bleibt die Meldung der Brügge die einzige Quelle.
+
+> Der Rest von [GitHub-Issue #34](https://github.com/regover13/friesenspy/issues/34) bleibt
+> offen: die `quelle`-Falle, die für den Ballon besonders zählt — ein Heißluftballon aus einem
+> Payware-Paket nützt der Gruppe nichts.
 
 ---
 

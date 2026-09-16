@@ -17,15 +17,36 @@ Tabelle `bruegge_katalog`.
 
 | | wo die Titel stehen |
 |---|---|
-| MSFS 2020 | `SimObjects/*/*/sim.cfg`, Feld `title=` |
+| MSFS 2020 | `SimObjects/*/*/sim.cfg` und `aircraft.cfg`, Feld `title=` |
 | MSFS 2024 | dasselbe für Community-Pakete; der eigene Bestand ist **gestreamt** |
 | X-Plane 12 | es gibt keine Titel — der **Dateipfad** der `.obj` ist der Bezeichner |
+
+⚠ **Flugzeuge tragen ihren Titel in `aircraft.cfg`, nicht in `sim.cfg`.** Bis zum 16.09.2026
+wurde nur `sim.cfg` gesucht, und deshalb hat dieser Lauf **noch nie einen Flugzeugtitel
+geliefert** — auch nicht aus Paketen, die welche haben. Die Gegenprobe war eindeutig:
+`gotfriends-wilga` stand mit 19 Zeilen im Katalog, und das waren Bienen, Wohnwagen, Pfützen
+und ein Windsack aus `SimObjects/{Misc,Animals,Humans}`; kein einziger der zwölf
+`Wilga 80X: …`-Titel. Was im Katalog trotzdem nach Flugzeug aussah, waren Handeinträge und
+die Meldungen der Brügge (`quelle='gemeldet'`).
+
+⚠⚠ **Und nicht jeder `title=` aus einer `aircraft.cfg` lässt sich setzen** — am 16.09.2026 am
+fliegenden Simulator gemessen (GitHub-Issue #40):
+
+    presets/…/passenger/config/aircraft.cfg      "Mi-2 [passenger]"                    steht
+    common/config/aircraft.cfg                   "Digital Aeronautics Mi-2 Hoplite"    EXCEPTION_22
+
+Der Eintrag unter `common/` ist der **Basiseintrag der Modular-Struktur** und keine wählbare
+Variante — man kann ihn nicht einmal fliegen, und `AICreateSimulatedObject` nimmt ihn nicht.
+Deshalb bleibt er hier draußen, solange er nicht zusätzlich als Preset vorkommt (`--mit-basis`
+nimmt ihn doch mit, markiert). Die Trennlinie ist an beiden Enden belegt: Steht derselbe Name
+in `common` **und** als Preset — so bei `A2A Piper PA-24-250 Comanche` und
+`A2A Piper Aerostar 600` —, dann setzt er sich. `common` schadet nicht, es genügt nur nicht.
 
 ⚠ **Junctions muss man ansteuern, nicht durchlaufen.** Viele Community-Pakete sind Junctions.
 `find` ohne `-L` übersieht sie (9 statt 309 `sim.cfg`) — daher stand in einer früheren Fassung
 von OBJEKTE.md fälschlich „keine Robben". **Und `Path.rglob` übersieht sie ebenso**, entgegen
 einer früheren Annahme hier: Von der Wurzel aus fand es 243 Dateien, aus einer Junction heraus
-allein 64 weitere. Deshalb durchsucht `_alle_sim_cfg` jeden Paketordner EINZELN.
+allein 64 weitere. Deshalb durchsucht `_alle_objekt_cfg` jeden Paketordner EINZELN.
 """
 
 from __future__ import annotations
@@ -61,8 +82,14 @@ def _titel_aus_cfg(datei: Path) -> list[str]:
     return [t.strip() for t in TITEL.findall(text) if t.strip()]
 
 
-def _alle_sim_cfg(wurzel: Path):
-    """Jede `sim.cfg` unter `wurzel` -- auch die hinter Windows-Junctions.
+#: Die zwei Dateien, in denen ein MSFS-Objekt seinen Titel traegt. `sim.cfg` gehoert den
+#: Szenerieobjekten (Tiere, Boote, Fahrzeuge), `aircraft.cfg` den Flugzeugen -- und die fehlte
+#: hier bis zum 16.09.2026 vollstaendig, s. Modul-Docstring.
+_CFG_NAMEN = ("sim.cfg", "aircraft.cfg")
+
+
+def _alle_objekt_cfg(wurzel: Path):
+    """Jede `sim.cfg` und `aircraft.cfg` unter `wurzel` -- auch die hinter Windows-Junctions.
 
     ⚠ **`Path.rglob` steigt NICHT in Junctions ab.** Hier stand, es tue das „von selbst", und
     das ist falsch: Am 13.09.2026 fand `rglob` von der Community-Wurzel aus **243** `sim.cfg`
@@ -78,12 +105,13 @@ def _alle_sim_cfg(wurzel: Path):
 
     def darunter(basis: Path):
         try:
-            for cfg in basis.rglob("sim.cfg"):
-                schluessel = str(cfg).lower()
-                if schluessel in gesehen:      # dasselbe Paket kann ueber zwei Wege kommen
-                    continue
-                gesehen.add(schluessel)
-                yield cfg
+            for name in _CFG_NAMEN:
+                for cfg in basis.rglob(name):
+                    schluessel = str(cfg).lower()
+                    if schluessel in gesehen:  # dasselbe Paket kann ueber zwei Wege kommen
+                        continue
+                    gesehen.add(schluessel)
+                    yield cfg
         except OSError:
             return                              # unlesbarer Ordner darf den Lauf nicht killen
 
@@ -101,11 +129,48 @@ def _alle_sim_cfg(wurzel: Path):
                 yield from darunter(paket)
 
 
-def sammle_msfs(wurzel: Path, simulator: str) -> list[dict]:
-    """Alle `title=` aus allen `sim.cfg` unterhalb von `wurzel`."""
-    raus: list[dict] = []
-    gesehen: set[str] = set()
-    for cfg in _alle_sim_cfg(wurzel):
+def _ist_basiseintrag(cfg: Path) -> bool:
+    """Steht dieser Titel im Basiseintrag der Modular-Struktur (`common/config/aircraft.cfg`)?
+
+    ⚠ **Ein solcher Titel laesst sich NICHT setzen** -- am 16.09.2026 gemessen, nicht
+    hergeleitet: `Digital Aeronautics Mi-2 Hoplite` aus `common/config/aircraft.cfg`
+    scheiterte mit `EXCEPTION_22`, waehrend `Mi-2 [passenger]` aus
+    `presets/…/passenger/config/aircraft.cfg` im selben Lauf stand. Der Grund liegt nahe: Der
+    common-Eintrag ist keine waehlbare Variante, man kann ihn nicht einmal fliegen.
+
+    Die Erkennung haengt bewusst an BEIDEM -- Dateiname und Ordner. `sim.cfg` bleibt
+    unberuehrt (dort gibt es diese Struktur nicht), und ein Ordner `common` anderswo im Baum
+    macht aus einem Szenerieobjekt keinen Basiseintrag.
+
+    ⚠ Das ist eine Aussage ueber die Datei, nicht ueber den TITEL: Steht derselbe Name
+    zusaetzlich in einem Preset, setzt er sich (beide A2A-Muster, gemessen). Darueber
+    entscheidet deshalb `sammle_msfs` beim Zusammenfuehren, nicht diese Funktion.
+    """
+    return cfg.name.lower() == "aircraft.cfg" and "common" in {t.lower() for t in cfg.parts}
+
+
+def sammle_msfs(wurzel: Path, simulator: str,
+                mit_basis: bool = False) -> tuple[list[dict], list[str]]:
+    """Alle `title=` aus allen `sim.cfg`/`aircraft.cfg` unterhalb von `wurzel`.
+
+    Gibt ``(eintraege, nur_basis)`` zurueck. ``nur_basis`` sind die Flugzeugtitel, die
+    AUSSCHLIESSLICH im Basiseintrag der Modular-Struktur stehen (s. `_ist_basiseintrag`) --
+    sie bleiben draussen, weil sie im Simulator scheitern. Der zweite Rueckgabewert ist
+    nicht Zierrat: Ohne ihn verschwaende der Lauf sie stillschweigend, und wer den Katalog
+    spaeter vermisst, haette keinen Anhaltspunkt.
+
+    ``mit_basis=True`` nimmt sie doch auf -- markiert in `bemerkung`, damit man im Admin
+    sieht, woran man ist. Gedacht fuer den Fall, dass sich die Messung irgendwann als zu
+    eng erweist; die Vorgabe bleibt das Weglassen.
+
+    ⚠ **Zweistufig, und das muss so sein:** Ob ein Titel taugt, entscheidet sich erst, wenn
+    ALLE seine Fundstellen bekannt sind -- die Preset-Datei kann nach der common-Datei
+    kommen. Ein Durchlauf, der beim ersten Treffer entscheidet, wuerde `A2A Piper PA-24-250
+    Comanche` wegwerfen, obwohl er nachweislich steht.
+    """
+    # titel -> {"basis": bool (nur in common gefunden), "eintrag": dict}
+    fund: dict[str, dict] = {}
+    for cfg in _alle_objekt_cfg(wurzel):
         teile = cfg.parts
         if "SimObjects" not in teile:
             continue
@@ -120,13 +185,33 @@ def sammle_msfs(wurzel: Path, simulator: str) -> list[dict]:
                     paket = teile[j + 1]
                 break
         quelle = "community" if "Community" in teile else "bord"
+        basis = _ist_basiseintrag(cfg)
         for t in _titel_aus_cfg(cfg):
-            if t in gesehen:
-                continue
-            gesehen.add(t)
-            raus.append({"simulator": simulator, "titel": t, "paket": paket,
-                         "quelle": quelle, "kategorie": kategorie})
-    return raus
+            vorher = fund.get(t)
+            if vorher is None:
+                fund[t] = {"basis": basis,
+                           "eintrag": {"simulator": simulator, "titel": t, "paket": paket,
+                                       "quelle": quelle, "kategorie": kategorie}}
+            elif vorher["basis"] and not basis:
+                # Derselbe Name auch als waehlbare Variante -- DIE Fundstelle zaehlt, und
+                # mit ihr Paket und Kategorie (die common-Datei liegt oft eine Ebene hoeher).
+                fund[t] = {"basis": False,
+                           "eintrag": {"simulator": simulator, "titel": t, "paket": paket,
+                                       "quelle": quelle, "kategorie": kategorie}}
+
+    raus: list[dict] = []
+    nur_basis: list[str] = []
+    for t, f in fund.items():
+        if not f["basis"]:
+            raus.append(f["eintrag"])
+            continue
+        nur_basis.append(t)
+        if mit_basis:
+            e = dict(f["eintrag"])
+            e["bemerkung"] = ("nur Basiseintrag (common/config/aircraft.cfg) -- "
+                              "im Simulator gemessen NICHT setzbar")
+            raus.append(e)
+    return raus, sorted(nur_basis)
 
 
 def sammle_gestreamt(wurzel: Path) -> list[dict]:
@@ -270,6 +355,20 @@ def sammle_xplane(wurzel: Path) -> list[dict]:
     return raus
 
 
+def _basis_melden(nur_basis: list[str], mit_basis: bool) -> None:
+    """Was wegen `common/config/aircraft.cfg` draussen blieb -- sichtbar, nicht stillschweigend.
+
+    Ein weggelassener Titel, von dem niemand erfaehrt, ist genau die Sorte Luecke, die spaeter
+    als „der Simulator hat das nicht" missverstanden wird. Drei Beispiele reichen, um den Fall
+    wiederzuerkennen; die Zahl sagt den Rest.
+    """
+    if not nur_basis:
+        return
+    wort = "mitgenommen (--mit-basis)" if mit_basis else "weggelassen"
+    beispiel = ", ".join(nur_basis[:3]) + ("  …" if len(nur_basis) > 3 else "")
+    print(f"            {len(nur_basis):5d} Basiseintraege {wort}: {beispiel}")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -277,6 +376,9 @@ def main() -> int:
                     help="nur diesen Simulator")
     ap.add_argument("--xplane", default=r"D:\X-Plane 12", help="X-Plane-Wurzel")
     ap.add_argument("--ausgabe", default="katalog.json")
+    ap.add_argument("--mit-basis", action="store_true",
+                    help="auch die Basiseintraege aus common/config/aircraft.cfg aufnehmen "
+                         "(gemessen nicht setzbar -- nur fuer die Fehlersuche)")
     a = ap.parse_args()
 
     alles: list[dict] = []
@@ -284,9 +386,10 @@ def main() -> int:
     if a.nur in (None, "msfs2024"):
         w = _msfs_wurzel("Microsoft.Limitless_8wekyb3d8bbwe")
         if w:
-            teil = sammle_msfs(w, "msfs2024")
+            teil, nur_basis = sammle_msfs(w, "msfs2024", mit_basis=a.mit_basis)
             gestreamt = sammle_gestreamt(w)
             print(f"MSFS 2024:  {len(teil):5d} Titel, {len(gestreamt):5d} gestreamte Platzhalter")
+            _basis_melden(nur_basis, a.mit_basis)
             alles += teil + gestreamt
         else:
             print("MSFS 2024:  nicht gefunden")
@@ -294,8 +397,9 @@ def main() -> int:
     if a.nur in (None, "msfs2020"):
         w = _msfs_wurzel("Microsoft.FlightSimulator_8wekyb3d8bbwe")
         if w:
-            teil = sammle_msfs(w, "msfs2020")
+            teil, nur_basis = sammle_msfs(w, "msfs2020", mit_basis=a.mit_basis)
             print(f"MSFS 2020:  {len(teil):5d} Titel")
+            _basis_melden(nur_basis, a.mit_basis)
             alles += teil
         else:
             print("MSFS 2020:  nicht gefunden")

@@ -56,7 +56,20 @@ schiebt ihn hoch.
 | X-Plane 12 | 1146 | *offen* | — (aber s. Gattungstabelle unten: 22 Pfade einzeln nachgesehen) |
 
 **Was aus einer `sim.cfg` eines installierten Pakets kommt, lässt sich setzen — ausnahmslos.**
-1536 von 1536 Addon-Titeln. Der einzige nennenswerte Ausfall sind **Tiere im Bordbestand**:
+1536 von 1536 Addon-Titeln.
+
+⚠ **Für `aircraft.cfg` gilt dieser Satz NICHT** (gemessen 16.09.2026, s. `katalog_sammeln.py`).
+Flugzeuge tragen ihren Titel dort, und ein Paket nennt denselben Flieger an mehreren Stellen:
+
+| Datei | Beispiel | setzbar |
+|---|---|---|
+| `presets/…/config/aircraft.cfg` | `Mi-2 [passenger]` | **ja** |
+| `presets/…/config/aircraft.cfg` (umbenannt auf eine Livery) | `Digital Aeronautics Mi-2 Hoplite - Czech Air Force` | **ja** |
+| `common/config/aircraft.cfg` | `Digital Aeronautics Mi-2 Hoplite` | **nein — EXCEPTION_22** |
+
+Der common-Eintrag ist der Basiseintrag der Modular-Struktur und keine wählbare Variante —
+man kann ihn nicht einmal fliegen. Steht derselbe Name zusätzlich als Preset, setzt er sich
+trotzdem (beide A2A-Muster): **`common` schadet nicht, es genügt nur nicht.** Der einzige nennenswerte Ausfall sind **Tiere im Bordbestand**:
 
 | Kategorie (MSFS-2020-Bestand) | setzbar | nicht |
 |---|---|---|
