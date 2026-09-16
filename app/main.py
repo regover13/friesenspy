@@ -1725,7 +1725,27 @@ _BRUEGGE_ART_ERSCHOEPFT = ("KEIN_TITEL_GING", "KEIN_MODELL_MEHR")
 #: ⚠ Getroffen hat es die KNAPPSTEN Arten: `bruegge_katalog_ergebnis_melden` schreibt bei
 #: `alle=False` nur, wenn die Art in diesem Topf genau EINEN aktiven Titel hat. Arten mit
 #: mehreren Titeln waren zufaellig geschuetzt.
-_BRUEGGE_KEIN_URTEIL = ("NOCH_NICHT_GESETZT", "GATTUNG_UNBEKANNT")
+#: ⚠ `KEINE_ANTWORT` ist das MSFS-Gegenstueck zu `NOCH_NICHT_GESETZT` (msfs/bruegge.cpp:691,
+#: `objekt_id == 0`). Derselbe Fehler steckte also auf BEIDEN Seiten -- gefunden erst, als
+#: nach dem dritten Einzelfall alle Fehlerzeichenketten beider Quelltexte durchgesehen wurden,
+#: statt weiter zu stolpern.
+#:
+#: ⚠ `MODELLBESTAND_VOLL` (xplane/bruegge.cpp:628): X-Plane haelt hoechstens `OBJEKTE_MAX = 24`
+#: verschiedene Modelle gleichzeitig. Beim ersten Pruflauf ueber den Katalog kam die Meldung
+#: sechsmal in Folge -- waere er durchgelaufen, haette er den halben Katalog stillgelegt.
+#:
+#: ⚠ `KEINE_INSTANZ` (xplane/bruegge.cpp:644) ist der unklare Fall: `XPLMCreateInstance` gab
+#: nichts zurueck, und das kann am Modell liegen oder an einer Ressourcengrenze. Es zaehlt
+#: hier trotzdem als „kein Urteil" -- nach der Regel, die im Katalogcode schon steht: Ein
+#: falsch stillgelegter Titel ist schlimmer als eine Luecke, denn man sieht ihm nicht an,
+#: dass er zu Unrecht aus ist.
+#: ⚠ `GATTUNG_UNBEKANNT` und `ART_UNBEKANNT` sind DASSELBE. Umbenannt am 16.09.2026 (Bruegge
+#: MSFS 1.13.0, X-Plane 1.3.0), weil es seit dem 14.09. ueberall „Art" heisst und der alte
+#: Name dem Nutzer im Admin vor der Nase stand. Die alte Schreibweise bleibt stehen, solange
+#: eine aeltere Bruegge fliegt -- ein Fehlercode ist ein Vertrag, und wer die alte Fassung
+#: streicht, legt bei jedem Piloten, der nicht herunterlaedt, Titel still.
+_BRUEGGE_KEIN_URTEIL = ("NOCH_NICHT_GESETZT", "GATTUNG_UNBEKANNT", "ART_UNBEKANNT",
+                        "MODELLBESTAND_VOLL", "KEINE_INSTANZ", "KEINE_ANTWORT")
 
 
 def _bruegge_katalog_lernen(conn, simulator: str | None, cid: int, steht: list) -> None:

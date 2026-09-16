@@ -92,7 +92,7 @@
 // Die Fassung gehört der UMSETZUNG, nicht dem Protokoll. Das WASM-Modul steht bei 1.6.0,
 // weil es sechs Runden im Simulator hinter sich hat; diese Brügge fängt bei 1.0.0 an. Was
 // beide verbindet, ist `protokoll: 1` -- und das steht in der Meldung daneben.
-#define BRUEGGE_VERSION   "1.2.2"
+#define BRUEGGE_VERSION   "1.3.0"
 #define SIMULATOR_NAME    "xplane12"
 
 
@@ -148,6 +148,7 @@ struct SollObjekt {
     bool   belegt;
     bool   in_soll;
     int    titel_nr;              // welches Modell der Gattung gerade versucht wird
+    int    objekt_idx;            // Platz in `g_objekte`, -1 = keiner -- s. modell_aufraeumen
     XPLMInstanceRef instanz;      // 0 = noch nicht gesetzt
     bool   hoehe_gemessen;        // hat die Terrain-Probe getroffen?
     double hoehe_ft;              // die Höhe, auf der es TATSÄCHLICH steht
@@ -605,6 +606,10 @@ static void lage_rechnen(const SollObjekt& o, double* x, double* y, double* z,
     *gemessen = true;
 }
 
+// Weiter unten definiert -- `objekt_setzen` und `objekt_wegnehmen` brauchen sie
+// beide, und sie steht bei den anderen Modell-Funktionen.
+static void modell_aufraeumen(int idx);
+
 static void objekt_setzen(int i) {
     SollObjekt& o = g_soll[i];
 
@@ -615,17 +620,30 @@ static void objekt_setzen(int i) {
         // laden" (die Dateien fehlen bei DIESEM Piloten), GATTUNG_UNBEKANNT heisst "der
         // Server hat zu dieser Art gar nichts mitgeschickt".
         //
-        // Die Fehlercodes bleiben wortgleich, obwohl `GATTUNG_UNBEKANNT` seit Fassung 2
-        // etwas anderes bedeutet als vorher (frueher: die Bruegge kennt die Art nicht --
-        // ein Fall fuer ein Client-Release; jetzt: der Server lieferte sie nicht mit --
-        // ein Fall fuer den Admin). Ein aelterer Server soll den Code wiedererkennen.
+        // ⚠ `ART_UNBEKANNT` seit 1.3.0 (16.09.2026) -- vorher `GATTUNG_UNBEKANNT`. Seit dem
+        // 14.09.2026 heisst es im ganzen Haus „Art", nur dieser Fehlercode hinkte hinterher
+        // und stand dem Nutzer im Admin vor der Nase: *"Gattung unbekannt? wir haben jetzt
+        // Arten, keine Gattungen mehr!"*
+        //
+        // ⚠ DER SERVER NIMMT BEIDE SCHREIBWEISEN AN (`_BRUEGGE_KEIN_URTEIL` in app/main.py),
+        // und das muss so bleiben, solange eine Bruegge vor 1.3.0 fliegt. Ein Fehlercode ist
+        // ein Vertrag: Wer ihn umbenennt und die alte Fassung streicht, legt bei jedem
+        // Piloten, der nicht herunterlaedt, Titel still.
         std::snprintf(o.fehler, sizeof(o.fehler), "%s",
-                      art_bekannt(o.art) ? "KEIN_MODELL_MEHR" : "GATTUNG_UNBEKANNT");
+                      art_bekannt(o.art) ? "KEIN_MODELL_MEHR" : "ART_UNBEKANNT");
         return;
     }
 
     int oi = objekt_holen(pfad);
     if (oi < 0) { std::snprintf(o.fehler, sizeof(o.fehler), "MODELLBESTAND_VOLL"); return; }
+    // Wer welches Modell benutzt -- daran haengt die Freigabe (s. `modell_aufraeumen`).
+    // Wechselt ein Objekt den Titel (`titel_nr` rueckt nach), gibt der alte Platz frei,
+    // sobald ihn niemand mehr braucht.
+    if (o.objekt_idx != oi) {
+        const int vorher = o.objekt_idx;
+        o.objekt_idx = oi;
+        if (vorher >= 0) modell_aufraeumen(vorher);
+    }
     if (g_objekte[oi].laedt) return;          // noch am Laden -- der nächste Takt sieht nach
     if (g_objekte[oi].fehlt) {
         // Der nächste Kandidat der Gattung rückt nach. Genau dafür ist die Liste da: Am
@@ -695,7 +713,37 @@ static void objekte_nachfuehren() {
 static void objekt_wegnehmen(int i) {
     SollObjekt& o = g_soll[i];
     if (o.instanz) XPLMDestroyInstance(o.instanz);
+    // Den Platz MERKEN, bevor er weggeraeumt wird -- danach ist er 0 und zeigte auf das
+    // erste Modell im Bestand.
+    const int idx = o.objekt_idx;
     std::memset(&o, 0, sizeof(o));
+    o.objekt_idx = -1;
+    modell_aufraeumen(idx);
+}
+
+// Ein Modell freigeben, sobald es KEIN Soll-Objekt mehr braucht (1.3.0, 16.09.2026).
+//
+// ⚠⚠ **Vorher wurde im Betrieb nie eines freigegeben.** `XPLMUnloadObject` stand
+// ausschliesslich in `XPluginStop`; `g_objekte` fuellte sich bis OBJEKTE_MAX und blieb voll.
+// Fuer den Flugbetrieb faellt das nicht auf -- eine Robbenkolonie sind 200 Instanzen EINES
+// Modells. Es faellt auf, sobald viele VERSCHIEDENE Modelle nacheinander kommen:
+//
+// Beim Durchpruefen des Katalogs (scripts/katalog_durchpruefen.py, 16.09.2026) war nach
+// 24 Titeln Schluss, und alles Weitere meldete `MODELLBESTAND_VOLL`. Ein Lauf ueber die
+// 2928 X-Plane-Titel haette 122 Simulator-Neustarts gebraucht.
+//
+// Gezaehlt wird ueber `objekt_idx` statt ueber einen Referenzzaehler: Der Index steht ohnehin
+// im Soll-Objekt, und ein Zaehler waere eine zweite Wahrheit, die beim naechsten Umbau
+// auseinanderlaeuft. Der Durchlauf ist SOLL_MAX Schritte lang -- das ist einmal je
+// abgeraeumtem Objekt, nicht je Takt.
+static void modell_aufraeumen(int idx) {
+    if (idx < 0 || idx >= OBJEKTE_MAX || !g_objekte[idx].pfad[0]) return;
+    if (g_objekte[idx].laedt) return;      // der Rueckruf kommt noch und will den Platz
+    for (int i = 0; i < SOLL_MAX; ++i) {
+        if (g_soll[i].belegt && g_soll[i].objekt_idx == idx) return;   // noch in Benutzung
+    }
+    if (g_objekte[idx].ref) XPLMUnloadObject(g_objekte[idx].ref);
+    std::memset(&g_objekte[idx], 0, sizeof(g_objekte[idx]));
 }
 
 static void alles_abraeumen() {
@@ -740,6 +788,10 @@ static void soll_abgleichen(const char* json) {
             std::memset(&o, 0, sizeof(o));
             std::snprintf(o.id, sizeof(o.id), "%s", id);
             o.belegt = true;
+            // ⚠ NACH dem memset, und das ist kein Beiwerk: 0 waere ein GUELTIGER Platz im
+            // Modellbestand. Jedes frische Soll-Objekt haette damit behauptet, Modell 0 zu
+            // benutzen -- und `modell_aufraeumen` haette genau dieses eine nie freigegeben.
+            o.objekt_idx = -1;
             o.seit_s = g_sekunden;
         }
 

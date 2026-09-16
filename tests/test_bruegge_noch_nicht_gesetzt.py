@@ -122,3 +122,54 @@ def test_gattung_unbekannt_legt_nichts_still(conn, monkeypatch):
     _melden(conn, monkeypatch, "GATTUNG_UNBEKANNT")
     assert _zeile(conn)["status"] == "aktiv"
     assert "flagge" in db.bruegge_arten_anforderbar(conn)
+
+
+class TestAlleMeldungenDieKeinUrteilSind:
+    """Die vollständige Liste — aus beiden Brügge-Quelltexten abgelesen, nicht geraten.
+
+    Anlass war der erste Prüflauf über den Katalog (16.09.2026): Er meldete sechs
+    Fehlschläge in Folge, alle mit ``MODELLBESTAND_VOLL`` — X-Plane hält höchstens
+    ``OBJEKTE_MAX = 24`` verschiedene Modelle gleichzeitig. Das sagt nichts über den Titel,
+    und wäre der Lauf durchgelaufen, hätte er den halben Katalog stillgelegt.
+
+    Danach wurden ALLE Fehlerzeichenketten beider Quelltexte durchgesehen, statt weiter
+    einzeln zu stolpern:
+
+    ===========================  ==========================================================
+    ``KEIN_MODELL_MEHR``         Urteil: alle Titel der Art durchprobiert (X-Plane)
+    ``KEIN_TITEL_GING``          Urteil: dasselbe in MSFS
+    ``EXCEPTION_22``             Urteil: der Simulator kennt diesen Container nicht
+    ---------------------------  ----------------------------------------------------------
+    ``NOCH_NICHT_GESETZT``       Zustand: Instanz noch nicht da (X-Plane, jedes Objekt)
+    ``KEINE_ANTWORT``            Zustand: noch keine Objekt-ID (MSFS — dasselbe!)
+    ``GATTUNG_UNBEKANNT``        Server: die Art wurde nicht mitgeliefert
+    ``MODELLBESTAND_VOLL``       Brügge: ``OBJEKTE_MAX`` erreicht
+    ``KEINE_INSTANZ``            Brügge: ``XPLMCreateInstance`` gab nichts zurück
+    ===========================  ==========================================================
+
+    ⚠ ``KEINE_INSTANZ`` ist der unklare Fall — es könnte am Modell liegen oder an einer
+    Ressourcengrenze. Es zählt hier trotzdem als „kein Urteil", und zwar nach der Regel, die
+    im Katalogcode schon steht: *„Ein falsch stillgelegter Titel wäre schlimmer als eine
+    Lücke, denn man sieht ihm nicht an, dass er zu Unrecht aus ist."*
+    """
+
+    def test_die_liste_ist_vollstaendig(self):
+        from app import main
+        assert set(main._BRUEGGE_KEIN_URTEIL) == {
+            "NOCH_NICHT_GESETZT", "KEINE_ANTWORT", "MODELLBESTAND_VOLL", "KEINE_INSTANZ",
+            # ⚠ BEIDE Schreibweisen: `ART_UNBEKANNT` seit dem 16.09.2026, `GATTUNG_UNBEKANNT`
+            # solange eine aeltere Bruegge fliegt. Wer die alte streicht, legt bei jedem
+            # Piloten, der nicht herunterlaedt, Titel still.
+            "GATTUNG_UNBEKANNT", "ART_UNBEKANNT",
+        }
+
+    def test_und_sie_ueberschneidet_sich_nicht_mit_den_urteilen(self):
+        """Eine Meldung kann nicht beides sein — sonst entschiede die Reihenfolge im Code."""
+        from app import main
+        assert not (set(main._BRUEGGE_KEIN_URTEIL) & set(main._BRUEGGE_ART_ERSCHOEPFT))
+
+    @pytest.mark.parametrize("meldung", ["MODELLBESTAND_VOLL", "KEINE_INSTANZ",
+                                         "KEINE_ANTWORT", "ART_UNBEKANNT"])
+    def test_keine_davon_schaltet_ab(self, conn, monkeypatch, meldung):
+        _melden(conn, monkeypatch, meldung)
+        assert _zeile(conn)["status"] == "aktiv", meldung

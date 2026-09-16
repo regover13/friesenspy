@@ -1,13 +1,15 @@
 [
   {
-    "version": "14.50.3",
+    "version": "14.51.0",
     "date": "2026-09-16",
     "highlight": false,
-    "title": "Ein Objekt, das noch lädt, gilt nicht mehr als kaputt",
+    "title": "Die FriesenBrügge heißt jetzt „Art unbekannt“ — und räumt ihre Modelle auf",
     "items": [
       "🚩 Die FriesenBrügge meldet „noch nicht gesetzt“, solange der Simulator ein angefordertes Objekt noch lädt — das kommt bei jedem Objekt einmal vor. Der Server hat das als Fehlschlag gewertet und den Namen abgeschaltet. Bei Arten mit nur einem X-Plane-Objekt — Flagge, Kran — verschwand dadurch die ganze Art, obwohl die Datei einwandfrei auf der Platte lag.",
-      "🔄 Schlimmer war die zweite Meldung: Bekommt die Brügge zu einer Art keine Objekte, meldet sie „Art unbekannt“. Auch das galt als Fehlschlag — und schloss damit einen Kreis, aus dem von Hand kein Herauskommen war: abgeschaltet, also nichts ausgeliefert, also „unbekannt“ gemeldet, also abgeschaltet. Beobachtet am hellblauen Rauch, der sich nach jeder Reparatur beim nächsten Versuch sofort wieder abschaltete.",
-      "🔍 Beide Meldungen sagen nichts über das Objekt aus. Echte Fehlschläge wirken unverändert weiter."
+      "🔄 Schlimmer war die zweite Meldung: Bekommt die FriesenBrügge zu einer Art keine Objekte, meldet sie „Art unbekannt“. Auch das galt als Fehlschlag — und schloss damit einen Kreis, aus dem von Hand kein Herauskommen war: abgeschaltet, also nichts ausgeliefert, also „unbekannt“ gemeldet, also abgeschaltet. Beobachtet am hellblauen Rauch, der sich nach jeder Reparatur beim nächsten Versuch sofort wieder abschaltete.",
+      "🔍 Beide Meldungen sagen nichts über das Objekt aus. Echte Fehlschläge wirken unverändert weiter.",
+      "🏷 Zwei neue FriesenBrügge-Fassungen (MSFS 1.13.0, X-Plane 1.3.0). Die Meldung „Gattung unbekannt“ heißt jetzt „Art unbekannt“ — seit dem 14. September heißt es überall Art, nur dieser eine Text hinkte hinterher und stand im Admin vor der Nase. Wer nicht herunterlädt, ist nicht betroffen: Der Server versteht beide Schreibweisen.",
+      "🧹 In X-Plane gab die FriesenBrügge geladene Modelle bisher erst beim Beenden wieder frei. Im Flug fällt das nicht auf — eine Robbenkolonie sind zweihundert Exemplare desselben Modells. Es fällt auf, sobald viele verschiedene Modelle nacheinander kommen: Nach vierundzwanzig war Schluss. Jetzt wird jedes Modell freigegeben, sobald es niemand mehr braucht."
     ]
   },
   {

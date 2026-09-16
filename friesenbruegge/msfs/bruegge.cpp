@@ -84,7 +84,7 @@ static void log_zeile(const char* format, ...) {
 // Feste Größen
 // ---------------------------------------------------------------------------------------
 
-#define BRUEGGE_VERSION   "1.12.0"
+#define BRUEGGE_VERSION   "1.13.0"
 #define BRUEGGE_URL       "https://friesenspy.devprops.de/api/bruegge/melden"
 #define KENNUNG_DATEI     "\\work\\friesenbruegge.kennung"
 
@@ -757,9 +757,17 @@ static void objekt_erzeugen(int i) {
         //
         // Seit Protokollfassung 2 heisst das etwas anderes als vorher: Frueher hiess es "die
         // Bruegge kennt die Art nicht" (ein Fall fuer ein Client-Release), jetzt "der Server
-        // hat sie nicht mitgeliefert" (ein Fall fuer den Admin). Der FEHLERCODE bleibt
-        // trotzdem wortgleich -- ein aelterer Server soll ihn wiedererkennen.
-        std::snprintf(o.fehler, sizeof(o.fehler), "GATTUNG_UNBEKANNT");
+        // hat sie nicht mitgeliefert" (ein Fall fuer den Admin).
+        //
+        // ⚠ `ART_UNBEKANNT` seit 1.13.0 (16.09.2026) -- vorher `GATTUNG_UNBEKANNT`. Seit dem
+        // 14.09.2026 heisst es im ganzen Haus „Art", nur dieser Fehlercode hinkte hinterher
+        // und stand dem Nutzer im Admin vor der Nase.
+        //
+        // ⚠ DER SERVER NIMMT BEIDE SCHREIBWEISEN AN (`_BRUEGGE_KEIN_URTEIL` in app/main.py),
+        // und das muss so bleiben, solange eine aeltere Bruegge fliegt. Ein Fehlercode ist ein
+        // Vertrag: Wer ihn umbenennt und die alte Fassung streicht, legt bei jedem Piloten,
+        // der nicht herunterlaedt, Titel still.
+        std::snprintf(o.fehler, sizeof(o.fehler), "ART_UNBEKANNT");
         o.erzeugt_gerufen = true;
         return;
     }

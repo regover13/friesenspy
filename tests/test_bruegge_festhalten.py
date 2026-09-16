@@ -82,9 +82,18 @@ def test_es_wird_nach_der_objekt_id_festgehalten(cpp):
     assert "objekt_festhalten" not in cpp[beginn:ende]
 
 
-def test_die_version_ist_gestiegen(cpp):
-    """Ein Client-Release kostet eine Verteilung an 61 Piloten — die Nummer sagt, welche."""
-    assert '#define BRUEGGE_VERSION   "1.12.0"' in cpp
+def test_die_version_traegt_das_festhalten(cpp):
+    """Festhalten gibt es seit 1.12.0 — die Fassung darf nicht dahinter zurückfallen.
+
+    ⚠ Hier stand zuerst die Zahl selbst (`== "1.12.0"`), und der Test wurde schon beim
+    nächsten Release rot — bei einem, der mit dem Festhalten nichts zu tun hatte. Ein Test,
+    der bei jeder Versionserhöhung bricht, sagt nichts über die Sache und wird irgendwann
+    gedankenlos nachgezogen. Gebunden ist deshalb die UNTERGRENZE.
+    """
+    import re
+    m = re.search(r'#define BRUEGGE_VERSION\s+"(\d+)\.(\d+)\.(\d+)"', cpp)
+    assert m, "keine Versionsnummer gefunden"
+    assert tuple(int(x) for x in m.groups()) >= (1, 12, 0)
 
 
 def test_das_messwerkzeug_liegt_daneben(cpp):
