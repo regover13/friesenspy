@@ -84,7 +84,7 @@ static void log_zeile(const char* format, ...) {
 // Feste Größen
 // ---------------------------------------------------------------------------------------
 
-#define BRUEGGE_VERSION   "1.11.0"
+#define BRUEGGE_VERSION   "1.12.0"
 #define BRUEGGE_URL       "https://friesenspy.devprops.de/api/bruegge/melden"
 #define KENNUNG_DATEI     "\\work\\friesenbruegge.kennung"
 
@@ -165,6 +165,31 @@ enum {
     // Stelle, die voellig unverdaechtig aussieht (11.09.2026 gemessen).
     REQ_ERZEUGEN = 1000,      // 1000 .. 1000+SOLL_MAX
     REQ_OBJEKT   = 2000,      // 2000 .. 2000+SOLL_MAX
+
+    // ⭐ EIN OBJEKT IN DER LUFT FESTHALTEN (1.12.0, 16.09.2026)
+    //
+    // `AICreateSimulatedObject` erzeugt ein SIMULIERTES Objekt -- auf ein Flugzeug wirkt
+    // damit die Physik. Am 16.09.2026 gemessen: ein `HotAirBalloon Passengers`, auf 3000 ft
+    // gesetzt, lag nach 15 s auf Gelaendehoehe; ein `Skyship600 Passenger` sank mit 780
+    // ft/min und lag nach 115 s. Ein WINDRAD an derselben Stelle stand auf exakt 3000,0 ft
+    // -- statische SimObjects haben keine Physik, Flugzeuge schon.
+    //
+    // Die drei Freeze-Ereignisse halten es fest. Dass sie auf ein Objekt aus
+    // `AICreateSimulatedObject` ueberhaupt wirken, steht in keiner Doku und ist deshalb
+    // VORHER extern gemessen worden (`probe-msfs/freeze_probe.py`, A/B mit zwei Ballons
+    // nebeneinander): eingefroren 2999,7 ft ueber 20 s, frei nach 11 s am Boden. Erst
+    // danach ist diese Zeile entstanden -- ein Fehlversuch haette hier einen Build und eine
+    // Verteilung an 61 Piloten gekostet.
+    //
+    // ⚠⚠ ABER: EXTERN GEMESSEN IST NICHT AUS WASM GEMESSEN. Genau diese Luecke gibt es auf
+    // dieser Codebasis schon einmal, zwanzig Zeilen weiter unten nachzulesen: `OnGround=1`
+    // wirkt extern zuverlaessig und aus WASM heraus NICHT (11.09.2026). Die externe Messung
+    // beweist hier also nur, dass der Simulator die Ereignisse auf ein solches Objekt
+    // anwendet -- nicht, dass ein WASM-Modul sie senden darf. Solange das nicht im Flug mit
+    // DIESEM Modul belegt ist, ist 1.12.0 ein Versuch und keine Zusage.
+    EV_FREEZE_ALT  = 30,
+    EV_FREEZE_LAGE = 31,
+    EV_FREEZE_ORT  = 32,
 };
 
 // Ein Objekt, das dastehen soll -- und wie es ihm ergangen ist.
@@ -796,6 +821,36 @@ static void objekt_erzeugen(int i) {
     }
 }
 
+// Ein Objekt in der Luft festhalten -- s. EV_FREEZE_ALT fuer die Messung dahinter.
+//
+// ⚠ NUR wenn es auch in der Luft steht (`!auf_boden` UND eine Hoehe dabei). Am Boden ist
+// nichts festzuhalten, und ein Freeze dort wuerde nur verdecken, dass `OnGround` seine
+// Arbeit tut. Die Regel stammt vom Nutzer (16.09.2026): *"einfrieren immer, wenn ein Objekt
+// mit auf_boden=false und einer Hoehe gesetzt wird"*.
+//
+// ⚠ ALLE DREI, nicht nur die Hoehe. Ohne ATTITUDE kippt das Objekt, ohne
+// LATITUDE_LONGITUDE treibt es im Wind ab -- beides sieht beim Hinsehen aus wie ein
+// halber Erfolg und ist keiner.
+//
+// Der Server erfaehrt davon nichts und muss es auch nicht: Dass ein Flugzeugmodell in MSFS
+// faellt und ein statisches Objekt nicht, ist Simulator-Wissen. Die Bruegge bleibt dumm,
+// aber ihre eigenen Eigenheiten kennt sie selbst -- ein Protokollfeld dafuer waere eine
+// Fassung mehr fuer etwas, das X-Plane gar nicht hat (dort ist ein Ballon ein statisches
+// `.obj` und bleibt von allein haengen).
+static void objekt_festhalten(int i) {
+    SollObjekt& o = g_soll[i];
+    if (o.auf_boden || !o.hat_hoehe || o.objekt_id == 0) return;
+    static const DWORD ereignisse[] = { EV_FREEZE_ALT, EV_FREEZE_LAGE, EV_FREEZE_ORT };
+    for (DWORD ev : ereignisse) {
+        // `1` heisst einfrieren. Die `_SET`-Fassungen nehmen den Zustand als Wert -- die
+        // `_TOGGLE`-Geschwister waeren nicht wiederholbar, und wiederholt wird hier: Ein
+        // Objekt, das der Server verschiebt, entsteht neu und muss neu festgehalten werden.
+        SimConnect_TransmitClientEvent(g_sim, o.objekt_id, ev, 1,
+                                       SIMCONNECT_GROUP_PRIORITY_HIGHEST,
+                                       SIMCONNECT_EVENT_FLAG_GROUPID_IS_PRIORITY);
+    }
+}
+
 static void objekt_entfernen(int i) {
     SollObjekt& o = g_soll[i];
 
@@ -1303,6 +1358,10 @@ void CALLBACK dispatch(SIMCONNECT_RECV* pData, DWORD, void*) {
             g_soll[i].objekt_id = z->dwObjectID;
             g_soll[i].letzte_meldung_s = g_sekunden;
             g_soll[i].seit_s = g_sekunden;
+            // In der Luft? Dann festhalten, sonst faellt ein Flugzeugtitel herunter
+            // (s. EV_FREEZE_ALT). HIER und nicht in `objekt_erzeugen`: Die Ereignisse
+            // brauchen die Objekt-ID, und die gibt es erst in diesem Augenblick.
+            objekt_festhalten(i);
             // Ab jetzt hinsehen: Lebt das Objekt noch, und auf welcher Hoehe steht es?
             // Die Hoehe ist der einzige Weg, auf dem der Server erfaehrt, ob die Stelle
             // taugt -- FriesenSpy hat kein Gelaendemodell.
@@ -1443,6 +1502,18 @@ extern "C" MSFS_CALLBACK void module_init(void) {
     // aussen geht er die ersten FLUGZEUG_MELDUNGEN Meldungen mit (s. g_flugzeug_offen).
     SimConnect_RequestDataOnSimObject(g_sim, REQ_FLUGZEUG, DEF_FLUGZEUG,
                                       SIMCONNECT_OBJECT_ID_USER, SIMCONNECT_PERIOD_SECOND);
+
+    // Die drei Freeze-Ereignisse anmelden -- EINMAL JE VERBINDUNG, nicht je Objekt.
+    //
+    // ⚠ Das ist kein Feinschliff, sondern ein Fehler, der in diesem Projekt schon einmal
+    // gemacht wurde: In `kieker_probe.py` steckten Definition und Anfrage in einer Funktion,
+    // die je Objekt lief -- bei 25 Objekten hatte dieselbe Definition danach 75 Eintraege,
+    // und die gemessene Meldungsrate sagte nichts mehr ueber den Simulator aus. Eine
+    // Zuordnung wird einmal angelegt und dann beliebig oft benutzt; genau dafuer ist die
+    // Ereignis-ID da (`objekt_festhalten` sendet, meldet aber nicht an).
+    SimConnect_MapClientEventToSimEvent(g_sim, EV_FREEZE_ALT,  "FREEZE_ALTITUDE_SET");
+    SimConnect_MapClientEventToSimEvent(g_sim, EV_FREEZE_LAGE, "FREEZE_ATTITUDE_SET");
+    SimConnect_MapClientEventToSimEvent(g_sim, EV_FREEZE_ORT,  "FREEZE_LATITUDE_LONGITUDE_SET");
 
     // "SimStart" feuert, sobald die Simulation läuft -- im Hauptmenü und während des Ladens
     // ist sie gestoppt. "FlightLoaded" feuert zusätzlich bei jedem Flugwechsel.
