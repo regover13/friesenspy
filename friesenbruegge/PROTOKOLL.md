@@ -695,9 +695,34 @@ abgelehnte Meldung gibt keinen Zustand preis.
 
 Sie probiert die Liste **von vorn nach hinten**. Genau das tat sie vorher auch, nur mit ihrer
 eigenen Tabelle. Scheitert Titel 1, rückt Titel 2 nach; ist die Liste erschöpft, meldet sie
-`KEIN_TITEL_GING` in `steht`. Fehlt die Art im Wörterbuch ganz, meldet sie
-`GATTUNG_UNBEKANNT` — dieser Fehlercode bleibt wortgleich, damit ältere Server ihn
-wiedererkennen.
+`KEIN_TITEL_GING` in `steht`. Fehlt die Art im Wörterbuch ganz, meldet sie `ART_UNBEKANNT`
+(MSFS ab 1.13.0, X-Plane ab 1.3.0 — davor `GATTUNG_UNBEKANNT`).
+
+### ⚠ Zwei Sorten Rückmeldung, und der Server muss sie unterscheiden
+
+Nicht jedes `fehlgeschlagen` ist ein Urteil über den Titel. Am 16.09.2026 kostete diese
+Verwechslung den Nutzer einen halben Vormittag: Eine `flagge` in X-Plane meldete
+`GATTUNG_UNBEKANNT`, obwohl `flagpole_20m_1.obj` einwandfrei auf der Platte lag.
+
+| Meldung | heißt |
+|---|---|
+| `KEIN_TITEL_GING` / `KEIN_MODELL_MEHR` | **Urteil:** alle Titel der Art durchprobiert, keiner ging |
+| `EXCEPTION_22` | **Urteil:** der Simulator kennt diesen Container nicht |
+| `NOCH_NICHT_GESETZT` (X-Plane) | Zustand: Instanz noch nicht da — kommt bei **jedem** Objekt einmal |
+| `KEINE_ANTWORT` (MSFS) | dasselbe: noch keine Objekt-ID |
+| `ART_UNBEKANNT` / `GATTUNG_UNBEKANNT` | **Server:** die Art wurde nicht mitgeliefert |
+| `MODELLBESTAND_VOLL` (X-Plane) | Brügge: `OBJEKTE_MAX` erreicht |
+| `KEINE_INSTANZ` (X-Plane) | Brügge: `XPLMCreateInstance` gab nichts zurück |
+
+**Nur die ersten drei dürfen einen Titel stilllegen** (`_BRUEGGE_KEIN_URTEIL` in
+`app/main.py`). Bei `ART_UNBEKANNT` ist das nicht bloß falsch, sondern selbstverstärkend:
+Ein abgeschalteter Titel macht die Art einseitig, der Server liefert daraufhin gar nichts
+mehr, und die Brügge meldet folgerichtig wieder `ART_UNBEKANNT`. Aus diesem Kreis kommt man
+von Hand nicht heraus — jede Reparatur hält bis zum nächsten Setzversuch.
+
+**Beide Schreibweisen bleiben gültig**, solange eine ältere Brügge fliegt. Ein Fehlercode ist
+ein Vertrag: Wer die alte Fassung streicht, legt bei jedem Piloten, der nicht herunterlädt,
+Titel still.
 
 ### ⚠ `kann` fällt weg (Fassung 2)
 
