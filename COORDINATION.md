@@ -6,6 +6,59 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-16 (mittags) — Zwei Sitzungen haben #34 gleichzeitig gebaut
+
+**Wir sind uns beim Push in die Quere gekommen**, und zwar an derselben Datei mit demselben
+Dateinamen für den Test (`tests/test_katalog_sammeln_flugzeuge.py`). Beide Fassungen kamen
+unabhängig zum gleichen Befund: `_alle_sim_cfg` las nur `sim.cfg`, und der Titel aus
+`common/config/aircraft.cfg` ist nicht setzbar — entschieden wird erst nach dem vollständigen
+Lauf, weil bei A2A derselbe String in beiden Dateien steht.
+
+**Aufgelöst zugunsten der anderen Sitzung** (`d5dd8b1`): Sie *lässt* die untauglichen Titel
+weg, mit `--mit-basis` als Ausnahme und einer Meldung, wie viele — statt sie nur zu
+markieren. Mein eigener Versuch ist verworfen; der Rebase hat nur behalten, was dort fehlte.
+
+### Was daraus für die nächste parallele Sitzung folgt
+
+**Vor dem Anfangen `git fetch` und in die offenen Issues sehen, nicht nur in diese Datei.**
+Beide Sitzungen haben #34 aus `docs/offene-aufgaben.md` gezogen, ohne zu wissen, dass die
+andere schon dran war. Eine Zeile hier („nehme mir #34 vor") hätte zwei Stunden gespart.
+
+⚠ **Und Testdateien kollidieren nach Thema, nicht nach Zufall.** Wer einen Test zu einem
+Issue schreibt, landet fast zwangsläufig bei `test_<thema>.py` — dieselbe Datei, die die
+andere Sitzung gerade anlegt. Beim Rebase ist das ein Konflikt in einer Datei, die es vorher
+in keinem der beiden Zweige gab.
+
+## 2026-09-16 (nachmittags) — Der ganze Objektkatalog ist einmal durch den Simulator
+
+7065 Titel gesetzt und zurückgemeldet (X-Plane 2928/2928, MSFS 2024 4137). Vorher waren
+**vier** geprüft. Werkzeug: `scripts/katalog_durchpruefen.py`.
+
+⚠⚠ **Wer das Werkzeug anfasst, liest zuerst seine vier Narben** — alle an einem Tag
+entstanden, alle mit demselben Bild: plausible Fehlschläge, die keine waren.
+
+1. **Es zerstörte die Art-Zuordnungen.** Der Lauf hängt jeden Titel an eine Wegwerf-Art, und
+   `bruegge_art_loeschen` gibt Titel beim Aufräumen frei. Von 203 Zuordnungen waren 58
+   übrig; keine Art mehr beidseitig, alles meldete `ART_UNBEKANNT`. Gerettet hat es die
+   nächtliche Sicherung (`/opt/backup/friesenspy`, 03:01). Jetzt wird die Zuordnung gesichert
+   und nach jedem Block zurückgeschrieben.
+2. **Es urteilte selbst über Ladezustände**, statt `_BRUEGGE_KEIN_URTEIL` zu importieren.
+3. **Alle Prüf-Arten teilten sich einen Partnertitel** — „ein Titel gehört zu höchstens einer
+   Art" heißt, dass dabei nur die letzte Art beidseitig bleibt.
+4. **Es prüfte nicht, WER antwortet.** Der Pilot wechselte von X-Plane zu MSFS, dieselbe CID;
+   der Lauf schickte weiter X-Plane-Pfade, und 16 Titel galten als kaputt.
+
+**Serverseitig gilt jetzt: fünf Meldungen sind kein Urteil** (`_BRUEGGE_KEIN_URTEIL` in
+`app/main.py`, Tabelle in `PROTOKOLL.md`). Besonders `ART_UNBEKANNT` — das schließt einen
+Kreis, aus dem von Hand kein Herauskommen ist.
+
+**Brügge-Fassungen:** MSFS 1.13.0, X-Plane 1.3.1, beide verteilt. X-Plane gibt Modelle jetzt
+im Betrieb frei (vorher nur bei `XPluginStop`, deshalb nach 24 verschiedenen Schluss), und
+`OBJEKTE_MAX` steht auf 64 — die 24 waren **unsere** Grenze, nicht die von X-Plane, und
+standen ohne Begründung da.
+
+---
+
 ## 2026-09-16 (nachts) — Alle sieben Punkte durch, im Flug geprüft
 
 Die Liste aus #23 ist abgearbeitet und **am fliegenden Simulator belegt**, nicht nur getestet.
