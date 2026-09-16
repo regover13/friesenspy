@@ -6,6 +6,26 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-16 (mittags, zweite Sitzung) — Fassungshinweis gebaut, v14.52.0
+
+**Angefasst:** `app/database.py` (Migration `bruegge_zuordnung.bruegge_version`, zwei
+Lesefunktionen), `app/main.py` (`/api/me/fassungen`, Speichern beim Melden, Fassungsspalte im
+Admin-Endpunkt), `app/static/index.html` (Hinweiskasten unten rechts),
+`app/static/admin.html` (Spalte in der Melderliste), `tests/test_fassung_hinweis.py` (neu).
+
+**Wer an einer dieser Stellen baut, sollte wissen:** `bruegge_version = NULL` heißt „hat noch
+nicht gemeldet", NICHT „alt" — beim Kniebrett-Paket ist es umgekehrt (erst 2.0.0 meldet
+überhaupt), und dieser Unterschied ist Absicht, kein Versehen. `veraltet` entscheidet
+ausschließlich der Server, damit Admin, Website und Kniebrett dieselbe Antwort geben.
+
+⚠ **Zwei Kästen unten links/rechts, und sie gehören nicht zusammengelegt:** Im Kniebrett hat
+das EFB-Paket seinen eigenen Hinweis aus einer genaueren Quelle (die Hülle meldet die
+wirklich laufende Fassung); dieser hier nennt dort nur die Brügge.
+
+**Anschluss an die Fassungen von nebenan:** Sobald die neuen ZIPs (MSFS 1.13.0, X-Plane
+1.3.1) unter `data/efb/` liegen, meldet der Hinweis jeden älteren Melder — die Sollzahl liest
+der Server aus dem Archiv selbst, es gibt keine Konstante zum Nachziehen.
+
 ## 2026-09-16 (mittags) — Zwei Sitzungen haben #34 gleichzeitig gebaut
 
 **Wir sind uns beim Push in die Quere gekommen**, und zwar an derselben Datei mit demselben
