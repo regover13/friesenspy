@@ -693,7 +693,19 @@ läuft auf dem Rechner des Piloten.
 | versetzen | wegnehmen und neu erzeugen | `XPLMInstanceSetPosition` — echtes Verschieben |
 | Höhe am Zielort | **gibt es nicht** — nur die unter dem Flugzeug | `XPLMProbeTerrainXYZ` |
 | Netz | `fsNetworkHttpRequestPost` (Callback) | eigener Thread mit WinHTTP |
+| Modelle freigeben | entfällt (kein Modellbestand) | seit 1.3.0 im Betrieb, vorher nur bei `XPluginStop` |
 | gemeinsam | `json.h`, Protokollfassung 1, Kennung, Spur, Sprungerkennung, Sollabgleich | |
+
+⚠ **Die Modellfreigabe in X-Plane ist keine Feinheit** (16.09.2026). `XPLMUnloadObject` stand
+ausschließlich im Plugin-Ende; `g_objekte` füllte sich bis `OBJEKTE_MAX` und blieb voll. Im
+Flug fällt das nie auf — eine Robbenkolonie sind 200 Instanzen **eines** Modells. Es fällt
+auf, sobald viele **verschiedene** nacheinander kommen: Beim Durchmessen des Katalogs war
+nach 24 Titeln Schluss, und ein Lauf über die 2928 X-Plane-Titel hätte 122 Simulator-Neustarts
+gebraucht. MSFS hat das Problem nicht, weil es Container-Titel setzt statt geladener Modelle.
+
+⚠ **`OBJEKTE_MAX` (64, vorher 24) ist UNSERE Grenze, nicht die von X-Plane.**
+`XPLMLoadObject` kennt keine; dort begrenzt der Speicher. Die Zahl sagt nur, wie viele
+verschiedene Modelle gleichzeitig **sichtbar** sein dürfen.
 
 Der Server merkt vom Unterschied nichts: Er spricht in Gattungen, und `simulator` in der
 Meldung ist für ihn ein Textfeld. Genau dafür ist der Entwurf so geschnitten (Punkt 2 unten).

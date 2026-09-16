@@ -2281,6 +2281,28 @@ behaupten. Der Server schickt für den gemeldeten `simulator`, was er hat, und e
 `steht`, was tatsächlich stand: belegt statt behauptet. **Fassung 1 darf es weiter mitschicken**;
 es wird übergangen, wie schon immer.
 
+⚠⚠ **Nicht jedes `fehlgeschlagen` in `steht` ist ein Urteil über den Titel** (16.09.2026).
+Der Server wertet nur drei Meldungen als solches; die übrigen beschreiben einen
+Zwischenzustand, die Brügge selbst oder den Server:
+
+| Meldung | heißt | legt einen Titel still? |
+|---|---|---|
+| `KEIN_TITEL_GING` / `KEIN_MODELL_MEHR` | alle Titel der Art durchprobiert | **ja** |
+| `EXCEPTION_22` | der Simulator kennt den Container nicht | **ja** |
+| `NOCH_NICHT_GESETZT` (X-Plane) | Instanz noch nicht da — kommt bei **jedem** Objekt einmal | nein |
+| `KEINE_ANTWORT` (MSFS) | dasselbe: noch keine Objekt-ID | nein |
+| `ART_UNBEKANNT` (früher `GATTUNG_UNBEKANNT`) | der Server hat die Art nicht mitgeliefert | nein |
+| `MODELLBESTAND_VOLL` (X-Plane) | `OBJEKTE_MAX` erreicht | nein |
+| `KEINE_INSTANZ` (X-Plane) | `XPLMCreateInstance` gab nichts zurück | nein |
+
+Die Liste steht als `_BRUEGGE_KEIN_URTEIL` in `app/main.py`. Bei `ART_UNBEKANNT` wäre ein
+Urteil nicht bloß falsch, sondern **selbstverstärkend**: Ein abgeschalteter Titel macht die
+Art einseitig, der Server liefert daraufhin nichts mehr, und die Brügge meldet folgerichtig
+wieder `ART_UNBEKANNT`. Aus dem Kreis kommt man von Hand nicht heraus.
+
+**Beide Schreibweisen bleiben gültig**, solange eine Brügge vor MSFS 1.13.0 / X-Plane 1.3.0
+fliegt — ein Fehlercode ist ein Vertrag.
+
 ⭐ **`flugzeug`** (seit 14.09.2026) trägt den Titel des eigenen Flugzeugs — den, den
 `AICreateSimulatedObject` annähme. Er geht **nur mit, wenn er sich geändert hat**, und
 landet als `quelle='gemeldet'` im Katalog, **ohne** Prüfergebnis. Grund: Die
