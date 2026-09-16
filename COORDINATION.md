@@ -46,7 +46,7 @@ Nichts aus dieser Liste. Die Brügge kehrt nach dem Abschalten in **20 Sekunden*
 
 ---
 
-## 2026-09-15 (spät) — Die Rangfolge ist gedreht (Punkt 6, Server-Sitzung)## 2026-09-15 (spät) — Die Rangfolge ist gedreht (Punkt 6, Server-Sitzung)
+## 2026-09-15 (spät) — Die Rangfolge ist gedreht (Punkt 6, Server-Sitzung)
 
 `QUELLE_KNIEBRETT_VOLL = 3` steht jetzt über der Brügge — **aber nur für Meldungen, die
 `agl` UND `gnd` tragen**:
