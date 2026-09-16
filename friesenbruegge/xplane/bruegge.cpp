@@ -92,7 +92,7 @@
 // Die Fassung gehört der UMSETZUNG, nicht dem Protokoll. Das WASM-Modul steht bei 1.6.0,
 // weil es sechs Runden im Simulator hinter sich hat; diese Brügge fängt bei 1.0.0 an. Was
 // beide verbindet, ist `protokoll: 1` -- und das steht in der Meldung daneben.
-#define BRUEGGE_VERSION   "1.3.0"
+#define BRUEGGE_VERSION   "1.3.1"
 #define SIMULATOR_NAME    "xplane12"
 
 
@@ -133,7 +133,30 @@
 //
 // ⚠ Die Leistung ist UNGEMESSEN: Gemessen sind 30 gleichzeitige Instanzen (12.09.2026).
 #define SOLL_MAX 200
-#define OBJEKTE_MAX 24            // verschiedene .obj gleichzeitig geladen
+// Wie viele VERSCHIEDENE .obj gleichzeitig geladen sein duerfen.
+//
+// ⚠ DAS IST UNSERE GRENZE, NICHT DIE VON X-PLANE. `XPLMLoadObject` kennt keine Obergrenze,
+// dort begrenzt allein der Speicher. Hier stand bis zum 16.09.2026 eine 24 ohne jede
+// Begruendung -- und sie wurde unversehens zur harten Schranke, als der Katalogdurchlauf
+// (scripts/katalog_durchpruefen.py) viele verschiedene Modelle nacheinander setzen wollte:
+// nach 24 nur noch `MODELLBESTAND_VOLL`.
+//
+// Die Ursache war aber nicht die Zahl, sondern dass NIE EINES FREIGEGEBEN WURDE
+// (`XPLMUnloadObject` stand allein in `XPluginStop`). Das ist der eigentliche Fix, s.
+// `modell_aufraeumen` -- und mit ihm ist die Zahl hier nur noch die Frage, wie viele
+// verschiedene Modelle GLEICHZEITIG SICHTBAR sein duerfen.
+//
+// 64 statt 24, weil das die Frage beantwortet, um die es wirklich geht: Eine Station mit
+// Robben, Windrad, Kran, Fahrzeugen, Rauch und Flaggen kommt schnell auf ein Dutzend
+// verschiedener Modelle, und bei 24 waere die Luft duenn geworden, ohne dass jemand es
+// vorher gemerkt haette -- gemerkt haette es der Pilot mitten im Event.
+//
+// Der Platz kostet nichts: `GeladenesObjekt` sind 200 Byte Pfad plus Zeiger und zwei
+// Wahrheitswerte, also rund 216 Byte. 64 davon sind 14 kB statischer Speicher. Was Speicher
+// kostet, sind die MODELLE -- und die laedt X-Plane ohnehin nur, wenn sie gebraucht werden
+// (die Oelplattform allein ist 63 MB). Ein hoeheres Limit laedt nichts zusaetzlich; es
+// erlaubt nur, mehr gleichzeitig stehen zu lassen.
+#define OBJEKTE_MAX 64
 
 #define FT_JE_M 3.280839895
 

@@ -161,14 +161,49 @@ def lauf(cid: int, simulator: str, block: int, sekunden: float, vor_m: float,
         steht = fehl = stumm = 0
         for start in range(0, len(titel), block):
             teil = titel[start:start + block]
+            # ⚠⚠ `AND simulator = ?` -- ohne das misst der Lauf den FALSCHEN SIMULATOR.
+            #
+            # Am 16.09.2026 passiert: Der Pilot hatte X-Plane geschlossen und MSFS gestartet,
+            # dieselbe CID. Der Lauf schickte weiter X-Plane-Dateipfade, die MSFS-Bruegge
+            # antwortete voellig korrekt mit `EXCEPTION_22` -- und 16 Titel, die zwanzig
+            # Minuten vorher nachweislich gestanden hatten, galten als kaputt.
+            #
+            # Die Rueckmeldung traegt keine Simulator-Angabe (`bruegge_steht` hat nur `id`,
+            # `kennung` und `cid`), also muss VORHER feststehen, wer da meldet.
             lage = conn.execute(
-                "SELECT lat, lon, kurs FROM bruegge_positions WHERE cid = ?", (cid,)).fetchone()
+                "SELECT lat, lon, kurs FROM bruegge_positions WHERE cid = ? AND simulator = ?",
+                (cid, simulator)).fetchone()
             if not lage:
-                print("Die Bruegge meldet nicht mehr -- Lauf angehalten.")
+                jetzt = conn.execute(
+                    "SELECT simulator FROM bruegge_positions WHERE cid = ?", (cid,)).fetchone()
+                print(f"Keine {simulator}-Bruegge fuer CID {cid}"
+                      + (f" -- dort meldet gerade {jetzt[0]}." if jetzt else " -- sie meldet nicht.")
+                      + " Lauf angehalten.")
                 break
             punkte = list(_raster(lage[0], lage[1], lage[2], len(teil), vor_m, abstand_m))
 
             zu_id = {}
+            # ⚠⚠ DIE URSPRUENGLICHE ZUORDNUNG MERKEN, SONST ZERSTOERT DER LAUF SIE.
+            #
+            # Am 16.09.2026 passiert, und es war der schwerste Fehler des Tages: Der Lauf
+            # haengt jeden Titel an eine Wegwerf-Art, und `bruegge_art_loeschen` GIBT DIE
+            # TITEL BEIM AUFRAEUMEN FREI (art/rang/status auf NULL). Was vorher `windrad`
+            # oder `seehund_kuh` war, stand danach ohne Art da.
+            #
+            # Von 203 Zuordnungen waren 58 uebrig. Keine Art war mehr beidseitig, und ALLES
+            # meldete `ART_UNBEKANNT` -- gerettet hat es die naechtliche Sicherung.
+            #
+            # Titel mit Art vom Lauf auszunehmen waere falsch: Gerade sie gehen an Piloten
+            # hinaus und muessen geprueft sein. Also wird die Zuordnung gesichert und nach
+            # dem Block zurueckgeschrieben.
+            vorher = {}
+            for t in teil:
+                r = conn.execute(
+                    "SELECT art, rang, status FROM bruegge_katalog "
+                    "WHERE simulator = ? AND titel = ?", (simulator, t)).fetchone()
+                if r and r[0]:
+                    vorher[t] = tuple(r)
+
             for nr, (t, (zl, zo)) in enumerate(zip(teil, punkte)):
                 art = VORSATZ + f"{nr:03d}"
                 bruegge_art_setzen(conn, art, bedeutung="Pruefbetrieb 16.09.2026",
@@ -208,6 +243,11 @@ def lauf(cid: int, simulator: str, block: int, sekunden: float, vor_m: float,
                     break
                 time.sleep(max(4.0, sekunden / 2))
             stumm += len(offen)
+
+            # Die gesicherte Zuordnung zurueckschreiben -- VOR dem Aufraeumen, sonst holt
+            # `bruegge_art_loeschen` sie gleich wieder weg.
+            for t, (art, rang, status) in vorher.items():
+                bruegge_katalog_setzen(conn, simulator, t, art=art, rang=rang, status=status)
             conn.commit()
             _aufraeumen(conn)
             fertig = min(start + block, len(titel))
