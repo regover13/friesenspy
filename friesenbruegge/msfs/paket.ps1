@@ -120,7 +120,25 @@ $rauchPakete = @("devprops-friesenrauch", "devprops-friesenrauch-mat",
 # Die Mindestversionen des Rauchs koennen ueber denen des Moduls liegen -- er wurde mit
 # einem neueren SDK kompiliert. Der hoehere Wert gewinnt: Ein Paket, das eine Fassung
 # verspricht, mit der seine Inhalte nie gebaut wurden, verspricht zu viel.
-$minSpiel  = [version]$(if ($Fuer2020) { '1.38.2' } else { '1.7.35' })
+# ⭐ EINE ZAHL FUER BEIDE SIMULATOREN (16.09.2026) -- hier stand sie je Schalter verschieden.
+#
+# Seit 1.14.0 ist es EIN Paket fuer MSFS 2020 und 2024, also darf es auch nur EIN Manifest
+# geben. Die beiden zaehlen getrennt -- MSFS 2020 steht bei 1.39.6 --, aber das Feld ist
+# NICHT die Huerde, fuer die ich es zunaechst gehalten habe. Gemessen an den Paketen, die
+# auf dieser Platte nachweislich laufen:
+#
+#   im MSFS-2024-Community-Ordner   1.4.20 ... 1.37.19   (u. a. SayIntentions, 95ermod)
+#   im MSFS-2020-Community-Ordner   1.8.3  ... 1.39.12
+#
+# Beide Simulatoren nehmen also Werte aus dem jeweils anderen Band an; `SayIntentions` liegt
+# sogar mit derselben Zahl in beiden. Die niedrige Zahl ist damit die sichere Wahl -- aber
+# nicht, weil die hohe abgelehnt WUERDE (das ist ungeprueft und stand hier zunaechst
+# faelschlich als Begruendung), sondern weil sie nichts verspricht, was die Inhalte nicht
+# halten.
+#
+# ⚠ Den tatsaechlich gesetzten Wert bestimmt ohnehin der Rauch: Seine Teilpakete tragen
+# derzeit 1.8.16, und weiter unten gewinnt der hoehere Wert.
+$minSpiel  = [version]'1.7.35'
 $minKompat = [version]'7.26.0.214'
 $rauchDa = 0
 foreach ($rp in $rauchPakete) {
@@ -202,7 +220,7 @@ $groesse = ($dateien | Measure-Object -Property Length -Sum).Sum
   "minimum_game_version": "$minSpiel",
   "minimum_compatibility_version": "$minKompat",
   "export_type": "Community",
-  "builder": "$(if ($Fuer2020) { 'Microsoft Flight Simulator' } else { 'Microsoft Flight Simulator 2024' })",
+  "builder": "Microsoft Flight Simulator 2024",
   "package_order_hint": "MISC",
   "release_notes": {
     "neutral": {
@@ -340,4 +358,5 @@ if ($Hochladen) {
 }
 
 Write-Output ""
-Write-Output "MSFS 2024 jetzt NEU STARTEN -- Community-Pakete liest der Simulator nur beim Start."
+Write-Output ("$(if ($Fuer2020) { 'MSFS 2020' } else { 'MSFS 2024' }) jetzt NEU STARTEN -- " +
+              "Community-Pakete liest der Simulator nur beim Start.")

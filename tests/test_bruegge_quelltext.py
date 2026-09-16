@@ -206,7 +206,15 @@ def test_ein_gescheitertes_simconnect_open_ist_nicht_mehr_stumm():
     Sitzung nichts -- von aussen genau das Bild, das gemessen wurde."""
     q = quelltext("msfs/bruegge.cpp")
     init = q[q.index("void module_init"):]
-    block = init[:init.index("kennung_laden_oder_erzeugen")]
+    # ⚠ Die Endmarke war bis zum 16.09.2026 `kennung_laden_oder_erzeugen` -- eine Funktion,
+    # die es seit 1.14.0 nicht mehr gibt (mit der Datei-API entfallen, s.
+    # `tests/test_bruegge_ein_modul.py`). Der Test starb dann mit `ValueError: substring not
+    # found`, also am Werkzeug statt an der Sache.
+    #
+    # Jetzt begrenzt `AddToDataDefinition` den Ausschnitt: die erste Anweisung NACH dem
+    # geglueckten Verbinden. Sie steht hier nicht zufaellig -- ohne Verbindung gibt es
+    # nichts zu definieren, sie kann dem `SimConnect_Open` also nie vorausgehen.
+    block = init[:init.index("SimConnect_AddToDataDefinition")]
     assert block.count("SimConnect_Open") >= 1
     assert "log_zeile" in block, "der Fehlschlag laeuft weiterhin stumm ins Leere"
     assert re.search(r"for\s*\(.*versuch", block), "es gibt keinen zweiten Versuch"

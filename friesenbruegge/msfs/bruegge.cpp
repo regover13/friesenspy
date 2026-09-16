@@ -33,17 +33,38 @@
 #include <MSFS/MSFS_Network.h>
 #include <SimConnect.h>
 
-// Die Datei-API gibt es NUR im MSFS-2024-SDK -- MSFS_IO.h fehlt im 2020er vollstaendig
-// (geprueft 11.09.2026). Damit ist die dauerhafte Kennung eine Eigenschaft von MSFS 2024;
-// unter MSFS 2020 zieht die Bruegge bei jedem Start eine neue.
+// ⭐⭐ EIN MODUL FUER MSFS 2020 UND 2024 -- und warum dafuer die Datei-API weichen musste
+// (16.09.2026, Nutzerentscheidung "Ein Modul").
 //
-// Das kostet weniger, als es klingt: Der Server matcht dann einmal je SITZUNG voll statt
-// einmal je Installation. Bei einer Flugstunde im Sekundentakt ist das ein voller Match
-// statt 3600 -- der Nutzen der Kennung bleibt praktisch vollstaendig erhalten.
-#ifndef FUER_MSFS2020
-#include <MSFS/MSFS_IO.h>
-#define KENNUNG_HAELT 1
-#endif
+// Die Datei-API (`MSFS_IO.h`) gibt es NUR im 2024er SDK; im 2020er fehlt der Header
+// vollstaendig, und das Wort `fsIOOpen` kommt im ganzen `D:\MSFS SDK\WASM\` nicht ein
+// einziges Mal vor. Gemessen an den fertigen Modulen:
+//
+//     mit    fsIO   23 Importe   laeuft NUR in MSFS 2024
+//     ohne   fsIO   19 Importe   echte Teilmenge -- laeuft in BEIDEN
+//
+// ⚠ Ein WASM-Import ist statisch. Ein Modul, das `fsIOOpen` nur VIELLEICHT benutzt,
+// importiert es trotzdem -- und MSFS 2020 verwirft es dann bei der Validierung, bevor eine
+// einzige Zeile laeuft (`ERR_UNKNOWN_BLANK_IMPORT`, dieselbe Bauart wie Falle 1 in
+// bauen.ps1). Lautlos: kein module_init, keine Meldung, kein Objekt. Es gibt also keinen
+// Weg, die Datei-API "nur in 2024" zu benutzen und trotzdem ein Modul auszuliefern.
+//
+// DER PREIS, und er ist kleiner als er aussieht: Die Kennung haelt jetzt in KEINEM
+// Simulator ueber einen Neustart. Der Server matcht damit einmal je SITZUNG voll statt
+// einmal je Installation -- bei einer Flugstunde im Sekundentakt ein voller Match statt
+// 3600. Karteileichen entstehen dabei nicht: `bruegge_zuordnung_setzen` loescht aeltere
+// Zeilen derselben CID bereits selbst (database.py:2820).
+//
+// ⚠ WAS DAMIT AUCH VERSCHWUNDEN IST: die drei asynchronen Wettlaeufe, die am 14.09.2026 je
+// einen Anlauf gekostet haben (Schreiben gegen Lesen, Schliessen gegen Schreiben, Server
+// gegen Platte). Sie sind in der Git-Historie nachzulesen, falls die Datei-API je
+// zurueckkommt -- wer sie wieder einbaut, lese sie ZUERST.
+//
+// DER WEG ZURUECK FUEHRT NICHT UEBER DEN CLIENT. Soll die Kennung wieder halten, gehoert
+// das auf den Server: Er gibt bei leerer Kennung die zuletzt fuer diese (CID, Simulator)
+// vergebene zurueck, statt neu zu wuerfeln (app/main.py:1992). Das haelt sie in BEIDEN
+// Simulatoren, kostet kein Client-Release -- und entspricht dem Leitbild des Protokolls:
+// "Die Bruegge ist dumm. Alle Klugheit bleibt auf dem Server."
 
 #include <cstdio>
 #include <cstdarg>
@@ -84,15 +105,25 @@ static void log_zeile(const char* format, ...) {
 // Feste Größen
 // ---------------------------------------------------------------------------------------
 
-#define BRUEGGE_VERSION   "1.13.0"
+#define BRUEGGE_VERSION   "1.14.0"
 #define BRUEGGE_URL       "https://friesenspy.devprops.de/api/bruegge/melden"
-#define KENNUNG_DATEI     "\\work\\friesenbruegge.kennung"
+// ⭐ WELCHER SIMULATOR -- ZUR LAUFZEIT, NICHT BEIM UEBERSETZEN (16.09.2026).
+//
+// Bis hierher stand der Name in einem `#ifdef FUER_MSFS2020` und war damit eine Eigenschaft
+// des BAUS. Das geht nicht mehr: Ein Modul laeuft jetzt in beiden Simulatoren, und welcher
+// es ist, weiss es erst, wenn SimConnect antwortet.
+//
+// ⚠ DAS IST KEINE KOSMETIK. Der Server sucht die Titel je Simulator heraus
+// (`bruegge_titel_fuer`), und der Katalog fuehrt getrennte Bestaende. Eine Bruegge, die sich
+// in MSFS 2020 als `msfs2024` ausgibt, bekommt Titel, die es bei ihr nicht gibt -- und
+// meldet sie als gescheitert zurueck. Damit wuerde ein falsches Wort hier echte Titel im
+// Katalog abschalten, und niemand saehe, woher es kam.
+//
+// Bis SIMCONNECT_RECV_ID_OPEN eintrifft, steht hier `msfs` -- weder das eine noch das
+// andere behauptet. Das ist ehrlich und praktisch folgenlos: Die erste Meldung geht erst
+// hinaus, wenn `g_welt_da` gesetzt ist, und das passiert lange nach dem Verbinden.
+static char g_simulator[16] = "msfs";
 
-#ifdef FUER_MSFS2020
-#define SIMULATOR_NAME "msfs2020"
-#else
-#define SIMULATOR_NAME "msfs2024"
-#endif
 
 // Die eigene Lage wird JEDE SEKUNDE gelesen -- unabhängig davon, wie oft gesendet wird.
 // Was zwischen zwei Meldungen anfällt, geht als `spur` mit; bei Regeltakt 1 s ist sie leer
@@ -298,9 +329,6 @@ static SpurPunkt g_spur[SPUR_MAX];
 static int       g_spur_anzahl = 0;
 
 static char    g_kennung[40] = {0};
-// Steht die Kennung endgueltig fest? Erst dann wird sie geschrieben -- vorher wuerde das
-// Schreiben das eigene, asynchrone Lesen ueberholen (s. kennung_laden_oder_erzeugen).
-static bool    g_kennung_fest = false;
 static int     g_takt_s = 1;              // was der Server zuletzt vorgegeben hat
 // Hat der Server die Protokollfassung abgelehnt (426)? Dann ist der Vertrag tot, und das
 // bleibt er -- auch über einen Flugwechsel hinweg. Jede andere Drosselung darf eine neue
@@ -403,142 +431,13 @@ static char    g_antwort[ANTWORT_PUFFER] = {0};
 //      vom 16.08.2026). Die Zuordnung gelingt auf Meter.
 //   2. Er antwortet mit `"kennung": "..."`.
 //   3. Die Bruegge speichert sie und liefert sie ab jetzt bei jeder Meldung mit.
-//   4. Nach einem Simulator-Neustart liest sie die Datei -- dieselbe Kennung, dieselbe
-//      Zuordnung.
+//   4. Nach einem Simulator-Neustart beginnt das von vorn -- seit dem 16.09.2026 gibt es
+//      keine Datei mehr, in der sie ueberdauern koennte (s. ganz oben, "EIN MODUL").
 //
 // Bis Schritt 2 meldet sie mit LEERER Kennung. Das ist kein Notbehelf: Der Server matcht
 // dann voll, was er ohnehin kann, und genau das stand seit jeher im Kommentar unten.
 
-#ifdef KENNUNG_HAELT
-// Hier landet die gelesene Kennung, sobald der Lesevorgang fertig ist.
-static char g_kennung_gelesen[64] = {0};
 
-static void kennung_gelesen(FsIOFile datei, char* puffer, int, int bytes, void*) {
-    if (bytes > 0 && bytes < (int)sizeof(g_kennung_gelesen)) {
-        std::memcpy(g_kennung_gelesen, puffer, bytes);
-        g_kennung_gelesen[bytes] = '\0';
-    }
-    fsIOClose(datei);
-}
-#endif
-
-#ifdef KENNUNG_HAELT
-// ⚠⚠ GESCHLOSSEN WIRD ERST IM CALLBACK -- SONST BLEIBT DIE DATEI LEER.
-//
-// `fsIOWrite` ist ASYNCHRON (es nimmt einen `FsIOFileWriteCallback`, s. MSFS_IO.h Zeile 62).
-// Hier stand `fsIOWrite(...); fsIOClose(w);` unmittelbar hintereinander -- das Schliessen
-// ueberholte das Schreiben, und zurueck blieb eine Datei mit NULL BYTES.
-//
-// Am 14.09.2026 gemessen, nachdem die Kennung bei jedem Simulator-Start eine andere war:
-//
-//     -rw-r--r-- 1 Tobias 0  17:12:09  friesenbruegge.kennung
-//
-// Damit war der ganze Zweck der Speicherung dahin: Die Bruegge meldete bei jedem Start ohne
-// Kennung, bekam eine neue vom Server, und in `bruegge_zuordnung` sammelten sich Karteileichen.
-//
-// Es ist DIESELBE Falle, die weiter unten schon einmal beschrieben ist (das Schreiben
-// ueberholte dort das asynchrone LESEN). Ich hatte sie gelesen, verstanden -- und beim
-// Schreiben nicht wiedererkannt.
-static void kennung_geschrieben(FsIOFile datei, const char*, int, int, void*) {
-    fsIOClose(datei);
-}
-
-// ⚠⚠ UND AUCH DAS OEFFNEN IST ASYNCHRON -- die ganze Kette, nicht nur das Schreiben.
-//
-// Der erste Anlauf legte das Schliessen in den Write-Callback und schrieb weiter direkt
-// nach `fsIOOpen`. Die Datei blieb LEER (14.09.2026, 17:35:10, null Bytes) -- denn
-// `fsIOOpen` nimmt ebenfalls einen Callback (`FsIOFileOpenCallback`, MSFS_IO.h Zeile 59),
-// und der Rueckgabewert ist erst danach benutzbar.
-//
-// Richtig ist die vollstaendige Kette: oeffnen -> im Callback schreiben -> im naechsten
-// Callback schliessen. Jede Abkuerzung darin kostet den Inhalt, und zwar lautlos: Die
-// Datei entsteht, sie ist nur leer.
-static void kennung_datei_offen(FsIOFile datei, void*) {
-    if (datei == FS_IO_ERROR_FILE || g_kennung[0] == '\0') return;
-    fsIOWrite(datei, g_kennung, 0, (int)std::strlen(g_kennung),
-              kennung_geschrieben, nullptr);
-}
-#endif
-
-static void kennung_schreiben() {
-#ifdef KENNUNG_HAELT
-    // `g_kennung` ist global und bleibt gueltig, bis die Callbacks kommen -- ein Puffer auf
-    // dem Stapel waere hier ein Fehler.
-    fsIOOpen(KENNUNG_DATEI,
-             FsIOOpenFlag_WRONLY | FsIOOpenFlag_CREAT | FsIOOpenFlag_TRUNC,
-             kennung_datei_offen, nullptr);
-#endif
-}
-
-static void kennung_laden_oder_erzeugen() {
-#ifdef KENNUNG_HAELT
-    // Lesen ist asynchron: Der Callback kommt spaeter, moeglicherweise erst nach der ersten
-    // Meldung. Das ist hinnehmbar -- eine Meldung mit frischer Kennung kostet einen vollen
-    // Match, mehr nicht -- und deshalb wird hier NICHT gewartet.
-    static char puffer[64];
-    fsIOOpenRead(KENNUNG_DATEI, FsIOOpenFlag_RDONLY, 0, (int)sizeof(puffer) - 1,
-                 kennung_gelesen, nullptr);
-#endif
-    // Erzeugt wird hier nichts mehr (s. oben). Bleibt `g_kennung` leer, meldet die Bruegge
-    // ohne -- und bekommt vom Server eine zugeteilt.
-
-    // ⚠ HIER STAND `kennung_schreiben()`, UND DAS WAR EIN WETTLAUF MIT DEM EIGENEN LESEN.
-    //
-    // Das Lesen oben laeuft asynchron, das Schreiben lief sofort -- und `FsIOOpenFlag_TRUNC`
-    // leert die Datei. Wenn der Lese-Callback eintraf, war die gespeicherte Kennung laengst
-    // ueberschrieben. Folge: Die Bruegge zog bei JEDEM Simulator-Start eine neue, obwohl sie
-    // ausdruecklich dafuer gebaut ist, dieselbe zu behalten.
-    //
-    // Gemessen am 12.09.2026: drei Starts, drei Kennungen (9e371e61…, 9e3713f1…,
-    // 9e3713d1…) -- und im Server drei Saetze `bruegge_steht`-Zeilen fuer dieselben Objekte,
-    // weil dort (kennung, id) der Schluessel ist.
-    //
-    // Jetzt wird erst geschrieben, wenn feststeht, dass nichts Altes mehr kommt: entweder
-    // sofort nach einem fehlgeschlagenen Lesen, oder nach KENNUNG_WARTE_S Sekunden
-    // (s. `kennung_pruefen`). Das kostet nichts -- die Kennung geht ohnehin bei jeder
-    // Meldung mit hinaus, sie muss nur nicht auf der Platte stehen.
-}
-
-// Sekunden seit Modulstart, nach denen eine erzeugte Kennung endgueltig gilt und geschrieben
-// wird. Drei Sekunden sind reichlich fuer ein Dateilesen aus dem WASM-Sandkasten und immer
-// noch weit vor der ersten Meldung, die auf `g_welt_da` wartet.
-#define KENNUNG_WARTE_S 3
-
-// Ist die Kennung aus der Datei inzwischen eingetroffen? Dann gilt sie -- sie ist die
-// aeltere und damit die, die der Server schon kennt.
-static void kennung_pruefen() {
-#ifdef KENNUNG_HAELT
-    // Ist die gespeicherte Kennung nach KENNUNG_WARTE_S nicht da, kommt sie nicht mehr --
-    // dann gilt die erzeugte und wird jetzt (und nur jetzt) auf die Platte geschrieben.
-    // Vorher zu schreiben hiesse, das eigene Lesen zu ueberholen (s. kennung_laden_oder_erzeugen).
-    // Nach KENNUNG_WARTE_S ist klar, dass keine gespeicherte mehr kommt. Frueher wurde hier
-    // die erfundene festgeschrieben; jetzt gibt es keine, und die Bruegge meldet so lange
-    // ohne, bis der Server eine zuteilt (s. `kennung_uebernehmen`).
-    if (!g_kennung_fest && g_sekunden >= KENNUNG_WARTE_S && g_kennung_gelesen[0] == '\0') {
-        g_kennung_fest = true;
-        if (g_kennung[0] != '\0') kennung_schreiben();
-        return;
-    }
-    if (g_kennung_gelesen[0] == '\0') return;
-    // Nur uebernehmen, wenn sie plausibel aussieht: 16 Hexziffern, wie kennung_erzeugen sie
-    // baut. Eine halb geschriebene oder fremde Datei soll nicht durchschlagen.
-    size_t n = std::strlen(g_kennung_gelesen);
-    if (n == 16) {
-        bool hex = true;
-        for (size_t i = 0; i < n; ++i) {
-            char c = g_kennung_gelesen[i];
-            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) { hex = false; break; }
-        }
-        if (hex) {
-            std::snprintf(g_kennung, sizeof(g_kennung), "%s", g_kennung_gelesen);
-            // Sie steht ja schon in der Datei -- erneut zu schreiben waere sinnlos und
-            // braechte nur die Gelegenheit, sie dabei zu zerstoeren.
-            g_kennung_fest = true;
-        }
-    }
-    g_kennung_gelesen[0] = '\0';
-#endif
-}
 
 // ---------------------------------------------------------------------------------------
 // Art -> Titel: DIE ZUORDNUNG KOMMT VOM SERVER (Protokollfassung 2, 14.09.2026)
@@ -594,7 +493,7 @@ static void meldung_bauen(char* puffer, size_t groesse) {
     JsonSchreiber j(puffer, groesse);
     j.roh("{");
     j.feld("protokoll");       j.ganzzahl(2);                 j.komma();
-    j.feld("simulator");       j.text(SIMULATOR_NAME);        j.komma();
+    j.feld("simulator");       j.text(g_simulator);           j.komma();
     j.feld("bruegge_version"); j.text(BRUEGGE_VERSION);       j.komma();
 
     // Nur wenn die letzte Antwort nicht in den Puffer passte -- sonst faellt das Feld weg.
@@ -1034,24 +933,28 @@ static void soll_abgleichen(const char* json) {
 static void kennung_uebernehmen(const char* json) {
     if (g_kennung[0] != '\0') return;
 
-    // ⚠⚠ NICHT, SOLANGE DIE DATEI NOCH GELESEN WIRD -- sonst gewinnt der Server das Rennen
-    // gegen die eigene Platte.
+    // ⚠⚠ HIER STAND `if (!g_kennung_fest) return;` -- UND DAS WAERE AM 16.09.2026 BEINAHE
+    // ZUM SCHWEREN FEHLER GEWORDEN.
     //
-    // Gemessen am 14.09.2026: Die Kennung wechselte bei JEDEM Start, obwohl die Datei
-    // sauber geschrieben wurde (16 Bytes, richtiger Inhalt). Der Grund war die Reihenfolge.
-    // `fsIOOpenRead` laeuft asynchron und braucht bis zu KENNUNG_WARTE_S; die erste Meldung
-    // geht aber schon nach einer Sekunde hinaus. Der Server antwortete mit einer frischen
-    // Kennung, die Bruegge uebernahm sie -- und der Lese-Callback kam ins Leere.
+    // Die Schranke bewachte einen Wettlauf, den es nicht mehr gibt: den Server gegen das
+    // asynchrone Lesen der Kennungsdatei. Gesetzt wurde `g_kennung_fest` AUSSCHLIESSLICH
+    // innerhalb von `#ifdef KENNUNG_HAELT`. Mit dem Wegfall der Datei-API waere es damit
+    // fuer immer `false` geblieben -- und diese Funktion haette bei JEDER Antwort sofort
+    // zurueckgekehrt.
     //
-    // `g_kennung_fest` wird erst gesetzt, wenn das Lesen abgeschlossen ODER abgelaufen ist
-    // (s. kennung_pruefen). Vorher nehmen wir nichts entgegen. Die paar Sekunden ohne
-    // Kennung kosten nur einen vollen Positionsmatch, und den kann der Server ohnehin --
-    // genau dafuer ist er gebaut.
+    // Die Folge waere lautlos gewesen und uebel: Die Bruegge haette nie eine Kennung
+    // angenommen und bei jeder Meldung ohne gemeldet. Der Server vergibt dann jedes Mal
+    // eine neue (`if not kennung: kennung = zugeteilt = secrets.token_hex(8)`,
+    // app/main.py:1992) -- im SEKUNDENTAKT, jede mit einem vollen Positionsmatch und einem
+    // DELETE/INSERT in `bruegge_zuordnung`. Von aussen haette es ausgesehen wie "die
+    // Kennung haelt eben nicht", also wie das erwartete Verhalten.
     //
-    // Das ist der DRITTE Wettlauf derselben Bauart an dieser einen Funktion: erst das
-    // Schreiben gegen das Lesen, dann das Schliessen gegen das Schreiben, jetzt der Server
-    // gegen die Platte. Wer hier etwas aendert, frage sich zuerst, was gleichzeitig laeuft.
-    if (!g_kennung_fest) return;
+    // ⚠ Die Lehre ist allgemeiner als der Fall: Wer einen `#ifdef`-Zweig entfernt, muss
+    // suchen, welche Variablen NUR DORT gesetzt wurden. Der Compiler schweigt dazu --
+    // `g_kennung_fest` blieb ja eine gueltige, nur nie wahre Bedingung.
+    //
+    // Es bleibt genau eine Schranke, und sie steht oben: eine bestehende Kennung wird nicht
+    // ersetzt. Das ist das Flackern, das die Zuordnungs-Spec verbietet.
     char neu[40] = {0};
     if (!json_text_in(json, "kennung", neu, sizeof(neu))) return;
     size_t n = std::strlen(neu);
@@ -1063,11 +966,18 @@ static void kennung_uebernehmen(const char* json) {
         if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return;
     }
     std::snprintf(g_kennung, sizeof(g_kennung), "%s", neu);
-    g_kennung_fest = true;
-    kennung_schreiben();
-    // Kein Log: Die MSFS-Fassung hat keinen Ausgabeweg (anders als die X-Plane-Fassung mit
-    // `logzeile`). Ob es geklappt hat, steht ohnehin dort, wo es zaehlt -- in der naechsten
-    // Meldung, und damit in `bruegge_zuordnung` auf dem Server.
+
+    // ⭐ DIE KENNUNG GEHOERT INS LOG -- und hier stand bis zum 16.09.2026 das Gegenteil:
+    // "Kein Log: Die MSFS-Fassung hat keinen Ausgabeweg (anders als die X-Plane-Fassung)".
+    // Das stimmte, bis `log_zeile` am 15.09. mit 1.13.0 in dieselbe Datei kam; nachgezogen
+    // hat es niemand.
+    //
+    // Was dadurch fehlte, hat am 16.09.2026 eine ganze Untersuchung aufgehalten: In der
+    // Datenbank stand eine Kennung unter einer fremden CID, und es liess sich NICHT
+    // entscheiden, ob die eigene Bruegge falsch zugeordnet worden war oder ob schlicht ein
+    // anderer Pilot gemeldet hatte. Beide Faelle sehen von aussen gleich aus. Eine Zeile
+    // hier haette die Frage in einer Sekunde beantwortet.
+    log_zeile("Kennung vom Server: %s (%s)", g_kennung, g_simulator);
 }
 
 static void antwort_lesen(const char* json) {
@@ -1227,7 +1137,6 @@ static void melden() {
 
 static void sekunde() {
     ++g_sekunden;
-    kennung_pruefen();
     anfrage_bewachen();
     if (!g_lage_gueltig) return;
 
@@ -1286,6 +1195,42 @@ static void sekunde() {
 
 void CALLBACK dispatch(SIMCONNECT_RECV* pData, DWORD, void*) {
     switch (pData->dwID) {
+
+    // ⭐ WELCHER SIMULATOR IST DAS? -- die erste Nachricht nach dem Verbinden (16.09.2026)
+    //
+    // Seit ein Modul beide bedient, ist das keine Frage des Baus mehr (s. `g_simulator`).
+    // SimConnect beantwortet sie gleich beim Oeffnen, und zwar doppelt: mit einem Namen und
+    // mit einer Fassungsnummer.
+    //
+    // ⚠ ENTSCHIEDEN WIRD NACH DER NUMMER, NICHT NACH DEM NAMEN. `szApplicationName` ist ein
+    // Marketingtext, und beide Simulatoren tragen historische Eigennamen ("KittyHawk" steht
+    // noch im User-Agent, den MSFS selbst mitschickt). Eine Zeichenkette, auf die man
+    // vergleicht, ist genau so lange richtig, bis Asobo sie anfasst.
+    //
+    // `dwApplicationVersionMajor` ist dagegen die Fassung des Simulators: MSFS 2020 zaehlt
+    // im 11er-Band (11.x), MSFS 2024 im 12er. Die Schwelle steht bei 12, damit ein kuenftiger
+    // Nachfolger nicht versehentlich als MSFS 2020 gilt -- im Zweifel lieber der neuere.
+    //
+    // ⚠⚠ BEIDE WERTE GEHEN INS LOG, und das ist Absicht: Die Schwelle ist aus der SDK-Doku
+    // und der Beobachtung abgeleitet, NICHT in MSFS 2020 gemessen (dort lief die Bruegge
+    // noch nie). Steht beim ersten Start eine unerwartete Zahl in der Konsole, ist sie
+    // sofort sichtbar -- statt dass die Bruegge stillschweigend die falschen Titel anfordert
+    // und der Katalog daraufhin echte Eintraege abschaltet.
+    case SIMCONNECT_RECV_ID_OPEN: {
+        auto* o = (SIMCONNECT_RECV_OPEN*)pData;
+        const bool ist_2024 = (o->dwApplicationVersionMajor >= 12);
+        std::snprintf(g_simulator, sizeof(g_simulator), "%s",
+                      ist_2024 ? "msfs2024" : "msfs2020");
+        log_zeile("verbunden mit \"%s\" %lu.%lu (Build %lu.%lu) -- erkannt als %s",
+                  o->szApplicationName,
+                  (unsigned long)o->dwApplicationVersionMajor,
+                  (unsigned long)o->dwApplicationVersionMinor,
+                  (unsigned long)o->dwApplicationBuildMajor,
+                  (unsigned long)o->dwApplicationBuildMinor,
+                  g_simulator);
+        break;
+    }
+
     case SIMCONNECT_RECV_ID_EVENT: {
         auto* e = (SIMCONNECT_RECV_EVENT*)pData;
         if (e->uEventID == EV_SIMSTART || e->uEventID == EV_FLUGGELADEN) {
@@ -1437,8 +1382,12 @@ void CALLBACK dispatch(SIMCONNECT_RECV* pData, DWORD, void*) {
 }
 
 extern "C" MSFS_CALLBACK void module_init(void) {
-    log_zeile("Fassung %s (%s) startet -- verbinde mit SimConnect...",
-              BRUEGGE_VERSION, SIMULATOR_NAME);
+    // ⚠ HIER STAND DER SIMULATOR MIT IN DER ZEILE, und das geht seit 1.14.0 nicht mehr:
+    // Welcher es ist, weiss die Bruegge erst mit SIMCONNECT_RECV_ID_OPEN -- also nach
+    // genau dem Verbinden, das diese Zeile ankuendigt. Sie haette hier immer "msfs"
+    // gemeldet und damit eine Auskunft vorgetaeuscht, die es noch nicht gibt. Der
+    // Simulator steht eine Zeile spaeter im Log, dort dann gemessen.
+    log_zeile("Fassung %s startet -- verbinde mit SimConnect...", BRUEGGE_VERSION);
 
     // ⚠ MEHR ALS DIESE DREI VERSUCHE IST NICHT BAUBAR -- und das ist keine Bequemlichkeit.
     //
@@ -1475,7 +1424,6 @@ extern "C" MSFS_CALLBACK void module_init(void) {
     }
     log_zeile("SimConnect verbunden.");
 
-    kennung_laden_oder_erzeugen();
 
     // Die Datendefinition GENAU EINMAL. Und mit IDs, die sich mit nichts anderem im Modul
     // überschneiden: SIMCONNECT_DATA_DEFINITION_ID ist ein gemeinsamer Nummernraum mit den
