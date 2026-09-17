@@ -1,5 +1,18 @@
 [
   {
+    "version": "15.0.0",
+    "date": "2026-09-17",
+    "highlight": true,
+    "title": "Luftschloss",
+    "items": [
+      "🌉 Die FriesenBrügge — ein kleines Zusatzpaket für deinen Simulator, und schon stehst du auf der Karte im Sekundentakt statt alle 15 Sekunden. In Kurven und beim Beschleunigen ist der Unterschied deutlich. Du musst dafür nichts offen haben und nichts einstellen: Die FriesenBrügge erkennt dich daran, dass du mit Friesen-Rufzeichen auf VATSIM fliegst. Es gibt sie für MSFS 2024, MSFS 2020 und X-Plane 12 — unter Windows, Mac und Linux.",
+      "🏰 Und sie stellt Dinge in deinen Simulator: Seehunde am Strand, ein Windrad, eine Rauchsäule am Horizont. Die FriesenBrügge baut Luftschlösser — das steht nur bei dem, der sie hat, und sonst nirgends. Gedacht ist es als Grundlage für neue Eventformen, bei denen es etwas zu finden, zu zählen oder anzufliegen gibt.",
+      "📡 Der Platzverkehr, den einer sieht, sehen jetzt alle. Wer mit dem Kniebrett fliegt, dessen Simulator kennt die Flugzeuge ringsum genauer als VATSIM — dort kommen sie in 15-Sekunden-Sprüngen und im Schnitt 35 Sekunden zu spät. Bisher blieb das im Tablet; jetzt gibt es das Tablet weiter, und auf der Website steht der Verkehr am Platz sekundengenau, solange dort einer von uns unterwegs ist. Einer fliegt, alle sehen mit — noch in der Beta-Testphase.",
+      "📱 Das lohnt sich auch auf einem zweiten Gerät: FriesenSpy auf einem Apple- oder Android-Tablet daneben ist eine Moving Map mit Track-up, OpenFlightMap, OpenAIP, überblendeten DFS-Karten und sekundengenauem Verkehr.",
+      "🩵 Türkis heißt jetzt auch im Kniebrett: Diese Position kommt direkt aus dem Simulator. Friesen sind dabei ganz türkis, Fremdverkehr bleibt dunkel mit türkisem Schein. Dein eigenes Flugzeug ist blau, solange nur der Simulator es kennt, und türkis, sobald auch die VATSIM-Verbindung dazu gefunden ist."
+    ]
+  },
+  {
     "version": "14.53.1",
     "date": "2026-09-17",
     "highlight": false,
