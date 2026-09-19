@@ -4269,7 +4269,6 @@
         <button type="button" class="panel-zoom-knopf" id="panel-karten-heller"
                 aria-label="Karten heller">+</button>
       </div>
-      <button type="button" class="panel-zoom-zurueck" id="panel-karten-aus">Aus</button>
     </div>
     <div id="panel-notif" hidden>
       <div class="panel-abschnitt-titel">Benachrichtigungen</div>
@@ -15529,12 +15528,12 @@ function _initPanelAnzeige() {
 
   const dunkler = document.getElementById('panel-karten-dunkler');
   const heller  = document.getElementById('panel-karten-heller');
-  const kartenAus = document.getElementById('panel-karten-aus');
+  // ⚠ HIER STAND EIN "Aus"-KNOPF -- entfernt auf Nutzerwunsch (19.09.2026). Die oberste
+  // Stufe IST "Aus" (Faktor 1), `+` fuehrt also ohnehin dorthin; der Knopf war nur eine
+  // Abkuerzung von bis zu sieben Tippern. Wer ihn wieder einbaut, baut eine zweite Bedienung
+  // fuer einen Zustand, den es schon gibt.
   if (dunkler) dunkler.onclick = function () { _kartenhelligkeitStufen(1); };
   if (heller)  heller.onclick  = function () { _kartenhelligkeitStufen(-1); };
-  if (kartenAus) kartenAus.onclick = function () {
-    _kartenhelligkeitSetzen(_KARTENHELLIGKEIT_AUS);
-  };
 
   // ERST wenn die Merker vom Server da sind: Vorher steht dort der Anfangswert, und ein
   // sofortiges Anwenden schriebe die 1 als gemerkte Einstellung fest (dieselbe Falle wie bei
