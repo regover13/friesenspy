@@ -1099,7 +1099,15 @@ def test_deckkraft_messreihe_ist_vollstaendig_zurueckgebaut():
     assert m, "_makeTileLayers nicht gefunden"
     rumpf = m.group(1)
     assert "opacity" not in rumpf, "Basisebenen tragen immer noch eine gedrosselte Deckkraft"
-    assert "className" not in rumpf, "Compositing-Versuch der Messreihe ist noch da"
+    # Hier stand bis v15.1.0 `assert "className" not in rumpf`. Das war die richtige Aussage
+    # mit dem falschen Mass: Die Messreihe wollte ueber EINE gemeinsame Klasse `.kachel-ebene`
+    # ein Compositing erzwingen -- verboten gehoert dieser Zweck, nicht das Schluesselwort.
+    # Seit der Kartenhelligkeit traegt jede Grundkarte ihren eigenen Griff `kachel-<name>`,
+    # ueber den _kachelRegeln sie einzeln absenkt. Das ist das Gegenteil einer gemeinsamen
+    # Ebene, und tests/test_kartenhelligkeit.py haelt fest, dass die Zuordnung stimmt.
+    fremd = [c for c in re.findall(r"className: '([^']*)'", rumpf)
+             if c == "kachel-ebene" or not re.fullmatch(r"kachel-(ofm|topo|light|dark|sat)", c)]
+    assert not fremd, f"className ausserhalb der Helligkeits-Griffe: {fremd}"
     assert ".kachel-ebene" not in INDEX, "CSS der Messreihe ist noch da"
 
 

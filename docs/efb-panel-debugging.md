@@ -559,3 +559,108 @@ Moving Map die Karte in der Sekunde nach dem Aufbau auf das Flugzeug zog — kei
 
 **`lsSchlüssel` bleibt dagegen aussagekräftig:** Es zählt, was tatsächlich im Browser-Speicher
 liegt, und ist unmittelbar nach einem Sim-Start ~0.
+
+---
+
+## Kachelhelligkeit: warum der EFB-Regler das nicht lösen kann (gemessen 19.09.2026)
+
+**Symptom (Nutzer, 19.09.2026):** „Regler 0 und auto = nachts OK, tags zu dunkel; Regler >0
+nachts zu hell, tagsüber OK."
+
+**Ursache:** Der Helligkeitsregler des EFB ändert die Helligkeit, aber nicht das *Verhältnis*.
+In der EFB-API endet er in `Coherent.call("SET_MANUAL_BRIGHTNESS", wert)` — ein einzelner
+Skalar, nativ angewandt, ohne jeden Bezug zum Seiteninhalt. Er verschiebt die Skala, er
+staucht sie nicht.
+
+Auf diesem Bildschirm ist die Spanne aber sehr groß. Mittlere Luma als Anteil von Weiß,
+gemessen über vier Kacheln in Ostfriesland (Norden, Emden, Wilhelmshaven, Borkum) bei Zoom 11,
+jede Kachel über `--bg-body` gelegt:
+
+| Ebene | Luma | Verhältnis zur Oberfläche |
+|---|---|---|
+| Flugplatzkarte (DFS) | 96 % | 32× |
+| Rollkarte (DFS) | 94 % | 31× |
+| Sichtflugkarte (DFS) | 92 % | 31× |
+| CARTO light | 89 % | 30× |
+| OpenTopoMap | 81 % | 27× |
+| Satellit (Esri) | 28 % | 9× |
+| CARTO dark | 11 % | 4× |
+| OFM (aero) | 9 % | 3× |
+| Oberfläche (`#04080f`) | 3 % | — |
+
+Nachts begrenzt das **Hellste** im Bild (die Karte), tagsüber das **Dunkelste** (Schrift und
+Flächen). Keine Reglerstellung erfüllt beides — und die Automatik kann es ebensowenig, weil sie
+nur eine Position auf derselben Skala sucht. Das ist kein Fehler des Simulators, sondern die
+Grenze eines einzelnen Faktors.
+
+**Lösung:** Die Grundkarten werden im Panel separat abgesenkt (`_KACHEL_LUMA`, `_kachelRegeln`
+in `app/static/index.html`), *bevor* der EFB-Regler ins Spiel kommt. Danach ist die Spanne
+kleiner und er bekommt seinen Spielraum zurück. Der gespeicherte Wert ist eine
+**Zielhelligkeit**, kein Dimmfaktor: Jede Karte bekommt den Faktor, der sie dorthin bringt.
+Deshalb genügt *ein* Regler für fünf Karten — und deshalb bleibt die Bildhelligkeit beim
+Kartenwechsel gleich, die vorher zwischen Satellit und OpenTopoMap um das Dreifache sprang.
+
+⚠ **`className` landet bei Leaflet je nach Ebenenart woanders.** Bei `L.tileLayer` am
+**Container** (`GridLayer._initContainer`, `leaflet-src.js:11456`), bei `L.imageOverlay` am
+**`<img>` selbst** (`ImageOverlay._initImage`, `:9530`). Beide Ebenenarten sind hier betroffen —
+die Grundkarten sind Kachelebenen, die drei DFS-Blätter sind Bildebenen. `_kachelRegeln` gibt
+deshalb je Regel **zwei** Selektoren aus (`.kachel-X img.leaflet-tile` und `img.kachel-X`); die
+jeweils unpassende Hälfte trifft einfach nichts. Die Kachelform ist dieselbe wie beim
+`mix-blend-mode`-Fix oben, die in dieser Engine nachweislich greift.
+
+⚠ **Bei den DFS-Blättern nur die deckenden Bildpunkte messen.** Sie werden zur Passung gedreht
+und haben deshalb durchsichtige Ecken. Wer sie über den Hintergrund legt und mitzählt, misst den
+**Drehwinkel** statt des Papiers — ein stark gedrehtes Blatt sähe dunkler aus als ein gerades,
+obwohl beide gleich hell sind. Filter: `a >= 250`.
+
+**Nachmessen** — rein lesend, jederzeit wiederholbar. `CARTO_API_KEY` ist nur für Light/Dark
+nötig; auf dem VPS liegt er in der Umgebung des Containers. ⚠ Zwei Messfallen stecken darin:
+Der Esri-Server weist den Aufruf ohne browserartigen User-Agent mit `Connection reset` ab, und
+`convert("RGB")` macht aus Transparenz Schwarz — teiltransparente Kacheln müssen über den
+echten Hintergrund gelegt werden, sonst misst man den Hintergrund mit.
+
+```python
+import math, io, os, urllib.request
+from PIL import Image
+
+UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Chrome/120.0 Safari/537.36")
+BG = (0x04, 0x08, 0x0f)          # --bg-body, worueber die Kacheln liegen
+
+def deg2tile(lat, lon, z):
+    n = 2 ** z
+    return (int((lon + 180.0) / 360.0 * n),
+            int((1.0 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2.0 * n))
+
+def luma(roh):
+    img = Image.open(io.BytesIO(roh)).convert("RGBA")
+    unter = Image.new("RGBA", img.size, BG + (255,))
+    px = list(Image.alpha_composite(unter, img).convert("RGB").getdata())
+    return sum(0.2126 * r + 0.7152 * g + 0.0722 * b for r, g, b in px) / len(px)
+
+PUNKTE = [(53.60, 7.20), (53.37, 7.21), (53.53, 8.11), (53.58, 6.66)]
+Z = 11
+KEY = os.environ.get("CARTO_API_KEY", "")
+QUELLEN = {
+    "OpenTopoMap": "https://a.tile.opentopomap.org/{z}/{x}/{y}.png",
+    "Satellit":    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    "OFM (aero)":  "https://nwy-tiles-api.prod.newaydata.com/tiles/{z}/{x}/{y}.png?path=latest/aero/latest",
+    "CARTO light": "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png?api_key=" + KEY,
+    "CARTO dark":  "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png?api_key=" + KEY,
+}
+
+for name, tpl in QUELLEN.items():
+    werte = []
+    for lat, lon in PUNKTE:
+        x, y = deg2tile(lat, lon, Z)
+        req = urllib.request.Request(tpl.format(z=Z, x=x, y=y), headers={"User-Agent": UA})
+        werte.append(luma(urllib.request.urlopen(req, timeout=25).read()))
+    m = sum(werte) / len(werte)
+    print(f"{name:13s} {m:6.1f}/255 ({m / 255 * 100:4.1f} %)")
+```
+
+**Die Werte sind eine Eichung, keine Naturkonstante.** Vier Kacheln, eine Gegend, eine
+Zoomstufe. Über Schnee, Watt oder offener See sieht es anders aus. Wer `_KACHEL_LUMA` anfasst,
+misst neu — und `tests/test_kartenhelligkeit.py` hält fest, dass **jede** Grundkarte aus
+`_makeTileLayers` einen Messwert und ihre Klasse hat. Eine sechste Karte ohne beides bricht den
+Test, statt still ungedimmt zu bleiben.

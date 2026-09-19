@@ -1,5 +1,16 @@
 [
   {
+    "version": "15.1.0",
+    "date": "2026-09-19",
+    "highlight": false,
+    "title": "Kartenhelligkeit im Kniebrett",
+    "items": [
+      "🌙 Die Einstellungen im Kniebrett (⚙ → Anzeige) haben jetzt eine **Kartenhelligkeit**. Sie nimmt nur das Kartenbild zurück — Grundkarten und die aufgelegten Sichtflug-, Flugplatz- und Rollkarten —, nicht Schrift und Bedienelemente. Genau das kann der Helligkeitsregler des Simulators nicht, weil er das ganze Tablet gleichmäßig dimmt. Nachts blendete deshalb entweder die Karte, oder tagsüber war alles zu dunkel.",
+      "🗺️ Eingestellt wird eine Zielhelligkeit: Jede Karte wird so weit abgesenkt, dass sie so hell ist wie die anderen. Ein Regler genügt damit für alle — und beim Wechsel zwischen OpenTopoMap und Satellit springt die Helligkeit nicht mehr um das Dreifache. „Aus\" stellt den alten Zustand her.",
+      "📄 Am stärksten abgesenkt werden die Kartenblätter: Weißes Papier ist mit über 90 % das Hellste, was im Cockpit auf dem Schirm liegt."
+    ]
+  },
+  {
     "version": "15.0.1",
     "date": "2026-09-19",
     "highlight": false,

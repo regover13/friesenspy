@@ -3497,6 +3497,17 @@
     }
     .panel-zoom-zurueck:hover { color: var(--green); }
     /* Auf der Website gibt es kein Kniebrett, dessen Flaeche zu klein waere. */
+    /* Beschriftung ueber jeder Reihe -- seit es zwei sind, traegt der Abschnittstitel
+       "Anzeige" allein die Unterscheidung nicht mehr. */
+    .panel-einst-name {
+      font-size: 13px;
+      color: var(--green-dim);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin: 14px 0 6px;
+    }
+    .panel-einst-name:first-of-type { margin-top: 6px; }
+
     html:not(.vr-panel) #panel-anzeige { display: none !important; }
 
     .notif-panel::-webkit-scrollbar { width: 8px; }
@@ -4237,6 +4248,7 @@
          bei 510, 600 und 800 Prozent und finden nicht mehr zurueck. -->
     <div id="panel-anzeige" hidden>
       <div class="panel-abschnitt-titel">Anzeige</div>
+      <div class="panel-einst-name">Gr&ouml;&szlig;e</div>
       <div class="panel-zoom-reihe">
         <button type="button" class="panel-zoom-knopf" id="panel-zoom-kleiner"
                 aria-label="Anzeige verkleinern">&minus;</button>
@@ -4245,6 +4257,19 @@
                 aria-label="Anzeige vergroessern">+</button>
       </div>
       <button type="button" class="panel-zoom-zurueck" id="panel-zoom-zurueck">Automatisch</button>
+
+      <!-- Senkt NUR die Kartenkacheln ab, nicht die Oberflaeche. Damit bekommt der
+           Helligkeitsregler des EFB seinen Spielraum zurueck -- Begruendung und Messwerte
+           stehen bei _KACHEL_LUMA. Minus ist dunkler: Die Karte ist das, was blendet. -->
+      <div class="panel-einst-name">Kartenhelligkeit</div>
+      <div class="panel-zoom-reihe">
+        <button type="button" class="panel-zoom-knopf" id="panel-karten-dunkler"
+                aria-label="Karten dunkler">&minus;</button>
+        <span class="panel-zoom-wert" id="panel-karten-wert">Aus</span>
+        <button type="button" class="panel-zoom-knopf" id="panel-karten-heller"
+                aria-label="Karten heller">+</button>
+      </div>
+      <button type="button" class="panel-zoom-zurueck" id="panel-karten-aus">Aus</button>
     </div>
     <div id="panel-notif" hidden>
       <div class="panel-abschnitt-titel">Benachrichtigungen</div>
@@ -4906,14 +4931,146 @@ const _PANEL_MODUS = document.documentElement.classList.contains('vr-panel');
 const _AIP_DECKKRAFT = 0.8;
 
 function _makeTileLayers() {
+  // `className` ist der Griff, ueber den _kachelRegeln jede Grundkarte EINZELN absenkt.
+  // Leaflet haengt ihn an den Container der Ebene (GridLayer._initContainer), nicht an die
+  // Kacheln -- der Filter gehoert deshalb an die Bilder darin, s. _kachelRegeln.
   return {
-    ofm:  L.tileLayer(TILE_OFM_URL,  { attribution: TILE_OFM_ATTR,  maxNativeZoom: OFM_NATIVE_MAX_ZOOM, maxZoom: 19, minZoom: 6 }),
-    topo: L.tileLayer(TILE_TOPO_URL, { attribution: TILE_TOPO_ATTR, subdomains: 'abc', maxZoom: 17 }),
-    light: L.tileLayer(_mitCartoKey(TILE_LIGHT_URL), { attribution: TILE_DARK_ATTR, subdomains: 'abcd', maxZoom: 19 }),
-    dark: L.tileLayer(_mitCartoKey(TILE_DARK_URL),  { attribution: TILE_DARK_ATTR, subdomains: 'abcd', maxZoom: 19 }),
-    sat:  L.tileLayer(TILE_SAT_URL,  { attribution: TILE_SAT_ATTR,  maxZoom: 19 }),
+    ofm: L.tileLayer(TILE_OFM_URL, {
+      className: 'kachel-ofm', attribution: TILE_OFM_ATTR,
+      maxNativeZoom: OFM_NATIVE_MAX_ZOOM, maxZoom: 19, minZoom: 6 }),
+    topo: L.tileLayer(TILE_TOPO_URL, {
+      className: 'kachel-topo', attribution: TILE_TOPO_ATTR, subdomains: 'abc', maxZoom: 17 }),
+    light: L.tileLayer(_mitCartoKey(TILE_LIGHT_URL), {
+      className: 'kachel-light', attribution: TILE_DARK_ATTR, subdomains: 'abcd', maxZoom: 19 }),
+    dark: L.tileLayer(_mitCartoKey(TILE_DARK_URL), {
+      className: 'kachel-dark', attribution: TILE_DARK_ATTR, subdomains: 'abcd', maxZoom: 19 }),
+    sat: L.tileLayer(TILE_SAT_URL, {
+      className: 'kachel-sat', attribution: TILE_SAT_ATTR, maxZoom: 19 }),
   };
 }
+
+// ==========================================================================
+//  KACHEL-ZIELHELLIGKEIT IM PANEL
+// ==========================================================================
+// Der Helligkeitsregler des MSFS-EFB dimmt das ganze Tablet mit EINEM Faktor -- in der
+// EFB-API endet er in `Coherent.call("SET_MANUAL_BRIGHTNESS", wert)`, also nativ, ohne
+// jeden Bezug zum Seiteninhalt. Er verschiebt die Skala, er staucht sie nicht.
+//
+// Auf diesem Bildschirm ist die Spanne aber riesig. Gemessen am 19.09.2026 ueber vier
+// Kacheln in Ostfriesland (Norden, Emden, Wilhelmshaven, Borkum; Zoom 11; jeweils ueber
+// --bg-body gelegt), mittlere Luma als Anteil von Weiss:
+//
+//     CARTO light  89 %     Satellit    28 %     OFM (aero)   9 %
+//     OpenTopoMap  81 %     CARTO dark  11 %     Oberflaeche  3 %
+//
+// Nachts begrenzt das HELLSTE im Bild (die Karte), tagsueber das DUNKELSTE (Schrift und
+// Flaechen). Keine Reglerstellung erfuellt beides -- und die Automatik kann es auch nicht,
+// weil sie nur eine Position auf derselben Skala sucht. Nutzerbefund 19.09.2026: "Regler 0
+// und auto = nachts OK, tags zu dunkel; Regler >0 nachts zu hell, tagsueber OK."
+//
+// Deshalb senkt das Panel die Karten SEPARAT ab, bevor der EFB-Regler ins Spiel kommt.
+// Danach ist die Spanne kleiner, und der EFB-Regler bekommt seinen Spielraum zurueck --
+// dieser Block ersetzt ihn nicht, er macht ihn wieder brauchbar.
+//
+// Der gespeicherte Wert ist eine ZIELHELLIGKEIT, kein Dimmfaktor: Jede Grundkarte bekommt
+// den Faktor, der sie dorthin bringt. Das haelt die Bildhelligkeit auch beim KARTENWECHSEL
+// gleich -- heute springt sie von Satellit auf OpenTopoMap um das Dreifache, was nachts
+// blendet. Und es ist der Grund, warum EIN Regler fuer fuenf Karten genuegt.
+//
+// Nachmessen geht rein lesend; das Messskript steht in docs/efb-panel-debugging.md.
+// Die drei DFS-Blaetter liegen als L.imageOverlay auf der Karte, nicht als Kachelebene --
+// und sie sind das HELLSTE auf diesem Bildschirm, heller als jede Grundkarte. Gemessen am
+// 19.09.2026 ueber je zwoelf abgelegte Blaetter, und zwar nur die DECKENDEN Bildpunkte:
+// Ein gedrehtes Blatt hat durchsichtige Ecken, und wer die mitzaehlt, misst den Drehwinkel
+// statt des Papiers. Spanne je Sorte 213-251, der Mittelwert traegt also.
+const _KACHEL_LUMA = { ofm: 0.09, topo: 0.81, light: 0.89, dark: 0.11, sat: 0.28,
+                       sichtflug: 0.92, flugplatzkarte: 0.96, rollkarte: 0.94 };
+
+const _KARTENHELLIGKEIT_KEY = 'friesenspy_panel_kartenhelligkeit';
+// Stufen statt gleicher Schritte: von "Aus" bis brauchbar sind es so vier Tipper statt
+// vierzehn, und jede Stufe ist ein sichtbarer Sprung (rund ein Viertel weniger).
+const _KARTENHELLIGKEIT_STUFEN = [1, 0.6, 0.45, 0.35, 0.25, 0.18, 0.12, 0.08];
+const _KARTENHELLIGKEIT_AUS = _KARTENHELLIGKEIT_STUFEN[0];
+const _KARTENHELLIGKEIT_MIN = _KARTENHELLIGKEIT_STUFEN[_KARTENHELLIGKEIT_STUFEN.length - 1];
+
+/** Faktor, der `ebene` auf die Zielhelligkeit bringt. Nie ueber 1 -- aufhellen waere Unfug. */
+function _kachelFaktor(ebene, ziel) {
+  const luma = _KACHEL_LUMA[ebene];
+  if (!luma || !isFinite(ziel) || ziel <= 0) return 1;
+  return Math.min(1, ziel / luma);
+}
+
+function _kartenhelligkeitLesen() {
+  const roh = Number(_prefLies(_KARTENHELLIGKEIT_KEY));
+  if (!isFinite(roh) || roh <= 0) return _KARTENHELLIGKEIT_AUS;
+  return Math.min(_KARTENHELLIGKEIT_AUS, Math.max(_KARTENHELLIGKEIT_MIN, roh));
+}
+
+/**
+ * Die CSS-Regeln fuer eine Zielhelligkeit -- eine je Grundkarte.
+ *
+ * Selektorform bewusst wie beim mix-blend-mode-Fix weiter oben: Container-Klasse, dann die
+ * Kachelbilder darin. Genau diese Form greift in Coherent GT nachweislich.
+ */
+function _kachelRegeln(ziel) {
+  return Object.keys(_KACHEL_LUMA).map(function (ebene) {
+    // Zwei Selektoren je Regel, weil Leaflet `className` je nach Ebenenart woanders
+    // hinhaengt: bei L.tileLayer an den CONTAINER (GridLayer._initContainer), bei
+    // L.imageOverlay an das <img> SELBST (ImageOverlay._initImage). Die jeweils
+    // unpassende Haelfte trifft einfach nichts.
+    return 'html.vr-panel .kachel-' + ebene + ' img.leaflet-tile,\n' +
+           'html.vr-panel img.kachel-' + ebene +
+           ' { filter: brightness(' + _kachelFaktor(ebene, ziel).toFixed(3) + '); }';
+  }).join('\n');
+}
+
+/** Regeln in ein eigenes <style> schreiben. Nur im Panel -- die Website bleibt, wie sie ist. */
+function _kartenhelligkeitAnwenden() {
+  if (!_PANEL_MODUS) return;
+  let stil = document.getElementById('kachel-helligkeit');
+  if (!stil) {
+    stil = document.createElement('style');
+    stil.id = 'kachel-helligkeit';
+    document.head.appendChild(stil);
+  }
+  stil.textContent = _kachelRegeln(_kartenhelligkeitLesen());
+}
+
+function _kartenhelligkeitAnzeigen() {
+  const feld = document.getElementById('panel-karten-wert');
+  if (!feld) return;
+  const wert = _kartenhelligkeitLesen();
+  feld.textContent = wert >= _KARTENHELLIGKEIT_AUS ? 'Aus' : Math.round(wert * 100) + '%';
+}
+
+function _kartenhelligkeitSetzen(wert) {
+  const neu = Math.min(_KARTENHELLIGKEIT_AUS, Math.max(_KARTENHELLIGKEIT_MIN, wert));
+  _prefSchreib(_KARTENHELLIGKEIT_KEY, String(neu));
+  _kartenhelligkeitAnwenden();
+  _kartenhelligkeitAnzeigen();
+}
+
+/**
+ * Eine Stufe dunkler (richtung = 1) oder heller (richtung = -1).
+ *
+ * Geht von der Stufe aus, die dem gemerkten Wert am naechsten liegt -- nicht von einem
+ * gehaltenen Index. Im Merker kann ein Zwischenwert aus einer frueheren Stufenleiter
+ * stehen, und der soll auf die naechste Stufe einrasten statt zu verwerfen.
+ *
+ * An beiden Enden bleibt es stehen. Ein Umschlag waere hier boesartig: Wer im Dunkeln
+ * weiterdrueckt, bekaeme die volle Helligkeit ins Gesicht.
+ */
+function _kartenhelligkeitStufen(richtung) {
+  const jetzt = _kartenhelligkeitLesen();
+  let naechste = 0;
+  for (let i = 1; i < _KARTENHELLIGKEIT_STUFEN.length; i++) {
+    if (Math.abs(_KARTENHELLIGKEIT_STUFEN[i] - jetzt)
+        < Math.abs(_KARTENHELLIGKEIT_STUFEN[naechste] - jetzt)) naechste = i;
+  }
+  const ziel = Math.max(0, Math.min(_KARTENHELLIGKEIT_STUFEN.length - 1, naechste + richtung));
+  _kartenhelligkeitSetzen(_KARTENHELLIGKEIT_STUFEN[ziel]);
+}
+
 
 // ==========================================================================
 //  KACHEL-EINBLENDUNG IM PANEL ABSCHALTEN
@@ -11884,7 +12041,7 @@ function _aipKarteZeigen(k) {
   if (!k) { _aipDeckkraftAnzeigen(); _aipMarkenAnstrich(); return; }
   _aipKarteOverlay = L.imageOverlay(k.bild, [[k.sued, k.west], [k.nord, k.ost]], {
     opacity: _aipDeckkraft, attribution: _aipKarteAttribution(k), interactive: false,
-    zIndex: _Z_SICHTFLUG,
+    zIndex: _Z_SICHTFLUG, className: 'kachel-' + k.sorte,
   });
   _aipKartenGruppe.addLayer(_aipKarteOverlay);
   _aipDeckkraftAnzeigen();
@@ -12156,7 +12313,7 @@ function _groundZeigen(k) {
   if (k) {
     _groundOverlay = L.imageOverlay(k.bild, [[k.sued, k.west], [k.nord, k.ost]], {
       opacity: _aipDeckkraft, attribution: _groundAttribution(k), interactive: false,
-      zIndex: _Z_PLATZKARTE,
+      zIndex: _Z_PLATZKARTE, className: 'kachel-' + k.sorte,
     });
     _groundGruppe.addLayer(_groundOverlay);
   }
@@ -15370,6 +15527,15 @@ function _initPanelAnzeige() {
   };
   if (zurueck) zurueck.onclick = function () { _panelZoomSetzen(1); };
 
+  const dunkler = document.getElementById('panel-karten-dunkler');
+  const heller  = document.getElementById('panel-karten-heller');
+  const kartenAus = document.getElementById('panel-karten-aus');
+  if (dunkler) dunkler.onclick = function () { _kartenhelligkeitStufen(1); };
+  if (heller)  heller.onclick  = function () { _kartenhelligkeitStufen(-1); };
+  if (kartenAus) kartenAus.onclick = function () {
+    _kartenhelligkeitSetzen(_KARTENHELLIGKEIT_AUS);
+  };
+
   // ERST wenn die Merker vom Server da sind: Vorher steht dort der Anfangswert, und ein
   // sofortiges Anwenden schriebe die 1 als gemerkte Einstellung fest (dieselbe Falle wie bei
   // _prefServerPlanen, s. dort).
@@ -15380,6 +15546,10 @@ function _initPanelAnzeige() {
       window._panelZoomAnwenden();
     }
     _panelZoomAnzeigen();
+    // Erst nach den Server-Merkern: vorher stuende dort der Anfangswert, und ein sofortiges
+    // Anwenden schriebe "Aus" als gemerkte Einstellung fest (dieselbe Falle wie beim Zoom).
+    _kartenhelligkeitAnwenden();
+    _kartenhelligkeitAnzeigen();
   });
 }
 
