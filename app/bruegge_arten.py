@@ -30,8 +30,8 @@ sieht.
 
 **Der Rang ist die Reihenfolge, in der die Bruegge probiert.** Scheitert Titel 1, rueckt
 Titel 2 nach -- kein theoretischer Fall: `ASO_Ambulance_Japan` liegt im MSFS-2020-Bestand,
-aber nicht in 2024; er ist dort der EINZIGE Krankenwagen, und faellt er aus, sperrt die
-Regel die Art `krankenwagen` in BEIDEN Simulatoren (s. `bruegge_arten_beidseitig`).
+aber nicht in 2024; er ist dort der EINZIGE Krankenwagen, und faellt er aus, verliert die
+Art `krankenwagen` ihr Praedikat "ueberall" (s. `bruegge_arten_zustand`).
 
 ⚠ **Die Bruegge nimmt IMMER Rang 1** und rueckt nur bei einem Fehlschlag nach. Wer gemischte
 Gruppen will -- drei Kuehe, ein Bulle --, bekommt sie deshalb NICHT ueber mehrere Titel in

@@ -748,11 +748,9 @@ def test_ein_pruefergebnis_ueberlebt_das_neue_einlesen(klient):
     ein2 = dict(ein, paket="anderes-paket")
     klient.post("/api/admin/bruegge/katalog", cookies=_admin_kekse(), json={"eintraege": [ein2]})
 
-    d = klient.get("/api/admin/bruegge/katalog?simulator=msfs2024",
-                   cookies=_admin_kekse()).json()
-    z = [x for x in d["eintraege"] if x["titel"] == "Windmill"][0]
-    assert z["ergebnis"] == "steht", "das Pruefergebnis wurde ueberschrieben"
-    assert z["hoehe_ft"] == 1370.0
+    d = klient.get("/api/admin/bruegge/titel?suche=Windmill", cookies=_admin_kekse()).json()
+    z = [x for x in d["zeilen"] if x["titel"] == "Windmill" and x["simulator"] == "msfs2024"][0]
+    assert z["ergebnis_msfs2024"] == "steht", "das Pruefergebnis wurde ueberschrieben"
     assert z["paket"] == "anderes-paket", "der Bestand wurde NICHT nachgezogen"
 
 
@@ -1146,37 +1144,57 @@ def _katalog_lesen(db_pfad, art):
     from app.database import get_connection
     conn = get_connection(db_pfad)
     rows = conn.execute(
-        "SELECT titel, simulator, ergebnis, status, fehler FROM bruegge_katalog "
+        "SELECT titel, simulator, status FROM bruegge_katalog "
         "WHERE art = ? ORDER BY simulator, titel", (art,)).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
 
+def _lauf(db_pfad):
+    """Die Urteile: {(titel, pruef_simulator): {ergebnis, fehler, ...}}.
+
+    Seit dem 19.09.2026 stehen sie NICHT mehr am Katalog, sondern je (Titel, Simulator) in
+    `bruegge_titel_lauf` -- ein Urteil aus MSFS 2020 darf keines aus MSFS 2024 ueberschreiben.
+    """
+    from app.database import get_connection
+    conn = get_connection(db_pfad)
+    rows = conn.execute("SELECT * FROM bruegge_titel_lauf").fetchall()
+    conn.close()
+    return {(r["titel"], r["simulator"]): dict(r) for r in rows}
+
+
+def _liefert(db_pfad, simulator):
+    from app.database import bruegge_titel_fuer, get_connection
+    conn = get_connection(db_pfad)
+    try:
+        return bruegge_titel_fuer(conn, simulator)
+    finally:
+        conn.close()
+
+
 def _soll_und_melden(klient, steht, simulator="xplane12", art="tier_gross"):
-    """⚠ Die Art muss in BEIDEN Töpfen einen Titel haben, sonst lehnt der Admin-Endpunkt das
-    Anfordern ab (`bruegge_arten_beidseitig`, stehende Regel seit 14.09.2026: eine Art, die
-    ein Simulator nicht zeigen kann, geht an KEINEN hinaus). Ohne Soll-Zeile gibt es keine
-    Art zur Objekt-`id`, und der Rückfluss hätte nichts zu lernen — die Tests hier wären
-    dann grün, ohne etwas zu prüfen."""
+    """⚠ Ohne Soll-Zeile gibt es keine Art zur Objekt-`id`, und der Rückfluss hätte nichts zu
+    lernen — die Tests hier wären dann grün, ohne etwas zu prüfen. Die Art muss dafür
+    anforderbar sein, also in mindestens einem Simulator noch etwas zu setzen haben."""
     klient.post("/api/admin/bruegge/soll", cookies=_admin_kekse(),
                 json={"art": art, "lat": 53.78, "lon": 7.92, "id": "t1"})
     return klient.post("/api/bruegge/melden",
                        json=_meldung(simulator=simulator, steht=steht))
 
 
-#: Der Gegenpart im jeweils anderen Topf -- nur damit die Art überhaupt anforderbar ist.
-#: Er wird in den Prüfungen nicht angefasst und darf sich auch nicht verändern.
+#: Der Gegenpart im jeweils anderen Topf -- der Zeuge dafür, dass ein Urteil in EINEM
+#: Simulator nichts in dem anderen anfasst. Er darf sich in den Prüfungen nicht verändern.
 def _gegenpart(simulator):
     return ("msfs2024", "Gegenpart_Deer") if simulator == "xplane12" \
         else ("xplane12", "gegenpart.obj")
 
 
-def test_kein_titel_ging_legt_die_ganze_art_still(klient, tmp_path):
+def test_kein_titel_ging_verurteilt_die_ganze_art_in_diesem_simulator(klient, tmp_path):
     """Die Brügge hat ALLE Titel durchprobiert — dann gilt es für jeden von ihnen.
 
     Ohne diesen Rückfluss wusste der Katalog nach Monaten Betrieb nicht, was funktioniert:
-    2932 X-Plane-Titel, kein einziges Prüfergebnis. Und `bruegge_arten_beidseitig` hängt
-    daran — die Regel fußt auf `status='aus'`.
+    2932 X-Plane-Titel, kein einziges Prüfergebnis. Das Urteil gilt seit dem 19.09.2026 nur
+    für den MELDENDEN Simulator und legt nichts still: `status` gehört dem Nutzer.
     """
     db = str(tmp_path / "t.db")
     _friese_anlegen(db)
@@ -1188,12 +1206,17 @@ def test_kein_titel_ging_legt_die_ganze_art_still(klient, tmp_path):
     _soll_und_melden(klient, [{"id": "t1", "zustand": "fehlgeschlagen",
                                "fehler": "KEIN_MODELL_MEHR"}])
 
+    lauf = _lauf(db)
+    assert lauf[("a.obj", "xplane12")]["ergebnis"] == "fehlgeschlagen"
+    assert lauf[("b.obj", "xplane12")]["ergebnis"] == "fehlgeschlagen"
+    assert ("Deer", "msfs2024") not in lauf and ("Deer", "msfs2020") not in lauf, (
+        "ein X-Plane-Fehlschlag darf über keinen MSFS-Titel urteilen")
     zeilen = {(z["simulator"], z["titel"]): z for z in _katalog_lesen(db, "tier_gross")}
-    assert zeilen[("xplane12", "a.obj")]["status"] == "aus"
-    assert zeilen[("xplane12", "b.obj")]["status"] == "aus"
-    assert zeilen[("xplane12", "a.obj")]["ergebnis"] == "fehlgeschlagen"
-    assert zeilen[("msfs2024", "Deer")]["status"] == "aktiv", (
-        "ein X-Plane-Fehlschlag darf keinen MSFS-Titel stilllegen")
+    assert zeilen[("xplane12", "a.obj")]["status"] == "aktiv", "das Urteil schaltet nichts ab"
+    # Die Wirkung: X-Plane bekommt die Art nicht mehr, MSFS aber weiter -- der Kern der
+    # Regel vom 16.09.2026 (vorher ging sie dann an KEINEN mehr hinaus).
+    assert "tier_gross" not in _liefert(db, "xplane12")
+    assert "Deer" in _liefert(db, "msfs2024")["tier_gross"]
 
 
 def test_msfs_sagt_dasselbe_mit_einem_anderen_wort(klient, tmp_path):
@@ -1205,10 +1228,14 @@ def test_msfs_sagt_dasselbe_mit_einem_anderen_wort(klient, tmp_path):
                           (*_gegenpart("msfs2024"), "tier_gross", "aktiv")])
     _soll_und_melden(klient, [{"id": "t1", "zustand": "fehlgeschlagen",
                                "fehler": "KEIN_TITEL_GING"}], simulator="msfs2024")
-    zeilen = {z["titel"]: z for z in _katalog_lesen(db, "tier_gross")}
-    assert zeilen["Deer"]["status"] == "aus"
-    assert zeilen["Elk"]["status"] == "aus"
-    assert zeilen["gegenpart.obj"]["status"] == "aktiv", "X-Plane bleibt unberührt"
+    lauf = _lauf(db)
+    assert lauf[("Deer", "msfs2024")]["ergebnis"] == "fehlgeschlagen"
+    assert lauf[("Elk", "msfs2024")]["ergebnis"] == "fehlgeschlagen"
+    assert ("gegenpart.obj", "xplane12") not in lauf, "X-Plane bleibt unberührt"
+    # ... und der Schwestersimulator hat es NICHT mitbekommen: In MSFS 2020 ist nichts
+    # versucht worden, also wird dort weiter geliefert.
+    assert ("Deer", "msfs2020") not in lauf
+    assert "Deer" in _liefert(db, "msfs2020")["tier_gross"]
 
 
 def test_ein_einzelner_fehlschlag_raet_nicht(klient, tmp_path):
@@ -1224,8 +1251,7 @@ def test_ein_einzelner_fehlschlag_raet_nicht(klient, tmp_path):
                           (*_gegenpart("xplane12"), "tier_gross", "aktiv")])
     _soll_und_melden(klient, [{"id": "t1", "zustand": "fehlgeschlagen",
                                "fehler": "NAME_UNRECOGNIZED"}])
-    assert all(z["ergebnis"] is None for z in _katalog_lesen(db, "tier_gross")), \
-        "bei zwei Titeln darf nichts geschrieben werden"
+    assert not _lauf(db), "bei zwei Titeln darf nichts geschrieben werden"
 
 
 def test_bei_genau_einem_titel_ist_auch_das_einzelergebnis_eindeutig(klient, tmp_path):
@@ -1235,9 +1261,11 @@ def test_bei_genau_einem_titel_ist_auch_das_einzelergebnis_eindeutig(klient, tmp
                           (*_gegenpart("xplane12"), "tier_gross", "aktiv")])
     _soll_und_melden(klient, [{"id": "t1", "zustand": "fehlgeschlagen",
                                "fehler": "NAME_UNRECOGNIZED"}])
-    z = [x for x in _katalog_lesen(db, "tier_gross") if x["titel"] != "Gegenpart_Deer"][0]
-    assert z["ergebnis"] == "fehlgeschlagen" and z["status"] == "aus"
-    assert z["fehler"] == "NAME_UNRECOGNIZED"
+    urteil = _lauf(db)[("nur_der.obj", "xplane12")]
+    assert urteil["ergebnis"] == "fehlgeschlagen"
+    assert urteil["fehler"] == "NAME_UNRECOGNIZED"
+    z = [x for x in _katalog_lesen(db, "tier_gross") if x["titel"] == "nur_der.obj"][0]
+    assert z["status"] == "aktiv", "das Urteil schaltet nichts ab -- status gehoert dem Nutzer"
 
 
 def test_ein_fehlschlag_verschont_die_abgeschalteten_titel(klient, tmp_path):
@@ -1258,12 +1286,11 @@ def test_ein_fehlschlag_verschont_die_abgeschalteten_titel(klient, tmp_path):
     _soll_und_melden(klient, [{"id": "t1", "zustand": "fehlgeschlagen",
                                "fehler": "NAME_UNRECOGNIZED"}])
 
-    zeilen = {z["titel"]: z for z in _katalog_lesen(db, "tier_gross")}
-    assert zeilen["nur_der.obj"]["ergebnis"] == "fehlgeschlagen"
+    lauf = _lauf(db)
+    assert lauf[("nur_der.obj", "xplane12")]["ergebnis"] == "fehlgeschlagen"
     for titel in ("schon_aus.obj", "auch_aus.obj"):
-        assert zeilen[titel]["ergebnis"] is None, (
+        assert (titel, "xplane12") not in lauf, (
             f"{titel} wurde nie ausgeliefert und kann nicht gescheitert sein")
-        assert zeilen[titel]["fehler"] is None
 
 
 def test_auch_beim_durchprobieren_zaehlt_nur_was_ausgeliefert_wurde(klient, tmp_path):
@@ -1282,11 +1309,13 @@ def test_auch_beim_durchprobieren_zaehlt_nur_was_ausgeliefert_wurde(klient, tmp_
     _soll_und_melden(klient, [{"id": "t1", "zustand": "fehlgeschlagen",
                                "fehler": "KEIN_MODELL_MEHR"}])
 
+    lauf = _lauf(db)
     zeilen = {z["titel"]: z for z in _katalog_lesen(db, "tier_gross")}
-    assert zeilen["a.obj"]["ergebnis"] == "fehlgeschlagen"
-    assert zeilen["b.obj"]["ergebnis"] == "fehlgeschlagen"
-    assert zeilen["schon_aus.obj"]["ergebnis"] is None
+    assert lauf[("a.obj", "xplane12")]["ergebnis"] == "fehlgeschlagen"
+    assert lauf[("b.obj", "xplane12")]["ergebnis"] == "fehlgeschlagen"
+    assert ("schon_aus.obj", "xplane12") not in lauf
     assert zeilen["schon_aus.obj"]["status"] == "aus", "und bleibt, was sie war"
+    assert ("Deer", "msfs2024") not in lauf
 
 
 def test_ein_gelungener_versuch_traegt_sich_nicht_in_fremde_zeilen_ein(klient, tmp_path):
@@ -1303,9 +1332,9 @@ def test_ein_gelungener_versuch_traegt_sich_nicht_in_fremde_zeilen_ein(klient, t
                           (*_gegenpart("xplane12"), "tier_gross", "aktiv")])
     _soll_und_melden(klient, [{"id": "t1", "zustand": "steht", "hoehe_ft": 12.5}])
 
-    zeilen = {z["titel"]: z for z in _katalog_lesen(db, "tier_gross")}
-    assert zeilen["nur_der.obj"]["ergebnis"] == "steht"
-    assert zeilen["schon_aus.obj"]["ergebnis"] is None
+    lauf = _lauf(db)
+    assert lauf[("nur_der.obj", "xplane12")]["ergebnis"] == "steht"
+    assert ("schon_aus.obj", "xplane12") not in lauf
 
 
 def test_ein_gelungener_versuch_wird_vermerkt_aber_aendert_den_status_nicht(klient, tmp_path):
@@ -1324,8 +1353,8 @@ def test_ein_gelungener_versuch_wird_vermerkt_aber_aendert_den_status_nicht(klie
     _katalog_anlegen(db, [("xplane12", "nur_der.obj", "tier_gross", "aktiv"),
                           (*_gegenpart("xplane12"), "tier_gross", "aktiv")])
     _soll_und_melden(klient, [{"id": "t1", "zustand": "steht", "hoehe_ft": 12.5}])
+    assert _lauf(db)[("nur_der.obj", "xplane12")]["ergebnis"] == "steht"
     z = [x for x in _katalog_lesen(db, "tier_gross") if x["titel"] == "nur_der.obj"][0]
-    assert z["ergebnis"] == "steht"
     assert z["status"] == "aktiv", "der Status bleibt, wie der Nutzer ihn gesetzt hat"
 
 
@@ -1336,5 +1365,6 @@ def test_verschwunden_sagt_nichts_ueber_den_titel(klient, tmp_path):
     _katalog_anlegen(db, [("xplane12", "nur_der.obj", "tier_gross", "aktiv"),
                           (*_gegenpart("xplane12"), "tier_gross", "aktiv")])
     _soll_und_melden(klient, [{"id": "t1", "zustand": "verschwunden", "seit_s": 12}])
-    z = [x for x in _katalog_lesen(db, "tier_gross") if x["titel"] != "Gegenpart_Deer"][0]
-    assert z["ergebnis"] is None and z["status"] == "aktiv"
+    assert not _lauf(db), "`verschwunden` ist kein Urteil"
+    z = [x for x in _katalog_lesen(db, "tier_gross") if x["titel"] == "nur_der.obj"][0]
+    assert z["status"] == "aktiv"

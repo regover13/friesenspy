@@ -1,5 +1,16 @@
 [
   {
+    "version": "15.2.0",
+    "date": "2026-09-19",
+    "highlight": false,
+    "title": "Die FriesenBrügge kennt jeden Simulator einzeln",
+    "items": [
+      "🌉 Ob ein Objekt geht, wird jetzt für **jeden Simulator einzeln** festgehalten — MSFS 2020, MSFS 2024 und X-Plane 12. Fällt ein Objekt in einem Simulator aus, kommt es in den anderen weiter an. Bisher hätte es damit in allen gefehlt. Die Ergebnisse aus MSFS 2024 bleiben dabei stehen, wenn MSFS 2020 durchgemessen wird.",
+      "🏷️ Im Admin steht bei jeder Art, in welchen Simulatoren sie nachweislich geht. Die Objektauswahl lässt sich auf einen oder mehrere Simulatoren eingrenzen, Vorgabe ist „überall“. Solange MSFS 2020 nicht durchgemessen ist, ist bewusst noch keine Art „überall“: Ungeprüft gilt nicht als „geht“.",
+      "✋ Was nur das Auge sieht — ein rosa Seehund, ein unsichtbarer Rauch —, lässt sich als Urteil von Hand eintragen. Die Automatik überschreibt es nicht."
+    ]
+  },
+  {
     "version": "15.1.0",
     "date": "2026-09-19",
     "highlight": false,

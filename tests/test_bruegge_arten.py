@@ -69,7 +69,7 @@ def test_erstbefuellung_faesst_handarbeit_nicht_an(conn):
 
 
 def test_gescheiterter_titel_wird_nicht_ausgeliefert(leer):
-    """DER Grund fuer den ganzen Umzug.
+    """DER Grund fuer den ganzen Umzug -- und seit dem 19.09.2026 je Simulator.
 
     Die alte Bruegge-Tabelle fuehrte drei Titel, die seit dem 12.09.2026 mit EXCEPTION_22
     scheitern (`PolarBear`, `Bear_U_Maritimus`, `deer_o_hemionus`) -- sie probierte sie
@@ -78,6 +78,9 @@ def test_gescheiterter_titel_wird_nicht_ausgeliefert(leer):
     Geprueft wird an `BlackBear`, weil der in der Zuordnung auf `aktiv` steht: Nur so wird
     der Test ohne die Automatik rot. Bei `PolarBear` waere er gruen, ohne etwas zu zeigen --
     der steht dort schon von Hand auf `aus`.
+
+    ⚠ Das Urteil fiel in MSFS 2024. In MSFS 2020 ist der Titel nie versucht worden und geht
+    deshalb weiter hinaus -- sonst koennte dort nie ein Urteil entstehen.
     """
     # Eine frische Testdatenbank hat keinen gesammelten Bestand -- die Zeile muss es geben,
     # sonst legt die Erstbefuellung sie neu an und findet natuerlich kein Pruefergebnis.
@@ -87,11 +90,13 @@ def test_gescheiterter_titel_wird_nicht_ausgeliefert(leer):
                         fehler="EXCEPTION_22", geprueft_in="msfs2024")
     db.bruegge_arten_erstbefuellen(leer)
     assert "BlackBear" not in db.bruegge_titel_fuer(leer, "msfs2024").get("tier_gross", [])
-    # ... aber die Zeile bleibt stehen. Wer sie loescht, verliert den Befund.
+    assert "BlackBear" in db.bruegge_titel_fuer(leer, "msfs2020")["tier_gross"], \
+        "das Urteil aus MSFS 2024 darf MSFS 2020 nicht mitverurteilen"
+    # ... aber die Zeile bleibt stehen, und `status` bleibt Sache des Nutzers.
     zeile = leer.execute(
         "SELECT art, status FROM bruegge_katalog WHERE titel = 'BlackBear'").fetchone()
     assert zeile["art"] == "tier_gross"
-    assert zeile["status"] == "aus"
+    assert zeile["status"] == "aktiv"
 
 
 def test_msfs_bekommt_beide_bestaende_xplane_nur_seinen(conn):
@@ -295,13 +300,24 @@ def test_die_suche_findet_auch_ueber_die_art(conn):
 
 
 # ---------------------------------------------------------------------------------------
-# Beide Simulatoren muessen liefern koennen -- stehende Regel (Nutzer, 14.09.2026)
+# Was ein Simulator nicht kann, sperrt die Art nur dort -- stehende Regel (Nutzer, 16.09.2026)
 # ---------------------------------------------------------------------------------------
+#
+# "Arten werden nur noch vollstaendig deaktiviert, wenn kein Objekt mehr gesetzt werden kann.
+# Wenn mindestens ein SIM scheitert, verliert die Art nur noch ihr alle-Simulatoren-Praedikat."
+#
+# Sie loest die Beidseitig-Regel vom 14.09.2026 ab ("beide SIM muessen immer irgendwas aus der
+# Art anzeigen koennen"): Die verlangte, dass eine Art aus JEDEM Simulator hinausgeht oder aus
+# KEINEM -- und machte dadurch aus einem Fehlschlag in MSFS 2020 einen Ausfall in X-Plane.
 #
 # ⚠ Diese Tests legen sich ihre EIGENE Art an, statt eine echte zu benutzen. Der erste
 # Anlauf nahm `robbe`, und schon einen Tag spaeter zerfiel die in drei Arten -- vier Tests
 # wurden rot, ohne dass an der Regel etwas falsch war. Der Docstring dieser Datei sagt es
 # oben: gebunden werden die REGELN, nicht der Inhalt.
+
+SIMS = ("msfs2020", "msfs2024", "xplane12")
+X1 = "Resources/probe/x1.obj"
+X2 = "Resources/probe/x2.obj"
 
 
 @pytest.fixture()
@@ -310,95 +326,119 @@ def probe(conn):
     db.bruegge_arten_erstbefuellen(conn)
     conn.execute("INSERT INTO bruegge_art (art, bedeutung, status, angelegt_am) "
                  "VALUES ('probe', 'Probeart fuer die Tests', 'aktiv', datetime('now'))")
-    for sim, titel in (("msfs2024", ("ProbeM1", "ProbeM2")),
-                       ("xplane12", ("Resources/probe/x1.obj", "Resources/probe/x2.obj"))):
+    for sim, titel in (("msfs2024", ("ProbeM1", "ProbeM2")), ("xplane12", (X1, X2))):
         for rang, t in enumerate(titel, 1):
             conn.execute(
                 "INSERT INTO bruegge_katalog (simulator, titel, quelle, art, rang, status) "
                 "VALUES (?, ?, 'bord', 'probe', ?, 'aktiv')", (sim, t, rang))
     conn.commit()
     return conn
-#
-# "sollten innerhalb einer Art alle Entsprechungen eines Simulators nicht gesetzt werden
-# koennen, wird die Art deaktiviert. Ich muss sichergehen koennen, dass beide SIM immer
-# irgendwas aus der Art anzeigen koennen!"
 
 
-def test_einseitige_art_geht_an_KEINE_bruegge(probe):
-    """Der Kern der Regel -- und der Grund, warum sie nicht im Admin allein stehen darf.
+def _zustand(conn, art="probe"):
+    return db.bruegge_arten_zustand(conn)[art]
 
-    Eine Art, deren X-Plane-Titel alle ausfallen, darf auch die MSFS-Bruegge nicht mehr
-    bekommen. Sonst zeigt eine Station zwei Dritteln der Gruppe etwas und dem letzten
-    Drittel nichts -- und eine Zaehlaufgabe, bei der nicht alle dasselbe sehen, ist keine.
+
+def _durchgefallen(conn, simulator, *titel):
+    for t in titel:
+        db.bruegge_lauf_setzen(conn, t, simulator, "fehlgeschlagen", fehler="EXCEPTION_22")
+    conn.commit()
+
+
+def test_scheitert_ein_simulator_geht_die_art_an_die_anderen_weiter(probe):
+    """Der Kern der neuen Regel -- und das Gegenstueck zur alten.
+
+    Alle X-Plane-Titel der Art fallen aus. Vorher ging sie damit an KEINE Bruegge mehr
+    hinaus, auch nicht an die, die sie noch konnte. Jetzt verliert sie nur dort ihren Platz,
+    wo es nichts mehr zu setzen gibt.
     """
-    assert "probe" in db.bruegge_titel_fuer(probe, "msfs2024")
     assert "probe" in db.bruegge_titel_fuer(probe, "xplane12")
-
-    # Alle X-Plane-Robben fallen aus -- die MSFS-Seite bleibt vollstaendig.
-    probe.execute("UPDATE bruegge_katalog SET status = 'aus' "
-                 "WHERE art = 'probe' AND simulator = 'xplane12'")
-    probe.commit()
+    _durchgefallen(probe, "xplane12", X1, X2)
 
     assert "probe" not in db.bruegge_titel_fuer(probe, "xplane12")
-    assert "probe" not in db.bruegge_titel_fuer(probe, "msfs2024"), \
-        "einseitige Art darf auch der Simulator nicht bekommen, der sie noch koennte"
+    for sim in ("msfs2020", "msfs2024"):
+        assert "probe" in db.bruegge_titel_fuer(probe, sim), (
+            f"{sim} kann sie noch -- ein X-Plane-Ausfall darf sie ihm nicht nehmen")
+    assert _zustand(probe)["xplane12"] == "kann_nicht"
+    u = {d["art"]: d for d in db.bruegge_arten_uebersicht(probe)}["probe"]
+    assert u["anforderbar"] is True, "sie ist ja noch irgendwo setzbar"
+    assert u["ueberall"] is False
 
 
-def test_ein_einziger_titel_je_seite_genuegt(probe):
-    """Die Regel verlangt EINEN Titel je Simulator, nicht Gleichstand.
+def test_ein_simulator_kann_nur_wegen_seiner_eigenen_urteile_nicht(probe):
+    """Ein Urteil gilt fuer den Simulator, in dem es fiel -- die Titel zaehlen je Simulator.
 
-    Ohne das waere sie unbrauchbar: MSFS bringt zu `tier_gross` sechs Titel mit, X-Plane
-    zwei. Gefordert ist, dass beide etwas zeigen koennen -- nicht, dass sie gleich viel
-    mitbringen.
-
-    ⚠ Dieser Test wird ohne den Fix NICHT rot, und das ist Absicht -- er bindet die
-    GEGENRICHTUNG. Rot wird er, wenn jemand die Regel verschaerft und Gleichstand verlangt.
-    Die beiden Nachbarn darueber und darunter sind die eigentlichen Regressionstests.
+    ⚠ Gepraeft wird ausdruecklich MSFS 2020 gegen 2024: Sie teilen sich den Titelvorrat, und
+    genau dort waere ein Urteil pro Titel ohne Simulator im Schluessel durchgeschlagen.
     """
-    probe.execute("UPDATE bruegge_katalog SET status = 'aus' "
-                 "WHERE art = 'probe' AND simulator = 'xplane12' "
-                 "AND titel NOT LIKE '%x1.obj'")
+    _durchgefallen(probe, "msfs2024", "ProbeM1", "ProbeM2")
+    assert _zustand(probe)["msfs2024"] == "kann_nicht"
+    assert _zustand(probe)["msfs2020"] == "ungeprueft", (
+        "in MSFS 2020 ist nichts versucht worden -- das Urteil aus 2024 gilt dort nicht")
+    assert "probe" in db.bruegge_titel_fuer(probe, "msfs2020")
+
+
+def test_ungeprueft_ist_nicht_kann_und_damit_nicht_ueberall(probe):
+    """Variante A (Nutzer, 16.09.2026): Von einem Simulator auf den anderen wird nicht
+    geschlossen. `BlackBear` laeuft in MSFS 2024, 38 seiner Nachbarn nicht."""
+    assert _zustand(probe) == {"msfs2020": "ungeprueft", "msfs2024": "ungeprueft",
+                               "xplane12": "ungeprueft"}
+    assert "probe" not in db.bruegge_arten_ueberall(probe)
+
+    for sim, t in (("msfs2024", "ProbeM1"), ("xplane12", X1)):
+        db.bruegge_lauf_setzen(probe, t, sim, "steht")
     probe.commit()
-    xp = db.bruegge_titel_fuer(probe, "xplane12")
-    assert len(xp["probe"]) == 1
-    assert "probe" in db.bruegge_titel_fuer(probe, "msfs2024")
+    assert _zustand(probe) == {"msfs2020": "ungeprueft", "msfs2024": "kann",
+                               "xplane12": "kann"}
+    assert "probe" not in db.bruegge_arten_ueberall(probe), "2020 fehlt noch der Beleg"
+
+    # Der Beleg fuer MSFS 2020 kommt unter DEMSELBEN Titel -- ein Urteil je Simulator.
+    db.bruegge_lauf_setzen(probe, "ProbeM1", "msfs2020", "steht")
+    probe.commit()
+    assert "probe" in db.bruegge_arten_ueberall(probe)
+    assert db.bruegge_lauf_setzen(probe, "ProbeM1", "msfs2020", "steht") is True
+
+
+def test_ein_beleg_je_simulator_genuegt(probe):
+    """Verlangt ist EIN Titel, der geht -- nicht, dass alle gehen. Sonst waere die Regel
+    unbrauchbar: MSFS bringt zu `tier_gross` sechs Titel mit, X-Plane zwei."""
+    db.bruegge_lauf_setzen(probe, X1, "xplane12", "steht")
+    db.bruegge_lauf_setzen(probe, X2, "xplane12", "fehlgeschlagen", fehler="EXCEPTION_22")
+    probe.commit()
+    assert _zustand(probe)["xplane12"] == "kann"
 
 
 def test_die_regel_heilt_sich_selbst(probe):
-    """Kommt ein Titel zurueck, ist die Art sofort wieder da -- ohne Handgriff.
+    """Kommt ein Titel zurueck, ist die Art dort sofort wieder da -- ohne Handgriff.
 
     Das ist der Grund, warum die Regel BERECHNET wird und nicht in `bruegge_art.status`
     gepflegt. Eine gepflegte Liste wuesste vom Ausfall nichts und von der Rueckkehr erst
     recht nicht.
     """
-    probe.execute("UPDATE bruegge_katalog SET status = 'aus' "
-                 "WHERE art = 'probe' AND simulator = 'xplane12'")
-    probe.commit()
-    assert "probe" not in db.bruegge_titel_fuer(probe, "msfs2024")
+    _durchgefallen(probe, "xplane12", X1, X2)
+    assert "probe" not in db.bruegge_titel_fuer(probe, "xplane12")
 
-    probe.execute("UPDATE bruegge_katalog SET status = 'aktiv' "
-                 "WHERE art = 'probe' AND simulator = 'xplane12' "
-                 "AND titel LIKE '%x1.obj'")
+    db.bruegge_lauf_setzen(probe, X1, "xplane12", "steht")     # ein spaeterer Lauf
     probe.commit()
-    assert "probe" in db.bruegge_titel_fuer(probe, "msfs2024")
     assert "probe" in db.bruegge_titel_fuer(probe, "xplane12")
+    assert _zustand(probe)["xplane12"] == "kann"
 
 
 def test_admin_sagt_WARUM_eine_art_gesperrt_ist(probe):
     """Ohne Begruendung sucht jemand den Fehler bei sich.
 
-    Der Admin zeigt drei verschiedene Gruende -- abgeschaltet, kein Titel, einseitig -- und
-    sie sind nicht dasselbe: Der erste ist eine Entscheidung, der zweite eine Luecke, der
-    dritte ein Ausfall im Betrieb.
+    Drei Gruende, und sie sind nicht dasselbe: abgeschaltet (eine Entscheidung), kein Titel
+    (eine Luecke) und in keinem Simulator setzbar (ein Ausfall im Betrieb).
     """
-    probe.execute("UPDATE bruegge_katalog SET status = 'aus' "
-                 "WHERE art = 'probe' AND simulator = 'xplane12'")
-    probe.commit()
+    _durchgefallen(probe, "msfs2020", "ProbeM1", "ProbeM2")
+    _durchgefallen(probe, "msfs2024", "ProbeM1", "ProbeM2")
+    _durchgefallen(probe, "xplane12", X1, X2)
     u = {d["art"]: d for d in db.bruegge_arten_uebersicht(probe)}
     assert u["probe"]["anforderbar"] is False
-    assert u["probe"]["beidseitig"] is False
-    assert "X-Plane" in u["probe"]["gesperrt_weil"]
-    # Eine gesunde Art traegt keine Begruendung.
+    assert "kein Simulator" in u["probe"]["gesperrt_weil"]
+    assert u["probe"]["ueberall"] is False
+    # Eine gesunde Art traegt keine Begruendung -- auch wenn MSFS 2020 sie noch nicht
+    # gesehen hat: "ungeprueft" sperrt nicht.
     assert u["windsack"]["anforderbar"] is True
     assert u["windsack"]["gesperrt_weil"] is None
 
@@ -408,6 +448,6 @@ def test_die_regel_gibt_nichts_frei_was_der_nutzer_abgeschaltet_hat(probe):
     db.bruegge_art_setzen(probe, "probe", status="aus")
     probe.commit()
     u = {d["art"]: d for d in db.bruegge_arten_uebersicht(probe)}
-    assert u["probe"]["beidseitig"] is True       # die Titel stehen ja
-    assert u["probe"]["anforderbar"] is False     # trotzdem gesperrt
+    assert u["probe"]["anforderbar"] is False
     assert u["probe"]["gesperrt_weil"] == "vom Nutzer abgeschaltet"
+    assert "probe" not in db.bruegge_arten_anforderbar(probe)

@@ -728,11 +728,12 @@ Verwechslung den Nutzer einen halben Vormittag: Eine `flagge` in X-Plane meldete
 | `MODELLBESTAND_VOLL` (X-Plane) | Brügge: `OBJEKTE_MAX` erreicht |
 | `KEINE_INSTANZ` (X-Plane) | Brügge: `XPLMCreateInstance` gab nichts zurück |
 
-**Nur die ersten drei dürfen einen Titel stilllegen** (`_BRUEGGE_KEIN_URTEIL` in
-`app/main.py`). Bei `ART_UNBEKANNT` ist das nicht bloß falsch, sondern selbstverstärkend:
-Ein abgeschalteter Titel macht die Art einseitig, der Server liefert daraufhin gar nichts
-mehr, und die Brügge meldet folgerichtig wieder `ART_UNBEKANNT`. Aus diesem Kreis kommt man
-von Hand nicht heraus — jede Reparatur hält bis zum nächsten Setzversuch.
+**Nur die ersten drei dürfen ein Urteil begründen** (`_BRUEGGE_KEIN_URTEIL` in
+`app/main.py`). Bei `ART_UNBEKANNT` wäre das nicht bloß falsch, sondern selbstverstärkend:
+Ein durchgefallener Titel lässt die Art in diesem Simulator leer, der Server liefert
+daraufhin gar nichts mehr, und die Brügge meldet folgerichtig wieder `ART_UNBEKANNT`. Seit
+dem 19.09.2026 legt ein Fehlschlag zwar keinen Titel mehr still (er schreibt ein Urteil je
+Simulator, `status` gehört dem Nutzer) — der Kreis wäre für diesen Simulator aber derselbe.
 
 **Beide Schreibweisen bleiben gültig**, solange eine ältere Brügge fliegt. Ein Fehlercode ist
 ein Vertrag: Wer die alte Fassung streicht, legt bei jedem Piloten, der nicht herunterlädt,

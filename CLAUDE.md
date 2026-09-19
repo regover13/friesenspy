@@ -302,22 +302,26 @@ belassen es bei einer einfachen Hash-Aktualitätsprüfung.").
 
 ## Die FriesenBrügge: Arten (stehende Regeln — IMMER einhalten)
 
-- **Eine Art geht nur hinaus, wenn BEIDE Simulatoren etwas aus ihr zeigen können.** Fallen
-  in einem Simulator alle Titel aus, ist die Art in **keinem** mehr anforderbar — auch nicht
-  in dem, der sie noch könnte. Nutzerregel vom 14.09.2026: *„Ich muss sichergehen können,
-  dass beide SIM immer irgendwas aus der Art anzeigen können!"* Der Grund ist die
-  Zähl­aufgabe: Eine Station, die MSFS-Piloten eine Robbe zeigt und X-Plane-Piloten nichts,
-  benachteiligt nicht einen — sie macht das ganze Event ungültig, und ein Drittel der Gruppe
-  fliegt X-Plane.
-  **Die Regel wird berechnet, nicht gepflegt** (`bruegge_arten_beidseitig`, greift in
+- **Eine Art hat je Simulator einen Zustand — und wird nur ganz gesperrt, wenn KEIN
+  Simulator mehr etwas aus ihr setzen kann.** Scheitert nur einer, verliert sie bloß ihr
+  Prädikat **„überall"**. Nutzerregel vom 16.09.2026, sie löst die Beidseitig-Regel vom 14.09.
+  ab („beide SIM müssen immer irgendwas anzeigen können"), die aus einem Fehlschlag in MSFS
+  2020 einen Ausfall in X-Plane machte. Drei Simulatoren, drei Urteile: `msfs2020`,
+  `msfs2024`, `xplane12`. Der Admin-Filter erlaubt Mehrfachauswahl (UND), Vorgabe „überall".
+  **Das Urteil steht je (Titel, Simulator)** in `bruegge_titel_lauf`, nicht an der
+  Katalogzeile: Eine Prüfung in MSFS 2020 darf das Urteil aus MSFS 2024 nie überschreiben.
+  **Ungeprüft zählt NICHT als „kann"** (Nutzerentscheidung 16.09.2026, Variante A): Von 2024 auf
+  2020 zu schließen hat der Katalog selbst widerlegt — `BlackBear` läuft in 2024, 38 Nachbarn
+  nicht. Wer das lockert, macht „überall" wieder zu einer Vermutung.
+  **Die Regel wird berechnet, nicht gepflegt** (`bruegge_arten_zustand`, greift in
   `bruegge_titel_fuer` **und** `bruegge_arten_uebersicht` aus derselben Quelle). Titel fallen
-  im Betrieb aus — `ergebnis='fehlgeschlagen'` setzt `status='aus'` —, und eine von Hand
-  geführte Liste wüsste davon nichts. Wer sie nach `bruegge_art.status` verlegt, baut die
-  Lücke wieder ein, durch die eine Art einseitig hinausgeht; im Admin sieht sie dabei weiter
-  vollständig aus. Umgekehrt heilt sie sich selbst: Kommt ein Titel zurück, ist die Art
-  sofort wieder da.
-  `bruegge_art.status` bleibt daneben die **ausdrückliche Abschaltung durch den Nutzer** —
-  die Regel kann nur sperren, nie freigeben.
+  im Betrieb aus, und eine von Hand geführte Liste wüsste davon nichts; umgekehrt heilt die
+  Berechnung sich selbst. **`status` gehört allein dem Nutzer**: Ein Fehlschlag setzt ihn nicht
+  mehr, sondern schreibt ein Urteil — ausgeliefert wird, was `aktiv` ist und **im anfragenden
+  Simulator** nicht durchfiel. Ein Urteil **von Hand** (`quelle='hand'`, „der Seehund ist
+  rosa") überschreibt keine Automatik: Nur das Auge sieht, was die Brügge als `steht` meldet.
+  `bruegge_art.status` bleibt die **ausdrückliche Abschaltung durch den Nutzer** — die
+  Berechnung kann nur sperren, nie freigeben.
 - **Ein Titel gehört zu höchstens einer Art**, und die Brügge nimmt aus einer Art **immer
   Rang 1** — sie rückt nur nach, wenn ein Titel scheitert. Wer gemischte Gruppen will (drei
   Kühe, ein Bulle), bekommt sie deshalb *nicht* über mehrere Titel in einer Art, sondern

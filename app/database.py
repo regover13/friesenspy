@@ -815,6 +815,29 @@ CREATE TABLE IF NOT EXISTS bruegge_art (
     status      TEXT NOT NULL DEFAULT 'aktiv',
     angelegt_am TEXT
 );
+
+-- Wie ein Titel in JEDEM Simulator abgeschnitten hat -- ein Urteil je (Titel, Simulator).
+--
+-- `bruegge_katalog` fuehrte je Titel nur EIN `geprueft_in`/`ergebnis`. Eine Pruefung in
+-- MSFS 2020 haette das 2024er Urteil ueberschrieben, und Simulator-Unterschiede sind genau
+-- das, was der Katalog wissen soll: `BlackBear` steht im 2020er Bestand und laeuft in 2024.
+-- Deshalb steht das Urteil hier, mit dem PRUEF-Simulator im Schluessel -- nicht dem Fundort.
+--
+-- `quelle`: 'bruegge' = eine Bruegge oder ein Pruefwerkzeug hat es gemessen, 'hand' = der
+-- Nutzer hat es gesehen. Nur das Auge weiss, dass ein Seehund rosa ist, waehrend die Bruegge
+-- `steht` meldet; ein solches Urteil ueberschreibt die Automatik nie.
+--
+-- Was hier NICHT steht, ist "nie versucht" -- die Abwesenheit einer Zeile, kein Status.
+CREATE TABLE IF NOT EXISTS bruegge_titel_lauf (
+    titel        TEXT NOT NULL,
+    simulator    TEXT NOT NULL,     -- msfs2020 | msfs2024 | xplane12 (wo GEPRUEFT wurde)
+    ergebnis     TEXT NOT NULL,     -- steht | fehlgeschlagen
+    fehler       TEXT,              -- z. B. EXCEPTION_22, 'rosa (Textur fehlt)'
+    hoehe_ft     REAL,
+    geprueft_am  TEXT NOT NULL,
+    quelle       TEXT NOT NULL DEFAULT 'bruegge',
+    PRIMARY KEY (titel, simulator)
+);
 """
 
 
@@ -998,6 +1021,39 @@ _BRUEGGE_MIGRATIONS = [
     # Position zufaellig passt, ist etwas voellig anderes. `geloest_am` trennt die beiden:
     # Die Zeile bleibt stehen und sagt weiter, WEM diese Kennung gehoert.
     "ALTER TABLE bruegge_zuordnung ADD COLUMN geloest_am TEXT",
+    # ------------------------------------------------------------------------------------
+    # 19.09.2026: DAS URTEIL GEHOERT ZUM SIMULATOR, IN DEM ES FIEL.
+    #
+    # `bruegge_katalog.ergebnis` trug je Titel EIN Urteil; eine Pruefung in MSFS 2020 haette
+    # das aus MSFS 2024 ueberschrieben. Die Urteile ziehen in `bruegge_titel_lauf`, Schluessel
+    # (titel, PRUEF-Simulator). Die alten Spalten bleiben stehen und werden nicht mehr
+    # gelesen -- ein DROP ist eine eigene Entscheidung.
+    #
+    # Idempotent: Ein Titel, der in BEIDEN MSFS-Bestaenden steht, landet auf demselben
+    # Schluessel (beide Zeilen wurden in 2024 geprueft) -- es gewinnt das neuere Urteil, und
+    # ein spaeterer Lauf kann ein neueres nie durch ein aelteres ersetzen. Ein Urteil von Hand
+    # bleibt ohnehin unangetastet.
+    """CREATE TABLE IF NOT EXISTS bruegge_titel_lauf (
+        titel        TEXT NOT NULL,
+        simulator    TEXT NOT NULL,
+        ergebnis     TEXT NOT NULL,
+        fehler       TEXT,
+        hoehe_ft     REAL,
+        geprueft_am  TEXT NOT NULL,
+        quelle       TEXT NOT NULL DEFAULT 'bruegge',
+        PRIMARY KEY (titel, simulator)
+    )""",
+    "INSERT INTO bruegge_titel_lauf (titel, simulator, ergebnis, fehler, hoehe_ft, "
+    "                                geprueft_am, quelle) "
+    "SELECT titel, COALESCE(geprueft_in, simulator), ergebnis, fehler, hoehe_ft, "
+    "       COALESCE(geprueft_am, ''), 'bruegge' "
+    "FROM bruegge_katalog WHERE ergebnis IN ('steht', 'fehlgeschlagen') "
+    "ORDER BY COALESCE(geprueft_am, '') "
+    "ON CONFLICT(titel, simulator) DO UPDATE SET "
+    "    ergebnis = excluded.ergebnis, fehler = excluded.fehler, "
+    "    hoehe_ft = excluded.hoehe_ft, geprueft_am = excluded.geprueft_am "
+    "WHERE excluded.geprueft_am > bruegge_titel_lauf.geprueft_am "
+    "  AND bruegge_titel_lauf.quelle <> 'hand'",
 ]
 
 _KNIEBRETT_MIGRATIONS = [
@@ -2705,21 +2761,58 @@ def bruegge_zuordnung_holen(conn: sqlite3.Connection, kennung: str) -> dict | No
     return _row_to_dict(row) if row else None
 
 
+#: Die drei Simulatoren, in denen ein Titel ein Urteil bekommen kann. Alles andere (eine
+#: Bruegge aelter als 1.14.0 meldet schlicht `msfs`) sagt nicht, WO gemessen wurde -- und ein
+#: Urteil ohne Ort waere schlimmer als keines.
+BRUEGGE_SIMULATOREN = ("msfs2020", "msfs2024", "xplane12")
+
+
+def bruegge_lauf_setzen(conn: sqlite3.Connection, titel: str, simulator: str,
+                        ergebnis: str, fehler: str | None = None,
+                        hoehe_ft: float | None = None, quelle: str = "bruegge") -> bool:
+    """Ein Urteil fuer (Titel, Simulator) festhalten (kein commit).
+
+    ``simulator`` ist der Simulator, in dem GEPRUEFT wurde -- nicht der, in dessen Bestand der
+    Titel gefunden wurde. Die Urteile der anderen Simulatoren bleiben unberuehrt; das ist der
+    Zweck der Tabelle.
+
+    ``quelle='hand'`` ist das Urteil des Nutzers ("Seehund ist rosa", waehrend die Bruegge
+    `steht` meldet) und wird von der Automatik nie ueberschrieben. Umgekehrt ueberschreibt
+    ein Urteil von Hand jedes andere.
+    """
+    if (not titel or simulator not in BRUEGGE_SIMULATOREN
+            or ergebnis not in ("steht", "fehlgeschlagen")):
+        return False
+    cur = conn.execute(
+        "INSERT INTO bruegge_titel_lauf (titel, simulator, ergebnis, fehler, hoehe_ft, "
+        "                                geprueft_am, quelle) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(titel, simulator) DO UPDATE SET "
+        "    ergebnis = excluded.ergebnis, fehler = excluded.fehler, "
+        "    hoehe_ft = COALESCE(excluded.hoehe_ft, bruegge_titel_lauf.hoehe_ft), "
+        "    geprueft_am = excluded.geprueft_am, quelle = excluded.quelle "
+        "WHERE bruegge_titel_lauf.quelle <> 'hand' OR excluded.quelle = 'hand'",
+        (titel, simulator, ergebnis, (str(fehler)[:120] if fehler else None), hoehe_ft,
+         _now_utc(), "hand" if quelle == "hand" else "bruegge"))
+    return bool(cur.rowcount)
+
+
 def bruegge_katalog_ergebnis_melden(conn: sqlite3.Connection, simulator: str, art: str,
                                     ergebnis: str, fehler: str | None = None,
                                     hoehe_ft: float | None = None,
                                     alle: bool = False) -> int:
-    """Was die Brügge beim Setzen erlebt hat, in den Katalog zurückschreiben (kein commit).
+    """Was die Brügge beim Setzen erlebt hat, als Urteil festhalten (kein commit).
 
     **Die Information lief monatelang durchs Haus, ohne anzukommen.** Die Brügge meldet bei
     JEDEM Setzversuch ``steht`` oder ``fehlgeschlagen``; das landete in ``bruegge_steht`` und
     war beim nächsten Takt überschrieben. Der Katalog wusste deshalb nach Wochen Betrieb
-    nicht, was funktioniert: 2932 X-Plane-Titel, **kein einziges** Prüfergebnis — ``ergebnis``
-    füllte allein ``probe-msfs/titel_schau.py``, ein MSFS-Werkzeug.
+    nicht, was funktioniert: 2932 X-Plane-Titel, **kein einziges** Prüfergebnis.
 
-    ⚠ **Und die Regel „eine Art wird gesperrt, wenn ein Simulator nichts kann" hängt daran**
-    (``bruegge_arten_beidseitig``): Sie fußt auf ``status='aus'``, das aus dem Prüfergebnis
-    kommt. Ohne Rückfluss greift sie nur dort, wo jemand von Hand gepflegt hat.
+    Das Urteil gilt seit dem 19.09.2026 **für den meldenden Simulator** und nur für ihn
+    (``bruegge_titel_lauf``). Es legt keinen Titel mehr still: ``status`` ist die
+    Entscheidung des Nutzers, ein Fehlschlag in MSFS 2020 darf einen Titel nicht abschalten,
+    der in 2024 läuft. Ausgeliefert wird, was ``aktiv`` ist und **dort** nicht durchfiel
+    (``bruegge_titel_fuer``).
 
     ⚠⚠ **DIE RÜCKMELDUNG NENNT KEINEN TITEL** — nur ``id``, ``zustand`` und ``fehler``
     (PROTOKOLL.md, Abschnitt „steht"). Der Server weiß also, dass *Objekt k7-3-b* scheiterte,
@@ -2730,63 +2823,29 @@ def bruegge_katalog_ergebnis_melden(conn: sqlite3.Connection, simulator: str, ar
         (``KEIN_TITEL_GING`` in MSFS, ``KEIN_MODELL_MEHR`` in X-Plane — zwei Namen, eine
         Sache). Dann gilt das Ergebnis für jeden Titel der Art in diesem Simulator.
 
-    ``alle=False`` — nur wenn die Art in diesem Simulator **genau einen** aktiven Titel hat.
-        Dann kann kein anderer gemeint sein. Bei mehreren wird NICHTS geschrieben: Ein
-        falsch stillgelegter Titel wäre schlimmer als eine Lücke, denn man sieht ihm nicht
-        an, dass er zu Unrecht aus ist.
+    ``alle=False`` — nur wenn die Art in diesem Simulator **genau einen** Titel zu liefern
+        hat. Dann kann kein anderer gemeint sein. Bei mehreren wird NICHTS geschrieben: Ein
+        falsch verurteilter Titel wäre schlimmer als eine Lücke, denn man sieht ihm nicht
+        an, dass er zu Unrecht durchgefallen ist.
 
-    In beiden Fällen wird ausschließlich über **aktive** Zeilen geschrieben — nur die gehen
-    an eine Brügge hinaus (``bruegge_titel_fuer``), nur die können probiert worden sein.
+    Geschrieben wird in beiden Fällen ausschließlich über **aktive** Titel, die dieser
+    Simulator bekommen hat — nur die können probiert worden sein.
 
     Alles darüber hinaus bräuchte den Titel in der Rückmeldung und damit ein Client-Release
     an alle Piloten.
-
-    ``status`` wird nur auf ``aus`` gesetzt, nie auf ``aktiv`` zurück: Die Zuordnung einer Art
-    ist eine Entscheidung des Nutzers (s. ``bruegge_arten_zuordnen``), ein gelungener
-    Setzversuch ist bloß eine Beobachtung.
     """
-    if not simulator or not art or ergebnis not in ("steht", "fehlgeschlagen"):
+    if simulator not in BRUEGGE_SIMULATOREN or not art             or ergebnis not in ("steht", "fehlgeschlagen"):
         return 0
-    wo_sim = _BRUEGGE_TOPF["xplane12" if simulator == "xplane12" else "msfs"]
-
-    if not alle:
-        # Eindeutig nur bei genau einem aktiven Titel -- und gezaehlt wird im TOPF, weil die
-        # Bruegge genau den geliefert bekommt (s. bruegge_titel_fuer).
-        (n,) = conn.execute(
-            f"SELECT COUNT(*) FROM bruegge_katalog "
-            f"WHERE art = ? AND status = 'aktiv' AND {wo_sim}", (art,)
-        ).fetchone()
-        if n != 1:
-            return 0
-
-    # ⚠ Geschrieben wird auf die Zeile des MELDENDEN Simulators, nicht auf die des Topfes.
-    # Sonst legte eine MSFS-2020-Bruegge Titel still, die in 2024 einwandfrei laufen -- der
-    # Topf fasst beide zusammen, der Bestand tut es nicht.
-    #
-    # ⚠⚠ UND NUR AUF AKTIVE ZEILEN -- bis v14.49.4 fehlte dieser Filter. Gezaehlt wurde ueber
-    # die aktiven, geschrieben auf JEDE Zeile der Art: auch auf die, die auf `aus` stehen und
-    # deshalb nie ausgeliefert wurden. Eine Art mit einem aktiven und drei abgeschalteten
-    # Titeln legte bei EINEM Fehlschlag alle vier still, und bei `steht` bekam ein nie
-    # probierter Titel ein "funktioniert" eingetragen. Am 16.09.2026 beim Messen der
-    # Flugzeugtitel dreimal beobachtet (Issue #41).
-    #
-    # Der Filter gilt fuer BEIDE Faelle, auch fuer `alle=True`. Dort ist das Ergebnis zwar
-    # fuer die ganze Art gemeint, aber probiert werden kann nur, was hinausging -- und eine
-    # abgeschaltete Zeile verliert nichts: Ihr `status` steht ohnehin schon auf `aus`, sie
-    # behaelt lediglich ihr eigenes altes Ergebnis statt eines geerbten.
-    #
-    # Folge im Randfall: Liegt der einzige aktive Titel des Topfes im ANDEREN Simulator
-    # (2020er Zeile, 2024er Bruegge), trifft das UPDATE nichts und `rowcount` ist 0. Das ist
-    # gewollt -- es gibt dort keine Zeile, die der Versuch meinen koennte.
-    cur = conn.execute(
-        "UPDATE bruegge_katalog SET ergebnis = ?, fehler = ?, geprueft_am = ?, "
-        "    geprueft_in = ?, hoehe_ft = COALESCE(?, hoehe_ft), "
-        "    status = CASE WHEN ? = 'fehlgeschlagen' THEN 'aus' ELSE status END "
-        "WHERE art = ? AND simulator = ? AND status = 'aktiv'",
-        (ergebnis, (str(fehler)[:120] if fehler else None), _now_utc(),
-         simulator, hoehe_ft, ergebnis, art, simulator),
-    )
-    return cur.rowcount
+    # DIESELBE Auswahl wie bei der Auslieferung -- was die Bruegge nie bekam, kann sie nicht
+    # probiert haben.
+    titel = [t for t in bruegge_titel_fuer(conn, simulator).get(art, [])]
+    if not titel or (not alle and len(titel) != 1):
+        return 0
+    n = 0
+    for t in dict.fromkeys(titel):
+        if bruegge_lauf_setzen(conn, t, simulator, ergebnis, fehler, hoehe_ft):
+            n += 1
+    return n
 
 
 def bruegge_belegte_cids(conn: sqlite3.Connection, ausser_kennung: str,
@@ -3227,20 +3286,19 @@ def katalog_eintragen(conn: sqlite3.Connection, eintraege) -> int:
 def katalog_ergebnis(conn: sqlite3.Connection, simulator: str, titel: str,
                      ergebnis: str, fehler: str | None = None,
                      hoehe_ft: float | None = None,
-                     geprueft_in: str | None = None) -> None:
+                     geprueft_in: str | None = None, quelle: str = "bruegge") -> bool:
     """Festhalten, wie ein Setzversuch ausging (kein commit).
 
     ``geprueft_in`` ist der Simulator, in dem der Versuch lief -- er kann von ``simulator``
-    abweichen, und genau das ist der Punkt: `BlackBear` steht in der MSFS-2020-Installation
-    und laesst sich in MSFS 2024 setzen. Ohne den Unterschied waere nicht festzuhalten,
-    welche Titel des alten Bestands im neuen Simulator ueberlebt haben.
+    (dem Fundort) abweichen, und genau das ist der Punkt: `BlackBear` steht in der
+    MSFS-2020-Installation und laesst sich in MSFS 2024 setzen. Das Urteil steht unter dem
+    PRUEF-Simulator (``bruegge_titel_lauf``); die Urteile der anderen bleiben, wie sie sind.
+    ``simulator`` wird nur gebraucht, wenn ``geprueft_in`` fehlt. Gibt an, ob ein Urteil
+    geschrieben wurde (nein bei unbekanntem Simulator oder wenn ein Urteil von Hand
+    davorsteht).
     """
-    conn.execute(
-        "UPDATE bruegge_katalog SET geprueft_am = ?, geprueft_in = ?, ergebnis = ?, "
-        "                           fehler = ?, hoehe_ft = ? "
-        "WHERE simulator = ? AND titel = ?",
-        (_now_utc(), geprueft_in or simulator, ergebnis, fehler, hoehe_ft, simulator, titel),
-    )
+    return bruegge_lauf_setzen(conn, titel, geprueft_in or simulator, ergebnis, fehler,
+                               hoehe_ft, quelle)
 
 
 def katalog_lesen(conn: sqlite3.Connection, simulator: str | None = None,
@@ -3251,17 +3309,22 @@ def katalog_lesen(conn: sqlite3.Connection, simulator: str | None = None,
 
     ``offen_fuer`` ist der Griff, den das Pruefwerkzeug braucht: *alles, was in DIESEM
     Simulator noch nicht versucht wurde* -- unabhaengig davon, wo der Titel gefunden wurde.
-    Damit kommen die 200 Titel des 2020er Bestands auch in einem MSFS-2024-Lauf dran, und
-    genau daran laesst sich ablesen, welche davon ueberlebt haben.
+    "Versucht" heisst: Es gibt ein Urteil fuer (Titel, dieser Simulator). Ein Urteil aus einem
+    ANDEREN Simulator zaehlt nicht -- sonst waeren die Titel des 2020er Bestands nach dem
+    2024er Lauf fuer MSFS 2020 "schon erledigt".
+
+    ``nur_geprueft`` / ``nur_offen`` fragen dagegen nach IRGENDEINEM Urteil.
 
     ⚠ Geratene Titel bleiben dabei aussen vor: Bei gestreamten Paketen ohne entpackten Ordner
     steht im Katalog nur der PAKETNAME als Notbehelf (`bemerkung` sagt es). Die zu setzen
     versuchen hiesse, einen Fehlschlag zu messen, den man selbst verursacht hat.
     """
-    wo, werte = [], []
+    join, wp, wo, werte = "", [], [], []
     if offen_fuer:
-        wo.append("(geprueft_in IS NULL OR geprueft_in <> ?)"); werte.append(offen_fuer)
-        wo.append("(bemerkung IS NULL OR bemerkung NOT LIKE 'Titel unbekannt%')")
+        join = "LEFT JOIN bruegge_titel_lauf l ON l.titel = k.titel AND l.simulator = ?"
+        wp.append(offen_fuer)
+        wo.append("l.titel IS NULL")
+        wo.append("(k.bemerkung IS NULL OR k.bemerkung NOT LIKE 'Titel unbekannt%')")
         # Nur Titel, die in DIESEM Simulator ueberhaupt etwas bedeuten koennen.
         #
         # MSFS 2020 und 2024 teilen sich den Bestand -- ein 2020er Titel gehoert in einem
@@ -3272,24 +3335,22 @@ def katalog_lesen(conn: sqlite3.Connection, simulator: str | None = None,
         # Ohne diese Schranke lieferte `offen_fuer=msfs2024` am 13.09.2026 auch die 1146
         # X-Plane-Objekte: 1146 Versuche, die nur Fehlschlaege ergeben koennen, und ein
         # Katalog voller falscher "geht nicht".
-        if offen_fuer.startswith("msfs"):
-            wo.append("simulator IN ('msfs2020', 'msfs2024')")
-        else:
-            wo.append("simulator = ?"); werte.append(offen_fuer)
+        wo.append(_BRUEGGE_TOPF.get(offen_fuer, _BRUEGGE_TOPF["msfs2024"]))
     if simulator:
-        wo.append("simulator = ?"); werte.append(simulator)
+        wo.append("k.simulator = ?"); werte.append(simulator)
     if quelle:
-        wo.append("quelle = ?"); werte.append(quelle)
+        wo.append("k.quelle = ?"); werte.append(quelle)
+    hat = "EXISTS (SELECT 1 FROM bruegge_titel_lauf x WHERE x.titel = k.titel)"
     if nur_geprueft:
-        wo.append("geprueft_am IS NOT NULL")
+        wo.append(hat)
     if nur_offen:
-        wo.append("geprueft_am IS NULL")
-    sql = "SELECT * FROM bruegge_katalog"
+        wo.append("NOT " + hat)
+    sql = f"SELECT k.* FROM bruegge_katalog k {join}"
     if wo:
         sql += " WHERE " + " AND ".join(wo)
-    sql += " ORDER BY simulator, kategorie, titel LIMIT ?"
-    werte.append(int(grenze))
-    return [_row_to_dict(r) for r in conn.execute(sql, werte).fetchall()]
+    sql += " ORDER BY k.simulator, k.kategorie, k.titel LIMIT ?"
+    return [_row_to_dict(r) for r in
+            conn.execute(sql, wp + werte + [int(grenze)]).fetchall()]
 
 
 # ---------------------------------------------------------------------------
@@ -3307,11 +3368,11 @@ def bruegge_arten_erstbefuellen(conn: sqlite3.Connection) -> dict:
     angefasst -- gepflegt wird im Admin, und ein Neustart darf Handarbeit nicht ueberschreiben.
     Titel, die der Katalog noch nicht kennt (unser eigener Rauch etwa), werden angelegt.
 
-    **Nachweislich Gescheitertes kommt auf `aus`.** Ein Titel mit ``ergebnis =
-    'fehlgeschlagen'`` wird zugeordnet, aber nicht ausgeliefert. Das ist der eigentliche
-    Gewinn des Umzugs: Die Bruegge probierte `PolarBear`, `Bear_U_Maritimus` und
-    `deer_o_hemionus` bei jedem Fehlversuch durch, obwohl alle drei am 12.09.2026 mit
-    EXCEPTION_22 gescheitert waren. Eine Tabelle im Client kann das nicht wissen.
+    **Nachweislich Gescheitertes geht nicht hinaus** -- das leistet seit dem 19.09.2026 nicht
+    mehr `status`, sondern das Urteil (``bruegge_titel_lauf``) je Simulator: Die Bruegge
+    probierte `PolarBear`, `Bear_U_Maritimus` und `deer_o_hemionus` bei jedem Fehlversuch
+    durch, obwohl alle drei am 12.09.2026 mit EXCEPTION_22 gescheitert waren. Eine Tabelle
+    im Client kann das nicht wissen. `status` bleibt allein die Entscheidung des Nutzers.
     """
     from app.bruegge_arten import ARTEN, erstbefuellung
 
@@ -3328,10 +3389,10 @@ def bruegge_arten_erstbefuellen(conn: sqlite3.Connection) -> dict:
             "VALUES (?, ?, 'aktiv', ?) ON CONFLICT(art) DO NOTHING",
             (art, bedeutung, _now_utc()))
 
-    neu = gesetzt = abgeschaltet = 0
+    neu = gesetzt = 0
     for e in erstbefuellung():
         vorhanden = conn.execute(
-            "SELECT ergebnis FROM bruegge_katalog WHERE simulator = ? AND titel = ?",
+            "SELECT 1 FROM bruegge_katalog WHERE simulator = ? AND titel = ?",
             (e["simulator"], e["titel"])).fetchone()
         if vorhanden is None:
             conn.execute(
@@ -3339,90 +3400,112 @@ def bruegge_arten_erstbefuellen(conn: sqlite3.Connection) -> dict:
                 "VALUES (?, ?, 'unbekannt', NULL, 'beim Arten-Umzug angelegt')",
                 (e["simulator"], e["titel"]))
             neu += 1
-            status = e["status"]
-        else:
-            status = "aus" if vorhanden[0] == "fehlgeschlagen" else e["status"]
-            if status == "aus" and e["status"] != "aus":
-                abgeschaltet += 1
         conn.execute(
             "UPDATE bruegge_katalog SET art = ?, rang = ?, status = ? "
             "WHERE simulator = ? AND titel = ?",
-            (e["art"], e["rang"], status, e["simulator"], e["titel"]))
+            (e["art"], e["rang"], e["status"], e["simulator"], e["titel"]))
         gesetzt += 1
-    return {"uebersprungen": False, "zugeordnet": gesetzt, "angelegt": neu,
-            "wegen_fehlschlag_aus": abgeschaltet}
+    return {"uebersprungen": False, "zugeordnet": gesetzt, "angelegt": neu}
 
 
-#: Die beiden Toepfe, aus denen je eine Bruegge bedient wird. MSFS 2020 und 2024 bilden
-#: EINEN -- s. `bruegge_titel_fuer`.
+#: Die Toepfe, aus denen je eine Bruegge bedient wird -- DREI, einer je Simulator. MSFS 2020
+#: und 2024 SCHOEPFEN aus demselben Titelvorrat (s. `bruegge_titel_fuer`), haben aber je ein
+#: eigenes Urteil; deshalb sind es zwei Eintraege mit gleichem Ausdruck und keiner.
+#: ⚠ `k.` -- die Ausdruecke stehen in Abfragen, die `bruegge_titel_lauf` (auch mit
+#: `simulator`) dazuverbinden.
 _BRUEGGE_TOPF = {
-    "xplane12": "simulator = 'xplane12'",
-    "msfs": "simulator IN ('msfs2020', 'msfs2024')",
+    "xplane12": "k.simulator = 'xplane12'",
+    "msfs2020": "k.simulator IN ('msfs2020', 'msfs2024')",
+    "msfs2024": "k.simulator IN ('msfs2020', 'msfs2024')",
 }
 
 
-def bruegge_arten_beidseitig(conn: sqlite3.Connection) -> set[str]:
-    """Die Arten, die JEDER Simulator darstellen kann -- die einzigen, die hinausgehen.
+def _bruegge_liefer_sim(simulator: str | None) -> str:
+    """Welchem der drei Toepfe gehoert diese Bruegge?
 
-    ⚠⚠ **STEHENDE REGEL (Nutzer, 14.09.2026):** *"sollten innerhalb einer Art alle
-    Entsprechungen eines Simulators nicht gesetzt werden koennen, wird die Art deaktiviert.
-    Ich muss sichergehen koennen, dass beide SIM immer irgendwas aus der Art anzeigen
-    koennen!"*
-
-    Der Grund ist die Zaehlaufgabe: Eine Station, die bei MSFS-Piloten eine Robbe zeigt und
-    bei X-Plane-Piloten nichts, ist kein Nachteil fuer den einen -- sie macht das ganze
-    Event ungueltig. Ein Drittel der Gruppe fliegt X-Plane.
-
-    **Berechnet, nicht gepflegt.** Das ist der Punkt: Titel fallen im Betrieb aus
-    (`ergebnis = 'fehlgeschlagen'` setzt `status = 'aus'`, s. `bruegge_arten_zuordnen`), und
-    eine von Hand gefuehrte Liste wuesste davon nichts. Wer die Regel hier herausnimmt und
-    in `bruegge_art.status` pflegt, baut genau die Luecke wieder ein, durch die eine Art
-    einseitig hinausgeht -- lautlos, denn im Admin sieht sie weiter vollstaendig aus.
-
-    Umgekehrt heilt sie sich selbst: Kommt ein Titel dazu oder wird einer wieder `aktiv`,
-    ist die Art sofort wieder da, ohne dass jemand einen Haken setzt.
-
-    ⚠ `bruegge_art.status` bleibt daneben bestehen und bedeutet etwas anderes: die
-    ausdrueckliche Abschaltung durch den Nutzer. Beides muss stimmen, damit eine Art
-    hinausgeht -- die Regel kann eine Art nur sperren, nie freigeben.
+    Eine Bruegge, die nur `msfs` sagt (aelter als 1.14.0) oder gar nichts, wird wie MSFS 2024
+    bedient -- das war der Stand, bevor 2020 dazukam. Ihr Urteil wird aber NIE geschrieben
+    (`bruegge_katalog_ergebnis_melden`): Wer nicht weiss, wo gemessen wurde, misst nichts.
     """
-    je_art: dict[str, set[str]] = {}
-    for topf, wo in _BRUEGGE_TOPF.items():
-        for (art,) in conn.execute(
-                f"SELECT DISTINCT art FROM bruegge_katalog "
-                f"WHERE art IS NOT NULL AND status = 'aktiv' AND {wo}"):
-            je_art.setdefault(art, set()).add(topf)
-    return {a for a, t in je_art.items() if len(t) == len(_BRUEGGE_TOPF)}
+    if simulator in _BRUEGGE_TOPF:
+        return simulator
+    return "xplane12" if str(simulator or "").startswith("xplane") else "msfs2024"
+
+
+def bruegge_arten_zustand(conn: sqlite3.Connection) -> dict[str, dict[str, str]]:
+    """Je Art und Simulator: ``kann``, ``kann_nicht`` oder ``ungeprueft``.
+
+    ⚠⚠ **STEHENDE REGEL (Nutzer, 16.09.2026),** die die Beidseitig-Regel vom 14.09. ablöst:
+    Eine Art wird nur noch vollständig deaktiviert, wenn in KEINEM Simulator mehr ein Objekt
+    zu setzen ist. Scheitert ein Simulator, verliert sie bloß ihr Prädikat **„überall"**.
+
+    * ``kann`` — mindestens ein aktiver Titel hat in DIESEM Simulator ``steht``.
+    * ``kann_nicht`` — kein aktiver Titel, oder alle sind dort durchgefallen.
+    * ``ungeprueft`` — sonst: Es gibt etwas zu probieren, aber noch keinen Beleg.
+
+    **Ungeprüft zählt NICHT als „kann"** (Variante A, 16.09.2026). Von MSFS 2024 auf 2020 zu
+    schließen hat der Katalog selbst widerlegt: `BlackBear` läuft in 2024, 38 seiner
+    Nachbarn nicht. Wer das hier lockert, macht „überall" wieder zu einer Vermutung.
+
+    **Berechnet, nicht gepflegt** -- aus demselben Grund wie zuvor: Titel fallen im Betrieb
+    aus, und eine von Hand geführte Liste wüsste davon nichts. Umgekehrt heilt sie sich
+    selbst. ``bruegge_art.status`` bleibt daneben die ausdrückliche Abschaltung durch den
+    Nutzer; die Berechnung kann nur sperren, nie freigeben.
+    """
+    leer = {sim: "kann_nicht" for sim in BRUEGGE_SIMULATOREN}
+    zustand = {a: dict(leer) for (a,) in conn.execute("SELECT art FROM bruegge_art").fetchall()}
+    for sim in BRUEGGE_SIMULATOREN:
+        rows = conn.execute(
+            "SELECT k.art, "
+            "       SUM(CASE WHEN l.ergebnis = 'steht' THEN 1 ELSE 0 END), "
+            "       SUM(CASE WHEN COALESCE(l.ergebnis, '') <> 'fehlgeschlagen' "
+            "                THEN 1 ELSE 0 END) "
+            "FROM bruegge_katalog k "
+            "LEFT JOIN bruegge_titel_lauf l ON l.titel = k.titel AND l.simulator = ? "
+            f"WHERE k.art IS NOT NULL AND k.status = 'aktiv' AND {_BRUEGGE_TOPF[sim]} "
+            "GROUP BY k.art", (sim,)).fetchall()
+        for art, steht, moeglich in rows:
+            z = "kann" if steht else "ungeprueft" if moeglich else "kann_nicht"
+            zustand.setdefault(art, dict(leer))[sim] = z
+    return zustand
+
+
+def bruegge_arten_ueberall(conn: sqlite3.Connection) -> set[str]:
+    """Die Arten, die JEDER Simulator nachweislich darstellt -- das Prädikat „überall"."""
+    return {a for a, z in bruegge_arten_zustand(conn).items()
+            if all(v == "kann" for v in z.values())}
 
 
 def bruegge_titel_fuer(conn: sqlite3.Connection, simulator: str) -> dict[str, list[str]]:
     """Art -> Titel in der Reihenfolge, in der diese Bruegge sie probieren soll.
 
-    **MSFS 2020 und 2024 bilden EINEN Topf.** Das ist keine Bequemlichkeit, sondern der
-    gemessene Stand: `BlackBear` liegt im 2020er Bestand und funktioniert in MSFS 2024,
-    waehrend 38 seiner Nachbarn es nicht tun (12.09.2026). Welcher Titel in welchem Bestand
-    gefunden wurde, sagt wenig darueber, wo er laeuft -- deshalb bekommt eine MSFS-Bruegge
-    beide Baender, und der `rang` regelt, was zuerst versucht wird. Was nachweislich
-    scheitert, steht auf `status = 'aus'` und geht gar nicht erst hinaus.
+    **MSFS 2020 und 2024 schoepfen aus EINEM Titelvorrat.** Das ist keine Bequemlichkeit,
+    sondern der gemessene Stand: `BlackBear` liegt im 2020er Bestand und funktioniert in
+    MSFS 2024, waehrend 38 seiner Nachbarn es nicht tun (12.09.2026). Welcher Titel in
+    welchem Bestand gefunden wurde, sagt wenig darueber, wo er laeuft -- deshalb bekommt eine
+    MSFS-Bruegge beide Baender, und der `rang` regelt, was zuerst versucht wird.
+
+    **Ausgeliefert wird, was `aktiv` ist und in DIESEM Simulator nicht durchfiel.** Ein
+    Fehlschlag in MSFS 2020 schliesst den Titel in 2024 nicht aus (und umgekehrt) -- das war
+    der Grund fuer ``bruegge_titel_lauf``. Ein Titel, der hier noch nie versucht wurde, geht
+    hinaus: Sonst koennte nie ein Urteil entstehen.
 
     X-Plane bleibt getrennt: Dort ist der Bezeichner ein Dateipfad, ein MSFS-Titel waere
     dort sinnlos.
 
-    ⚠ **Einseitige Arten gehen an KEINE Bruegge** -- auch nicht an die, die sie darstellen
-    koennte. Das ist die Regel aus `bruegge_arten_beidseitig`, und sie greift hier, weil das
-    die Stelle ist, an der eine Art den Server verlaesst. Haette sie nur im Admin gegriffen,
-    bliebe der Weg ueber eine alte Soll-Zeile offen.
+    Eine Art, deren Titel hier ALLE durchgefallen sind, taucht nicht auf -- und ist damit
+    fuer diesen Simulator "kann_nicht" (s. `bruegge_arten_zustand`). Die anderen Simulatoren
+    bekommen sie trotzdem; das ist der Kern der neuen Regel.
     """
-    wo = _BRUEGGE_TOPF["xplane12" if simulator == "xplane12" else "msfs"]
-    beidseitig = bruegge_arten_beidseitig(conn)
+    sim = _bruegge_liefer_sim(simulator)
     rows = conn.execute(
-        f"SELECT art, titel FROM bruegge_katalog "
-        f"WHERE art IS NOT NULL AND status = 'aktiv' AND {wo} "
-        f"ORDER BY art, rang, titel").fetchall()
+        "SELECT k.art, k.titel FROM bruegge_katalog k "
+        "LEFT JOIN bruegge_titel_lauf l ON l.titel = k.titel AND l.simulator = ? "
+        f"WHERE k.art IS NOT NULL AND k.status = 'aktiv' AND {_BRUEGGE_TOPF[sim]} "
+        "  AND COALESCE(l.ergebnis, '') <> 'fehlgeschlagen' "
+        "ORDER BY k.art, k.rang, k.titel", (sim,)).fetchall()
     raus: dict[str, list[str]] = {}
     for art, titel in rows:
-        if art not in beidseitig:
-            continue
         raus.setdefault(art, []).append(titel)
     return raus
 
@@ -3437,6 +3520,11 @@ def bruegge_arten_uebersicht(conn: sqlite3.Connection) -> list[dict]:
     LEFT JOIN, damit leere Arten mitkommen: `flugzeug_klassik` hat keinen Titel und soll
     trotzdem sichtbar sein -- nur eben nicht anwaehlbar (`anforderbar` ist falsch).
 
+    `zustand` je Simulator und `ueberall` kommen aus `bruegge_arten_zustand` -- dieselbe
+    Quelle, aus der die Auslieferung ihre Titel holt, damit Admin und Wirklichkeit nicht
+    auseinanderlaufen. `anforderbar` heisst: Mindestens ein Simulator kann noch etwas setzen
+    (oder es ist ungeprueft) und der Nutzer hat die Art nicht abgeschaltet.
+
     `beispiele` ist die Anzeige im Admin, aus den ersten drei aktiven Titeln erzeugt statt
     von Hand gepflegt. `addon` sagt, ob die Art ein Fremdpaket braucht -- das MUSS
     sichtbar sein, sonst setzt jemand eine Station, die nur bei ihm selbst steht.
@@ -3449,7 +3537,6 @@ def bruegge_arten_uebersicht(conn: sqlite3.Connection) -> list[dict]:
         "                THEN 1 ELSE 0 END) AS msfs, "
         "       SUM(CASE WHEN k.simulator = 'xplane12' AND k.status = 'aktiv' "
         "                THEN 1 ELSE 0 END) AS xplane, "
-        "       SUM(CASE WHEN k.ergebnis = 'steht' THEN 1 ELSE 0 END) AS belegt, "
         # Braucht JEDER aktive Titel ein Fremdpaket? Dann steht bei einem Piloten ohne das
         # Paket nichts da. `bord`/`streamed`/`unbekannt` (unser eigenes) zaehlen als eigen.
         "       SUM(CASE WHEN k.status = 'aktiv' AND k.quelle = 'community' "
@@ -3458,18 +3545,17 @@ def bruegge_arten_uebersicht(conn: sqlite3.Connection) -> list[dict]:
         "LEFT JOIN bruegge_katalog k ON k.art = g.art "
         "GROUP BY g.art, g.bedeutung, g.status ORDER BY g.art"
     ).fetchall()
-    beidseitig = bruegge_arten_beidseitig(conn)
+    zustaende = bruegge_arten_zustand(conn)
     raus = []
     for r in rows:
         d = _row_to_dict(r)
         aktiv = d.get("aktiv") or 0
-        # ⚠ `beidseitig` ist die STEHENDE REGEL (s. `bruegge_arten_beidseitig`), nicht bloss
-        # eine Anzeige: Eine Art, die ein Simulator nicht darstellen kann, ist nirgends
-        # anforderbar. Dieselbe Menge entscheidet in `bruegge_titel_fuer` -- EINE Quelle,
-        # damit Admin und Auslieferung nicht auseinanderlaufen koennen.
-        d["beidseitig"] = d["art"] in beidseitig
-        d["anforderbar"] = (bool(aktiv) and d.get("art_status") == "aktiv"
-                            and d["beidseitig"])
+        z = zustaende.get(d["art"]) or {s: "kann_nicht" for s in BRUEGGE_SIMULATOREN}
+        d["zustand"] = z
+        d["ueberall"] = all(v == "kann" for v in z.values())
+        d["kann_in"] = [s for s in BRUEGGE_SIMULATOREN if z[s] == "kann"]
+        irgendwo = any(v != "kann_nicht" for v in z.values())
+        d["anforderbar"] = bool(aktiv) and d.get("art_status") == "aktiv" and irgendwo
         # Warum nicht? Das MUSS im Admin stehen -- sonst sucht jemand den Fehler bei sich.
         if d["anforderbar"]:
             d["gesperrt_weil"] = None
@@ -3478,10 +3564,9 @@ def bruegge_arten_uebersicht(conn: sqlite3.Connection) -> list[dict]:
         elif not aktiv:
             d["gesperrt_weil"] = "kein aktiver Titel"
         else:
-            fehlt = "X-Plane" if not (d.get("xplane") or 0) else "MSFS"
-            d["gesperrt_weil"] = f"{fehlt} kann nichts aus dieser Art setzen"
+            d["gesperrt_weil"] = "kein Simulator kann etwas aus dieser Art setzen"
         d["addon"] = bool(aktiv) and (d.get("aus_addon") or 0) == aktiv
-        d["beispiele"] = [z[0] for z in conn.execute(
+        d["beispiele"] = [t[0] for t in conn.execute(
             "SELECT titel FROM bruegge_katalog WHERE art = ? AND status = 'aktiv' "
             "ORDER BY rang, titel LIMIT 3", (d["art"],)).fetchall()]
         raus.append(d)
@@ -3524,39 +3609,50 @@ def bruegge_art_loeschen(conn: sqlite3.Connection, art: str) -> int:
 def bruegge_arten_anforderbar(conn: sqlite3.Connection) -> list[str]:
     """Welche Arten darf der Admin anfordern? Ersetzt `_BRUEGGE_GATTUNGEN`.
 
-    Eine Art ohne einen einzigen aktiven Titel faellt heraus: Der Server sendet nie ins
-    Leere, und ein Tippfehler soll nicht als stille Nicht-Anforderung enden (das war der
-    Grund fuer die alte Positivliste -- der Grund bleibt, nur die Quelle wechselt).
+    Eine Art, aus der KEIN Simulator etwas setzen kann, faellt heraus: Der Server sendet nie
+    ins Leere, und ein Tippfehler soll nicht als stille Nicht-Anforderung enden (das war der
+    Grund fuer die alte Positivliste -- der Grund bleibt, nur die Quelle wechselt). Reicht es
+    in einem Simulator, ist sie anforderbar; ob sie "ueberall" ist, ist eine andere Frage
+    (`bruegge_arten_ueberall`).
     """
-    return [z[0] for z in conn.execute(
-        "SELECT DISTINCT g.art FROM bruegge_art g "
-        "JOIN bruegge_katalog k ON k.art = g.art AND k.status = 'aktiv' "
-        "WHERE g.status = 'aktiv' ORDER BY g.art").fetchall()]
+    zustand = bruegge_arten_zustand(conn)
+    return [a for (a,) in conn.execute(
+                "SELECT art FROM bruegge_art WHERE status = 'aktiv' ORDER BY art").fetchall()
+            if any(v != "kann_nicht" for v in zustand.get(a, {}).values())]
 
 
 #: Spalten, nach denen der Admin sortieren darf. Eine Positivliste, weil der Name direkt in
-#: die ORDER-BY-Klausel geht -- alles andere waere eine Einladung.
+#: die ORDER-BY-Klausel geht -- alles andere waere eine Einladung. Das Urteil steht nicht
+#: dabei: Es gibt keines mehr, sondern drei (je Simulator).
 _KATALOG_SPALTEN = ("simulator", "titel", "paket", "quelle", "kategorie", "art",
-                    "rang", "status", "ergebnis", "geprueft_am", "geprueft_in")
+                    "rang", "status")
+
+#: Alias der je Simulator verbundenen Urteile in `bruegge_katalog_seite`.
+_LAUF_ALIAS = {"msfs2020": "l20", "msfs2024": "l24", "xplane12": "lxp"}
 
 
 def bruegge_katalog_seite(conn: sqlite3.Connection, *, art: str | None = None,
                           simulator: str | None = None, quelle: str | None = None,
                           ergebnis: str | None = None, status: str | None = None,
                           suche: str | None = None, ohne_art: bool = False,
-                          mit_art: bool = False,
+                          mit_art: bool = False, geprueft_in: str | None = None,
                           sortieren: str = "titel", absteigend: bool = False,
                           seite: int = 1, je_seite: int = 20) -> dict:
     """Eine Seite des Katalogs, gefiltert und sortiert -- fuer die Admin-Oberflaeche.
 
     Seitenweise und nicht am Stueck, weil es 2935 Zeilen sind: *"Vielleicht auch mit einem
     Umschalter der Seiten je 20. Wir brauchen keine 2000 Objekte."*
+
+    Jede Zeile traegt die Urteile ALLER drei Simulatoren (`ergebnis_msfs2020`, `…_msfs2024`,
+    `…_xplane12`, dazu `fehler_…` und `quelle_…`). `ergebnis` filtert auf `steht`,
+    `fehlgeschlagen` oder `offen`; `geprueft_in` legt fest, in welchem Simulator -- ohne
+    Angabe gilt "in irgendeinem" (`offen` = nirgends versucht).
     """
     wo, werte = [], []
     if ohne_art:
-        wo.append("art IS NULL")
+        wo.append("k.art IS NULL")
     elif art:
-        wo.append("art = ?"); werte.append(art)
+        wo.append("k.art = ?"); werte.append(art)
     elif mit_art:
         # ⚠ MUSS HIER STEHEN, nicht im Browser. Der erste Entwurf filterte die geladene Seite
         # nachtraeglich im JavaScript -- mit dem Ergebnis, dass der Server 20 Zeilen schickte,
@@ -3565,38 +3661,47 @@ def bruegge_katalog_seite(conn: sqlite3.Connection, *, art: str | None = None,
         #
         # Von 2953 Titeln tragen 87 eine Art. Wer danach filtert, sucht die Nadel -- und
         # genau dann darf die Seitenrechnung nicht den Heuhaufen zaehlen.
-        wo.append("art IS NOT NULL")
+        wo.append("k.art IS NOT NULL")
     if simulator:
-        wo.append("simulator = ?"); werte.append(simulator)
+        wo.append("k.simulator = ?"); werte.append(simulator)
     if quelle:
-        wo.append("quelle = ?"); werte.append(quelle)
+        wo.append("k.quelle = ?"); werte.append(quelle)
     if status:
-        wo.append("status = ?"); werte.append(status)
-    if ergebnis == "offen":
-        wo.append("ergebnis IS NULL")
-    elif ergebnis:
-        wo.append("ergebnis = ?"); werte.append(ergebnis)
+        wo.append("k.status = ?"); werte.append(status)
+    if ergebnis:
+        aliase = ([_LAUF_ALIAS[geprueft_in]] if geprueft_in in _LAUF_ALIAS
+                  else list(_LAUF_ALIAS.values()))
+        if ergebnis == "offen":
+            wo.append("(" + " AND ".join(f"{a}.ergebnis IS NULL" for a in aliase) + ")")
+        else:
+            wo.append("(" + " OR ".join(f"{a}.ergebnis = ?" for a in aliase) + ")")
+            werte += [ergebnis] * len(aliase)
     if suche:
         # ⚠ AUCH DIE ART, nicht nur Titel und Paket. Wer `windsack` sucht, findet sonst
         # nichts -- das Modell heisst `Windsock_05`, und den Namen kennt niemand auswendig.
         # Genau dafuer gibt es die Art: Sie ist die Bedeutung, das Modell nur ihr Traeger
         # (14.09.2026 gemeldet).
-        wo.append("(titel LIKE ? OR paket LIKE ? OR art LIKE ?)")
+        wo.append("(k.titel LIKE ? OR k.paket LIKE ? OR k.art LIKE ?)")
         werte += [f"%{suche}%", f"%{suche}%", f"%{suche}%"]
     rumpf = " WHERE " + " AND ".join(wo) if wo else ""
+    von = "FROM bruegge_katalog k " + " ".join(
+        f"LEFT JOIN bruegge_titel_lauf {a} ON {a}.titel = k.titel AND {a}.simulator = '{sim}'"
+        for sim, a in _LAUF_ALIAS.items())
 
-    gesamt = conn.execute(
-        f"SELECT COUNT(*) FROM bruegge_katalog{rumpf}", werte).fetchone()[0]
+    gesamt = conn.execute(f"SELECT COUNT(*) {von}{rumpf}", werte).fetchone()[0]
 
     spalte = sortieren if sortieren in _KATALOG_SPALTEN else "titel"
     richtung = "DESC" if absteigend else "ASC"
     je_seite = max(1, min(200, int(je_seite)))
     seite = max(1, int(seite))
     rows = conn.execute(
-        f"SELECT * FROM bruegge_katalog{rumpf} "
+        "SELECT k.*, "
+        + ", ".join(f"{a}.ergebnis AS ergebnis_{sim}, {a}.fehler AS fehler_{sim}, "
+                    f"{a}.quelle AS quelle_{sim}" for sim, a in _LAUF_ALIAS.items())
+        + f" {von}{rumpf} "
         # Zweiter Schluessel: Ohne ihn wandern Zeilen mit gleichem Sortierwert zwischen den
         # Seiten -- bei 2875 Titeln ohne Art waere die Sortierung sonst reine Zierde.
-        f"ORDER BY {spalte} {richtung}, simulator, titel LIMIT ? OFFSET ?",
+        f"ORDER BY k.{spalte} {richtung}, k.simulator, k.titel LIMIT ? OFFSET ?",
         werte + [je_seite, (seite - 1) * je_seite]).fetchall()
     return {"gesamt": gesamt, "seite": seite, "je_seite": je_seite,
             "seiten": max(1, (gesamt + je_seite - 1) // je_seite),
@@ -3621,7 +3726,7 @@ def bruegge_katalog_setzen(conn: sqlite3.Connection, simulator: str, titel: str,
         elif status is ...:
             # ⚠ DAS GEGENSTUECK ZUR ZEILE DARUEBER, und es hat lange gefehlt: MIT Art
             # braucht es einen Status. Ausgeliefert wird ausschliesslich `status = 'aktiv'`
-            # (bruegge_titel_fuer, bruegge_arten_beidseitig, bruegge_arten_anforderbar) --
+            # (bruegge_titel_fuer, bruegge_arten_zustand, bruegge_arten_anforderbar) --
             # ein frisch gemeldeter Titel hat aber NULL, und der Admin schickt beim
             # Zuordnen nur `art`.
             #
@@ -3635,6 +3740,10 @@ def bruegge_katalog_setzen(conn: sqlite3.Connection, simulator: str, titel: str,
             # (bruegge_katalog_ergebnis_melden) und ist eine Eigenschaft des TITELS, nicht
             # der Zuordnung -- wer ihn einer anderen Art gibt, holt sich sonst einen
             # nachweislich kaputten Titel durchs Umhaengen zurueck.
+            #
+            # (Stand 19.09.2026: Ein Fehlschlag setzt `status` gar nicht mehr -- das Urteil
+            # steht in `bruegge_titel_lauf`. Ein `aus` stammt jetzt immer vom Nutzer; die
+            # Luecke, die das COALESCE fuellt, ist aber dieselbe geblieben.)
             setz.append("status = COALESCE(status, 'aktiv')")
     if rang is not ...:
         setz.append("rang = ?"); werte.append(rang)
@@ -3649,15 +3758,30 @@ def bruegge_katalog_setzen(conn: sqlite3.Connection, simulator: str, titel: str,
 
 
 def katalog_zusammenfassung(conn: sqlite3.Connection) -> list[dict]:
-    """Wie viel steht drin, und wie viel ist geprueft? Nach Simulator und Quelle."""
-    rows = conn.execute(
-        "SELECT simulator, quelle, COUNT(*) AS gesamt, "
-        "       SUM(CASE WHEN ergebnis = 'steht' THEN 1 ELSE 0 END) AS geht, "
-        "       SUM(CASE WHEN ergebnis = 'fehlgeschlagen' THEN 1 ELSE 0 END) AS geht_nicht, "
-        "       SUM(CASE WHEN geprueft_am IS NULL THEN 1 ELSE 0 END) AS offen "
-        "FROM bruegge_katalog GROUP BY simulator, quelle ORDER BY simulator, quelle"
-    ).fetchall()
-    return [_row_to_dict(r) for r in rows]
+    """Wie viel steht drin, und wie viel ist geprueft? Je PRUEF-Simulator und Quelle.
+
+    Gezaehlt werden die Titel, die dieser Simulator ueberhaupt bekommen koennte (sein Topf) --
+    und davon, wie viele dort ``steht``, ``fehlgeschlagen`` oder noch nie versucht sind
+    (`offen`). Ein Titel steht in einem MSFS-Bestand in BEIDEN MSFS-Zeilen, gezaehlt wird er
+    einmal.
+    """
+    raus = []
+    for sim in BRUEGGE_SIMULATOREN:
+        rows = conn.execute(
+            "SELECT k.quelle AS quelle, COUNT(DISTINCT k.titel) AS gesamt, "
+            "  COUNT(DISTINCT CASE WHEN l.ergebnis = 'steht' THEN k.titel END) AS geht, "
+            "  COUNT(DISTINCT CASE WHEN l.ergebnis = 'fehlgeschlagen' THEN k.titel END) "
+            "    AS geht_nicht, "
+            "  COUNT(DISTINCT CASE WHEN l.titel IS NULL THEN k.titel END) AS offen "
+            "FROM bruegge_katalog k "
+            "LEFT JOIN bruegge_titel_lauf l ON l.titel = k.titel AND l.simulator = ? "
+            f"WHERE {_BRUEGGE_TOPF[sim]} GROUP BY k.quelle ORDER BY k.quelle", (sim,)
+        ).fetchall()
+        for r in rows:
+            d = _row_to_dict(r)
+            d["simulator"] = sim
+            raus.append(d)
+    return raus
 
 
 def bruegge_steht_alle(conn: sqlite3.Connection, hoechstalter_s: int = 60) -> list[dict]:

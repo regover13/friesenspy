@@ -37,8 +37,13 @@ def _katalog(db_pfad, titel=TITEL, simulator="msfs2024"):
     from app.database import get_connection
     conn = get_connection(db_pfad)
     conn.row_factory = __import__("sqlite3").Row
+    # Das Urteil steht seit 19.09.2026 in `bruegge_titel_lauf`, unter dem PRUEF-Simulator.
     z = conn.execute(
-        "SELECT * FROM bruegge_katalog WHERE titel = ? AND simulator = ?",
+        "SELECT k.titel, k.simulator, k.quelle, k.kategorie, "
+        "       l.ergebnis AS ergebnis, l.fehler AS fehler, l.geprueft_am AS geprueft_am "
+        "FROM bruegge_katalog k "
+        "LEFT JOIN bruegge_titel_lauf l ON l.titel = k.titel AND l.simulator = k.simulator "
+        "WHERE k.titel = ? AND k.simulator = ?",
         (titel, simulator)).fetchone()
     conn.close()
     return dict(z) if z else None

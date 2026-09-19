@@ -14,11 +14,14 @@ und über die ist der Titel eindeutig — der Lernweg des Servers
 (``bruegge_katalog_ergebnis_melden``) wird hier NICHT benutzt, denn der kann nur zuordnen,
 wenn eine Art genau einen aktiven Titel hat.
 
-⚠ **Die Wegwerf-Art braucht einen Partner im anderen Simulator.** ``bruegge_arten_beidseitig``
-sperrt jede Art, aus der ein Simulator nichts setzen kann — eine Prüf-Art mit nur einem
-X-Plane-Titel ginge nirgends hinaus, und der Lauf meldete lauter Fehlschläge, die keine sind.
-Deshalb bekommt sie zusätzlich einen Titel des jeweils anderen Simulators, der nachweislich
-steht. Der stört nicht: Im prüfenden Simulator läuft nur dessen eigene Brügge.
+**Das Urteil gilt je Simulator** (``bruegge_titel_lauf``, seit 19.09.2026): Ein Lauf in
+MSFS 2020 schreibt die 2020er Zeile und laesst die aus MSFS 2024 stehen. „Offen" heisst
+deshalb: *fuer DIESEN Simulator noch nie versucht* -- unabhaengig davon, wo der Titel gefunden
+wurde und was ein anderer Simulator sagt. Die Wegwerf-Art braucht keinen Partner im anderen
+Simulator mehr: Die Beidseitig-Regel, die ihn erzwang, gibt es nicht mehr.
+
+Ein Urteil **von Hand** (``quelle='hand'``, z. B. „Seehund ist rosa") wird nie ueberschrieben --
+solche Titel lassen den Lauf aus.
 
 ⚠ **Vor dem Lauf muss 14.50.3 laufen.** Davor wertete der Server ``NOCH_NICHT_GESETZT`` und
 ``GATTUNG_UNBEKANNT`` als Fehlschlag und schaltete Titel ab — ein Prüflauf hätte den Katalog
@@ -27,6 +30,7 @@ zerstört, statt ihn zu vermessen.
     python katalog_durchpruefen.py --cid 1602713 --simulator xplane12
     python katalog_durchpruefen.py --cid 1602713 --simulator xplane12 --block 12 --sekunden 8
     python katalog_durchpruefen.py --cid 1602713 --simulator xplane12 --alle   # auch Geprüfte
+    python katalog_durchpruefen.py --cid 1602713 --simulator msfs2020 --nur-zugeordnet
 """
 from __future__ import annotations
 
@@ -49,10 +53,11 @@ from app.database import (  # noqa: E402
     bruegge_art_loeschen,
     bruegge_art_setzen,
     bruegge_katalog_setzen,
+    bruegge_lauf_setzen,
     bruegge_soll_loeschen,
     bruegge_soll_setzen,
-    bruegge_titel_fuer,
     get_connection,
+    _BRUEGGE_TOPF,
 )
 
 DB = "/opt/friesenspy/data/friesenspy.db"
@@ -62,32 +67,41 @@ DB = "/opt/friesenspy/data/friesenspy.db"
 VORSATZ = "zzpruef_"
 
 
-def _partner(conn, simulator: str, anzahl: int) -> list[str]:
-    """`anzahl` VERSCHIEDENE Titel des anderen Simulators -- einer je Pruef-Art.
+def _offene_titel(conn, simulator: str, alle: bool,
+                  nur_zugeordnet: bool) -> list[tuple[str, str]]:
+    """(Fundort, Titel) -- EIN Eintrag je Titel, der in DIESEM Simulator zu pruefen ist.
 
-    ⚠⚠ **Verschiedene, nicht einer fuer alle.** „Ein Titel gehoert zu hoechstens einer Art"
-    (CLAUDE.md) heisst hier: Dieselbe Zeile mehreren Pruef-Arten zuzuweisen UEBERSCHREIBT die
-    vorherige Zuweisung -- am Ende traegt nur die LETZTE Art einen Partner, alle anderen sind
-    einseitig und damit gesperrt.
+    Massgeblich ist der Pruef-Simulator, nicht der Fundort: MSFS 2020 und 2024 schoepfen aus
+    demselben Titelvorrat, ein 2024er Titel kann in 2020 laufen und umgekehrt (`BlackBear`).
+    "Offen" ist, wofuer es in DIESEM Simulator noch kein Urteil gibt -- ein Urteil aus einem
+    anderen zaehlt nicht.
 
-    Beim ersten Probelauf (16.09.2026) sah das so aus: Von drei gleichzeitig gesetzten
-    Objekten stand genau eines, die beiden anderen meldeten 30 Sekunden lang
-    `GATTUNG_UNBEKANNT`. Das sieht aus wie ein Ladeproblem und war eine kaputte Zuordnung --
-    zwei Messfehler mit demselben Bild.
+    Titel mit Urteil von Hand bleiben draussen (die Automatik ueberschreibt sie nie), ebenso
+    geratene Titel (gestreamte Pakete ohne entpackten Ordner: ein Fehlschlag, den man selbst
+    verursacht haette).
 
-    Genommen wird nur, was noch KEINE Art hat: sonst reisst der Lauf eine echte Zuordnung ein.
+    ``nur_zugeordnet``: nur, was eine Art traegt -- also das, was an Piloten hinausgeht. Der
+    erste Lauf in einem neuen Simulator soll das zuerst wissen; der Rest des Katalogs (mehrere
+    Tausend Titel) hat keine Eile.
+
+    Steht ein Titel in beiden MSFS-Bestaenden, wird er einmal geprueft und bevorzugt ueber die
+    Zeile, die eine Art traegt.
     """
-    anderer = "msfs2024" if simulator == "xplane12" else "xplane12"
-    return [r[0] for r in conn.execute(
-        "SELECT titel FROM bruegge_katalog WHERE simulator = ? AND art IS NULL "
-        "ORDER BY titel LIMIT ?", (anderer, anzahl)).fetchall()]
-
-
-def _offene_titel(conn, simulator: str, alle: bool) -> list[str]:
-    wo = "" if alle else "AND ergebnis IS NULL "
-    return [r[0] for r in conn.execute(
-        f"SELECT titel FROM bruegge_katalog WHERE simulator = ? {wo}ORDER BY titel",
-        (simulator,)).fetchall()]
+    wo = ["(k.bemerkung IS NULL OR k.bemerkung NOT LIKE 'Titel unbekannt%')",
+          "(l.quelle IS NULL OR l.quelle <> 'hand')", _BRUEGGE_TOPF[simulator]]
+    if not alle:
+        wo.append("l.titel IS NULL")
+    if nur_zugeordnet:
+        wo.append("k.art IS NOT NULL")
+    rows = conn.execute(
+        "SELECT k.simulator, k.titel FROM bruegge_katalog k "
+        "LEFT JOIN bruegge_titel_lauf l ON l.titel = k.titel AND l.simulator = ? "
+        "WHERE " + " AND ".join(wo) + " ORDER BY k.titel, (k.art IS NULL), k.simulator",
+        (simulator,)).fetchall()
+    je_titel: dict[str, str] = {}
+    for fundort, titel in rows:
+        je_titel.setdefault(titel, fundort)
+    return [(f, t) for t, f in je_titel.items()]
 
 
 def _raster(lat: float, lon: float, kurs: float, n: int, vor_m: float, abstand_m: float):
@@ -117,50 +131,37 @@ def _aufraeumen(conn) -> int:
 
 def _ergebnis_schreiben(conn, simulator: str, titel: str, zustand: str,
                         fehler: str | None, hoehe) -> None:
-    """Direkt in die Katalogzeile -- ohne Umweg über den Lernweg des Servers.
+    """Das Urteil unter dem PRUEF-Simulator festhalten -- ohne Umweg ueber den Lernweg.
 
-    ⚠ `status` wird NICHT auf `aus` gesetzt, auch nicht bei einem Fehlschlag. Ein Prüflauf
-    soll messen, nicht entscheiden: Ob ein gescheiterter Titel abgeschaltet gehört, sieht
-    der Nutzer hinterher an der Liste -- und ein Fehlschlag kann auch an der Stelle liegen
+    ⚠ `status` wird NICHT angefasst, auch nicht bei einem Fehlschlag. Ein Prüflauf soll
+    messen, nicht entscheiden: Ob ein gescheiterter Titel abgeschaltet gehört, sieht der
+    Nutzer hinterher an der Liste -- und ein Fehlschlag kann auch an der Stelle liegen
     (Wasser, Gelände, Reality Bubble), nicht am Titel.
     """
-    conn.execute(
-        "UPDATE bruegge_katalog SET ergebnis = ?, fehler = ?, hoehe_ft = COALESCE(?, hoehe_ft), "
-        "    geprueft_am = ?, geprueft_in = ? WHERE simulator = ? AND titel = ?",
-        ("steht" if zustand == "steht" else "fehlgeschlagen",
-         (fehler or None), hoehe,
-         time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), simulator, simulator, titel))
+    bruegge_lauf_setzen(conn, titel, simulator,
+                        "steht" if zustand == "steht" else "fehlgeschlagen", fehler, hoehe)
 
 
 def lauf(cid: int, simulator: str, block: int, sekunden: float, vor_m: float,
-         abstand_m: float, alle: bool, grenze: int | None) -> int:
+         abstand_m: float, alle: bool, grenze: int | None,
+         nur_zugeordnet: bool = False) -> int:
     conn = get_connection(DB)
     try:
         weg = _aufraeumen(conn)
         if weg:
             print(f"  (aus einem frueheren Lauf aufgeraeumt: {weg} Arten)")
 
-        titel = _offene_titel(conn, simulator, alle)
+        titel = _offene_titel(conn, simulator, alle, nur_zugeordnet)
         if grenze:
             titel = titel[:grenze]
         if not titel:
             print("Nichts zu pruefen.")
             return 0
-        partner = _partner(conn, simulator, block)
-        if not partner:
-            print("Kein freier Partnertitel im anderen Simulator -- die Pruef-Arten waeren "
-                  "gesperrt und der Lauf meldete lauter Fehlschlaege, die keine sind.")
-            return 2
-        if len(partner) < block:
-            print(f"Nur {len(partner)} freie Partnertitel -- Block auf diese Zahl verkleinert.")
-            block = len(partner)
-        anderer = "msfs2024" if simulator == "xplane12" else "xplane12"
         print(f"{len(titel)} Titel in {simulator}, Bloecke zu {block}, je {sekunden:.0f} s")
-        print(f"{len(partner)} Partnertitel in {anderer}, je Pruef-Art einer")
 
         steht = fehl = stumm = 0
         for start in range(0, len(titel), block):
-            teil = titel[start:start + block]
+            teil = titel[start:start + block]          # [(Fundort, Titel), ...]
             # ⚠⚠ `AND simulator = ?` -- ohne das misst der Lauf den FALSCHEN SIMULATOR.
             #
             # Am 16.09.2026 passiert: Der Pilot hatte X-Plane geschlossen und MSFS gestartet,
@@ -197,21 +198,28 @@ def lauf(cid: int, simulator: str, block: int, sekunden: float, vor_m: float,
             # hinaus und muessen geprueft sein. Also wird die Zuordnung gesichert und nach
             # dem Block zurueckgeschrieben.
             vorher = {}
-            for t in teil:
+            for fundort, t in teil:
                 r = conn.execute(
                     "SELECT art, rang, status FROM bruegge_katalog "
-                    "WHERE simulator = ? AND titel = ?", (simulator, t)).fetchone()
+                    "WHERE simulator = ? AND titel = ?", (fundort, t)).fetchone()
                 if r and r[0]:
-                    vorher[t] = tuple(r)
+                    vorher[(fundort, t)] = tuple(r)
 
-            for nr, (t, (zl, zo)) in enumerate(zip(teil, punkte)):
+            # ⚠ Bei `--alle` steht fuer manche Titel schon ein Urteil -- und ein durchgefallener
+            # Titel geht in DIESEM Simulator nicht mehr hinaus (`bruegge_titel_fuer`), die
+            # Bruegge bekaeme ihn gar nicht und meldete `ART_UNBEKANNT`. Also vorher weg damit;
+            # gemessen wird ohnehin neu. Urteile von Hand sind aussortiert (`_offene_titel`).
+            if alle:
+                for _, t in teil:
+                    conn.execute(
+                        "DELETE FROM bruegge_titel_lauf WHERE titel = ? AND simulator = ? "
+                        "AND quelle <> 'hand'", (t, simulator))
+
+            for nr, ((fundort, t), (zl, zo)) in enumerate(zip(teil, punkte)):
                 art = VORSATZ + f"{nr:03d}"
-                bruegge_art_setzen(conn, art, bedeutung="Pruefbetrieb 16.09.2026",
+                bruegge_art_setzen(conn, art, bedeutung="Pruefbetrieb",
                                    status="aktiv")
-                bruegge_katalog_setzen(conn, simulator, t, art=art, rang=1, status="aktiv")
-                # Je Pruef-Art ein EIGENER Partner -- warum, steht in `_partner`.
-                bruegge_katalog_setzen(conn, anderer, partner[nr], art=art, rang=1,
-                                       status="aktiv")
+                bruegge_katalog_setzen(conn, fundort, t, art=art, rang=1, status="aktiv")
                 oid = "p-" + art
                 bruegge_soll_setzen(conn, oid, art, zl, zo, cid=cid, kurs=lage[2],
                                     auf_boden=True, bemerkung="Pruefbetrieb")
@@ -246,8 +254,8 @@ def lauf(cid: int, simulator: str, block: int, sekunden: float, vor_m: float,
 
             # Die gesicherte Zuordnung zurueckschreiben -- VOR dem Aufraeumen, sonst holt
             # `bruegge_art_loeschen` sie gleich wieder weg.
-            for t, (art, rang, status) in vorher.items():
-                bruegge_katalog_setzen(conn, simulator, t, art=art, rang=rang, status=status)
+            for (fundort, t), (art, rang, status) in vorher.items():
+                bruegge_katalog_setzen(conn, fundort, t, art=art, rang=rang, status=status)
             conn.commit()
             _aufraeumen(conn)
             fertig = min(start + block, len(titel))
@@ -272,8 +280,11 @@ def main() -> int:
     ap.add_argument("--abstand", type=float, default=25.0, help="Meter zwischen den Objekten")
     ap.add_argument("--alle", action="store_true", help="auch schon geprueste erneut")
     ap.add_argument("--grenze", type=int, help="nur die ersten N (zum Ausprobieren)")
+    ap.add_argument("--nur-zugeordnet", action="store_true",
+                    help="nur Titel, die eine Art tragen (das, was an Piloten hinausgeht)")
     a = ap.parse_args()
-    return lauf(a.cid, a.simulator, a.block, a.sekunden, a.vor, a.abstand, a.alle, a.grenze)
+    return lauf(a.cid, a.simulator, a.block, a.sekunden, a.vor, a.abstand, a.alle, a.grenze,
+                a.nur_zugeordnet)
 
 
 if __name__ == "__main__":

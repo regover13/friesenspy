@@ -781,15 +781,29 @@ katalog_hochladen.py   schiebt es in Häppchen zu 500 auf den Server
 katalog_pruefen.py     setzt jeden offenen Titel im laufenden Simulator und meldet zurück
 ```
 
-Drei Entscheidungen tragen die Tabelle:
+Vier Entscheidungen tragen die Tabelle:
 
-1. **`simulator` ist der Fundort, `geprueft_in` der Prüfort.** Nicht dasselbe — `BlackBear`
+1. **`simulator` ist der Fundort, der Prüfort steht im Urteil.** Nicht dasselbe — `BlackBear`
    steht in der 2020er Installation und läuft in 2024. Ohne die Trennung übersprang der erste
    Prüflauf 200 Titel.
 2. **Ein Verzeichnislauf überschreibt keine Prüfergebnisse.** Ein Simulator-Lauf ist teuer,
    ein erneutes Einlesen billig — dieselbe Überlegung wie bei `gesehener_hash` (AIP-Blätter).
-3. **`geprueft_am IS NULL` heißt „nie versucht", nicht „geht nicht".** Nur so lässt sich eine
+3. **Kein Urteil heißt „nie versucht", nicht „geht nicht".** Nur so lässt sich eine
    Arbeitsliste abarbeiten.
+4. **Ein Urteil je (Titel, Simulator)** — Tabelle `bruegge_titel_lauf`, seit 19.09.2026. Vorher
+   trug die Katalogzeile EIN `ergebnis`, und eine Prüfung in MSFS 2020 hätte das aus MSFS 2024
+   überschrieben. Jetzt bekommt ein Titel bis zu drei Urteile; `quelle` unterscheidet Messung
+   (`bruegge`) von Augenschein (`hand`: ein rosa Seehund ist für die Brügge `steht`). Ein Urteil
+   von Hand überschreibt keine Automatik. Die alten Spalten `ergebnis`/`geprueft_in`/
+   `geprueft_am` bleiben stehen und werden nicht mehr gelesen.
+
+**Was ein Simulator kann, wird berechnet** (`bruegge_arten_zustand`): je Art und Simulator
+`kann` (mindestens ein aktiver Titel mit `steht`), `kann_nicht` (keiner mehr, oder alle dort
+durchgefallen) oder `ungeprueft`. **Ungeprüft zählt nicht als „kann"** — von 2024 auf 2020 zu
+schließen hat der Katalog widerlegt. Das Prädikat **„überall"** verlangt `kann` in allen dreien;
+eine Art wird nur ganz gesperrt, wenn KEIN Simulator mehr etwas setzen kann.
+`bruegge_titel_fuer` liefert an eine Brügge, was `aktiv` ist und in ihrem Simulator nicht
+durchfiel — ein Fehlschlag legt also keinen Titel mehr still (`status` gehört dem Nutzer).
 
 ### Eine Brügge ohne VATSIM prüfen (`pruefserver.py`, seit 13.09.2026)
 

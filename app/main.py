@@ -1772,10 +1772,9 @@ def _bruegge_katalog_lernen(conn, simulator: str | None, cid: int, steht: list) 
     Katalog fuellte allein ein MSFS-Werkzeug (`probe-msfs/titel_schau.py`). Die X-Plane-Seite
     hatte deshalb 2932 Titel und NULL Pruefergebnisse.
 
-    ⚠ Daran haengt mehr als die Statistik: `bruegge_arten_beidseitig` sperrt eine Art, sobald
-    ein Simulator nichts aus ihr zeigen kann, und fusst dabei auf `status='aus'` -- also auf
-    genau diesen Ergebnissen. Ohne Rueckfluss greift die Regel nur, wo jemand von Hand
-    gepflegt hat.
+    ⚠ Daran haengt mehr als die Statistik: Ob eine Art in einem Simulator "kann" oder
+    "nicht kann" (`bruegge_arten_zustand`), steht in genau diesen Urteilen. Sie gelten
+    fuer den MELDENDEN Simulator und legen keinen Titel in einem anderen still.
 
     Geschrieben wird nur, was eindeutig ist (s. `bruegge_katalog_ergebnis_melden`): Die
     Rueckmeldung nennt die Objekt-`id`, nicht den Titel.
@@ -2197,6 +2196,10 @@ async def admin_katalog_ergebnis(request: Request):
 
     Gefuettert von `probe-msfs/titel_schau.py --katalog`: Das Werkzeug stellt Titel im
     laufenden Simulator hin und meldet zurueck, welche der Simulator annimmt.
+
+    ``geprueft_in`` (sonst ``simulator``) ist der Simulator, in dem gemessen wurde -- das
+    Urteil steht unter ihm, die der anderen bleiben. ``"quelle": "hand"`` ist das Urteil
+    des Nutzers ("Seehund ist rosa"), das keine Automatik ueberschreibt.
     """
     require_admin(request)
     daten = await request.json()
@@ -2209,12 +2212,12 @@ async def admin_katalog_ergebnis(request: Request):
         for e in liste:
             if not isinstance(e, dict) or e.get("ergebnis") not in ("steht", "fehlgeschlagen"):
                 continue
-            katalog_ergebnis(conn, str(e.get("simulator") or "")[:20],
+            n += bool(katalog_ergebnis(conn, str(e.get("simulator") or "")[:20],
                              str(e.get("titel") or "")[:200], e["ergebnis"],
                              (str(e["fehler"])[:120] if e.get("fehler") else None),
                              e.get("hoehe_ft"),
-                             (str(e["geprueft_in"])[:20] if e.get("geprueft_in") else None))
-            n += 1
+                             (str(e["geprueft_in"])[:20] if e.get("geprueft_in") else None),
+                             "hand" if e.get("quelle") == "hand" else "bruegge"))
         conn.commit()
         return {"status": "ok", "vermerkt": n}
     finally:
@@ -2310,7 +2313,7 @@ async def admin_titel_seite(request: Request, art: str | None = None,
                             simulator: str | None = None, quelle: str | None = None,
                             ergebnis: str | None = None, status: str | None = None,
                             suche: str | None = None, ohne_art: bool = False,
-                            mit_art: bool = False,
+                            mit_art: bool = False, geprueft_in: str | None = None,
                             sortieren: str = "titel", absteigend: bool = False,
                             seite: int = 1, je_seite: int = 20):
     """Eine Seite der Titelliste -- gefiltert, sortiert, seitenweise. (Admin)
@@ -2325,7 +2328,7 @@ async def admin_titel_seite(request: Request, art: str | None = None,
         return bruegge_katalog_seite(
             conn, art=art, simulator=simulator, quelle=quelle, ergebnis=ergebnis,
             status=status, suche=suche, ohne_art=ohne_art, mit_art=mit_art,
-            sortieren=sortieren, absteigend=absteigend, seite=seite, je_seite=je_seite)
+            geprueft_in=geprueft_in, sortieren=sortieren, absteigend=absteigend, seite=seite, je_seite=je_seite)
     finally:
         conn.close()
 

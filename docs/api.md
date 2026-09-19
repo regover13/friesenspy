@@ -2398,24 +2398,34 @@ gerade jemand übrig, und dann kommt er nie zustande.
 
 ⭐ **Der Katalog lernt aus der Rückmeldung** (seit 15.09.2026). Was die Brügge unter `steht`
 zurückmeldet, landet nicht mehr nur in `bruegge_steht` (wo es beim nächsten Takt überschrieben
-wird), sondern auch in `bruegge_katalog.ergebnis`. Vorher füllte dieses Feld allein
+wird), sondern auch als **Urteil je (Titel, Simulator)** in `bruegge_titel_lauf` (bis 18.09.2026
+stand es als `ergebnis` an der Katalogzeile). Vorher füllte dieses Feld allein
 `probe-msfs/titel_schau.py`, ein MSFS-Werkzeug — die X-Plane-Seite hatte **2932 Titel und kein
 einziges Prüfergebnis**, obwohl seit dem ersten Flug am 11.09.2026 Objekte gesetzt werden. Und
-`bruegge_arten_beidseitig` hängt daran: Die Regel fußt auf `status='aus'`.
+die Regel „was kann welcher Simulator" (`bruegge_arten_zustand`) hängt daran.
+
+⭐ **Ein Urteil gilt für den Simulator, in dem es fiel** (seit 19.09.2026). Eine Prüfung in
+MSFS 2020 schreibt die 2020er Zeile und lässt die aus MSFS 2024 stehen — vorher hätte sie sie
+überschrieben. Ein Fehlschlag **schaltet keinen Titel mehr ab**: `status` ist allein die
+Entscheidung des Nutzers, ausgeliefert wird, was `aktiv` ist und **im anfragenden Simulator**
+nicht durchfiel. Eine Brügge, die nur `msfs` meldet (älter als 1.14.0), wird wie MSFS 2024
+bedient, urteilt aber nie — wer nicht weiß, wo gemessen wurde, misst nichts.
 
 ⚠ **Die Rückmeldung nennt keinen Titel**, nur die Objekt-`id`. Geschrieben wird deshalb nur,
 was eindeutig ist:
 
 | Fall | Wirkung |
 |---|---|
-| `KEIN_TITEL_GING` (MSFS) bzw. `KEIN_MODELL_MEHR` (X-Plane) | alle Titel dieser Art in **diesem** Simulator auf `ergebnis='fehlgeschlagen'`, `status='aus'` |
-| Fehlschlag bei einer Art mit **genau einem** aktiven Titel | derselbe Eintrag, nur für diesen Titel |
+| `KEIN_TITEL_GING` (MSFS) bzw. `KEIN_MODELL_MEHR` (X-Plane) | alle Titel dieser Art, die **dieser** Simulator bekommen hat, erhalten dort das Urteil `fehlgeschlagen` — `status` bleibt unangetastet |
+| Fehlschlag bei einer Art mit **genau einem** auslieferbaren Titel | dasselbe Urteil, nur für diesen Titel |
 | Fehlschlag bei mehreren Titeln | **nichts** — es ist nicht zu erkennen, welcher gemeint war |
-| `steht` | `ergebnis='steht'` und Höhe; `status` bleibt unangetastet |
+| `steht` | Urteil `steht` und Höhe; `status` bleibt unangetastet |
 | `verschwunden` | nichts — das Objekt *war* da, der Grund kann die Reality Bubble sein |
 
-Geschrieben wird auf die Zeile des **meldenden** Simulators, nie auf die des Topfes: Sonst
-legte eine MSFS-2020-Brügge Titel still, die in 2024 laufen.
+Geschrieben wird unter dem **meldenden** Simulator (`msfs2020`, `msfs2024`, `xplane12`), nie
+unter dem des Topfes: Sonst legte eine MSFS-2020-Brügge Titel still, die in 2024 laufen.
+Ein Urteil **von Hand** (`quelle='hand'`) überschreibt diese Automatik nie — nur das Auge weiß,
+dass ein Seehund rosa ist, während die Brügge `steht` meldet.
 
 ⚠ **Jede Stilllegung wird protokolliert** (`Bruegge: <sim>/<art> stillgelegt`). Grund: Am
 15.09.2026 wurde beobachtet, dass im Admin unter `steht` schon einmal `fehlgeschlagen` stand,
@@ -2706,10 +2716,10 @@ Alle brauchen eine Admin-Sitzung.
 | `GET /api/admin/bruegge` | Melder, Takt, `soll` **und** `steht` in einer Antwort — der Vergleich ist der Punkt: Ein Objekt in `soll`, das in `steht` fehlt, ist der interessante Fall |
 | `POST /api/admin/bruegge/soll` | Objekt anfordern: `art`, `lat`, `lon`, optional `id`, `cid`, `kurs`, **`kurs_zufall`**, `erwartete_hoehe_ft`, `gilt_bis`, `auf_boden`. Gleiche `id` überschreibt. Unbekannte oder **leere** `art` → `400` |
 | ⭐ `kurs_zufall` | **Würfelt die Richtung, und zwar im Server** (14.09.2026). Ohne ihn schickt der Server `kurs: null`, und beide Brügge-Fassungen machen daraus 0 — jedes Objekt zeigte exakt nach Norden. Bei einem einzelnen fällt das nicht auf, bei einer Robbenkolonie sofort. Gewürfelt wird hier und nicht im Browser, damit der künftige Kieker dieselbe Streuung bekommt, ohne durch die Admin-Oberfläche zu müssen. Jedes Hinstellen würfelt neu, auch beim Überschreiben derselben `id` |
-| `GET /api/admin/bruegge/arten` | Alle Arten mit Zahlen: Titel gesamt/aktiv, je Simulator, Beispiele, `anforderbar`, `addon`. **Die einzige Quelle der Artenliste** — bis zum 14.09.2026 stand dieselbe Aufzählung viermal (zwei C++-Quelltexte, `main.py`, `admin.html`) |
+| `GET /api/admin/bruegge/arten` | Alle Arten mit Zahlen: Titel gesamt/aktiv, je Simulator, Beispiele, `anforderbar`, `addon`, dazu `zustand` je Simulator (`kann` / `ungeprueft` / `kann_nicht`), `ueberall` und `kann_in`. **Die einzige Quelle der Artenliste** — bis zum 14.09.2026 stand dieselbe Aufzählung viermal (zwei C++-Quelltexte, `main.py`, `admin.html`) |
 | `POST /api/admin/bruegge/arten` | Art anlegen oder ändern: `art`, `bedeutung`, `status`. `loeschen: true` nimmt sie weg und **gibt ihre Titel frei** — die Katalogzeilen bleiben, sie verlieren nur die Zuordnung |
 | ⚠ `loeschen: true` | **Verlangt das Passwort erneut** (`require_confirm` → `403 confirm_required`, seit 16.09.2026). Nur dieser Zweig: Anlegen, Umbenennen und `status: "aus"` bleiben frei. Grund ist die Unumkehrbarkeit — die Zuordnung Titel → Art steht nirgendwo sonst, bei `tier_gross` wären das über hundert Zeilen auf einen Klick. `status: "aus"` ist der Weg, der fast immer gemeint ist, und bleibt deshalb der bequemere |
-| `GET /api/admin/bruegge/titel` | Eine Seite des Katalogs (2953 Zeilen): `art`, `simulator`, `quelle`, `ergebnis`, `status`, `suche`, `ohne_art`, `mit_art`, `sortieren`, `absteigend`, `seite`, `je_seite`. **Gefiltert und sortiert wird hier, nicht im Browser** — sonst zählt die Seitenzahl Titel, die niemand sieht |
+| `GET /api/admin/bruegge/titel` | Eine Seite des Katalogs (2953 Zeilen): `art`, `simulator`, `quelle`, `ergebnis` (+ `geprueft_in` für den Prüf-Simulator), `status`, `suche`, `ohne_art`, `mit_art`, `sortieren`, `absteigend`, `seite`, `je_seite`. **Gefiltert und sortiert wird hier, nicht im Browser** — sonst zählt die Seitenzahl Titel, die niemand sieht |
 | `POST /api/admin/bruegge/titel` | Titel zuordnen: `simulator`, `titel`, dazu `art`, `rang`, `status`. `art: null` nimmt die Zuordnung weg (Rang und Status gehen mit) |
 | `DELETE /api/admin/bruegge/soll/{id}` | Anforderung zurücknehmen |
 | `POST /api/admin/bruegge/takt` | Die Drossel: `naechste_frage_in_s` für alle Brücken, ohne Deploy. „Aus" ist 900 s, nicht 0 — eine Brügge ohne Antwort könnte Abschaltung nicht von Netzausfall unterscheiden |
@@ -2733,12 +2743,14 @@ laufenden Simulator geprüft.
 | Endpunkt | Zweck |
 |---|---|
 | `POST /api/admin/bruegge/katalog` | Bestand aufnehmen (`{eintraege: [{simulator, titel, quelle, paket?, kategorie?, bemerkung?}]}`). **Vorhandene Prüfergebnisse bleiben stehen** — ein Verzeichnislauf ist billig, ein Simulator-Lauf teuer |
-| `POST /api/admin/bruegge/katalog/ergebnis` | Festhalten, wie ein Setzversuch ausging (`{ergebnisse: [{simulator, titel, ergebnis, fehler?, hoehe_ft?, geprueft_in?}]}`) |
-| `GET /api/admin/bruegge/katalog` | Abfragen; `offen_fuer=msfs2024` liefert alles, was in **diesem** Simulator noch nicht versucht wurde |
+| `POST /api/admin/bruegge/katalog/ergebnis` | Festhalten, wie ein Setzversuch ausging (`{ergebnisse: [{simulator, titel, ergebnis, fehler?, hoehe_ft?, geprueft_in?, quelle?}]}`). Das Urteil steht unter `geprueft_in` (sonst `simulator`); `quelle: "hand"` ist das Urteil des Nutzers und wird von keiner Automatik überschrieben. `vermerkt` zählt nur geschriebene Urteile |
+| `GET /api/admin/bruegge/katalog` | Abfragen; `offen_fuer=msfs2020` liefert alles, was in **diesem** Simulator noch nicht versucht wurde — ein Urteil aus einem anderen zählt nicht. `zusammenfassung` zählt je Prüf-Simulator und Quelle (`gesamt`, `geht`, `geht_nicht`, `offen`) |
 
 ⚠ **`simulator` ist der Fundort, `geprueft_in` der Prüfort** — und das ist nicht dasselbe:
 `BlackBear` steht in der MSFS-2020-Installation und lässt sich in MSFS 2024 setzen, während 38
-seiner Nachbarn es nicht tun. Genau daran hängt der interessante Teil des Katalogs.
+seiner Nachbarn es nicht tun. Genau daran hängt der interessante Teil des Katalogs. Das Urteil
+hat deshalb den **Prüf**-Simulator im Schlüssel (`bruegge_titel_lauf`), nicht den Fundort — und
+je Titel gibt es bis zu drei.
 
 ⚠ **„Setzbar" heißt nicht „sichtbar".** Der Katalog misst, ob der Simulator ein Objekt
 **anlegt**. Ob man es **sieht**, sagt allein der Blick aus dem Cockpit. `HumpbackWhale` ist der

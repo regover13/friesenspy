@@ -44,9 +44,12 @@ def conn(tmp_path):
 
 
 def _zeile(conn):
-    r = conn.execute("SELECT status, ergebnis, fehler FROM bruegge_katalog "
+    """Status am Katalog, Urteil in `bruegge_titel_lauf` (seit 19.09.2026 getrennt)."""
+    r = conn.execute("SELECT status FROM bruegge_katalog "
                      "WHERE simulator = 'xplane12' AND titel = 'fahne.obj'").fetchone()
-    return dict(zip(("status", "ergebnis", "fehler"), r))
+    u = conn.execute("SELECT ergebnis, fehler FROM bruegge_titel_lauf "
+                     "WHERE simulator = 'xplane12' AND titel = 'fahne.obj'").fetchone()
+    return {"status": r[0], "ergebnis": u[0] if u else None, "fehler": u[1] if u else None}
 
 
 def _melden(conn, monkeypatch, fehler: str):
@@ -80,18 +83,20 @@ def test_ein_echter_fehlschlag_wirkt_weiter(conn, monkeypatch):
     """⚠ Die Gegenprobe — sonst hätte der Fix das Lernen ganz abgeschaltet.
 
     `EXCEPTION_22` heißt: Der Simulator kennt diesen Container nicht. Das ist ein Urteil
-    über den Titel und muss ihn weiterhin stilllegen.
+    über den Titel — er geht in diesem Simulator nicht mehr hinaus.
     """
+    from app import database as db
     _melden(conn, monkeypatch, "EXCEPTION_22")
     z = _zeile(conn)
-    assert z["status"] == "aus"
     assert z["ergebnis"] == "fehlgeschlagen"
+    assert z["status"] == "aktiv", "das Urteil schaltet nichts ab -- `status` gehört dem Nutzer"
+    assert "flagge" not in db.bruegge_titel_fuer(conn, "xplane12")
 
 
 def test_erschoepfte_art_wirkt_weiter(conn, monkeypatch):
     """`KEIN_MODELL_MEHR` heißt: alle Titel durchprobiert, keiner ging."""
     _melden(conn, monkeypatch, "KEIN_MODELL_MEHR")
-    assert _zeile(conn)["status"] == "aus"
+    assert _zeile(conn)["ergebnis"] == "fehlgeschlagen"
 
 
 def test_steht_wird_weiterhin_gelernt(conn, monkeypatch):
@@ -121,6 +126,7 @@ def test_gattung_unbekannt_legt_nichts_still(conn, monkeypatch):
     from app import database as db
     _melden(conn, monkeypatch, "GATTUNG_UNBEKANNT")
     assert _zeile(conn)["status"] == "aktiv"
+    assert _zeile(conn)["ergebnis"] is None, "eine Aussage über den Server ist kein Urteil"
     assert "flagge" in db.bruegge_arten_anforderbar(conn)
 
 
@@ -173,3 +179,6 @@ class TestAlleMeldungenDieKeinUrteilSind:
     def test_keine_davon_schaltet_ab(self, conn, monkeypatch, meldung):
         _melden(conn, monkeypatch, meldung)
         assert _zeile(conn)["status"] == "aktiv", meldung
+        # ⚠ Das ist die eigentliche Sperre: Der Status wird seit dem 19.09.2026 gar nicht mehr
+        # angefasst, also würde die Zeile darüber auch OHNE die Liste grün bleiben.
+        assert _zeile(conn)["ergebnis"] is None, meldung

@@ -1607,6 +1607,18 @@
                        style="width:230px;padding:6px;">
                 <div id="bg-art-picker" class="ke-c-picker"></div>
               </div>
+              <!-- Welche Arten der Picker anbietet: nur solche, die in ALLEN angehakten
+                   Simulatoren nachweislich gehen (Nutzerregel 16.09.2026). Vorgabe sind alle
+                   drei Haken -- das ist das Praedikat "ueberall". Ohne Haken: jede Art, die
+                   irgendwo noch etwas setzen kann. -->
+              <div id="bg-sim-filter" style="display:flex;flex-wrap:wrap;gap:4px 10px;
+                   align-items:center;font-size:0.78rem;color:#8aa0b8;">
+                <span>nur Arten, die gehen in:</span>
+                <label><input type="checkbox" data-sim="msfs2020" checked> MSFS 2020</label>
+                <label><input type="checkbox" data-sim="msfs2024" checked> MSFS 2024</label>
+                <label><input type="checkbox" data-sim="xplane12" checked> X-Plane 12</label>
+                <span id="bg-sim-zahlen" style="color:#cfe0f2;"></span>
+              </div>
               <input id="bg-lat" placeholder="Breite" style="width:110px;padding:6px;">
               <input id="bg-lon" placeholder="Länge" style="width:110px;padding:6px;">
               <!-- Suchfeld statt blanker CID-Eingabe. Eine CID ist eine siebenstellige Zahl
@@ -1718,6 +1730,14 @@
                 <option value="fehlgeschlagen">gescheitert ✕</option>
                 <option value="offen">nie versucht</option>
               </select>
+              <!-- Das Urteil gilt je Simulator (bruegge_titel_lauf): "steht" heisst hier
+                   ohne Angabe "in irgendeinem", mit Angabe "in genau diesem". -->
+              <select id="bg-t-in">
+                <option value="">in irgendeinem Sim</option>
+                <option value="msfs2020">geprüft in MSFS 2020</option>
+                <option value="msfs2024">geprüft in MSFS 2024</option>
+                <option value="xplane12">geprüft in X-Plane 12</option>
+              </select>
               <select id="bg-t-zuordnung">
                 <option value="">zugeordnet egal</option>
                 <option value="mit">hat eine Art</option>
@@ -1739,7 +1759,7 @@
                     <th class="bg-sort" data-sp="simulator">Sim</th>
                     <th class="bg-sort" data-sp="quelle">Quelle</th>
                     <th class="bg-sort" data-sp="paket">Paket</th>
-                    <th class="bg-sort" data-sp="ergebnis">geprüft</th>
+                    <th title="geprüft in MSFS 2020 / MSFS 2024 / X-Plane 12">geprüft 20·24·XP</th>
                   </tr>
                   <tr>
                     <th colspan="5" style="font-weight:400;color:#8aa0b8;font-size:0.76rem;">
@@ -2707,6 +2727,7 @@
       bgArtenLaden().then(function () { bgArtPicker(); bgTitelLaden(); });
       bgTitelBedienung();
       bgArtenBedienung();
+      bgSimFilterBedienung();
       bgPilotenLaden().then(bgCidPicker);
       bgLaden();
       setInterval(bgLaden, 10000);
@@ -2764,6 +2785,62 @@
     // eine Station, die nur bei ihm selbst steht. Der Server leitet es aus `quelle` ab,
     // niemand pflegt es mehr von Hand.
     let _bgArten = [];        // nur Anforderbares -- fuer den Picker
+
+    // Die drei Simulatoren, je Art mit einem Zustand: kann (✓) / ungeprueft (?) / kann_nicht (✕).
+    // Der Server rechnet ihn aus (`bruegge_arten_zustand`); hier wird nichts hergeleitet.
+    const _BG_SIMS = [['msfs2020', 'MSFS 2020'], ['msfs2024', 'MSFS 2024'], ['xplane12', 'X-Plane 12']];
+
+    /** Welche Haken am Picker gesetzt sind. Vorgabe: alle drei = das Praedikat „überall". */
+    function bgSimGewaehlt() {
+      return Array.prototype.slice.call(
+        document.querySelectorAll('#bg-sim-filter input[data-sim]'))
+        .filter(function (c) { return c.checked; })
+        .map(function (c) { return c.dataset.sim; });
+    }
+
+    /** Passt die Art zum Filter? Sie muss in JEDEM angehakten Simulator nachweislich gehen
+     *  („MSFS 2020 UND MSFS 2024"). Ohne Haken gilt jede anforderbare Art. */
+    function bgSimPasst(a) {
+      return bgSimGewaehlt().every(function (sim) {
+        return a.zustand && a.zustand[sim] === 'kann';
+      });
+    }
+
+    /** „überall", „teilweise (MSFS 2024, X-Plane 12)" oder „noch nirgends belegt". */
+    function bgArtPraedikat(a) {
+      if (a.ueberall) return 'überall';
+      const wo = _BG_SIMS.filter(function (s) { return a.zustand && a.zustand[s[0]] === 'kann'; })
+        .map(function (s) { return s[1]; });
+      return wo.length ? 'teilweise (' + wo.join(', ') + ')' : 'noch nirgends belegt';
+    }
+
+    function bgArtMarken(a) {
+      return _BG_SIMS.map(function (sim) {
+        const z = (a.zustand || {})[sim[0]];
+        const [farbe, zeichen, wort] = z === 'kann' ? ['#5cb85c', '✓', 'geht']
+          : z === 'kann_nicht' ? ['#d9534f', '✕', 'geht nicht (alle Titel durchgefallen)']
+          : ['#8aa0b8', '?', 'noch nicht belegt'];
+        return '<span style="color:' + farbe + ';" title="' + escA(sim[1] + ': ' + wort) + '">'
+          + sim[1].replace('MSFS ', '').replace('X-Plane ', 'XP ') + zeichen + '</span>';
+      }).join(' ');
+    }
+
+    /** Picker und Zahlenzeile neu aufsetzen, wenn ein Haken wechselt. */
+    function bgSimFilterAnwenden() {
+      _bgArten = _bgArtenAlle.filter(function (a) { return a.anforderbar && bgSimPasst(a); });
+      const z = document.getElementById('bg-sim-zahlen');
+      if (z) {
+        const moeglich = _bgArtenAlle.filter(function (a) { return a.anforderbar; }).length;
+        z.textContent = _bgArten.length + ' von ' + moeglich + ' Arten passen'
+          + (_bgArten.length ? '' : ' — Haken lockern, um weitere zu sehen');
+      }
+    }
+
+    function bgSimFilterBedienung() {
+      document.querySelectorAll('#bg-sim-filter input[data-sim]').forEach(function (c) {
+        c.addEventListener('change', bgSimFilterAnwenden);
+      });
+    }
     let _bgArtenAlle = [];    // alle -- fuer die Titelverwaltung
 
     async function bgArtenLaden() {
@@ -2774,11 +2851,11 @@
         _bgArtenAlle = d.arten || [];
         // Nur Anforderbares in den Picker: Eine Art ohne einen einzigen aktiven Titel würde
         // der Server ohnehin ablehnen (400). Sie anzubieten hieße, einen Fehlschlag
-        // vorzubereiten.
+        // vorzubereiten. Dazu der Simulator-Filter: Vorgabe „überall" (alle drei Haken).
         //
         // In der Titelverwaltung dagegen müssen ALLE stehen — dort ordnet man einer leeren
         // Art ja gerade ihren ersten Titel zu.
-        _bgArten = _bgArtenAlle.filter(function (a) { return a.anforderbar; });
+        bgSimFilterAnwenden();
         bgArtenFilterFuellen();
         bgArtenZeichnen();
       } catch (e) { /* der Picker bleibt leer, die Eingabe funktioniert weiter */ }
@@ -2796,6 +2873,7 @@
       const zahlen = document.getElementById('bg-a-zahlen');
       if (zahlen) {
         zahlen.textContent = _bgArtenAlle.length + ' Arten · '
+          + _bgArtenAlle.filter(a => a.ueberall).length + ' überall · '
           + _bgArtenAlle.filter(a => a.anforderbar).length + ' gehen hinaus';
       }
       if (!_bgArtenAlle.length) {
@@ -2808,14 +2886,17 @@
     function bgArtZeile(a) {
       const aus = (a.art_status || 'aktiv') !== 'aktiv';
       // „geht hinaus?" statt „Status": Ein Haken allein beantwortet die Frage nicht — eine
-      // eingeschaltete Art kann trotzdem gesperrt sein, weil ein Simulator nichts aus ihr
-      // setzen kann (die stehende Regel, s. `bruegge_arten_beidseitig`). `gesperrt_weil`
-      // kommt fertig vom Server; wer das hier selbst herleitet, lässt beide auseinanderlaufen.
-      const geht = a.anforderbar
+      // eingeschaltete Art kann trotzdem gesperrt sein, weil in KEINEM Simulator etwas aus
+      // ihr zu setzen ist (die stehende Regel, s. `bruegge_arten_zustand`). Scheitert nur
+      // einer, verliert sie bloß das Prädikat „überall". `gesperrt_weil` und die Zustände
+      // kommen fertig vom Server; wer das hier selbst herleitet, lässt beide auseinanderlaufen.
+      const geht = (a.anforderbar
         ? '<span style="color:#5cb85c;">ja</span>'
         : '<span style="color:#d9534f;" title="' + escA(a.gesperrt_weil || '') + '">nein</span>'
           + ' <span style="color:#8aa0b8;font-size:0.74rem;">'
-          + escH(a.gesperrt_weil || '') + '</span>';
+          + escH(a.gesperrt_weil || '') + '</span>')
+        + '<div style="font-size:0.74rem;white-space:nowrap;">' + bgArtMarken(a) + '</div>'
+        + '<div style="color:#8aa0b8;font-size:0.72rem;">' + escH(bgArtPraedikat(a)) + '</div>';
       const beispiele = bgArtBeispiele(a);
       return '<tr>'
         + '<td><code>' + escH(a.art) + '</code>'
@@ -2945,8 +3026,9 @@
     function bgArtHinweis(a) {
       const teile = [];
       if (a.addon) teile.push('Addon');
-      if (!a.msfs) teile.push('nur X-Plane');
-      else if (!a.xplane) teile.push('nur MSFS');
+      // Nur nennen, was von „überall" abweicht: In der Auswahl steht ohnehin, was der Filter
+      // zulässt -- „überall" hinter jeder Zeile wäre Rauschen.
+      if (!a.ueberall) teile.push(bgArtPraedikat(a));
       return teile.join(' · ');
     }
 
@@ -2969,6 +3051,7 @@
       if (v('bg-t-sim')) p.set('simulator', v('bg-t-sim'));
       if (v('bg-t-quelle')) p.set('quelle', v('bg-t-quelle'));
       if (v('bg-t-ergebnis')) p.set('ergebnis', v('bg-t-ergebnis'));
+      if (v('bg-t-in')) p.set('geprueft_in', v('bg-t-in'));
       // „ohne Art" und „hat eine Art" sind eigene Schalter und keine Werte von `art`: Die
       // An- oder Abwesenheit einer Zuordnung lässt sich nicht als Gleichheit ausdrücken.
       //
@@ -3018,10 +3101,19 @@
     function bgTitelZeile(z) {
       const kurz = z.titel.indexOf('/') >= 0
         ? '…/' + z.titel.slice(z.titel.lastIndexOf('/') + 1) : z.titel;
-      const gepr = z.ergebnis === 'steht' ? '<span style="color:#5cb85c;">steht</span>'
-                 : z.ergebnis === 'fehlgeschlagen'
-                   ? '<span style="color:#d9534f;" title="' + escH(z.fehler || '') + '">✕</span>'
-                   : '<span style="color:#8aa0b8;">—</span>';
+      // Drei Marken, eine je Simulator: Das Urteil gilt dort, wo es fiel (bruegge_titel_lauf).
+      // ✓ steht, ✕ durchgefallen (Tooltip nennt den Grund; ✋ = vom Nutzer gesehen), – nie
+      // versucht.
+      const gepr = _BG_SIMS.map(function (sim) {
+        const e = z['ergebnis_' + sim[0]];
+        const hand = z['quelle_' + sim[0]] === 'hand' ? ' ✋' : '';
+        const tip = sim[1] + (z['fehler_' + sim[0]] ? ': ' + z['fehler_' + sim[0]] : '');
+        return e === 'steht'
+          ? '<span style="color:#5cb85c;" title="' + escA(tip) + '">✓</span>'
+          : e === 'fehlgeschlagen'
+            ? '<span style="color:#d9534f;" title="' + escA(tip) + hand + '">✕' + (hand ? '✋' : '') + '</span>'
+            : '<span style="color:#8aa0b8;" title="' + escA(sim[1] + ': nie versucht') + '">–</span>';
+      }).join(' · ');
       // Auswahl statt Freitext: Eine Art, die es nicht gibt, lehnt der Server ohnehin ab —
       // sie hier anbieten hieße, einen Fehlschlag vorzubereiten.
       const artWahl = '<select class="bg-t-setzart" data-sim="' + escA(z.simulator)
@@ -3127,7 +3219,7 @@
 
       // Filter: jede Änderung beginnt wieder bei Seite 1 — sonst steht man auf Seite 47
       // eines Ergebnisses mit drei Seiten und sieht nichts.
-      ['bg-t-art', 'bg-t-sim', 'bg-t-quelle', 'bg-t-ergebnis', 'bg-t-zuordnung']
+      ['bg-t-art', 'bg-t-sim', 'bg-t-quelle', 'bg-t-ergebnis', 'bg-t-in', 'bg-t-zuordnung']
         .forEach(function (id) {
           const el = document.getElementById(id);
           if (el) el.addEventListener('change', function () { _bgTStand.seite = 1; bgTitelLaden(); });
