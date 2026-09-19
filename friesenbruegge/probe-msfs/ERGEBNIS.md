@@ -948,6 +948,24 @@ des Protokolls führt den `Grund` deshalb **je Simulator**, nicht gemeinsam.
 > sie wurde zurückgenommen, und dann vor Ort richtig gemessen. Das Ergebnis ist dasselbe, der
 > Unterschied ist, dass es jetzt trägt.
 
+> **Nachgemessen am 19.09.2026, MSFS 2020, Wangerooge (Gelände 4,7 ft), Brügge 1.14.0.** Vier
+> `Boat`-Titel mit fester Höhe gesetzt und **ohne** `OnGround` (`erwartete_hoehe_ft`, so wie es
+> jedes andere Objekt bekommt): `Boat02`, `Yacht02`, `CruiseShip02` auf 4,7 ft, `FishingBoat` als
+> Kontrolle auf **60 ft**. Alle vier meldeten **0,0 ft** zurück, und der `FishingBoat` schwebte
+> im Bild nicht (Nutzer). Eine ausdrücklich mitgegebene Höhe ändert in MSFS 2020 an `Boat`
+> also nichts — die Kategorie nimmt stur Meereshöhe. Auf dem Gras standen die Rümpfe
+> sichtbar zur Hälfte im Boden (Screenshot 23:12). **Entscheidung des Nutzers: MSFS 2020
+> nur über See.** Vermerkt an den Arten `boot_klein` und `boot_gross` (Feld `bedeutung`); im
+> Katalog ist es kein Urteil, weil es der Ort ist und nicht der Titel.
+>
+> ⚠ **Ein Boot bei einer Sichtprobe an Land als „unsichtbar" zu urteilen ist falsch begründet.**
+> `Boat01` wurde am selben Tag deshalb zu Unrecht von Hand ausgeschieden und wieder
+> zurückgenommen — es versinkt dort, es fehlt nicht. Ein Boot in MSFS 2020 gehört auf See geprüft.
+>
+> **Nicht gemessen:** ob die `Microsoft_Ships_*`-Titel (Arten `schiff_*`) und `schnellboot` in
+> MSFS 2020 dasselbe tun. Sie meldeten im Prüflauf 4,6–5,2 ft, das war aber auch bei
+> `CruiseShip01` so (4,9 ft) und dort später 0,0 ft — der Erstwert taugt nicht als Beleg.
+
 Für MSFS 2024 gilt das nicht: Dort kommt `Altitude` an, die Brügge müsste nur die Geländehöhe
 kennen (s. den Kasten oben). Die hat FriesenSpy nicht (Spec 4.2) — dieselbe Einschränkung, die auch den
 X-Plane-Adapter trifft, der deshalb `XPLMProbeTerrainXYZ` fragt.
