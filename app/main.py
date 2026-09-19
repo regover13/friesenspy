@@ -2782,22 +2782,23 @@ async def meine_fassungen(request: Request):
     von Hand nachziehen müsste, wäre nach dem ersten vergessenen Nachziehen schlechter als
     keine.
 
-    Ohne Anmeldung gibt es nichts zu sagen -- dann ist die Antwort leer, aber kein Fehler:
-    Die Seite fragt bei jedem Aufbau, und ein 401 im Protokoll wäre ein Fehlalarm.
+    ⚠ **Nur eingeloggt** -- und das war anfangs anders: Die erste Fassung antwortete ohne
+    Anmeldung mit einer leeren Liste, gab dabei aber die aktuellen Paketfassungen heraus.
+    Damit stand dieselbe Auskunft offen, für die `/api/efb-package` und
+    `/api/bruegge-package` eine Anmeldung verlangen. Die Zahlen sind harmlos; die
+    Ungleichheit war es, die auffiel (gemessen 19.09.2026 über alle Endpunkte).
     """
     settings = get_settings()
     try:
         cid = _current_cid(request, settings)
     except Exception:
         cid = None
+    if cid is None:
+        raise HTTPException(status_code=401, detail="Nicht eingeloggt")
 
     aktuell_bruegge = {sim: _bruegge_paket_info(sim).get("version")
                        for sim in ("msfs", "xplane")}
     aktuell_panel = _efb_package_version(_efb_zip_path(settings))
-    leer = {"bruegge": {"aktuell": aktuell_bruegge, "meine": []},
-            "kniebrett": {"aktuell": aktuell_panel, "meine": []}}
-    if cid is None:
-        return leer
 
     conn = get_connection(settings.DB_PATH)
     try:

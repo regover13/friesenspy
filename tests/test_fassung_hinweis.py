@@ -86,11 +86,12 @@ def _bruegge_anlegen(db, kennung="K1", simulator="msfs2024", version="1.9.0", ci
 
 
 class TestServer:
-    def test_ohne_anmeldung_gibt_es_nichts_zu_sagen(self, env):
-        """Kein Fehler: Die Seite fragt bei jedem Aufbau, ein 401 wäre ein Fehlalarm."""
+    def test_ohne_anmeldung_gibt_es_gar_nichts(self, env):
+        """Auch nicht die Paketfassungen — dieselbe Auskunft ist bei `/api/efb-package`
+        anmeldepflichtig, und zwei Maßstäbe für dieselbe Zahl sind einer zu viel."""
         r = env.client.get("/api/me/fassungen")
-        assert r.status_code == 200
-        assert r.json()["bruegge"]["meine"] == []
+        assert r.status_code == 401
+        assert "1.12.0" not in r.text
 
     def test_eine_alte_bruegge_wird_als_veraltet_gemeldet(self, env):
         _bruegge_anlegen(env.db, version="1.9.0")

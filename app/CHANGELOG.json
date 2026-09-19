@@ -1,5 +1,14 @@
 [
   {
+    "version": "15.0.1",
+    "date": "2026-09-19",
+    "highlight": false,
+    "title": "Auskunft über die eigenen Fassungen nur noch angemeldet",
+    "items": [
+      "🔒 Die Abfrage, ob deine FriesenBrügge und dein Kniebrett-Paket noch aktuell sind, gab die aktuellen Versionsnummern auch ohne Anmeldung heraus — dieselbe Auskunft, für die die Download-Seite eine Anmeldung verlangt. Jetzt gilt überall derselbe Maßstab. Sichtbar ändert sich nichts: Der Hinweis erscheint wie bisher, sobald du angemeldet bist."
+    ]
+  },
+  {
     "version": "15.0.0",
     "date": "2026-09-17",
     "highlight": true,
