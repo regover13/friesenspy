@@ -15,8 +15,35 @@ und werden vorher eigens besprochen — die Hauptnummer gehört an die sichtbare
 | **Aufgenommen** | im Umkreis des Havaristen, **nach** dem Fund: *Haken an* eine Landung nach den Regeln des Projekts · *Haken aus* unter 30 kt | `aufgenommen_am`/`aufgenommen_von`; Fackel wechselt auf **`rauch_hellblau`** |
 | **Eingeliefert** | Landung des **Aufnehmenden** an irgendeinem registrierten Platz | `eingeliefert_am`/`_von`/`_icao`; gewertet ist die Zeit **vom Fund bis zu dieser Landung** |
 
-Der Aufnehmende muss nicht der Finder sein (#21). Der Überflug des Finders ist nicht gleichzeitig
-das Aufnehmen: Dafür zählt nur ein Überflug **nach** `gefunden_am`.
+**Aufnehmen darf irgendeiner.** Das ist eine Teamleistung, und der Finder kann es unter Umständen
+gar nicht — er sitzt im falschen Flugzeug, steht zu weit weg, oder hat nicht mehr genug Sprit.
+Der Überflug des Finders ist deshalb auch nicht gleichzeitig das Aufnehmen: Dafür zählt nur ein
+Überflug **nach** `gefunden_am`.
+
+**Das Finden selbst ist in allen Fällen gleich** — derselbe tiefe, langsame Überflug, egal ob
+danach gelandet oder geschwebt werden muss. Ein Flächenflugzeug findet den Havaristen also auch
+dann, wenn nur ein Hubschrauber ihn aufnehmen kann. Suchen ist Gruppenarbeit, Bergen
+Spezialarbeit; der Haken „Landung zur Rettung nötig" wirkt ausschließlich auf Stufe 3.
+
+### Wenn der Aufnehmende abbricht
+
+Wer aufgenommen hat und dann ohne Landung verschwindet, blockierte sonst die Einlieferung für
+den ganzen Abend. Ein Haken im Admin regelt das: **„Aufnahme verfällt, wenn der Aufnehmende
+abmeldet"**, Vorgabe an.
+
+⚠ **Der Auslöser ist die Abmeldung, keine Zeitschwelle.** „20 Minuten Funkstille" war der erste
+Vorschlag und wäre eine erfundene Größe gewesen — das Ereignis steht längst in den Daten: Der
+Pilot verschwindet aus dem VATSIM-Strom, und der Poller sieht das ohnehin in jedem Takt.
+
+**Eine Schonfrist braucht es trotzdem, aber aus einem anderen Grund:** Ein Absturz zum Desktop
+mit Wiederanmeldung ist im Simulator Alltag. Ohne Schonfrist reichte ein zweiminütiger Aussetzer
+die Rettung an jemand anderen weiter. Zehn Minuten nach dem Verschwinden, und nur wenn er nicht
+zurückgekommen ist — dann werden `aufgenommen_am`/`aufgenommen_von` geleert, die Fackel geht
+zurück auf **orange**, und ein Push sagt, dass die Rettung wieder offen ist.
+
+**Ohne den Haken bleibt die Aufnahme stehen, bis der Admin sie freigibt.** Der Knopf dafür muss
+es in beiden Fällen geben — sonst hängt ein Abend an einer Automatik, die im Einzelfall falsch
+liegt.
 
 **Findet niemand:** Bei `dtend` wird die Lage aufgelöst und veröffentlicht, die Fackeln werden
 zurückgenommen, die Bilanz sagt „nicht gefunden" und nennt die erreichte Abdeckung.
@@ -208,6 +235,7 @@ CREATE TABLE IF NOT EXISTS suchflug_events (
     -- Latches
     gefunden_am     TEXT,  gefunden_von     INTEGER,
     aufgenommen_am  TEXT,  aufgenommen_von  INTEGER,
+    aufnahme_verfaellt INTEGER DEFAULT 1,   -- 1 = verfällt, wenn der Aufnehmende abmeldet
     eingeliefert_am TEXT,  eingeliefert_von INTEGER,  eingeliefert_icao TEXT,
     aufgeloest_am   TEXT,                   -- Lage veröffentlicht (Fund oder dtend)
     -- wie bei den anderen Eventtypen
@@ -351,6 +379,7 @@ geprüfte Liste macht ihn überflüssig.
    nur die Bezugszahl ist dann geschätzt — und weil der Sektor über Land liegen darf, kann sie
    dort um mehr als die 1.000 ft der Höhenschranke danebenliegen. Deshalb gehört
    `havarist_grund_quelle` im Admin sichtbar neben die Zahl.
-4. **Abbruch eines Aufnehmenden.** Wer aufgenommen hat und dann ohne Landung abmeldet, blockiert
-   die Einlieferung. Vorschlag: `aufgenommen_*` verfällt, wenn der Pilot länger als 20 Minuten
-   nicht mehr meldet, und die Fackel geht zurück auf orange.
+4. **Wie oft ein Abbruch wirklich vorkommt, ist nicht gemessen.** Die Schonfrist von zehn
+   Minuten ist geschätzt, nicht belegt — sie lässt sich nach dem ersten Abend gegen
+   `position_history` prüfen (wie lange sind Aussetzer der eigenen Piloten wirklich?) und dann
+   begründet setzen.
