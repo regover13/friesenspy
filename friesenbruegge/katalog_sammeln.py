@@ -320,6 +320,27 @@ _XP_ZWEIGE = (
     # tragen Animationen; als abgestelltes Objekt ist die statische Fassung die richtige.
     ("1000 roads/objects/cars/static", "cars"),                   #  36 -- PKW, Polizei (US)
     ("1000 roads/objects/cars_EU/static", "cars_EU"),                #  43 -- PKW, Busse (EU)
+
+    # ⭐ DRITTE ERWEITERUNG, 20.09.2026 -- Anlass: „Was ist mit Xplane und 2020?" nach dem
+    # Abgleich Platte gegen Katalog (5 076 von 7 995 Standardobjekten fehlten). Meist zu Recht
+    # (Autogen, Straßen, Gelände, Hügel), aber vier Gruppen sind Einzelobjekte:
+    ("airport scenery/1000_Landmarks", "landmarks"),          #   4 -- Eiffelturm, Freiheitsstatue
+    ("900 roads/trains", "trains"),                           # 187 -- Güterwagen, Lokomotiven
+    ("900 us objects/skyscrapers", "skyscrapers"),            #  23 -- Hochhäuser (generisch)
+)
+
+#: Die offiziellen Pakete unter `Custom Scenery/`, die bei jeder X-Plane-12-Installation
+#: mitkommen (20.09.2026 gefunden): 16 „X-Plane Landmarks - <Stadt>" mit rund 165 Objekten
+#: (Brandenburger Tor, Fernsehturm, Eiffelturm, Empire State …) und 6 „X-Plane Airports -
+#: <Platz>" mit 137. Bis dahin stand davon NICHTS im Katalog -- der Sammellauf las nur
+#: `Resources/default scenery`. Ein Kölner Dom ist nicht dabei.
+#:
+#: ⚠ Der Titel ist wie überall der Pfad relativ zum X-Plane-Ordner, hier also
+#: `Custom Scenery/<Paket>/objects/<Name>.obj` -- `XPLMLoadObject` nimmt jeden solchen Pfad. In
+#: `paket` steht der Ordnername, damit die Admin-Liste danach filtern kann.
+_XP_CUSTOM = (
+    ("X-Plane Landmarks - ", "landmarks"),
+    ("X-Plane Airports - ", "airports_custom"),
 )
 
 
@@ -352,6 +373,41 @@ def sammle_xplane(wurzel: Path) -> list[dict]:
                          "quelle": "bord",
                          "kategorie": (teile[0] if len(teile) > 1 and zweig == "sim objects"
                                        else vorgabe)})
+    # ⭐ Und dann ALLES, was übrig ist (20.09.2026, Nutzer: „Ich meine auch übersehene Objekte!“).
+    # Bis dahin galt die Regel „nur, was als einzelnes Objekt einen Sinn ergibt“ (14.09.); sie
+    # hat 5 076 von 7 995 Standardobjekten draußen gelassen -- und niemand konnte sagen, ob
+    # darunter etwas Brauchbares war. Jetzt steht alles im Katalog, sortiert nach Ordner
+    # (`kategorie`), und ob ein Objekt taugt, sagt der Lauf, nicht die Vermutung. Die
+    # Verbundteile (Fassaden, Lampen, Autogen, Hügel) laufen mit; der Admin filtert nach
+    # Kategorie, und `--nur-kategorie` beim Prüfwerkzeug hält sie aus einem ersten Lauf heraus.
+    for obj in sorted(szenerie.rglob("*.obj")):
+        rel = obj.relative_to(wurzel).as_posix()
+        if rel in gesehen:
+            continue
+        gesehen.add(rel)
+        teile = obj.relative_to(szenerie).parts
+        raus.append({"simulator": "xplane12", "titel": rel, "paket": None, "quelle": "bord",
+                     "kategorie": "/".join(teile[:2]) if len(teile) > 2 else teile[0]})
+    raus += sammle_xplane_custom(wurzel)
+    return raus
+
+
+def sammle_xplane_custom(wurzel: Path) -> list[dict]:
+    """Die `.obj` der offiziellen Pakete unter `Custom Scenery/` (s. `_XP_CUSTOM`)."""
+    raus = []
+    cs = wurzel / "Custom Scenery"
+    if not cs.is_dir():
+        return raus
+    for ordner in sorted(cs.iterdir()):
+        if not ordner.is_dir():
+            continue
+        for vorsatz, kategorie in _XP_CUSTOM:
+            if not ordner.name.startswith(vorsatz):
+                continue
+            for obj in sorted(ordner.rglob("*.obj")):
+                raus.append({"simulator": "xplane12",
+                             "titel": obj.relative_to(wurzel).as_posix(),
+                             "paket": ordner.name, "quelle": "bord", "kategorie": kategorie})
     return raus
 
 
