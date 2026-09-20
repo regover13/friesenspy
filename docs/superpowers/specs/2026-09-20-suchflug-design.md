@@ -29,9 +29,19 @@ ein Fliegerverein sucht Flieger. Daraus folgen drei Vorgaben, die nicht kosmetis
 * **Vorgabe-Art ist `flugzeug_echo`** (kleines Flugzeug am Boden). `wilga` ist die
   dramatischere Wahl: das ist die Vereinsmaschine **D-EFRS**, und sie zu suchen erklärt sich
   ohne ein Wort. Ebenso möglich: `flugzeug_ga`, `hubschrauber`, `segelflugzeug`.
-* **`landung_noetig` ist standardmäßig AN.** Eine abgestürzte Maschine liegt meist an Land, und
-  dann muss zum Aufnehmen jemand dort landen. Auf Watt oder Wasser nimmt der Admin den Haken
-  heraus, dann genügt ein zweiter tiefer, langsamer Überflug.
+* **Der Haken heißt `im_wasser` und ist standardmäßig AUS.** Eine abgestürzte Maschine liegt
+  meist an Land, und dann muss zum Aufnehmen jemand **dort** landen — nicht auf dem nächsten
+  Platz, sondern an der Unglücksstelle. Liegt der Havarist im Wasser, genügt ein zweiter
+  tiefer, langsamer Überflug.
+
+  **Der Haken benennt eine Tatsache, nicht eine Regel**, und das ist Absicht: Der Admin setzt
+  den Punkt von Hand und sieht dabei, ob dort Wasser ist. „Landung zur Rettung nötig" hieß
+  zuerst umgekehrt — die Folge statt der Ursache — und war schwerer zu beantworten.
+
+  ⚠ **Die Regel wird NICHT aus der Art abgeleitet.** Das lag nahe („Bootsart ⇒ keine Landung")
+  und ist falsch: Ein im Wasser notgelandetes Flugzeug bleibt ein Flugzeug, und wer die Art
+  wechselt, um das Objekt hübscher zu machen, würde sonst versehentlich die Wertung kippen. Der
+  Haken schlägt die Art nur vor.
 * **Das Objekt steht auf dem Boden** (OnGround, wie seit 15.6.1 bei den Booten), mit dem
   `boden_versatz_ft` seiner Art — bei `flugzeug_echo` 3,9 ft.
 
@@ -67,8 +77,9 @@ niemand geht leer aus, der eine Fläche abgeflogen und nichts gefunden hat.
 ### Die Höhenschranke ist AGL über dem Havaristen
 
 **Nicht MSL.** Ein erster Entwurf nahm `position_history.altitude` (MSL) und rechtfertigte das
-mit „über dem Wattenmeer ist die Geländehöhe ~0". Das trägt nicht, sobald ein Wrack an Land
-liegt — und es ist auch unnötig, **denn der Server kennt die Höhe des Havaristen.**
+mit „über dem Wattenmeer ist die Geländehöhe ~0". **Der Sektor ist aber nicht aufs Watt
+beschränkt** — er darf überall liegen, und bei Flugzeugen wird er meist über Land liegen. Nötig
+ist die Annahme ohnehin nicht, **denn der Server kennt die Höhe des Havaristen.**
 
 Die FriesenBrügge meldet für jedes gesetzte Objekt zurück, auf welcher Höhe es tatsächlich
 gelandet ist (`bruegge_steht.hoehe_ft`, PROTOKOLL Abschnitt 1). In der Produktion stehen drei
@@ -154,7 +165,7 @@ CREATE TABLE IF NOT EXISTS suchflug_events (
     havarist_verdeckt INTEGER DEFAULT 0,    -- 1 = gewürfelt, auch im Admin verborgen
     havarist_grund_ft REAL,                 -- Geländehöhe MSL an der Unglücksstelle
     havarist_grund_quelle TEXT,             -- 'gemessen' | 'admin' | 'platz'
-    landung_noetig  INTEGER DEFAULT 1,      -- 1 = an Land, Aufnehmen verlangt eine Landung
+    im_wasser       INTEGER DEFAULT 0,      -- 1 = im Wasser: Aufnehmen per Überflug, ohne Landung
     -- Latches
     gefunden_am     TEXT,  gefunden_von     INTEGER,
     aufgenommen_am  TEXT,  aufgenommen_von  INTEGER,
@@ -186,7 +197,7 @@ Im Poller, im vorhandenen Takt (15 s) — ein Job `_check_suchflug`, nach dem Mu
 1. **Abdeckung** — `abdeckung(spuren, zellen_aus_box(...), fenster)`.
 2. **Fund** — dieselbe Funktion, ein Ziel mit dem gerechneten Fundradius, dasselbe Fenster.
 3. **Aufnehmen** — dasselbe Ziel, nur Spurenpunkte **nach** `gefunden_am`; bei
-   `landung_noetig` mit `Fenster(gs_max_kt=30)`.
+   `im_wasser = 0` (also an Land) mit `Fenster(gs_max_kt=30)`.
 4. **Einliefern** — Landung des Aufnehmenden aus `canonicalize_legs`, erster Zielpunkt nach
    `aufgenommen_am`.
 
@@ -201,16 +212,21 @@ Pfad kein guter Ort für neue Arbeit ist, solange er nicht verstanden ist.
 ## 8. Was der Admin bedient
 
 Ein Bereich wie bei Bummel und Kutter: Sektor durch zwei Ecken auf der Karte, Zellkante,
-Korridor, Höhen- und Geschwindigkeitsfenster, Art des Havaristen, Haken „Landung zur Rettung
-nötig", Kalendertermin, Push. Dazu:
+Korridor, Höhen- und Geschwindigkeitsfenster, Art des Havaristen, Haken „Havarist liegt im
+Wasser", Kalendertermin, Push. Dazu:
 
 * **Die Lage des Havaristen setzt der Admin von Hand** auf die Karte — das ist die Vorgabe. Sie
   ist dort auch sichtbar, denn wer das Event anlegt, weiß es ohnehin.
 
-  Ein Land-Wasser-Modell haben wir nicht: Ob der Punkt im Watt oder auf dem Deich liegt,
-  entscheidet das Auge des Veranstalters, und bei „Landung nötig" muss er an Land liegen. Von
-  Hand gesetzt ist außerdem die bessere Geschichte (die Sandbank vor Juist statt einer
-  Zufallskoordinate) und steuert über die Entfernung zum Platz die Länge des Abends.
+  Ein Land-Wasser-Modell haben wir nicht: Ob dort Wasser liegt, entscheidet das Auge des
+  Veranstalters — deshalb der Haken daneben. Von Hand gesetzt ist außerdem die bessere
+  Geschichte (das Wrack am Waldrand statt einer Zufallskoordinate) und steuert über die
+  Entfernung zum Platz die Länge des Abends.
+
+  ⚠ **Ein Wrack an Land verlangt eine Außenlandung, und die ist nicht überall möglich.** Eine
+  Zusatzregel („der nächste Platz zählt auch") ist ausdrücklich **nicht** vorgesehen — das wäre
+  keine Rettung mehr. Wo gelandet werden kann, beurteilt der Admin beim Setzen des Punktes; ein
+  Wrack mitten im Wald macht den Abend unlösbar, und das sieht er dort.
 
 * **„Würfeln und verbergen" ist ein Knopf daneben** — für den einen Fall, in dem ein Zufallspunkt
   etwas kann, was die Hand nicht kann: **wenn der Veranstalter selbst mitsuchen will.** Dann
@@ -218,8 +234,9 @@ nötig", Kalendertermin, Push. Dazu:
   aufgelöst ist (Fund oder `dtend`). Ein Würfel, dessen Ergebnis der Admin nachsehen kann, wäre
   wertlos — deshalb gehören beide Teile zusammen und sind ein Knopf, nicht zwei Felder.
 
-  Bei gesetztem Haken „Landung zur Rettung nötig" ist Würfeln gesperrt: Der Server weiß nicht,
-  wo Land ist.
+  **Würfeln ist nur bei gesetztem Haken „im Wasser" erlaubt.** An Land muss der Punkt eine
+  Stelle treffen, an der jemand landen kann — das weiß der Server nicht, und ein gewürfeltes
+  Wrack im Wald wäre ein unlösbarer Abend.
 
 * **Die erwartete Suchdauer** als Hinweis neben der Sektorgröße, aus Kantenlänge, Korridor und
   angenommenen 110 kt — sonst setzt niemand einen Sektor, der zur Abendlänge passt.
@@ -245,10 +262,10 @@ nötig", Kalendertermin, Push. Dazu:
    die Wertung später ohne Datenverlust anders schneiden lässt.
 3. **Woher die Grundhöhe kommt, wenn niemand sie meldet.** Die Messung setzt voraus, dass
    mindestens eine Brügge das Objekt gesetzt und zurückgemeldet hat. Fliegt an einem Abend
-   niemand mit Brügge, bleibt der Admin-Wert oder die Platzhöhe — beides brauchbar in Ostfriesland
-   (0–10 m), beides grob über höherem Gelände. Der Rechenweg bleibt dabei richtig; nur die
-   Bezugszahl ist dann geschätzt, und das gehört im Admin sichtbar zu sein
-   (`havarist_grund_quelle`).
+   niemand mit Brügge, bleibt der Admin-Wert oder die Platzhöhe. Der Rechenweg bleibt richtig;
+   nur die Bezugszahl ist dann geschätzt — und weil der Sektor über Land liegen darf, kann sie
+   dort um mehr als die 1.000 ft der Höhenschranke danebenliegen. Deshalb gehört
+   `havarist_grund_quelle` im Admin sichtbar neben die Zahl.
 4. **Abbruch eines Aufnehmenden.** Wer aufgenommen hat und dann ohne Landung abmeldet, blockiert
    die Einlieferung. Vorschlag: `aufgenommen_*` verfällt, wenn der Pilot länger als 20 Minuten
    nicht mehr meldet, und die Fackel geht zurück auf orange.
