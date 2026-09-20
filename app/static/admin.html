@@ -1660,6 +1660,20 @@
               <input id="bg-kurs" type="number" step="1" min="0" max="359" placeholder="Richtung °" disabled
                      title="Rechtweisender Kurs in Grad (0–359). Nur wenn „zufällige Richtung“ abgewählt ist."
                      style="width:110px;padding:6px;">
+              <!-- MATRIX (20.09.2026): mehrere auf einmal. Startpunkt ist die erste Ecke; die Reihen
+                   laufen in Rasterrichtung, die Spalten quer dazu nach RECHTS. 1 × 1 = ein Objekt. -->
+              <span style="color:#8aa0b8;font-size:0.78rem;display:flex;align-items:center;gap:4px;"
+                    title="Mehrere auf einmal. Startpunkt = erste Ecke. „längs“ = Anzahl in Rasterrichtung, „quer“ = Anzahl nach rechts davon. 1 × 1 heißt: ein einzelnes Objekt.">
+                Matrix
+                <input id="bg-laengs" type="number" min="1" max="200" value="1" style="width:56px;padding:6px;"
+                       title="Anzahl in Rasterrichtung (Reihen)"> ×
+                <input id="bg-quer" type="number" min="1" max="200" value="1" style="width:56px;padding:6px;"
+                       title="Anzahl quer dazu, nach rechts (Spalten)">
+                Abstand <input id="bg-abstand" type="number" min="0.5" step="0.5" placeholder="m" style="width:64px;padding:6px;"
+                       title="Abstand in Metern zwischen zwei Objekten"> m
+                Raster <input id="bg-raster" type="number" min="0" max="359" placeholder="°" style="width:60px;padding:6px;"
+                       title="Richtung der Reihen in Grad. Leer = die Richtung oben, sonst Nord."> °
+              </span>
               <button class="btn btn-sm" id="bg-soll-setzen">Hinstellen</button>
               <button class="btn btn-sm" id="bg-karte-auf">🗺 Karte</button>
             </div>
@@ -2780,12 +2794,25 @@
                        '</td><td>' + (o.cid || 'alle') +
                        '</td><td>' + lage(o.id) +
                        '</td><td><button class="btn btn-sm bg-weg" data-id="' + o.id +
-                       '">wegnehmen</button></td></tr>';
+                       '">wegnehmen</button>' +
+                       // Ein Objekt aus einer Matrix (`<id>-<reihe>-<spalte>`): Die ganze Gruppe auf einmal.
+                       (/-\d+-\d+$/.test(o.id)
+                         ? ' <button class="btn btn-sm bg-weg-gruppe" data-id="' +
+                           o.id.replace(/-\d+-\d+$/, '') + '">Matrix weg</button>'
+                         : '') +
+                       '</td></tr>';
               }).join('')
             : '<tr><td colspan="6" class="empty-hint">Nichts angefordert.</td></tr>';
           sb.querySelectorAll('.bg-weg').forEach(function (b) {
             b.addEventListener('click', async function () {
               await fetch('/api/admin/bruegge/soll/' + encodeURIComponent(b.dataset.id),
+                          { method: 'DELETE', credentials: 'same-origin' });
+              bgLaden();
+            });
+          });
+          sb.querySelectorAll('.bg-weg-gruppe').forEach(function (b) {
+            b.addEventListener('click', async function () {
+              await fetch('/api/admin/bruegge/soll/' + encodeURIComponent(b.dataset.id) + '?gruppe=true',
                           { method: 'DELETE', credentials: 'same-origin' });
               bgLaden();
             });
@@ -2834,12 +2861,21 @@
           return;
         }
         const cid = roh;
+        const laengs = parseInt(document.getElementById('bg-laengs').value, 10) || 1;
+        const quer = parseInt(document.getElementById('bg-quer').value, 10) || 1;
+        const abstand = parseFloat(document.getElementById('bg-abstand').value);
+        if (laengs * quer > 1 && !(abstand > 0)) { alert('Für eine Matrix fehlt der Abstand in Metern.'); return; }
+        if (laengs * quer > 200) { alert(laengs + ' × ' + quer + ' = ' + (laengs * quer) + ' Objekte -- höchstens 200.'); return; }
+        const rasterWert = parseFloat(document.getElementById('bg-raster').value);
         const r = await fetch('/api/admin/bruegge/soll', {
           method: 'POST', credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             art: art,
             lat: lat, lon: lon, cid: cid ? parseInt(cid, 10) : null,
+            laengs: laengs, quer: quer,
+            abstand_m: isFinite(abstand) ? abstand : null,
+            raster_kurs: isFinite(rasterWert) ? ((rasterWert % 360) + 360) % 360 : null,
             auf_boden: document.getElementById('bg-auf-boden').checked,
             // Beides mitschicken: Der Server würfelt, wenn `kurs_zufall` steht, sonst
             // nimmt er `kurs`. Gewürfelt wird DORT und nicht hier, damit der künftige

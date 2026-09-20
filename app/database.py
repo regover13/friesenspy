@@ -3203,6 +3203,26 @@ def bruegge_soll_loeschen(conn: sqlite3.Connection, kennung_id: str) -> int:
     return cur.rowcount or 0
 
 
+def bruegge_soll_anzahl(conn: sqlite3.Connection, ausser: set[str] | None = None) -> int:
+    """Wie viele Objekte stehen im Soll -- ohne die genannten ids (die werden ueberschrieben)."""
+    ids = {r[0] for r in conn.execute("SELECT id FROM bruegge_soll").fetchall()}
+    return len(ids - (ausser or set()))
+
+
+def bruegge_soll_gruppe_loeschen(conn: sqlite3.Connection, basis: str) -> int:
+    """Eine Matrix zuruecknehmen (kein commit): alle ``<basis>-<reihe>-<spalte>``.
+
+    Nur genau dieses Namensmuster -- ein Einzelobjekt, das zufaellig ``<basis>-x`` heisst, bleibt.
+    """
+    import re as _re
+    muster = _re.compile("^" + _re.escape(basis) + r"-\d+-\d+$")
+    n = 0
+    for (i,) in conn.execute("SELECT id FROM bruegge_soll").fetchall():
+        if muster.match(i):
+            n += conn.execute("DELETE FROM bruegge_soll WHERE id = ?", (i,)).rowcount or 0
+    return n
+
+
 def bruegge_soll_alle(conn: sqlite3.Connection) -> list[dict]:
     """Alles, was angefordert ist -- fuer den Admin."""
     rows = conn.execute("SELECT * FROM bruegge_soll ORDER BY angelegt_am DESC").fetchall()

@@ -8,6 +8,7 @@ import html as _html
 import json
 import logging
 from logging.handlers import RotatingFileHandler
+import math
 import secrets
 import threading
 import time
@@ -123,6 +124,8 @@ from app.database import (
     katalog_lesen,
     katalog_zusammenfassung,
     bruegge_soll_loeschen,
+    bruegge_soll_anzahl,
+    bruegge_soll_gruppe_loeschen,
     bruegge_soll_alle,
     KNIEBRETT_MODI,
     kniebrett_rang,
@@ -2059,9 +2062,40 @@ def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
     return treffer.cid, True, zugeteilt, True
 
 
+#: So viele Objekte fasst der Soll der Bruegge (`SOLL_MAX` in beiden Quelltexten).
+_BRUEGGE_SOLL_MAX = 200
+
+
+def _matrix_punkte(lat: float, lon: float, raster_kurs: float, laengs: int, quer: int,
+                   abstand_laengs_m: float, abstand_quer_m: float) -> list[tuple[int, int, float, float]]:
+    """Die Punkte einer Matrix -- ``(reihe, spalte, lat, lon)``, beide ab 1.
+
+    Der Startpunkt ist die ERSTE ECKE (Nutzer, 20.09.2026). Die Reihen folgen dem Rasterkurs
+    (``laengs`` Stueck im Abstand ``abstand_laengs_m``), die Spalten stehen quer dazu nach RECHTS
+    (``quer`` Stueck im Abstand ``abstand_quer_m``). Ebene Naeherung: Bei den Weiten eines
+    Flugplatzes liegt der Fehler weit unter einem Meter.
+    """
+    vor = math.radians(raster_kurs)
+    rechts = math.radians(raster_kurs + 90.0)
+    m_je_grad = 111320.0
+    m_je_grad_lon = m_je_grad * max(1e-6, math.cos(math.radians(lat)))
+    punkte = []
+    for r in range(laengs):
+        for c in range(quer):
+            n = r * abstand_laengs_m * math.cos(vor) + c * abstand_quer_m * math.cos(rechts)
+            e = r * abstand_laengs_m * math.sin(vor) + c * abstand_quer_m * math.sin(rechts)
+            punkte.append((r + 1, c + 1, lat + n / m_je_grad, lon + e / m_je_grad_lon))
+    return punkte
+
+
 @app.post("/api/admin/bruegge/soll")
 async def admin_bruegge_soll_setzen(request: Request):
-    """Ein Objekt anfordern (Admin).
+    """Ein Objekt anfordern (Admin) -- oder eine MATRIX davon.
+
+    ``laengs`` × ``quer`` (Vorgabe 1 × 1) mit ``abstand_m`` (``abstand_quer_m`` optional) stellt
+    mehrere auf einmal: Der Startpunkt ist die erste Ecke, die Reihen laufen in Richtung
+    ``raster_kurs`` (Vorgabe: ``kurs``, sonst Nord), die Spalten quer dazu nach rechts. Die ids
+    heissen ``<id>-<reihe>-<spalte>``; hoechstens 200 Objekte im ganzen Soll.
 
     ``cid`` leer heisst: fuer jede Bruegge. ``art`` ist eine GATTUNG, kein Dateiname --
     welches Modell daraus wird, entscheidet die Bruegge, denn sie kennt ihren Simulator.
@@ -2101,18 +2135,59 @@ async def admin_bruegge_soll_setzen(request: Request):
         # kuenftige Kieker davon hat, der Kolonien ohne Admin setzt.
         #
         # Jedes Hinstellen wuerfelt neu -- auch wenn dieselbe `id` ueberschrieben wird.
-        kurs = float(body["kurs"]) if body.get("kurs") is not None else None
-        if body.get("kurs_zufall"):
-            kurs = round(secrets.randbelow(3600) / 10.0, 1)
+        kurs_fest = float(body["kurs"]) if body.get("kurs") is not None else None
 
-        bruegge_soll_setzen(
-            conn, kennung_id, art, lat, lon,
-            cid=int(body["cid"]) if body.get("cid") else None,
-            kurs=kurs,
-            erwartete_hoehe_ft=(float(body["erwartete_hoehe_ft"])
-                                if body.get("erwartete_hoehe_ft") is not None else None),
-            gilt_bis=str(body["gilt_bis"])[:32] if body.get("gilt_bis") else None,
-            bemerkung=str(body.get("bemerkung") or "")[:200] or None,
+        # ⭐ MATRIX: Reihen (`laengs`) × Spalten (`quer`) im Abstand `abstand_m`.
+        try:
+            # Fehlt das Feld (oder ist es null), gilt 1; ein ausdrückliches 0 ist ein Fehler und wird unten abgelehnt.
+            laengs = int(1 if body.get("laengs") is None else body["laengs"])
+            quer = int(1 if body.get("quer") is None else body["quer"])
+            abstand = float(body["abstand_m"]) if body.get("abstand_m") is not None else None
+            abstand_quer = (float(body["abstand_quer_m"])
+                            if body.get("abstand_quer_m") is not None else abstand)
+            raster_kurs = (float(body["raster_kurs"]) if body.get("raster_kurs") is not None
+                           else (kurs_fest if kurs_fest is not None else 0.0))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="laengs, quer und Abstände müssen Zahlen sein")
+        if laengs < 1 or quer < 1:
+            raise HTTPException(status_code=400, detail="laengs und quer müssen mindestens 1 sein")
+        if laengs * quer > _BRUEGGE_SOLL_MAX:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{laengs}×{quer} = {laengs * quer} Objekte -- der Soll fasst höchstens {_BRUEGGE_SOLL_MAX}")
+        einzeln = laengs * quer == 1
+        if not einzeln and (abstand is None or abstand <= 0 or abstand_quer is None or abstand_quer <= 0):
+            raise HTTPException(status_code=400, detail="abstand_m (größer als 0) fehlt für die Matrix")
+        if einzeln:
+            punkte = [(1, 1, lat, lon)]
+            ids = [kennung_id]
+        else:
+            kennung_id = kennung_id[:50]
+            punkte = _matrix_punkte(lat, lon, raster_kurs, laengs, quer, abstand, abstand_quer)
+            ids = [f"{kennung_id}-{r}-{c}" for r, c, _, _ in punkte]
+        if bruegge_soll_anzahl(conn, set(ids)) + len(ids) > _BRUEGGE_SOLL_MAX:
+            raise HTTPException(
+                status_code=400,
+                detail=f"zu viele Objekte: {len(ids)} neue plus die schon angeforderten passen nicht "
+                       f"in den Soll (höchstens {_BRUEGGE_SOLL_MAX})")
+        bemerkung_wert = str(body.get("bemerkung") or "")[:200] or None
+        if not einzeln:
+            bemerkung_wert = (f"Matrix {laengs}×{quer}, {abstand:g} m" + (f" -- {bemerkung_wert}" if bemerkung_wert else ""))[:200]
+
+        for (r, sp, plat, plon), oid in zip(punkte, ids):
+            # `kurs_zufall`: Jedes Objekt der Matrix wuerfelt seine EIGENE Richtung. Die Ausrichtung des
+            # Rasters selbst kommt allein aus `raster_kurs`.
+            kurs = kurs_fest
+            if body.get("kurs_zufall"):
+                kurs = round(secrets.randbelow(3600) / 10.0, 1)
+            bruegge_soll_setzen(
+                conn, oid, art, plat, plon,
+                cid=int(body["cid"]) if body.get("cid") else None,
+                kurs=kurs,
+                erwartete_hoehe_ft=(float(body["erwartete_hoehe_ft"])
+                                    if body.get("erwartete_hoehe_ft") is not None else None),
+                gilt_bis=str(body["gilt_bis"])[:32] if body.get("gilt_bis") else None,
+                bemerkung=bemerkung_wert,
             # VORGABE IST `True`, und das ist der Kern der Sache: `OnGround=1` laesst den
             # Simulator selbst aufsetzen, und das trifft bis auf 10 km Entfernung
             # (13.09.2026 gemessen). Die Alternative -- eine gerechnete Hoehe -- gilt nur
@@ -2122,21 +2197,26 @@ async def admin_bruegge_soll_setzen(request: Request):
             # Bis eben stand das Feld gar nicht im Endpunkt, und der Admin setzte alles mit
             # gerechneter Hoehe. Aufgefallen an einem Buckelwal, der sechs Fuss ueber dem
             # Boden schwebte.
-            auf_boden=bool(body.get("auf_boden", True)),
-        )
+                auf_boden=bool(body.get("auf_boden", True)),
+            )
         conn.commit()
     finally:
         conn.close()
-    return {"status": "ok", "id": kennung_id}
+    return {"status": "ok", "id": kennung_id, "ids": ids, "anzahl": len(ids)}
 
 
 @app.delete("/api/admin/bruegge/soll/{soll_id}")
-async def admin_bruegge_soll_loeschen(request: Request, soll_id: str):
-    """Ein Objekt zuruecknehmen (Admin). Die Bruegge raeumt es beim naechsten Takt weg."""
+async def admin_bruegge_soll_loeschen(request: Request, soll_id: str, gruppe: bool = False):
+    """Ein Objekt zuruecknehmen (Admin). Die Bruegge raeumt es beim naechsten Takt weg.
+
+    ``?gruppe=true`` nimmt eine ganze Matrix zurueck: ``soll_id`` ist dann ihr Praefix, und weg sind
+    alle ``<praefix>-<reihe>-<spalte>``.
+    """
     require_admin(request)
     conn = get_connection(get_settings().DB_PATH)
     try:
-        weg = bruegge_soll_loeschen(conn, soll_id)
+        weg = (bruegge_soll_gruppe_loeschen(conn, soll_id) if gruppe
+               else bruegge_soll_loeschen(conn, soll_id))
         conn.commit()
     finally:
         conn.close()

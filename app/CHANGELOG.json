@@ -1,5 +1,14 @@
 [
   {
+    "version": "15.10.0",
+    "date": "2026-09-20",
+    "highlight": false,
+    "title": "Mehrere Objekte auf einmal in einer Matrix",
+    "items": [
+      "🌉 In der FriesenBrügge lassen sich jetzt viele Objekte auf einmal aufstellen, zum Beispiel eine Lichterkette entlang einer Piste: Anzahl in Reihe mal Anzahl quer, dazu der Abstand in Metern und die Richtung des Rasters. Der Startpunkt ist die erste Ecke. Eine ganze Matrix lässt sich mit einem Klick wieder wegnehmen. Höchstens 200 Objekte gleichzeitig."
+    ]
+  },
+  {
     "version": "15.9.0",
     "date": "2026-09-20",
     "highlight": false,
