@@ -2743,7 +2743,21 @@ class VatsimPoller:
             subscriptions: list = []
             try:
                 for ev in list_reddung_events(conn):
-                    if now < (ev.get("dtstart") or "") or ev.get("aufgeloest_am"):
+                    if now < (ev.get("dtstart") or ""):
+                        continue
+                    if ev.get("aufgeloest_am"):
+                        # ⚠ NACHLAUF, und er muss VOR dem Ueberspringen stehen. Ein
+                        # aufgeloestes Event lief bisher gar nicht mehr durch diese Schleife --
+                        # also hat niemand mehr seine Objekte weggenommen, und im Admin stand
+                        # ein Wrack zu einem Event, das laengst vorbei war (gemeldet am
+                        # 20.09.2026).
+                        #
+                        # Erst NACH `dtend`: Bis dahin sollen Wrack und rote Fackel stehen und
+                        # die Stelle markieren. `gilt_bis` allein genuegt dafuer nicht -- es
+                        # haelt die Zeilen nur aus der AUSLIEFERUNG heraus, weg sind sie damit
+                        # nicht.
+                        if now >= (ev.get("dtend") or ""):
+                            reddung_objekte_abgleichen(conn, ev, weg=True)
                         continue
                     name = ev.get("name") or "FriesenReddung"
                     push_on = bool(ev.get("push_enabled"))

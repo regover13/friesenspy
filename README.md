@@ -454,10 +454,17 @@ Ist der **Board-Login** aktiv (Admin → „Betrieb“ → „Board-Login“, St
 - **Bearbeiten, 🔗 Link, Push je Event** und **Löschen** — der Link ist der Direktlink fürs
   Forum, Löschen nimmt Wrack und Fackeln aus allen Simulatoren mit.
 
-⚠ **Der Havarist ist im Simulator ein echtes Objekt** — auf der Karte im Kniebrett wird er
-ausgeblendet (ein stehendes Objekt ohne VATSIM-Partner ist kein Verkehr), **in LittleNavMap und
-ähnlichen Werkzeugen ist er aber zu sehen.** Die lesen den Simulator direkt; daran lässt sich
-von hier aus nichts ändern.
+**Der Havarist wird erst aus der Nähe in den Simulator gestellt** — 1.000 Meter seitlich und
+nicht höher darüber. Der Grund ist nicht die eigene Karte (die blendet ihn ohnehin aus), sondern
+Werkzeuge wie LittleNavMap: Sie lesen den Simulator direkt und zeigen ein gesetztes Flugzeug als
+Flugzeug. Von weitem stünde dort die Lage, die das Event verbirgt. Wer näher als einen Kilometer
+ist, hätte das Wrack ohnehin gesehen. **Nach dem Fund fällt der Riegel** — dann sollen Wrack und
+Rauchsäule von weitem zu sehen sein.
+
+**Und die FriesenBrügge trägt die Wertung, wo sie da ist:** Sie meldet im Sekundentakt und mit
+echter Höhe, VATSIM nur alle 15 Sekunden — zwischen zwei VATSIM-Punkten liegt fast ein
+Kilometer. Für den Fund, der 150 Meter verlangt, ist das der Unterschied zwischen genau und
+geschätzt. Wer ohne Brügge fliegt, wird trotzdem gewertet, nur gröber.
 
 ### Flugbetrieb und Daten
 

@@ -102,6 +102,7 @@ from app.database import (
     bruegge_zuordnung_verstoss,
     bruegge_zuordnung_loesen,
     bruegge_position_schreiben,
+    bruegge_spur_schreiben,
     bruegge_position_loeschen,
     bruegge_uebersicht,
     bruegge_aufraeumen,
@@ -1616,6 +1617,11 @@ async def bruegge_melden(request: Request):
         # Momentanposition.
         if lage_gilt:
             bruegge_position_schreiben(conn, cid, lage, simulator, kennung or None)
+            # ... und den Sekundenverlauf mitschreiben, WENN eine FriesenReddung ihn brauchen
+            # kann (laufendes Event, Pilot im Sektor). Sonst schreibt der Aufruf nichts -- die
+            # Wache dafuer ist billig, sie sitzt hier in einem Pfad, der je Pilot einmal pro
+            # Sekunde laeuft.
+            bruegge_spur_schreiben(conn, cid, lage)
 
         # ... und denselben Wert gleich in den Sekundenstrom legen, der die offenen Karten
         # versorgt (s. `VatsimPoller.bruegge_strom_senden`). Erst HIER, nach der Zuordnung:
@@ -1691,7 +1697,7 @@ async def bruegge_melden(request: Request):
                 "bemerkung": f"von einer Bruegge gemeldet ({simulator})",
             }])
 
-        soll = bruegge_soll_fuer(conn, cid, simulator)
+        soll = bruegge_soll_fuer(conn, cid, simulator, lage)
         # Die Titel zu den angeforderten Arten -- fuer DIESEN Simulator, und nur zu dem, was
         # wirklich angefordert ist. Alles mitzuschicken waere bequemer und kostete 914 Bytes
         # statt ~200; der Puffer traegt das, aber die Bruegge kann mit Titeln zu Arten, die
@@ -6444,12 +6450,26 @@ async def admin_reddung_aufnahme_freigeben(request: Request, event_id: int):
 
     Den Knopf braucht es unabhängig von der Automatik (``aufnahme_verfaellt``): Die liegt im
     Einzelfall falsch, und dann hängt ein ganzer Abend an ihr.
+
+    ⚠ **Nach der Einlieferung oder der Auflösung nicht mehr.** Am 20.09.2026 ist genau das
+    passiert: Der Knopf stand auch bei einem abgeschlossenen Fall da, ein Klick leerte den
+    Latch, und übrig blieb ein Event mit Einlieferung **ohne** Aufnahme — eine Reihenfolge,
+    die es nicht geben kann. Die Oberfläche blendet den Knopf jetzt aus; hier steht die
+    zweite Schranke, denn ein Endpunkt darf sich nicht auf seine Oberfläche verlassen.
     """
     require_admin(request)
     conn = get_connection(get_settings().DB_PATH)
     try:
-        if get_reddung_event(conn, event_id) is None:
+        ev = get_reddung_event(conn, event_id)
+        if ev is None:
             raise HTTPException(status_code=404, detail="unbekannt")
+        if ev.get("eingeliefert_am"):
+            raise HTTPException(status_code=400,
+                                detail="Schon eingeliefert — die Aufnahme gehört zur Wertung.")
+        if ev.get("aufgeloest_am"):
+            raise HTTPException(status_code=400, detail="Der Fall ist abgeschlossen.")
+        if not ev.get("aufgenommen_am"):
+            raise HTTPException(status_code=400, detail="Es ist niemand aufgenommen.")
         clear_reddung_aufnahme(conn, event_id)
         reddung_objekte_abgleichen(conn, get_reddung_event(conn, event_id))
         conn.commit()

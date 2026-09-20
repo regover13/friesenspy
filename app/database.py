@@ -724,6 +724,33 @@ CREATE TABLE IF NOT EXISTS bruegge_positions (
 --
 -- Darin unterscheidet sie sich von panel_devices.device_id, die heute DOCH ein
 -- Zugangsschluessel ist ("wer ihn hat, ist als dieser Nutzer angemeldet").
+-- Der Sekundenverlauf der FriesenBruegge -- aber nur, solange er gebraucht wird.
+--
+-- `bruegge_positions` haelt bewusst nur den AKTUELLEN Punkt je Pilot (cid ist dort der
+-- Schluessel, jede Sekunde wird dieselbe Zeile ueberschrieben). Fuer die Karte reicht das,
+-- fuer eine Wertung nicht: Ein Ueberflug von vorhin ist dort nicht mehr zu finden.
+--
+-- WARUM ES SICH LOHNT: Die Wertung lief bis zum 20.09.2026 auf `position_history`, also auf
+-- VATSIM -- alle 15 s, rund 950 m Punktabstand. Die Rechnung nimmt zwischen zwei Punkten eine
+-- GERADE an; bei einem Fundradius von 150 m traegt diese Annahme die ganze Entscheidung, und
+-- bei einer Kurve zwischen den Punkten traegt sie falsch. Mit 1 Hz sind es rund 50 m, und die
+-- Frage stellt sich nicht mehr. Dazu meldet die Bruegge die ECHTE MSL-Hoehe, VATSIM eine
+-- luftdruckabhaengige.
+--
+-- WARUM NUR MANCHMAL: 1 Hz je Pilot sind 3.600 Zeilen je Stunde. Geschrieben wird deshalb nur,
+-- waehrend eine FriesenReddung laeuft UND der Pilot in ihrem Sektor ist (plus Rand) --
+-- ausserhalb davon gaebe es keinen Abnehmer. `bruegge_aufraeumen` raeumt danach weg.
+CREATE TABLE IF NOT EXISTS bruegge_spur (
+    cid         INTEGER NOT NULL,
+    ts          TEXT NOT NULL,          -- Empfangszeit des SERVERS, wie bei bruegge_positions
+    lat         REAL NOT NULL,
+    lon         REAL NOT NULL,
+    alt_msl_ft  REAL,
+    gs_kt       REAL,
+    PRIMARY KEY (cid, ts)
+);
+CREATE INDEX IF NOT EXISTS idx_bruegge_spur_ts ON bruegge_spur(ts);
+
 CREATE TABLE IF NOT EXISTS bruegge_zuordnung (
     kennung      TEXT PRIMARY KEY,
     cid          INTEGER NOT NULL,
@@ -781,6 +808,17 @@ CREATE TABLE IF NOT EXISTS bruegge_soll (
     -- Die Spalte steht bewusst OBEN: Sie ist eine Sichtbarkeitsbedingung wie `cid`, kein Detail.
     id            TEXT PRIMARY KEY,
     simulator     TEXT,
+    -- Erst aus der NAEHE ausliefern: seitlicher Abstand in Metern, NULL = immer.
+    --
+    -- Gebraucht, weil ein gesetztes Objekt im Simulator fuer JEDES Werkzeug dasteht --
+    -- LittleNavMap liest SimConnect direkt und zeigt ein Flugzeug als Flugzeug, egal was
+    -- unsere eigene Karte filtert. Beim Havaristen einer FriesenReddung verraet das die Lage,
+    -- die der ganze Eventtyp verbirgt (gemeldet am 20.09.2026 mit Bildschirmfoto).
+    --
+    -- Der Riegel ist kein Geheimnis-Ersatz, sondern eine Entfernungsfrage: Wer naeher als
+    -- `nur_nah_m` ist und nicht hoeher als derselbe Wert, haette das Objekt ohnehin gesehen.
+    -- Er gehoert deshalb weggenommen, sobald die Lage oeffentlich ist (nach dem Fund).
+    nur_nah_m     REAL,
     cid           INTEGER,          -- NULL = fuer alle Bruegge
     art           TEXT NOT NULL,
     lat           REAL NOT NULL,
@@ -1033,6 +1071,7 @@ _BRUEGGE_SOLL_MIGRATIONS = [
     # Boden nicht. Die Spalte `fund_radius_ft` gab es eine Stunde lang -- sie faellt weg.
     "ALTER TABLE reddung_events ADD COLUMN fund_radius_m REAL DEFAULT 150",
     "ALTER TABLE reddung_events DROP COLUMN fund_radius_ft",
+    "ALTER TABLE bruegge_soll ADD COLUMN nur_nah_m REAL",
 ]
 
 _PANEL_DIAG_MIGRATIONS = [
@@ -3200,6 +3239,58 @@ def bruegge_position_schreiben(conn: sqlite3.Connection, cid: int, lage: dict,
     )
 
 
+#: Wie lange der Sekundenverlauf aufgehoben wird. Laenger als jede Reddung, kurz genug, dass
+#: die Tabelle nicht waechst.
+_SPUR_HALTEN_STUNDEN = 12
+
+#: Kleiner Zwischenspeicher fuer "laeuft hier gerade eine Reddung?" -- die Frage kommt einmal
+#: je Sekunde und Pilot, die Antwort aendert sich hoechstens minuetlich.
+_spur_sektoren: tuple[float, list] = (0.0, [])
+
+
+def _reddung_sektoren(conn: sqlite3.Connection) -> list[tuple]:
+    """Die Sektoren der gerade laufenden Reddungen, mit Rand. Hoechstens alle 30 s frisch."""
+    global _spur_sektoren
+    import time as _t
+    jetzt = _t.monotonic()
+    if jetzt - _spur_sektoren[0] < 30.0:
+        return _spur_sektoren[1]
+    now = _now_utc()
+    rand_lat = _REDDUNG_RAND_KM / 111.32
+    sektoren = []
+    for r in conn.execute(
+            "SELECT sued, west, nord, ost FROM reddung_events "
+            "WHERE dtstart <= ? AND dtend >= ? AND aufgeloest_am IS NULL", (now, now)).fetchall():
+        sued, west, nord, ost = (float(x) for x in r)
+        rand_lon = _REDDUNG_RAND_KM / max(_km_je_grad_lon((sued + nord) / 2.0), 1.0)
+        sektoren.append((sued - rand_lat, west - rand_lon, nord + rand_lat, ost + rand_lon))
+    _spur_sektoren = (jetzt, sektoren)
+    return sektoren
+
+
+def bruegge_spur_schreiben(conn: sqlite3.Connection, cid: int, lage: dict) -> bool:
+    """Den Sekundenpunkt mitschreiben, WENN eine Reddung ihn brauchen kann.
+
+    Gibt zurueck, ob geschrieben wurde. Die Wache ist billig (eine Abfrage alle 30 s, danach
+    ein Vergleich gegen wenige Rechtecke) -- sie sitzt in einem Pfad, der je Pilot einmal pro
+    Sekunde laeuft.
+    """
+    sektoren = _reddung_sektoren(conn)
+    if not sektoren:
+        return False
+    try:
+        lat, lon = float(lage["lat"]), float(lage["lon"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    if not any(s <= lat <= n and w <= lon <= o for s, w, n, o in sektoren):
+        return False
+    conn.execute(
+        "INSERT OR REPLACE INTO bruegge_spur (cid, ts, lat, lon, alt_msl_ft, gs_kt) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (int(cid), _now_utc(), lat, lon, lage.get("alt_msl_ft"), lage.get("gs_kt")))
+    return True
+
+
 def bruegge_position_holen(conn: sqlite3.Connection, cid: int) -> dict | None:
     """Die zuletzt gemeldete Bruegge-Position einer CID."""
     row = conn.execute(
@@ -3228,6 +3319,13 @@ def bruegge_position_loeschen(conn: sqlite3.Connection, cid: int) -> None:
 BRUEGGE_ZUORDNUNG_HALTEN_STUNDEN = 400 * 24
 
 
+def bruegge_spur_aufraeumen(conn: sqlite3.Connection,
+                            stunden: int = _SPUR_HALTEN_STUNDEN) -> int:
+    grenze = _shift_iso(_now_utc(), hours=-stunden)
+    cur = conn.execute("DELETE FROM bruegge_spur WHERE ts < ?", (grenze,))
+    return cur.rowcount or 0
+
+
 def bruegge_aufraeumen(conn: sqlite3.Connection,
                        stunden: int = BRUEGGE_ZUORDNUNG_HALTEN_STUNDEN) -> int:
     """Zuordnungen wegraeumen, die lange nicht mehr gesehen wurden (kein commit).
@@ -3239,6 +3337,9 @@ def bruegge_aufraeumen(conn: sqlite3.Connection,
     traegt `frisch`/`alter_s` ("vor 21 h"), und die Sperre "wer meldet gerade"
     (``bruegge_belegte_cids``) arbeitet mit ihrer eigenen Frist von Sekunden, nicht mit dem
     Vorhandensein der Zeile. Wer das aendert, prueft beide Stellen.
+
+    Der SEKUNDENVERLAUF (``bruegge_spur``) wird hier mit weggeraeumt -- er ist das einzige,
+    was ohne Aufraeumen wirklich waechst (1 Hz je Pilot, solange eine Reddung laeuft).
 
     Die Bruegge-POSITION bleibt dabei stehen -- sie ist ohnehin an die CID gebunden und wird
     von der naechsten Meldung ueberschrieben; sie zu loeschen wuerde nur eine Karte leeren,
@@ -3261,11 +3362,18 @@ def bruegge_aufraeumen(conn: sqlite3.Connection,
     # anfasst. Gefunden am 12.09.2026, als die Zuordnung nach dem Trennen von vPilot geloest
     # wurde und `bruegge_steht` als einzige Tabelle noch etwas behauptete.
     conn.execute("DELETE FROM bruegge_steht WHERE gemeldet_am < ?", (grenze,))
+    # Der Sekundenverlauf hat eine eigene, viel kuerzere Frist -- er waechst als einziger.
+    bruegge_spur_aufraeumen(conn)
     return cur.rowcount or 0
 
 
+#: 1.000 m sind 3.281 ft -- der Naehe-Riegel gilt seitlich UND in der Hoehe mit demselben Wert.
+_FT_JE_M = 3.28084
+
+
 def bruegge_soll_fuer(conn: sqlite3.Connection, cid: int,
-                      simulator: str | None = None) -> list[dict]:
+                      simulator: str | None = None,
+                      lage: dict | None = None) -> list[dict]:
     """Was soll bei diesem Piloten stehen?
 
     Abgelaufene Eintraege fallen weg, ohne geloescht zu werden -- ein Event kann so vorbereitet
@@ -3274,11 +3382,18 @@ def bruegge_soll_fuer(conn: sqlite3.Connection, cid: int,
     ``simulator`` filtert zusaetzlich: Ein Eintrag mit gesetztem ``simulator`` gilt nur dort.
     Ohne Angabe kommt alles -- abwaertskompatibel, damit ein aelterer Aufrufer nicht still
     Objekte verliert.
+
+    ``lage`` ist die gemeldete Position des Piloten (``lat``, ``lon``, ``alt_agl_ft``). Nur mit
+    ihr wirkt der Naehe-Riegel ``nur_nah_m``: Ein Eintrag damit kommt erst, wenn der Pilot
+    naeher ist als der Wert UND nicht hoeher darueber. Ohne ``lage`` bleibt er verborgen --
+    lieber nichts ausliefern als eine geheime Lage an einen Aufrufer, der seine Entfernung
+    nicht kennt.
     """
     now = _now_utc()
     if simulator:
         rows = conn.execute(
-            "SELECT id, art, lat, lon, kurs, erwartete_hoehe_ft, auf_boden FROM bruegge_soll "
+            "SELECT id, art, lat, lon, kurs, erwartete_hoehe_ft, auf_boden, nur_nah_m "
+            "FROM bruegge_soll "
             "WHERE (cid IS NULL OR cid = ?) AND (gilt_bis IS NULL OR gilt_bis > ?) "
             "  AND (simulator IS NULL OR simulator = ?) "
             "ORDER BY id",
@@ -3286,12 +3401,47 @@ def bruegge_soll_fuer(conn: sqlite3.Connection, cid: int,
         ).fetchall()
     else:
         rows = conn.execute(
-            "SELECT id, art, lat, lon, kurs, erwartete_hoehe_ft, auf_boden FROM bruegge_soll "
+            "SELECT id, art, lat, lon, kurs, erwartete_hoehe_ft, auf_boden, nur_nah_m "
+            "FROM bruegge_soll "
             "WHERE (cid IS NULL OR cid = ?) AND (gilt_bis IS NULL OR gilt_bis > ?) "
             "ORDER BY id",
             (int(cid), now),
         ).fetchall()
-    return [_row_to_dict(r) for r in rows]
+    raus = [_row_to_dict(r) for r in rows]
+    nah = [r for r in raus if r.get("nur_nah_m") is not None]
+    if not nah:
+        return [{k: v for k, v in r.items() if k != "nur_nah_m"} for r in raus]
+
+    from app.geo import haversine
+    plat = plon = None
+    pagl = None
+    if isinstance(lage, dict):
+        try:
+            plat, plon = float(lage["lat"]), float(lage["lon"])
+        except (KeyError, TypeError, ValueError):
+            plat = plon = None
+        try:
+            pagl = float(lage.get("alt_agl_ft"))
+        except (TypeError, ValueError):
+            pagl = None
+
+    gefiltert = []
+    for r in raus:
+        grenze = r.get("nur_nah_m")
+        if grenze is None:
+            gefiltert.append(r)
+            continue
+        if plat is None:
+            continue                      # ohne Position kein Naehe-Objekt
+        if haversine(plat, plon, r["lat"], r["lon"]) * 1000.0 > float(grenze):
+            continue
+        # Die Hoehe nur pruefen, wenn die Bruegge sie kennt -- sonst entschiede ein fehlendes
+        # Feld ueber die Sichtbarkeit. `auf_boden`-Objekte liegen am Boden, also ist die AGL
+        # des Piloten genau seine Hoehe darueber.
+        if pagl is not None and pagl > float(grenze) * _FT_JE_M:
+            continue
+        gefiltert.append(r)
+    return [{k: v for k, v in r.items() if k != "nur_nah_m"} for r in gefiltert]
 
 
 def bruegge_soll_setzen(conn: sqlite3.Connection, kennung_id: str, art: str,
@@ -3301,7 +3451,8 @@ def bruegge_soll_setzen(conn: sqlite3.Connection, kennung_id: str, art: str,
                         gilt_bis: str | None = None,
                         bemerkung: str | None = None,
                         auf_boden: bool = False,
-                        simulator: str | None = None) -> None:
+                        simulator: str | None = None,
+                        nur_nah_m: float | None = None) -> None:
     """Ein Objekt anfordern (kein commit). Gleiche ``id`` ueberschreibt.
 
     ``simulator`` schraenkt die Sichtbarkeit ein (``None`` = fuer alle). ⚠ Das ON CONFLICT
@@ -3310,15 +3461,17 @@ def bruegge_soll_setzen(conn: sqlite3.Connection, kennung_id: str, art: str,
     """
     conn.execute(
         "INSERT INTO bruegge_soll (id, cid, art, lat, lon, kurs, erwartete_hoehe_ft, "
-        "                          angelegt_am, gilt_bis, bemerkung, auf_boden, simulator) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+        "                          angelegt_am, gilt_bis, bemerkung, auf_boden, simulator, "
+        "                          nur_nah_m) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(id) DO UPDATE SET cid = excluded.cid, art = excluded.art, "
         "    lat = excluded.lat, lon = excluded.lon, kurs = excluded.kurs, "
         "    erwartete_hoehe_ft = excluded.erwartete_hoehe_ft, "
         "    gilt_bis = excluded.gilt_bis, bemerkung = excluded.bemerkung, "
-        "    auf_boden = excluded.auf_boden, simulator = excluded.simulator",
+        "    auf_boden = excluded.auf_boden, simulator = excluded.simulator, "
+        "    nur_nah_m = excluded.nur_nah_m",
         (kennung_id, cid, art, float(lat), float(lon), kurs, erwartete_hoehe_ft,
-         _now_utc(), gilt_bis, bemerkung, 1 if auf_boden else 0, simulator),
+         _now_utc(), gilt_bis, bemerkung, 1 if auf_boden else 0, simulator, nur_nah_m),
     )
 
 
@@ -9648,6 +9801,62 @@ def _km_je_grad_lon(lat: float) -> float:
     return _f(lat)
 
 
+def _reddung_grenzen(box: tuple) -> tuple:
+    """Sektor plus Rand als ``(sued, nord, west, ost)`` -- s. ``_REDDUNG_RAND_KM``."""
+    sued, west, nord, ost = box
+    d_lat = _REDDUNG_RAND_KM / 111.32
+    d_lon = _REDDUNG_RAND_KM / max(_km_je_grad_lon((sued + nord) / 2.0), 1.0)
+    return (sued - d_lat, nord + d_lat, west - d_lon, ost + d_lon)
+
+
+def _knapp_davor(ts: str) -> str:
+    """Eine Sekunde vor ``ts`` -- damit ein Punkt GENAU auf der Kante mitkommt."""
+    return _shift_iso(ts, hours=-1.0 / 3600.0)
+
+
+def _reddung_punkte_mischen(conn: sqlite3.Connection, von: str, bis: str,
+                            grenzen: tuple) -> dict[int, list]:
+    """Die Punkte je Pilot -- **FriesenBrügge bevorzugt, VATSIM als Rückfall.**
+
+    Die Brügge ist die bessere Quelle, wo es sie gibt: 1 Hz statt 15 s (rund 50 m statt 950 m
+    Punktabstand) und die echte MSL-Höhe statt der luftdruckabhängigen. Bei einem Fundradius
+    von 150 m ist das kein Feinschliff — zwischen zwei VATSIM-Punkten liegt fast ein
+    Kilometer, und die Rechnung nimmt dazwischen eine Gerade an. Bei einer Kurve dazwischen
+    nimmt sie falsch an.
+
+    ⚠ **Gemischt wird je Pilot nach ZEITRAUM, nicht nach Punkt.** Für die Zeit, die die Brügge
+    abdeckt, gilt ausschließlich sie; davor und danach VATSIM. Punktweise zu mischen erzeugte
+    an jeder Naht einen Sprung zwischen zwei Höhenmessarten — und Höhen entscheiden hier über
+    Treffer.
+    """
+    sued, nord, west, ost = grenzen
+    je_cid: dict[int, list] = {}
+    spanne: dict[int, tuple[str, str]] = {}
+    for cid, lat, lon, alt, gs, ts in conn.execute(
+            "SELECT cid, lat, lon, alt_msl_ft, gs_kt, ts FROM bruegge_spur "
+            "WHERE ts > ? AND ts <= ? AND lat BETWEEN ? AND ? AND lon BETWEEN ? AND ? "
+            "ORDER BY cid, ts", (von, bis, sued, nord, west, ost)).fetchall():
+        cid = int(cid)
+        je_cid.setdefault(cid, []).append(
+            (lat, lon, float(alt) if alt is not None else None,
+             float(gs) if gs is not None else None, ts))
+        a, b = spanne.get(cid, (ts, ts))
+        spanne[cid] = (min(a, ts), max(b, ts))
+    for cid, lat, lon, alt, gs, ts in conn.execute(
+            "SELECT cid, latitude, longitude, altitude, groundspeed, ts FROM position_history "
+            "WHERE ts > ? AND ts <= ? AND latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ? "
+            "ORDER BY cid, ts", (von, bis, sued, nord, west, ost)).fetchall():
+        cid = int(cid)
+        if cid in spanne and spanne[cid][0] <= ts <= spanne[cid][1]:
+            continue                      # in diesem Zeitraum gilt die Brügge
+        je_cid.setdefault(cid, []).append(
+            (lat, lon, float(alt) if alt is not None else None,
+             float(gs) if gs is not None else None, ts))
+    for punkte in je_cid.values():
+        punkte.sort(key=lambda x: x[4])
+    return je_cid
+
+
 def reddung_spuren(conn: sqlite3.Connection, start: str, end: str, *,
                    ab: str | None = None,
                    box: tuple[float, float, float, float] | None = None) -> list[tuple[int, list]]:
@@ -9663,26 +9872,10 @@ def reddung_spuren(conn: sqlite3.Connection, start: str, end: str, *,
     danach wegzuwerfen.
     """
     von = max(start, ab) if ab else start
-    if box:
-        sued, west, nord, ost = box
-        d_lat = _REDDUNG_RAND_KM / 111.32
-        d_lon = _REDDUNG_RAND_KM / max(_km_je_grad_lon((sued + nord) / 2.0), 1.0)
-        rows = conn.execute(
-            "SELECT cid, latitude, longitude, altitude, groundspeed, ts FROM position_history "
-            "WHERE ts >= ? AND ts <= ? "
-            "  AND latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ? "
-            "ORDER BY cid, ts",
-            (von, end, sued - d_lat, nord + d_lat, west - d_lon, ost + d_lon)).fetchall()
-    else:
-        rows = conn.execute(
-            "SELECT cid, latitude, longitude, altitude, groundspeed, ts FROM position_history "
-            "WHERE ts >= ? AND ts <= ? ORDER BY cid, ts", (von, end)).fetchall()
-    je_cid: dict[int, list] = {}
-    for cid, lat, lon, alt, gs, ts in rows:
-        je_cid.setdefault(int(cid), []).append(
-            (lat, lon,
-             float(alt) if alt is not None else None,
-             float(gs) if gs is not None else None, ts))
+    grenzen = _reddung_grenzen(box) if box else (-90.0, 90.0, -180.0, 180.0)
+    # `_knapp_davor`, weil `von` hier eine Fensterkante ist und kein zuletzt gerechneter Punkt:
+    # Ein Punkt genau darauf gehoert dazu.
+    je_cid = _reddung_punkte_mischen(conn, _knapp_davor(von), end, grenzen)
     return [(cid, punkte) for cid, punkte in je_cid.items()]
 
 
@@ -9710,36 +9903,21 @@ def _reddung_punkte_neu(conn: sqlite3.Connection, ev: dict, von: str, bis: str,
     letzten Punkt des vorigen Takts fehlt genau das Stück, das über die Schnittkante läuft --
     und es entstünde alle 60 Sekunden ein blinder Fleck, in dem ein Überflug verschwindet.
     """
-    sued, west, nord, ost = box
-    d_lat = _REDDUNG_RAND_KM / 111.32
-    d_lon = _REDDUNG_RAND_KM / max(_km_je_grad_lon((sued + nord) / 2.0), 1.0)
-    grenzen = (sued - d_lat, nord + d_lat, west - d_lon, ost + d_lon)
-    neu = conn.execute(
-        "SELECT cid, latitude, longitude, altitude, groundspeed, ts FROM position_history "
-        "WHERE ts > ? AND ts <= ? AND latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ? "
-        "ORDER BY cid, ts", (von, bis, *grenzen)).fetchall()
-    if not neu:
-        return []
-    cids = sorted({int(r[0]) for r in neu})
-    # Die Brücke: höchstens zwei Minuten zurück -- ein Segment darf ohnehin nur 60 s lang sein
-    # (``Fenster.luecke_max_s``), alles Ältere bildet kein Segment mehr.
+    grenzen = _reddung_grenzen(box)
+    # Ein Stueck VOR dem Schnitt mitladen -- zwei Minuten reichen, ein Segment darf ohnehin nur
+    # 60 s lang sein (``Fenster.luecke_max_s``). Danach bleibt je Pilot nur der LETZTE Punkt
+    # davor stehen: Er baut das Segment ueber die Schnittkante, alles Aeltere waere Arbeit, die
+    # mit jedem Takt wieder anfiele.
     frueher = _shift_iso(von, hours=-1.0 / 30.0)
-    marke = {}
-    for r in conn.execute(
-            f"SELECT cid, latitude, longitude, altitude, groundspeed, ts FROM position_history "
-            f"WHERE ts > ? AND ts <= ? AND cid IN ({','.join('?' * len(cids))}) "
-            f"  AND latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ? "
-            f"ORDER BY cid, ts", (frueher, von, *cids, *grenzen)).fetchall():
-        marke[int(r[0])] = r          # die letzte Zeile je cid gewinnt
-    je_cid: dict[int, list] = {}
-    for r in list(marke.values()) + list(neu):
-        cid, lat, lon, alt, gs, ts = r
-        je_cid.setdefault(int(cid), []).append(
-            (lat, lon, float(alt) if alt is not None else None,
-             float(gs) if gs is not None else None, ts))
-    for punkte in je_cid.values():
-        punkte.sort(key=lambda x: x[4])
-    return list(je_cid.items())
+    je_cid = _reddung_punkte_mischen(conn, frueher, bis, grenzen)
+    raus: list[tuple[int, list]] = []
+    for cid, punkte in je_cid.items():
+        neu = [pkt for pkt in punkte if pkt[4] > von]
+        if not neu:
+            continue
+        davor = [pkt for pkt in punkte if pkt[4] <= von]
+        raus.append((cid, davor[-1:] + neu))
+    return raus
 
 
 def reddung_landung_aus_bruegge(conn: sqlite3.Connection, cid: int,
@@ -9926,6 +10104,17 @@ _GRUND_MESS_MAX_KM = 200.0
 #: Die Fackel steht NEBEN dem Havaristen, nicht in ihm -- sonst steckt die Rauchsäule im Wrack.
 _FACKEL_VERSATZ_GRAD = 0.0003    # ~33 m nach Norden
 
+#: So nah muss man sein, damit der Havarist ueberhaupt in den Simulator gestellt wird --
+#: seitlich in Metern und ebenso viel in der Hoehe.
+#:
+#: Der Grund ist LittleNavMap: Ein gesetztes Flugzeug steht dort als Flugzeug, egal was unsere
+#: eigene Karte filtert, und damit stuende die verborgene Lage von weitem lesbar da. Wer
+#: naeher als 1.000 m ist und nicht hoeher, haette das Wrack ohnehin gesehen.
+#:
+#: ⚠ Der Riegel gilt NUR VOR DEM FUND. Danach ist die Lage oeffentlich, und Wrack wie Fackel
+#: SOLLEN von weitem zu sehen sein -- das ist der Sinn einer Rauchsaeule.
+_HAVARIST_NAH_M = 1000.0
+
 
 def _art_je_simulator(conn: sqlite3.Connection, art: str) -> dict[str, str | None]:
     """Welche Art ist in welchem Simulator setzbar? ``None`` = dort gibt es keine."""
@@ -9940,7 +10129,8 @@ def _art_je_simulator(conn: sqlite3.Connection, art: str) -> dict[str, str | Non
 
 
 def _reddung_soll_setzen(conn: sqlite3.Connection, basis_id: str, art: str,
-                         lat: float, lon: float, gilt_bis: str) -> list[str]:
+                         lat: float, lon: float, gilt_bis: str,
+                         nur_nah_m: float | None = None) -> list[str]:
     """Eine Zeile, wenn die Art überall geht -- sonst eine je Simulator.
 
     Der Normalfall ist EINE Zeile mit ``simulator = NULL``; die Aufspaltung entsteht nur bei
@@ -9950,7 +10140,7 @@ def _reddung_soll_setzen(conn: sqlite3.Connection, basis_id: str, art: str,
     je_sim = _art_je_simulator(conn, art)
     if set(je_sim.values()) == {art}:
         bruegge_soll_setzen(conn, basis_id, art, lat, lon, auf_boden=True,
-                            gilt_bis=gilt_bis, simulator=None)
+                            gilt_bis=gilt_bis, simulator=None, nur_nah_m=nur_nah_m)
         for sim in _REDDUNG_SIMULATOREN:
             bruegge_soll_loeschen(conn, f"{basis_id}-{sim}")
         return [basis_id]
@@ -9962,7 +10152,7 @@ def _reddung_soll_setzen(conn: sqlite3.Connection, basis_id: str, art: str,
             bruegge_soll_loeschen(conn, sid)
             continue
         bruegge_soll_setzen(conn, sid, gewaehlt, lat, lon, auf_boden=True,
-                            gilt_bis=gilt_bis, simulator=sim)
+                            gilt_bis=gilt_bis, simulator=sim, nur_nah_m=nur_nah_m)
         ids.append(sid)
     bruegge_soll_loeschen(conn, basis_id)
     return ids
@@ -10009,9 +10199,11 @@ def reddung_objekte_abgleichen(conn: sqlite3.Connection, ev: dict,
 
     lat, lon = float(ev["havarist_lat"]), float(ev["havarist_lon"])
     gilt_bis = ev["dtend"]
+    # Vor dem Fund nur aus der Naehe, danach fuer alle -- s. `_HAVARIST_NAH_M`.
+    nah = None if ev.get("gefunden_am") else _HAVARIST_NAH_M
     ids = _reddung_soll_setzen(conn, hav_id,
                                ev.get("havarist_art") or _HAVARIST_VORGABE_ART,
-                               lat, lon, gilt_bis)
+                               lat, lon, gilt_bis, nur_nah_m=nah)
 
     # Die Fackel als Zustandsanzeige, von hinten nach vorn gelesen:
     #   rot      -- der Fall ist abgeschlossen (oder das Event vorbei). Steht bis `dtend` und

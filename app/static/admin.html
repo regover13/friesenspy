@@ -6796,7 +6796,13 @@
           + '<div style="margin-top:6px;">'
           + '<button class="btn btn-sm" onclick="rdEdit(' + ev.id + ')">Bearbeiten</button> '
           + '<button class="btn btn-sm" onclick="rdCopyLink(' + ev.id + ')" title="Direktlink zur Reddung (fürs Forum/Discord) kopieren">🔗 Link</button> '
-          + '<button class="btn btn-sm" onclick="rdFreigeben(' + ev.id + ')">Aufnahme freigeben</button> '
+          // Der Knopf nur, wenn es etwas freizugeben GIBT: jemand ist aufgenommen, und der
+          // Fall ist weder eingeliefert noch abgeschlossen. Ohne diese Bedingung leert ein
+          // Klick den Latch eines fertigen Events -- Einlieferung ohne Aufnahme, eine
+          // Reihenfolge, die es nicht geben kann (passiert am 20.09.2026).
+          + (ev.aufgenommen_am && !ev.eingeliefert_am && !ev.aufgeloest_am
+             ? '<button class="btn btn-sm" onclick="rdFreigeben(' + ev.id + ')">Aufnahme freigeben</button> '
+             : '')
           + '<button class="btn btn-sm" onclick="rdPush(' + ev.id + ','
           + (ev.push_enabled ? 'false' : 'true') + ')">Push '
           + (ev.push_enabled ? 'aus' : 'an') + '</button> '

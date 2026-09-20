@@ -384,3 +384,45 @@ def test_wer_noch_rollt_ist_noch_nicht_eingeliefert(db):
         c.close()
     _lauf(db)
     assert _ev(db, eid)["eingeliefert_am"] is None
+
+
+def test_nach_dem_eventende_werden_die_objekte_weggenommen(db):
+    """⚠ Sie blieben stehen, und der Grund war die Reihenfolge: Ein aufgeloestes Event lief
+    gar nicht mehr durch die Schleife, also hat niemand mehr aufgeraeumt. Im Admin stand ein
+    Wrack zu einem Event, das vorbei war (gemeldet am 20.09.2026).
+    """
+    from app.database import reddung_objekte_abgleichen, get_reddung_event as _g
+    eid = _event(db, start_vor_h=3.0, ende_in_h=2.0, havarist_art="flugzeug_echo")
+    c = get_connection(db)
+    try:
+        reddung_objekte_abgleichen(c, _g(c, eid))
+        c.commit()
+        assert c.execute("SELECT count(*) FROM bruegge_soll").fetchone()[0] > 0
+    finally:
+        c.close()
+    # Aufgeloest, aber das Zeitfenster laeuft noch -> die Objekte BLEIBEN.
+    _punkte(db, 111, _quer(60))
+    _lauf(db)
+    c = get_connection(db)
+    try:
+        c.execute("UPDATE reddung_events SET aufgeloest_am = ? WHERE id = ?",
+                  (_iso(JETZT), eid))
+        c.commit()
+    finally:
+        c.close()
+    _lauf(db)
+    c = get_connection(db)
+    try:
+        assert c.execute("SELECT count(*) FROM bruegge_soll").fetchone()[0] > 0, \
+            "bis dtend sollen Wrack und rote Fackel die Stelle markieren"
+        c.execute("UPDATE reddung_events SET dtend = ? WHERE id = ?",
+                  (_iso(JETZT - timedelta(minutes=1)), eid))
+        c.commit()
+    finally:
+        c.close()
+    _lauf(db)
+    c = get_connection(db)
+    try:
+        assert c.execute("SELECT count(*) FROM bruegge_soll").fetchone()[0] == 0
+    finally:
+        c.close()

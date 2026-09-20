@@ -384,3 +384,36 @@ def test_der_fundradius_steht_in_metern():
     assert "Fundradius (m, seitlich)" in q
     assert "fund_radius_m:" in q
     assert "fund_radius_ft" not in q
+
+
+# --- Was nach dem Abschluss nicht mehr gehen darf ------------------------
+
+def test_freigeben_geht_nach_der_einlieferung_nicht_mehr(db):
+    """⚠ Am 20.09.2026 genau so passiert: Der Knopf stand bei einem abgeschlossenen Fall da,
+    ein Klick leerte den Latch -- uebrig blieb eine Einlieferung OHNE Aufnahme, eine
+    Reihenfolge, die es nicht geben kann."""
+    from app.database import (get_connection as _g, set_reddung_aufgenommen as _auf,
+                              set_reddung_eingeliefert as _ein)
+    from app.config import get_settings as _s
+    eid = _anlegen(havarist_lat=53.72, havarist_lon=7.25)
+    c = _g(main.get_settings().DB_PATH)
+    _auf(c, eid, "2026-09-25T17:50:00Z", 222)
+    _ein(c, eid, "2026-09-25T18:10:00Z", 222, "EDWF")
+    c.commit(); c.close()
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(main.admin_reddung_aufnahme_freigeben(FakeReq(), eid))
+    assert e.value.status_code == 400
+    assert _liste()[0]["aufgenommen_am"] == "2026-09-25T17:50:00Z", "der Latch bleibt stehen"
+
+
+def test_freigeben_geht_ohne_aufnahme_nicht(db):
+    eid = _anlegen()
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(main.admin_reddung_aufnahme_freigeben(FakeReq(), eid))
+    assert e.value.status_code == 400
+
+
+def test_der_knopf_steht_nur_da_wenn_er_etwas_tun_kann():
+    """Die erste Schranke sitzt in der Oberflaeche -- der Endpunkt ist die zweite."""
+    q = ADMIN.read_text(encoding="utf-8")
+    assert "ev.aufgenommen_am && !ev.eingeliefert_am && !ev.aufgeloest_am" in q

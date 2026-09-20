@@ -6,6 +6,36 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-21 (nachts) — Die Bruegge wertet mit; Havarist nur aus der Naehe
+
+**Angefasst:** `app/database.py` (`bruegge_spur`, `nur_nah_m`, Mischer), `app/poller.py`,
+`app/main.py`, `app/static/admin.html`, README, Spec.
+
+⚠ **`bruegge_spur` ist der Sekundenverlauf -- und er wird NUR waehrend einer laufenden Reddung
+im Sektor geschrieben.** 1 Hz je Pilot sind 3.600 Zeilen die Stunde; immer mitzuschreiben waere
+das Fuenfzehnfache der bisherigen Trackdaten, und die werden dauerhaft behalten. So sind es rund
+43.000 Zeilen je Abend, und `bruegge_aufraeumen` nimmt sie nach 12 Stunden wieder weg -- die
+Wertung liegt bis dahin als Snapshot fest.
+
+⚠ **Gemischt wird je Pilot nach ZEITRAUM, nicht nach Punkt.** Wo die Bruegge meldet, gilt nur
+sie; davor und danach VATSIM. Punktweise zu mischen erzeugte an jeder Naht einen Sprung zwischen
+zwei Hoehenmessarten -- und Hoehen entscheiden ueber Treffer.
+
+⚠ **`bruegge_soll.nur_nah_m`** -- ein Objekt kommt erst, wenn der Pilot naeher ist als der Wert
+UND nicht hoeher darueber. Der Grund ist NICHT die eigene Karte (die filtert seit 15.13.0
+selbst), sondern LittleNavMap: Es liest SimConnect direkt. Ohne gemeldete Position kommt ein
+Naehe-Objekt gar nicht. Nach dem Fund faellt der Riegel.
+
+**Zwei Fehler aus dem Betrieb:** "Aufnahme freigeben" stand auch bei abgeschlossenen Faellen da
+und hat einen Datensatz mit Einlieferung OHNE Aufnahme hinterlassen (jetzt in Oberflaeche UND
+Endpunkt verriegelt); und nach `dtend` blieben die Objektzeilen stehen, weil ein aufgeloestes
+Event gar nicht mehr durch die Poller-Schleife lief. Der Nachlauf steht jetzt VOR dem
+Ueberspringen.
+
+**Noch offen und ausdruecklich gewuenscht:** ein Hinweis in der Live-Ansicht -- "FriesenBruegge
+fehlt, fuer dieses Event unbedingt empfohlen" -- fuer jeden Piloten in einem Event, dessen
+Wertung sie braucht. Wenn die Wertung mit ihr besser wird, muss das VOR dem Flug sichtbar sein.
+
 ## 2026-09-20 (spaet) — Nach der ersten echten Reddung: fuenf Nachbesserungen
 
 **Angefasst:** `app/static/index.html` (Verkehrsfilter, Eventliste), `app/database.py`

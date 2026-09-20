@@ -390,3 +390,96 @@ def test_eine_neue_fassung_wirft_den_alten_stand_weg(conn):
     conn.execute("DELETE FROM position_history")
     neu = reddung_fortschreiben(conn, get_reddung_event(conn, eid), bis=_iso(JETZT))
     assert neu["abgedeckt"] == 0, "alter Stand muss verworfen werden"
+
+
+# --- Die FriesenBruegge als Quelle der Wertung ----------------------------
+
+from app.database import bruegge_spur_aufraeumen, bruegge_spur_schreiben
+
+
+def _spur_bruegge(conn, cid, punkte, alt=900, gs=110):
+    upsert_pilot(conn, cid, f"Pilot {cid}")
+    for lat, lon, ts in punkte:
+        conn.execute("INSERT OR REPLACE INTO bruegge_spur (cid, ts, lat, lon, alt_msl_ft, gs_kt)"
+                     " VALUES (?,?,?,?,?,?)", (cid, ts, lat, lon, alt, gs))
+
+
+def test_die_bruegge_wird_der_vatsim_spur_vorgezogen(conn):
+    """⚠ Der Grund: 1 Hz statt 15 s. Zwischen zwei VATSIM-Punkten liegen rund 950 m, und die
+    Rechnung nimmt dazwischen eine GERADE an -- bei 150 m Fundradius traegt diese Annahme die
+    ganze Entscheidung.
+
+    Hier liegen fuer denselben Piloten beide Quellen vor, und zwar mit unterschiedlichen
+    Orten: Die Bruegge zeigt den Ueberflug, VATSIM einen Umweg. Gewertet werden muss die
+    Bruegge.
+    """
+    eid = _kleiner_sektor(conn)
+    t0 = JETZT - timedelta(minutes=30)
+    # VATSIM: weit neben dem Havaristen
+    _spur(conn, 111, [(LAT + 1.5 * GRAD_KM_LAT, LON + k * GRAD_KM_LON,
+                       _iso(t0 + timedelta(seconds=15 * (k + 2)))) for k in (-2, -1, 0, 1)])
+    # Bruegge: genau darueber, im Sekundentakt
+    _spur_bruegge(conn, 111, [(LAT, LON + (k / 20.0) * GRAD_KM_LON,
+                               _iso(t0 + timedelta(seconds=k + 30))) for k in range(-20, 21)])
+    stand = reddung_fortschreiben(conn, get_reddung_event(conn, eid), bis=_iso(JETZT))
+    assert stand["fund"] is not None, "die Bruegge zeigt den Ueberflug"
+    assert stand["fund"]["cid"] == 111
+
+
+def test_ohne_bruegge_bleibt_vatsim(conn):
+    """Wer keine Bruegge hat, wird trotzdem gewertet -- nur groeber."""
+    eid = _kleiner_sektor(conn)
+    _spur(conn, 222, _quer(30))
+    stand = reddung_fortschreiben(conn, get_reddung_event(conn, eid), bis=_iso(JETZT))
+    assert stand["abgedeckt"] > 0 and 222 in stand["je_pilot"]
+
+
+def test_vatsim_gilt_ausserhalb_der_bruegge_zeit(conn):
+    """Gemischt wird nach ZEITRAUM: Wo die Bruegge nichts hat, bleibt VATSIM."""
+    eid = _kleiner_sektor(conn)
+    frueh = JETZT - timedelta(minutes=50)
+    _spur(conn, 111, [(LAT, LON + k * GRAD_KM_LON,
+                       _iso(frueh + timedelta(seconds=15 * (k + 2)))) for k in (-2, -1, 0, 1)])
+    spaet = JETZT - timedelta(minutes=10)
+    _spur_bruegge(conn, 111, [(LAT + 1.0 * GRAD_KM_LAT, LON + (k / 20.0) * GRAD_KM_LON,
+                               _iso(spaet + timedelta(seconds=k))) for k in range(0, 40)])
+    stand = reddung_fortschreiben(conn, get_reddung_event(conn, eid), bis=_iso(JETZT))
+    # Der fruehe VATSIM-Ueberflug liegt ausserhalb der Bruegge-Zeit und muss zaehlen.
+    assert stand["fund"] is not None and stand["fund"]["cid"] == 111
+
+
+def test_der_sekundenverlauf_wird_nur_bei_laufender_reddung_geschrieben(conn):
+    """1 Hz je Pilot sind 3.600 Zeilen je Stunde -- ohne Abnehmer waere das Muell."""
+    lage = {"lat": LAT, "lon": LON, "alt_msl_ft": 900, "gs_kt": 110}
+    assert bruegge_spur_schreiben(conn, 111, lage) is False, "ohne Event kein Verlauf"
+    _kleiner_sektor(conn)
+    import app.database as db
+    db._spur_sektoren = (0.0, [])          # Zwischenspeicher zuruecksetzen
+    assert bruegge_spur_schreiben(conn, 111, lage) is True
+    db._spur_sektoren = (0.0, [])
+    weit = {"lat": 48.1, "lon": 11.5, "alt_msl_ft": 900, "gs_kt": 110}
+    assert bruegge_spur_schreiben(conn, 111, weit) is False, "ausserhalb des Sektors nicht"
+
+
+def test_der_sekundenverlauf_wird_wieder_weggeraeumt(conn):
+    _spur_bruegge(conn, 111, [(LAT, LON, _iso(JETZT - timedelta(hours=20)))])
+    _spur_bruegge(conn, 111, [(LAT, LON, _iso(JETZT))])
+    assert conn.execute("SELECT count(*) FROM bruegge_spur").fetchone()[0] == 2
+    bruegge_spur_aufraeumen(conn)
+    assert conn.execute("SELECT count(*) FROM bruegge_spur").fetchone()[0] == 1
+
+
+def test_im_bruegge_zeitraum_kommt_kein_vatsim_punkt_dazu(conn):
+    """⚠ Gemischt wird nach Zeitraum, nicht nach Punkt. Punktweise zu mischen erzeugte an
+    jeder Naht einen Sprung zwischen zwei Hoehenmessarten -- und Hoehen entscheiden hier ueber
+    Treffer."""
+    from app.database import _reddung_grenzen, _reddung_punkte_mischen
+    eid = _kleiner_sektor(conn)
+    ev = get_reddung_event(conn, eid)
+    t0 = JETZT - timedelta(minutes=30)
+    _spur(conn, 111, [(LAT, LON, _iso(t0 + timedelta(seconds=s))) for s in (0, 15, 30)])
+    _spur_bruegge(conn, 111, [(LAT, LON, _iso(t0 + timedelta(seconds=s))) for s in range(0, 31)])
+    grenzen = _reddung_grenzen((ev["sued"], ev["west"], ev["nord"], ev["ost"]))
+    punkte = _reddung_punkte_mischen(conn, _iso(t0 - timedelta(minutes=1)), _iso(JETZT),
+                                     grenzen)[111]
+    assert len(punkte) == 31, f"31 Bruegge-Punkte, keine VATSIM-Punkte dazwischen: {len(punkte)}"

@@ -453,7 +453,48 @@ Die erste Reddung lief noch am selben Abend. Fünf Funde, alle behoben:
    **zuerst die Brügge** (`am_boden`, Sekundentakt) und fällt nur zurück, wenn der Pilot keine
    hat; der Takt steht auf 30 s.
 
-## 11. Offene Punkte
+## 11. Die FriesenBrügge trägt die Wertung, wo sie da ist
+
+**Bis zum 20.09.2026 lief alles auf VATSIM** (`position_history`, alle 15 s, rund 950 m
+Punktabstand) — die Brügge war nur für die Landung eingebaut. Das ist bei einem Fundradius von
+150 m nicht bloß ungenau, sondern grenzwertig: Die Rechnung nimmt zwischen zwei Punkten eine
+**Gerade** an, und bei einer Kurve dazwischen trägt diese Annahme die ganze Entscheidung falsch.
+
+| | VATSIM | FriesenBrügge |
+|---|---|---|
+| Takt | 15 s | **1 s** |
+| Punktabstand bei 110 kt | ~950 m | **~50 m** |
+| Höhe | luftdruckabhängig | **echte MSL** |
+
+Deshalb gibt es `bruegge_spur` — den Sekundenverlauf, **aber nur solange eine Reddung läuft und
+der Pilot in ihrem Sektor ist** (plus Rand). 1 Hz je Pilot sind 3.600 Zeilen je Stunde; ohne
+Abnehmer wäre das Müll, und `bruegge_aufraeumen` räumt es nach 12 Stunden weg.
+
+⚠ **Gemischt wird je Pilot nach ZEITRAUM, nicht nach Punkt.** Für die Zeit, die die Brügge
+abdeckt, gilt ausschließlich sie; davor und danach VATSIM. Punktweise zu mischen erzeugte an
+jeder Naht einen Sprung zwischen zwei Höhenmessarten — und Höhen entscheiden hier über Treffer.
+
+**Wer keine Brügge hat, wird trotzdem gewertet** — nur gröber. Das ist der Grund, warum der
+Fund weiterhin am gerechneten Umkreis hängt und nicht daran, ob jemand das Objekt gesehen hat.
+
+## 12. Der Havarist erscheint erst aus der Nähe
+
+`bruegge_soll.nur_nah_m` — ein Objekt wird erst ausgeliefert, wenn der Pilot näher ist als der
+Wert **und** nicht höher darüber (1.000 m, beides). Der Grund ist nicht die eigene Karte, die
+filtert seit 15.13.0 selbst: **LittleNavMap liest SimConnect direkt** und zeigt ein gesetztes
+Flugzeug als Flugzeug, egal was wir zeichnen. Von weitem stünde dort die Lage, die der ganze
+Eventtyp verbirgt.
+
+Der Riegel ist deshalb kein Geheimnis-Ersatz, sondern eine Entfernungsfrage: **Wer näher als
+1.000 m ist und nicht höher, hätte das Wrack ohnehin gesehen.**
+
+⚠ **Er gilt nur VOR dem Fund.** Danach ist die Lage öffentlich, und Wrack wie Fackel sollen von
+weitem zu sehen sein — das ist der Sinn einer Rauchsäule.
+
+⚠ **Ohne gemeldete Position kommt ein Nähe-Objekt gar nicht.** Lieber nichts ausliefern als eine
+geheime Lage an einen Aufrufer, der seine Entfernung nicht kennt.
+
+## 13. Offene Punkte
 
 1. **Mehrere Havaristen je Event** — nicht in dieser Runde (#21, Frage 4). Das Datenmodell
    verträgt es später als eigene Tabelle; die Latches wandern dann dorthin.

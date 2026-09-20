@@ -1,5 +1,16 @@
 [
   {
+    "version": "15.14.0",
+    "date": "2026-09-20",
+    "highlight": false,
+    "title": "Die FriesenBrügge wertet mit, und der Havarist erscheint erst aus der Nähe",
+    "items": [
+      "🌉 **Bei einer FriesenReddung zählt jetzt die FriesenBrügge**, wo sie da ist. Sie meldet jede Sekunde und mit der echten Höhe; VATSIM nur alle 15 Sekunden, und dazwischen liegt bei Reisegeschwindigkeit fast ein Kilometer. Für einen Fund, der 150 Meter verlangt, ist das der Unterschied zwischen gemessen und geschätzt. **Wer ohne Brügge fliegt, wird weiter gewertet** — nur gröber.",
+      "🚨 **Der Havarist wird erst aus der Nähe in den Simulator gestellt** — einen Kilometer seitlich, keinen Kilometer höher. Der Grund sind Werkzeuge wie LittleNavMap: Sie lesen den Simulator direkt und zeigen ein Flugzeug als Flugzeug, auch wenn unsere eigene Karte es ausblendet. Von weitem stünde dort die Lage, die das Event verbirgt. **Nach dem Fund fällt der Riegel** — dann sollen Wrack und Rauchsäule weithin zu sehen sein.",
+      "🔧 Zwei Fehler behoben: „Aufnahme freigeben\" stand auch bei einem abgeschlossenen Fall zur Verfügung und konnte eine Einlieferung **ohne** Aufnahme hinterlassen; und nach dem Ende eines Events blieben Wrack und Fackel als Einträge stehen, weil ein aufgelöstes Event gar nicht mehr geprüft wurde."
+    ]
+  },
+  {
     "version": "15.13.0",
     "date": "2026-09-20",
     "highlight": false,

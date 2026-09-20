@@ -48,11 +48,15 @@ def test_der_simulator_laesst_sich_wieder_auf_alle_stellen(conn):
     assert len(bruegge_soll_fuer(conn, 111, "xplane12")) == 1
 
 
-def test_der_melde_endpunkt_filtert_nach_simulator():
-    """Verankert am Quelltext: Wer den Parameter beim Aufruf wieder wegnimmt, liefert
-    2020-Piloten Objekte aus, die sie nicht setzen koennen."""
+def test_der_melde_endpunkt_gibt_simulator_und_lage_mit():
+    """Verankert am Quelltext, und beide Argumente tragen etwas:
+
+    * ohne `simulator` bekommen 2020-Piloten Objekte, die sie nicht setzen koennen;
+    * ohne `lage` wirkt der Naehe-Riegel nicht, und der Havarist steht von der ersten Minute
+      an in jedem LittleNavMap.
+    """
     quelle = pathlib.Path("app/main.py").read_text(encoding="utf-8")
-    assert "bruegge_soll_fuer(conn, cid, simulator)" in quelle
+    assert "bruegge_soll_fuer(conn, cid, simulator, lage)" in quelle
 
 
 # --- Havarist, Fackeln, Grundhoehe ----------------------------------------
@@ -331,3 +335,56 @@ def test_der_abgleich_ist_vollstaendig_und_raeumt_eine_ueberfluessige_fackel_weg
     assert conn.execute("SELECT count(*) FROM bruegge_soll "
                         "WHERE id LIKE '%havarist%'").fetchone()[0] == 1, \
         "der Havarist bleibt -- nur die Fackel ist weg"
+
+
+
+# --- Naehe-Riegel ---------------------------------------------------------
+
+def _lage(lat, lon, agl=500):
+    return {"lat": lat, "lon": lon, "alt_agl_ft": agl}
+
+
+def test_ein_nahes_objekt_kommt_nur_aus_der_naehe(conn):
+    """⚠ Der Grund ist LittleNavMap: Es liest SimConnect direkt und zeigt ein gesetztes
+    Flugzeug als Flugzeug -- egal, was unsere eigene Karte filtert."""
+    bruegge_soll_setzen(conn, "nah", "flugzeug_echo", 53.72, 7.25, nur_nah_m=1000)
+    weit = bruegge_soll_fuer(conn, 111, "msfs2024", _lage(53.80, 7.25))      # ~9 km
+    dicht = bruegge_soll_fuer(conn, 111, "msfs2024", _lage(53.7250, 7.25))   # ~550 m
+    assert weit == []
+    assert [o["id"] for o in dicht] == ["nah"]
+
+
+def test_zu_hoch_darueber_zaehlt_nicht_als_nah(conn):
+    """Derselbe Wert seitlich wie in der Hoehe: 1.000 m sind 3.281 ft."""
+    bruegge_soll_setzen(conn, "nah", "flugzeug_echo", 53.72, 7.25, nur_nah_m=1000)
+    tief = bruegge_soll_fuer(conn, 111, "msfs2024", _lage(53.7250, 7.25, agl=2000))
+    hoch = bruegge_soll_fuer(conn, 111, "msfs2024", _lage(53.7250, 7.25, agl=5000))
+    assert [o["id"] for o in tief] == ["nah"] and hoch == []
+
+
+def test_ohne_lage_kommt_kein_nahes_objekt(conn):
+    """Lieber nichts ausliefern als eine geheime Lage an einen Aufrufer, der seine Entfernung
+    nicht kennt."""
+    bruegge_soll_setzen(conn, "nah", "flugzeug_echo", 53.72, 7.25, nur_nah_m=1000)
+    assert bruegge_soll_fuer(conn, 111, "msfs2024") == []
+
+
+def test_ein_objekt_ohne_riegel_kommt_immer(conn):
+    bruegge_soll_setzen(conn, "frei", "flugzeug_echo", 53.72, 7.25)
+    assert len(bruegge_soll_fuer(conn, 111, "msfs2024")) == 1
+    assert len(bruegge_soll_fuer(conn, 111, "msfs2024", _lage(50.0, 8.0))) == 1
+
+
+def test_der_riegel_faellt_mit_dem_fund(conn):
+    """Nach dem Fund ist die Lage oeffentlich -- Wrack und Fackel SOLLEN von weitem zu sehen
+    sein, das ist der Sinn einer Rauchsaeule."""
+    _art(conn, "flugzeug_echo", ("msfs2024",))
+    _art(conn, "rauch_signalorange", ("msfs2024",))
+    ev = _ev(conn)
+    reddung_objekte_abgleichen(conn, ev)
+    assert conn.execute("SELECT nur_nah_m FROM bruegge_soll WHERE id LIKE '%havarist%'"
+                        ).fetchone()[0] == 1000.0
+    set_reddung_gefunden(conn, ev["id"], "2026-09-25T17:30:00Z", 111)
+    reddung_objekte_abgleichen(conn, get_reddung_event(conn, ev["id"]))
+    werte = [r[0] for r in conn.execute("SELECT nur_nah_m FROM bruegge_soll").fetchall()]
+    assert werte == [None, None], "nach dem Fund kein Riegel mehr"
