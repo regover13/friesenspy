@@ -8,35 +8,80 @@ neue Dateien kommen also von allein mit.
 Was entsteht (Nutzerwunsch 20.09.2026: *„Würfel in den Friesenfarben. Säule in Weiß + Friesenfarben"*,
 *„Würfel ca. 3 m"*, *„ein einfaches Licht"*; nach dem MSFS-Flugtest die Säule als Scheinwerferstrahl):
 
-| Datei                      | was                                                              |
-|----------------------------|------------------------------------------------------------------|
-| `wuerfel_<farbe>.obj` ×7   | massiver Würfel, Kante 3 m, Ursprung Mitte der Unterseite        |
-| `saeule_<farbe>.obj` ×7    | Scheinwerferstrahl: 100 m, Achteck 4 m → 6 m breit, unten hell, oben ausgeblendet |
-| `licht_warm.obj`           | ein Punktlicht, warmweiß, mit Glühpunkt und Lichtfleck           |
-| `marken.png`               | 4×256, weiß, senkrechter Alpha-Verlauf 0,55 → 0,02 (nur die Säulen) |
+| Datei                        | was                                                              |
+|------------------------------|------------------------------------------------------------------|
+| `wuerfel_<farbe>.obj` ×7     | massiver Würfel, Kante 3 m, Ursprung Mitte der Unterseite        |
+| `saeule_<farbe>.obj` ×7      | Scheinwerferstrahl: 100 m, Achteck 4 m → 6 m breit, unten hell, oben ausgeblendet |
+| `licht_warm.obj`             | ein Punktlicht, warmweiß, mit Glühpunkt und Lichtfleck           |
+| `marken.png`                 | 4×256, weiß, senkrechter Alpha-Verlauf 0,55 → 0,02 (Albedo der Säulen) |
+| `marken_weiss.png`           | 4×4, opak weiß (Albedo der Würfel; die Farbe kommt aus `ATTR_diffuse_rgb`) |
+| `wuerfel_<farbe>_LIT.png` ×7 | 4×4, die Leuchtfarbe (Nacht)                                     |
+| `saeule_<farbe>_LIT.png` ×7  | 4×256, Leuchtfarbe mit Verlauf `(1 − t)^1,2` (Nacht)             |
+| `test_*.obj`                 | Testleiter für die Nachthelligkeit (`MIT_TESTOBJEKTEN`)          |
 
 Die Farben sind dieselben sechs wie beim Rauch (`FARBEN` aus `rauch_bauen.py`) plus `WEISS`
 („Scheinwerferweiß", warmes, leicht gelbliches Weiß, identisch zur MSFS-Seite). Bei Farben wird nie
 gewürfelt — die Farbe trägt Bedeutung.
 
-WIE DIE SÄULE NACH OBEN AUSBLENDET (belegt, nicht geraten)
-==========================================================
+WARUM SIE NACHTS DUNKEL WAREN (Flug 20.09.2026) — was belegt ist und was nicht
+==============================================================================
 
-OBJ8 kennt keine Eckpunktfarben und kein Alpha je Eckpunkt. Zwei Mittel bleiben, und beide sind
-in Laminars eigenen Objekten nachzulesen (`Resources/default scenery/sim objects/`):
+**Belegt:** `ATTR_emission_rgb` ist in X-Plane 12 veraltet. Die OBJ8-Spezifikation
+(developer.x-plane.com/article/obj8-file-format-specification/) führt es als
+*„[deprecated] ATTR_emission_rgb <r> <g> <b>"* (Ambient und Specular sogar als *„deprecated and
+ignored"*). Das Leuchten bei Nacht kommt aus der **LIT-Textur**: *„The '_LIT' (emissive) texture for the
+object, specified via the TEXTURE_LIT command"* (ebd.), und sie wird zum Tageslicht **addiert**:
+*„albedo texture * external light level + emissive texture * internal light level"*
+(developer.x-plane.com/article/additive-lighting/). Die bisherigen Objekte hatten **keine**
+`TEXTURE_LIT` — bei Nacht war da nichts, was leuchten konnte.
 
-1. **Höhengradient in der Textur.** Die `v`-Koordinate jedes Eckpunkts ist seine Höhe (0 unten, 1 oben),
-   `marken.png` trägt den Alpha-Verlauf. Blenden ist der Vorgabezustand; `ATTR_blend` stellt ihn
-   ausdrücklich her — so benutzt es `ships/Whaler_470_01.obj` (`ATTR_no_blend` / `TRIS` /
-   `ATTR_blend` / `TRIS`, Zeilen 4536–4539).
-2. **Gestapelte Segmente mit abgestuftem `ATTR_emission_rgb`.** Attribute gelten für das folgende
-   `TRIS`; Laminars `vr/holodeck/hangar.obj` (Zeilen 56155–56161) setzt genau so je `TRIS`-Abschnitt
-   ein eigenes `ATTR_diffuse_rgb`/`ATTR_emission_rgb`. Zwanzig Segmente zu je 5 m, Leuchten je Segment
-   `(1 − t)^1,2` mit `t` = Höhe der Segmentmitte / 100 m; der Deckel steht bei `t = 1` und leuchtet nicht.
+**Belegt:** Die Helligkeit der LIT-Textur setzt `GLOBAL_luminance`: *„Sets the nits value for the lit
+texture used for rendering."* und *„The baseline luminance for the LIT texture, in nts. Value is
+clamped at 65530."* (OBJ8-Spezifikation). Alle 149 Objekte unter `Resources/default scenery/sim objects/`,
+die `GLOBAL_luminance` setzen, haben auch eine `TEXTURE_LIT` (nachgezählt, keines ohne). Werte dort:
+1000 (119×), 150 (12×), 500 (5×), 2000 (3×), 120 (3×), 30 (3×), 75 (2×), 100, **2500** (1×,
+`landscape/apron_light.obj` — der höchste, den Laminar selbst setzt).
 
-Die `*_uplight_*m.obj` unter `custom_spills/` sind KEIN Vorbild für die Form: Sie tragen keine
-Geometrie, nur ein `LIGHT_PARAM spot_params_sp` (Lichtfleck), und beleuchten damit ihre Umgebung,
-statt selbst einen Strahl zu zeichnen. Sie belegen nur, dass ein Objekt ohne Netz ein Licht sein darf.
+**Belegt:** Eine Normalentextur (PBR) ist für die LIT-Textur nicht nötig: 89 der 637 Laminar-Objekte
+mit `TEXTURE_LIT` haben keine `TEXTURE_NORMAL` (nachgezählt).
+
+**Belegt (Flug):** Bei Tag sind die Säulen in Ordnung (weiße Albedo-Textur × `ATTR_diffuse_rgb`), die
+Würfel waren ohne Textur fast schwarz. Darum haben die Würfel jetzt dieselbe Albedo (`marken_weiss.png`)
+und dieselbe Farbgebung wie die Säulen — was dort tagsüber funktioniert, wird nicht neu erfunden.
+
+**Gemessen (Testleiter im X-Plane-Flug, nachts, 20.09.2026 — Nutzer und Bildmessung):** Jede Stufe
+`GLOBAL_luminance` ≥ 2500 **überbelichtet** und der Bloom flutet die Umgebung. Ohne `GLOBAL_luminance` trifft die
+LIT-Textur die Friesenfarbe genau.
+
+| Stufe (Signalorange-Säule/-Würfel) | Luminanz im Bild | Farbe                 | Aufhellung neben der Säule |
+|------------------------------------|------------------|-----------------------|----------------------------|
+| `Lstd` (**ohne** `GLOBAL_luminance`) | **125**          | (233, 104, 15) — echt | **49**                     |
+| `L2500`                            | ~250             | gelb-weiß, überbelichtet | 73                      |
+| `L40000`                           | ~250             | gelb-weiß, überbelichtet | 220                     |
+| Bezug: Runway-Feuer des Nutzers    | ~144–153         | orange Punkte         | —                          |
+| Bezug: Hintergrund                 | —                | —                     | 24                         |
+
+Der Nutzer wählte die dunkelste Stufe („wahrscheinlich reicht das dunkelste von allen dreien"), beim Licht
+„höchstens das zweitdunkelste". **Endgültig:** Würfel und Säulen **ohne** `GLOBAL_luminance` (die Leuchtwirkung kommt
+allein aus den LIT-Texturen), das Licht mit 4500 cd (Laminars Randfeuer `edge_w`, zweitdunkelste Stufe der
+Lichtleiter) und 9000 cd im Lichtfleck. **Die Standardhelligkeit ohne `GLOBAL_luminance` ist also die richtige** — die
+frühere Vermutung „10000 Nits" war falsch. Die Testleiter ist mit `MIT_TESTOBJEKTEN = False` abgeschaltet und
+im Repo gelöscht; wer sie braucht, setzt den Schalter auf `True` und lässt den Generator laufen.
+
+**Weiterhin unbelegt:** ob die halbtransparente Säule (`ATTR_blend`) das Leuchten mit dem Albedo-Alpha multipliziert
+(dann fällt sie nach oben doppelt ab) und ob PNG-Farben der LIT-Textur als sRGB gelesen werden — der Flug zeigte
+die Farbe als korrekt, also genügt der Stand.
+
+WIE DIE SÄULE NACH OBEN AUSBLENDET
+==================================
+
+OBJ8 kennt keine Eckpunktfarben und kein Alpha je Eckpunkt. Die `v`-Koordinate jedes Eckpunkts ist seine
+Höhe (0 unten, 1 oben), und zwei Texturen tragen den Verlauf: `marken.png` das Alpha (0,55 → 0,02), die
+`saeule_<farbe>_LIT.png` das Leuchten (`(1 − t)^1,2`). Blenden ist der Vorgabezustand (*„Blending (default on)"*,
+OBJ8-Spezifikation); `ATTR_blend` stellt ihn ausdrücklich her, so wie `ships/Whaler_470_01.obj`
+(`ATTR_no_blend` / `TRIS` / `ATTR_blend` / `TRIS`, Zeilen 4536–4539). Die frühere Abstufung mit zwanzig
+Abschnitten und `ATTR_emission_rgb` je Abschnitt (Vorbild `vr/holodeck/hangar.obj`) ist mit dem veralteten
+Attribut entfallen — der Verlauf steckt jetzt in der Textur, die Säule ist ein einziger Körper.
 
 ⚠ **Die Breite ist der Abstand gegenüberliegender FLÄCHEN** (Flach-zu-flach), nicht der Ecken.
 
@@ -58,20 +103,21 @@ wie die `*_uplight_*m.obj` unter `default scenery/sim objects/custom_spills/`, d
 `WIDTH 0.5` trägt. Die Zahl der Parameter je Zeile stimmt mit der `LIGHT_PARAM_DEF` überein —
 das prüft `tests/test_xplane_marken.py` gegen die `lights.txt` der Installation, wenn sie da ist.
 
-⚠ **Im X-Plane-Flug noch nicht gesehen** (nur gebaut, der Simulator wurde nicht gestartet): ob der
-Lichtfleck ausreicht, ob `ATTR_emission_rgb` bei Nacht sichtbar leuchtet, ob der Alpha-Verlauf der
-Säule nach oben wirklich ausblendet (Richtung von `v`!) und wie hell 800 cd am Boden wirken. Die
-Stärken sind Stellschrauben (`LICHT_CD`, `LICHTFLECK_CD`), keine Messung.
+**Maßstab für die Stärke (belegt, `lights.txt` Zeile 572):** Laminars weißes Pistenrandfeuer
+`BILLBOARD_HW edge_w 1.39 0.91 0.77 1 4500cd …`, dazu die Hindernisfeuer `wind_turbine_obs` (3000 cd) und
+`smokestack_obs` (2500 cd); Flutlichter `spot_params_bb_day_pm` 20000 cd, die Vorfeldlampe
+`apron_light_billboard` 150000 cd. Die Leiter (2000 … 128000 cd) überdeckte genau diese Spanne, mit dem
+Randfeuer (4500) als Bezugsrung. **Endgültig 4500 cd** (Glühpunkt), der Lichtfleck 9000 cd: Der Nutzer wählte in der
+Nachtprüfung „höchstens das zweitdunkelste" — genau das Randfeuer.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import math
 import struct
 import zlib
 from pathlib import Path
-
-import importlib.util
 
 HIER = Path(__file__).resolve().parent
 
@@ -91,7 +137,9 @@ def _friesenfarben() -> dict[str, tuple[int, int, int]]:
 FARBEN = _friesenfarben()
 ZIEL = HIER / "objekte"
 
+#: Albedo der Säulen (mit Alpha-Verlauf) und der Würfel (opak weiß).
 TEXTUR = "marken.png"
+TEXTUR_WEISS = "marken_weiss.png"
 
 #: Kanten in Metern (Nutzer, 20.09.2026).
 WUERFEL_KANTE = 3.0
@@ -105,8 +153,8 @@ WEISS = (255, 240, 200)
 SAEULE_BREITE_UNTEN = 4.0
 SAEULE_BREITE_OBEN = 6.0
 
-#: Zwanzig Segmente zu 5 m; das Leuchten steht je Segment fest (OBJ8 hat keinen Verlauf im Attribut).
-SAEULE_SEGMENTE = 20
+#: Die Säule ist EIN Körper; der Verlauf steckt in den Texturen (kein Emissiv je Abschnitt mehr).
+SAEULE_SEGMENTE = 1
 
 #: Deckkraft der Textur unten und oben (Vorgabe des Koordinators) und Abfall des Leuchtens.
 SAEULE_ALPHA_UNTEN = 0.55
@@ -116,21 +164,46 @@ SAEULE_EMISSION_EXP = 1.2
 #: Höhe der Textur in Pixeln — je feiner, desto glatter der Verlauf; 4 breit genügt, er ist waagerecht gleich.
 TEXTUR_HOEHE = 256
 
-#: Wie stark der Würfel von selbst leuchtet (Vielfaches der Farbe) — „leichtes" Emissiv, damit er
-#: nachts nicht schwarz wird, tagsüber aber wie ein Würfel und nicht wie eine Lampe aussieht.
-WUERFEL_EMISSION = 0.35
+#: ⭐ NACHTHELLIGKEIT: KEINE `GLOBAL_luminance`-ZEILE (`None`). Gemessen in der Testleiter: Jede Stufe ab 2500 Nits
+#: überbelichtet und flutet die Umgebung mit Bloom; ohne die Zeile trifft die LIT-Textur die Friesenfarbe (Luminanz 125,
+#: Runway-Feuer ~150). Die Leuchtwirkung kommt allein aus den LIT-Texturen. Ein Wert hier schaltet die Zeile wieder ein.
+WUERFEL_NITS = None
+SAEULE_NITS = None
 
-#: Warmweiß und Stärke des Einfachlichts. Beide Candela-Werte sind UNGEMESSEN: 500 cd ist, was Laminars
-#: eigene Objekte für `spot_params_bb_pm` benutzen; nach dem 2020er Nachttest auf der MSFS-Seite ×1,6
-#: heller (5,0 → 8,0), hier gleich skaliert: 500 → 800 und 1000 → 1600. Stellschrauben, keine Messung.
+#: Warmweiß und Stärke des Einfachlichts. Maßstab: Laminars weißes Pistenrandfeuer `edge_w` hat 4500 cd
+#: (`lights.txt` Zeile 572). Nach der Nachtprüfung (Nutzer: „höchstens das zweitdunkelste") genau dieser Wert;
+#: der Lichtfleck doppelt.
 LICHT_RGB = (1.0, 0.84, 0.6)
-LICHT_CD = 800
-LICHTFLECK_CD = 1600
+LICHT_CD = 4500
+LICHTFLECK_FAKTOR = 2
+LICHTFLECK_CD = LICHT_CD * LICHTFLECK_FAKTOR
 LICHT_HOEHE = 0.5
+
+#: ⭐ Die Testleiter für die Nachthelligkeit — mit einem Wort abschaltbar. Ist der Schalter `False` (Stand nach der
+#: Nachtprüfung), schreibt der Generator keine `test_*`-Dateien und löscht vorhandene.
+MIT_TESTOBJEKTEN = False
+TEST_NITS = (2500, 5000, 10000, 20000, 40000)
+#: Lichtleiter in Candela: 2000 (Hindernisfeuer-Klasse) … 128000 (Vorfeldlampe); 4500 ist Laminars Randfeuer.
+TEST_CD = (2000, 4500, 8000, 32000, 128000)
+TEST_FARBE = "signalorange"
 
 #: Alle sieben Farben: die sechs Friesenfarben und Scheinwerferweiß — für Würfel und Säulen.
 SAEULEN = {**FARBEN, "weiss": WEISS}
 WUERFEL = dict(SAEULEN)
+
+
+def _f(farbe: tuple[int, int, int], faktor: float = 1.0) -> tuple[float, float, float]:
+    return tuple(round(c / 255.0 * faktor, 4) for c in farbe)
+
+
+def lit_farbe(farbe: tuple[int, int, int]) -> tuple[int, int, int]:
+    """Die Leuchtfarbe: der Farbton der Friesenfarbe, hochgezogen auf volle Helligkeit (größter Kanal = 255).
+
+    Ein Leuchtkörper ist nachts nicht so dunkel wie sein Lack — Navy (25, 29, 83) als Emission wäre schwarz.
+    Die Nits (`GLOBAL_luminance`) sagen, WIE hell; die Textur sagt nur, WELCHE Farbe.
+    """
+    m = max(farbe)
+    return tuple(round(c * 255.0 / m) for c in farbe)
 
 
 def saeule_emission(t: float) -> float:
@@ -143,10 +216,6 @@ def saeule_alpha(t: float) -> float:
     return SAEULE_ALPHA_UNTEN + (SAEULE_ALPHA_OBEN - SAEULE_ALPHA_UNTEN) * t
 
 
-def _f(farbe: tuple[int, int, int], faktor: float = 1.0) -> tuple[float, float, float]:
-    return tuple(round(c / 255.0 * faktor, 4) for c in farbe)
-
-
 # --------------------------------------------------------------------------- Geometrie
 
 def _mesh(flaechen: list, uv: tuple[float, float] = (0.5, 0.5), *, basis: int = 0,
@@ -157,7 +226,7 @@ def _mesh(flaechen: list, uv: tuple[float, float] = (0.5, 0.5), *, basis: int = 
     Eine Ecke gehört zu zwei oder drei Flächen mit verschiedenen Normalen.
 
     Ohne `hoehe` tragen alle Ecken dieselbe UV (`uv`). Mit `hoehe` läuft `v` mit der Höhe der Ecke
-    (0 unten, 1 oben) — der Anker des Alpha-Verlaufs der Säule. `basis` ist der Index, ab dem
+    (0 unten, 1 oben) — der Anker des Verlaufs der Säule. `basis` ist der Index, ab dem
     gezählt wird (mehrere Abschnitte teilen sich eine Eckpunktliste).
     """
     vt, idx = [], []
@@ -189,7 +258,7 @@ def wuerfel_flaechen(kante: float) -> list:
 def saeule_abschnitte(hoehe: float = SAEULE_HOEHE, unten: float = SAEULE_BREITE_UNTEN,
                       oben: float = SAEULE_BREITE_OBEN, segmente: int = SAEULE_SEGMENTE,
                       ecken: int = 8) -> list[tuple[float, list]]:
-    """Die Säule als gestapelte Abschnitte: `[(t, flächen), …]`, t = Höhe der Mitte (0…1).
+    """Die Säule als Abschnitte: `[(t, flächen), …]`, t = Höhe der Mitte (0…1).
 
     Ein regelmäßiges n-Eck-Prisma (Vorgabe Achteck), das nach oben leicht aufweitet; Ursprung Mitte der
     Unterseite. `unten`/`oben` sind Abstände gegenüberliegender FLÄCHEN. Der letzte Abschnitt ist der
@@ -229,70 +298,58 @@ def saeule_abschnitte(hoehe: float = SAEULE_HOEHE, unten: float = SAEULE_BREITE_
 
 # --------------------------------------------------------------------------- Dateien
 
-def _obj_text(titel: str, flaechen: list, uv: tuple[float, float], textur: str | None,
-              diffuse: tuple[float, float, float], emission: tuple[float, float, float],
-              kulling: bool) -> str:
-    vt, idx = _mesh(flaechen, uv)
-    zeilen = ["I", "800", "OBJ", f"# {titel}", "", f"TEXTURE\t{textur}" if textur else "TEXTURE\t",
-              f"POINT_COUNTS\t{len(vt)} 0 0 {len(idx)}", ""]
-    zeilen += vt
-    zeilen.append("")
+def _indexzeilen(idx: list[int]) -> list[str]:
+    zeilen = []
     for i in range(0, len(idx), 10):                  # zehn Indizes je Zeile, der Rest einzeln
         stueck = idx[i:i + 10]
         if len(stueck) == 10:
             zeilen.append("IDX10\t" + " ".join(map(str, stueck)))
         else:
             zeilen += [f"IDX\t{j}" for j in stueck]
-    zeilen.append("")
-    if not kulling:
-        zeilen.append("ATTR_no_cull")
-    zeilen.append("ATTR_diffuse_rgb\t{:.4f} {:.4f} {:.4f}".format(*diffuse))
-    zeilen.append("ATTR_emission_rgb\t{:.4f} {:.4f} {:.4f}".format(*emission))
-    zeilen.append(f"TRIS\t0 {len(idx)}")
-    zeilen.append("")
+    return zeilen
+
+
+def _kopf(titel: str, textur: str, lit: str, nits: int | None) -> list[str]:
+    """Kopf mit Albedo, LIT-Textur und — wenn gesetzt — der Helligkeit in Nits.
+
+    Ohne `nits` (`None`) steht KEINE `GLOBAL_luminance`-Zeile: dann gilt die Standardhelligkeit des Simulators —
+    die gemessen richtige (s. Kopfkommentar).
+    """
+    zeilen = ["I", "800", "OBJ", f"# {titel}", "", f"TEXTURE\t{textur}", f"TEXTURE_LIT\t{lit}"]
+    if nits is not None:
+        zeilen.append(f"GLOBAL_luminance\t{nits}")
+    return zeilen
+
+
+def wuerfel_text(name: str, farbe: tuple[int, int, int], nits: int | None) -> str:
+    vt, idx = _mesh(wuerfel_flaechen(WUERFEL_KANTE))
+    zeilen = _kopf("Die FriesenBruegge -- Wuerfel, Kante 3 m, Friesenfarbe.", TEXTUR_WEISS,
+                   f"wuerfel_{name}_LIT.png", nits)
+    zeilen += [f"POINT_COUNTS\t{len(vt)} 0 0 {len(idx)}", ""] + vt + [""] + _indexzeilen(idx)
+    zeilen += ["", "ATTR_diffuse_rgb\t{:.4f} {:.4f} {:.4f}".format(*_f(farbe)), f"TRIS\t0 {len(idx)}", ""]
     return "\n".join(zeilen)
 
 
-def wuerfel_schreiben(pfad: Path, farbe: tuple[int, int, int]) -> None:
-    pfad.write_text(_obj_text(
-        "Die FriesenBruegge -- Wuerfel, Kante 3 m, Friesenfarbe.",
-        wuerfel_flaechen(WUERFEL_KANTE), (0.5, 0.5), None,
-        _f(farbe), _f(farbe, WUERFEL_EMISSION), kulling=True),
-        encoding="utf-8", newline="\n")
-
-
-def saeule_schreiben(pfad: Path, farbe: tuple[int, int, int]) -> None:
-    """Ein Scheinwerferstrahl: 21 `TRIS`-Abschnitte, `v` = Höhe, Leuchten je Abschnitt abgestuft."""
-    vt, idx, tris = [], [], []
-    for t, flaechen in saeule_abschnitte():
+def saeule_text(name: str, farbe: tuple[int, int, int], nits: int | None) -> str:
+    """Ein Scheinwerferstrahl: ein Körper, `v` = Höhe; Alpha (Albedo) und Leuchten (LIT) laufen mit der Höhe aus."""
+    vt, idx = [], []
+    for _, flaechen in saeule_abschnitte():
         v, i = _mesh(flaechen, basis=len(vt), hoehe=SAEULE_HOEHE)
-        tris.append((len(idx), len(i), t))
         vt += v
-        idx += [x for x in i]
-    zeilen = ["I", "800", "OBJ",
-              "# Die FriesenBruegge -- Lichtstrahl, 100 m, unten 4 m, oben 6 m breit, nach oben ausgeblendet.",
-              "# v = Hoehe (0 unten, 1 oben): marken.png traegt den Alpha-Verlauf; ATTR_emission_rgb stuft je Abschnitt ab.",
-              "", f"TEXTURE\t{TEXTUR}", f"POINT_COUNTS\t{len(vt)} 0 0 {len(idx)}", ""]
-    zeilen += vt
-    zeilen.append("")
-    for i in range(0, len(idx), 10):
-        stueck = idx[i:i + 10]
-        if len(stueck) == 10:
-            zeilen.append("IDX10\t" + " ".join(map(str, stueck)))
-        else:
-            zeilen += [f"IDX\t{j}" for j in stueck]
-    zeilen += ["", "ATTR_no_cull", "ATTR_blend", "ATTR_diffuse_rgb\t{:.4f} {:.4f} {:.4f}".format(*_f(farbe))]
-    for start, anzahl, t in tris:
-        zeilen.append("ATTR_emission_rgb\t{:.4f} {:.4f} {:.4f}".format(*_f(farbe, saeule_emission(t))))
-        zeilen.append(f"TRIS\t{start} {anzahl}")
-    zeilen.append("")
-    pfad.write_text("\n".join(zeilen), encoding="utf-8", newline="\n")
+        idx += i
+    zeilen = _kopf("Die FriesenBruegge -- Lichtstrahl, 100 m, unten 4 m, oben 6 m breit, nach oben ausgeblendet.",
+                   TEXTUR, f"saeule_{name}_LIT.png", nits)
+    zeilen += [f"POINT_COUNTS\t{len(vt)} 0 0 {len(idx)}", ""] + vt + [""] + _indexzeilen(idx)
+    zeilen += ["", "ATTR_no_cull", "ATTR_blend", "ATTR_diffuse_rgb\t{:.4f} {:.4f} {:.4f}".format(*_f(farbe)),
+               f"TRIS\t0 {len(idx)}", ""]
+    return "\n".join(zeilen)
 
 
-def licht_schreiben(pfad: Path) -> None:
+def licht_text(cd: int = LICHT_CD, fleck_cd: int | None = None) -> str:
     """Ein Punktlicht — Glühpunkt und Lichtfleck. Keine Geometrie (wie Laminars `elevated_edge_*`)."""
     r, g, b = LICHT_RGB
-    pfad.write_text("\n".join([
+    fleck = cd * LICHTFLECK_FAKTOR if fleck_cd is None else fleck_cd
+    return "\n".join([
         "I", "800", "OBJ",
         "# Die FriesenBruegge -- einfaches Licht, warmweiss. Kein Modell, nur zwei Lichtzeilen.",
         "# spot_params_bb_pm = Glueh-Punkt (Billboard), spot_params_sp_pm = Lichtfleck; beide aus",
@@ -303,24 +360,24 @@ def licht_schreiben(pfad: Path) -> None:
         "",
         "ATTR_LOD\t0 10000",
         # R G B INTENSITY DX DY DZ WIDTH -- Richtung 0 0 0 und WIDTH 1 = ringsum sichtbar.
-        f"LIGHT_PARAM\tspot_params_bb_pm\t0 {LICHT_HOEHE} 0 {r} {g} {b} {LICHT_CD}cd 0 0 0 1",
+        f"LIGHT_PARAM\tspot_params_bb_pm\t0 {LICHT_HOEHE} 0 {r} {g} {b} {cd}cd 0 0 0 1",
         # R G B A INTENSITY DX DY DZ WIDTH -- nach unten, Kegel von 120 Grad (WIDTH = cos des halben Winkels).
-        f"LIGHT_PARAM\tspot_params_sp_pm\t0 {LICHT_HOEHE} 0 {r} {g} {b} 1 {LICHTFLECK_CD}cd 0 -1 0 0.5",
+        f"LIGHT_PARAM\tspot_params_sp_pm\t0 {LICHT_HOEHE} 0 {r} {g} {b} 1 {fleck}cd 0 -1 0 0.5",
         "",
-    ]), encoding="utf-8", newline="\n")
+    ])
 
 
-def textur_schreiben(pfad: Path) -> None:
-    """4×256, weiß, mit senkrechtem Alpha-Verlauf 0,55 (unten) → 0,02 (oben); PNG ohne Fremdbibliothek.
+def _nits(wert: int | None) -> str:
+    return "ohne GLOBAL_luminance" if wert is None else f"{wert} nits"
 
-    OBJ8-Texturen haben ihren Ursprung unten links: die letzte Bildzeile ist `v = 0`, die erste `v = 1`.
-    """
-    b, h = 4, TEXTUR_HOEHE
-    zeilen = []
-    for y in range(h):
-        t = (h - 1 - y) / (h - 1)                       # Zeile 0 = oben = t 1
-        alpha = round(saeule_alpha(t) * 255)
-        zeilen.append(b"\x00" + bytes([255, 255, 255, alpha]) * b)
+
+def _schreiben(pfad: Path, text: str) -> None:
+    pfad.write_text(text, encoding="utf-8", newline="\n")
+
+
+def _png(pfad: Path, breite: int, hoehe: int, pixel, rgba: bool) -> None:
+    """Ein PNG ohne Fremdbibliothek. `pixel(x, y)` gibt (r, g, b[, a]) zurück; Zeile 0 ist OBEN."""
+    zeilen = [b"\x00" + b"".join(bytes(pixel(x, y)) for x in range(breite)) for y in range(hoehe)]
     roh = b"".join(zeilen)
 
     def chunk(art: bytes, daten: bytes) -> bytes:
@@ -328,23 +385,79 @@ def textur_schreiben(pfad: Path) -> None:
         return c + struct.pack(">I", zlib.crc32(art + daten) & 0xFFFFFFFF)
 
     pfad.write_bytes(b"\x89PNG\r\n\x1a\n"
-                     + chunk(b"IHDR", struct.pack(">IIBBBBB", b, h, 8, 6, 0, 0, 0))
+                     + chunk(b"IHDR", struct.pack(">IIBBBBB", breite, hoehe, 8, 6 if rgba else 2, 0, 0, 0))
                      + chunk(b"IDAT", zlib.compress(roh, 9))
                      + chunk(b"IEND", b""))
+
+
+def _t(y: int, hoehe: int) -> float:
+    """Höhe t einer Bildzeile: OBJ8-Texturen haben ihren Ursprung unten links — die letzte Zeile ist v = 0."""
+    return (hoehe - 1 - y) / (hoehe - 1)
+
+
+def textur_schreiben(pfad: Path) -> None:
+    """4×256, weiß, mit senkrechtem Alpha-Verlauf 0,55 (unten) → 0,02 (oben) — die Albedo der Säulen."""
+    _png(pfad, 4, TEXTUR_HOEHE,
+         lambda x, y: (255, 255, 255, round(saeule_alpha(_t(y, TEXTUR_HOEHE)) * 255)), rgba=True)
+
+
+def weiss_schreiben(pfad: Path) -> None:
+    """4×4, opak weiß — die Albedo der Würfel (die Farbe kommt aus `ATTR_diffuse_rgb`, wie bei den Säulen)."""
+    _png(pfad, 4, 4, lambda x, y: (255, 255, 255), rgba=False)
+
+
+def wuerfel_lit_schreiben(pfad: Path, farbe: tuple[int, int, int]) -> None:
+    """4×4, die Leuchtfarbe (Nacht)."""
+    f = lit_farbe(farbe)
+    _png(pfad, 4, 4, lambda x, y: f, rgba=False)
+
+
+def saeule_lit_schreiben(pfad: Path, farbe: tuple[int, int, int]) -> None:
+    """4×256, Leuchtfarbe mit dem Verlauf (1 − t)^1,2 — unten voll, oben null."""
+    f = lit_farbe(farbe)
+    _png(pfad, 4, TEXTUR_HOEHE,
+         lambda x, y: tuple(round(c * saeule_emission(_t(y, TEXTUR_HOEHE))) for c in f), rgba=False)
+
+
+def testobjekte_schreiben() -> list[str]:
+    """Die Testleiter: Würfel und Säule in Signalorange bei 2500 … 40000 Nits, dazu `Lstd` ohne `GLOBAL_luminance`
+    (die Standardhelligkeit), und das Licht bei 2000 … 128000 cd. Sie benutzen die Texturen der echten Objekte."""
+    farbe = FARBEN[TEST_FARBE]
+    namen = []
+    for nits in (*TEST_NITS, None):
+        kennung = "Lstd" if nits is None else f"L{nits}"
+        _schreiben(ZIEL / f"test_wuerfel_{kennung}.obj", wuerfel_text(TEST_FARBE, farbe, nits))
+        _schreiben(ZIEL / f"test_saeule_{kennung}.obj", saeule_text(TEST_FARBE, farbe, nits))
+        namen += [f"test_wuerfel_{kennung}.obj", f"test_saeule_{kennung}.obj"]
+    for cd in TEST_CD:
+        _schreiben(ZIEL / f"test_licht_L{cd}.obj", licht_text(cd))
+        namen.append(f"test_licht_L{cd}.obj")
+    return namen
 
 
 def main() -> None:
     ZIEL.mkdir(exist_ok=True)
     textur_schreiben(ZIEL / TEXTUR)
+    weiss_schreiben(ZIEL / TEXTUR_WEISS)
     print(f"  {TEXTUR:24} {(ZIEL / TEXTUR).stat().st_size:7} Bytes")
     for name, farbe in WUERFEL.items():
-        wuerfel_schreiben(ZIEL / f"wuerfel_{name}.obj", farbe)
-        print(f"  wuerfel_{name}.obj".ljust(26) + f"#{farbe[0]:02X}{farbe[1]:02X}{farbe[2]:02X}")
+        _schreiben(ZIEL / f"wuerfel_{name}.obj", wuerfel_text(name, farbe, WUERFEL_NITS))
+        wuerfel_lit_schreiben(ZIEL / f"wuerfel_{name}_LIT.png", farbe)
+        print(f"  wuerfel_{name}.obj".ljust(26) + f"#{farbe[0]:02X}{farbe[1]:02X}{farbe[2]:02X}  {_nits(WUERFEL_NITS)}")
     for name, farbe in SAEULEN.items():
-        saeule_schreiben(ZIEL / f"saeule_{name}.obj", farbe)
-        print(f"  saeule_{name}.obj".ljust(26) + f"#{farbe[0]:02X}{farbe[1]:02X}{farbe[2]:02X}")
-    licht_schreiben(ZIEL / "licht_warm.obj")
-    print("  licht_warm.obj")
+        _schreiben(ZIEL / f"saeule_{name}.obj", saeule_text(name, farbe, SAEULE_NITS))
+        saeule_lit_schreiben(ZIEL / f"saeule_{name}_LIT.png", farbe)
+        print(f"  saeule_{name}.obj".ljust(26) + f"#{farbe[0]:02X}{farbe[1]:02X}{farbe[2]:02X}  {_nits(SAEULE_NITS)}")
+    _schreiben(ZIEL / "licht_warm.obj", licht_text())
+    print(f"  licht_warm.obj".ljust(26) + f"{LICHT_CD} cd / Fleck {LICHTFLECK_CD} cd")
+    # Die Testleiter: ein Wort steuert sie. Abgeschaltet werden vorhandene test_*-Dateien gelöscht.
+    if MIT_TESTOBJEKTEN:
+        for n in testobjekte_schreiben():
+            print(f"  {n}")
+    else:
+        for p in ZIEL.glob("test_*.obj"):
+            p.unlink()
+            print(f"  {p.name} gelöscht")
 
 
 if __name__ == "__main__":

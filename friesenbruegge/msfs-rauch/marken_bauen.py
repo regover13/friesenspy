@@ -51,28 +51,104 @@ Wie ein solcher Knoten AUSSIEHT, steht in Asobos eigenen, kompilierten Modellen 
   * Das Modell-XML braucht **nichts** — bei der Winde steht dort nur `<LODS>`; kein
     `<Behaviors>`, kein FX. Bei `day_night_cycle: true` schaltet der Simulator selbst.
 
-  ⚠ NICHT BELEGT: Ein Modell aus NUR einem Lichtknoten (ohne Mesh) ist bei Asobo nirgends
-  gefunden worden — jedes Modell trägt auch Geometrie. Deshalb trägt `FrsLicht_Warm` ein
-  winziges unsichtbares Trägermesh (`ASOBO_material_invisible`, wie der Rauch). Ebenso NICHT
-  belegt: welche `intensity` dem Nachtbild entspricht. Gestartet mit 5,0 (häufigster Wert der
-  Scheinwerfer bei Asobo, eine ANNAHME); nach dem 2020er Nachttest wollte der Nutzer es „etwas
-  heller, sagen wir 8.0" — der Wert steht seither auf 8,0 und bleibt der Regler für den Flugtest.
+  * ⭐ **Lichtknoten UND sichtbares Mesh im selben glTF ist bei Asobo der Normalfall** (ausgezählt
+    20.09.2026): 24 der 111 Modelle mit Lichtknoten tragen im selben glTF auch Meshes (alle 24); KEIN
+    Lichtknoten trägt selbst ein Mesh. Bei der Seilwinde `ESW_2B` steht es so: Wurzelknoten `Light` MIT
+    Mesh und den Lichtern als Kindern (`Point`, `Point.001`, `Spot`, `Spot.001`, selbst ohne Mesh), daneben
+    die Wurzelknoten der Karosserie. Genau so ist `FrsLicht_Warm` aufgebaut: Wurzelknoten `Light` trägt
+    den sichtbaren Leuchtkern, das Punktlicht `Point` hängt als Kind darunter.
+  * Ebenso NICHT belegt: welche `intensity` dem Nachtbild entspricht. Gestartet mit 5,0 (häufigster
+    Wert der Scheinwerfer bei Asobo, eine ANNAHME), dann 8,0, 50,0, 400,0 und zuletzt 1600,0 — die Werte
+    in Asobos Modellen reichen nur bis 50, der Regler ist also weit außerhalb dessen, was belegt ist
+    (gemessen im 2024er Nachttest: der Lichtfleck wird mit der Stärke heller, s. Testrunde 2 unten).
 
-DIE SÄULE — EIN SCHEINWERFERSTRAHL AUS 25 STAPELN (Flugtest MSFS 2020, 20.09.2026)
+**DER LEUCHTKERN (Testrunde 2, 20.09.2026).** Der Lichtfleck des `ASOBO_macro_light` allein ist der
+schwächste Punkt (Nutzer nach dem 2024-Nachttest: „das hellste Licht (I100) ist noch nicht hell genug,
+viel dunkler als die Runway-Feuer"; gemessen: Halo Luminanz ~42, Runway-Feuer ~162). Die Runway-Feuer
+wirken als heller PUNKT. Deshalb trägt `FrsLicht_Warm` zusätzlich einen kleinen sichtbaren Kern: einen
+0,2-m-Würfel in Warmweiß (1,0 / 0,84 / 0,6), `emissiveFactor` voll, mit `ASOBO_material_emissive`
+(`emissiveNightMultiplier` = `LICHT_KERN_NACHT`). Er ersetzt den unsichtbaren 5-cm-Träger; der Kern sitzt
+mit seiner Mitte 0,3 m über dem Boden, das Punktlicht in seiner Mitte.
+
+DIE HELLIGKEIT IN MSFS 2024 — `ASOBO_material_emissive` (Nachttest 2024, 20.09.2026)
 -----------------------------------------------------------------------------------
+Dasselbe Paket rendert in MSFS 2024 nachts viel dunkler als in 2020 (gemessen aus den Nachtbildern:
+Orange-Würfel 2020 (249, 145, 54), 2024 nur (46, 16, 6) — etwa ein Fünftel bis ein Zehntel). Nutzer:
+„das muss alles mindestens so hell sein wie die Feuer an der Runway im Hintergrund".
+
+Der Regler dafür ist die glTF-Erweiterung **`ASOBO_material_emissive`** mit `emissiveDayMultiplier` und
+`emissiveNightMultiplier`. WAS BELEGT IST, und woher:
+
+  * Es gibt sie im **2024er SDK** (`C:/MSFS 2024 SDK/Schemas/ASOBO_material_emissive/
+    gltf.ASOBO_material_emissive.schema.json`: zwei Felder, beide `number`, ohne Grenzen), im **2020er
+    SDK nicht** (`D:/MSFS SDK/Schemas` kennt sie nicht).
+  * **Vorgabe 1,0 für beide.** Der 3ds-Max-Exporter (`FlightSimMaterialExporter.cs`, `Defaults`) und das
+    Blender-Addon (`MSFS2024_MaterialProperties`) setzen 1.0; Asobos mitgeliefertes Bären-Beispiel
+    (`Samples/DevmodeProjects/SimObjects/Animals/Bears`) schreibt `{"emissiveDayMultiplier": 1.0,
+    "emissiveNightMultiplier": 1.0}` an jedes Material und führt die Erweiterung in `extensionsUsed`,
+    NICHT in `extensionsRequired`. Genau so machen wir es.
+  * ⚠ **NICHT belegt:** was der Wert im Simulator genau tut. Das 2024er SDK enthält keine Dokumentation
+    (nur Schemas, Samples und Werkzeuge), im 2020er steht die Erweiterung nirgends. Nach Name und
+    Vorgabe ist es ein Faktor auf `emissiveFactor`, getrennt für Tag und Nacht — Wertebereich und
+    Wirkung im Renderer sind ungemessen. Deshalb die Testtitel (`MIT_TESTTITELN`): Der Nutzer misst
+    im 2024-Nachtflug, welcher Wert trifft.
+  * ⚠ **Ungemessen:** ob der 2020er Compiler eine unbekannte, nicht geforderte Erweiterung
+    toleriert. Sie steht nur in `extensionsUsed`; ein 2020er Bau zeigt es.
+
+**Testrunde 1 (2024, feste Kamera, nachts): Der Multiplikator WIRKT** — das 2024er SDK behält ihn —,
+aber auch 12 ist zu dunkel. Gemessen: Runway-Feuer (hellste 200 Pixel) Luminanz ~162, RGB (224, 157, 26);
+unsere Würfel bei 12 nur ~74, RGB ~(161, 55, 7); Säulen bis ~97 („A85 hat kaum Einfluss"); Licht-Halo ~42.
+Also Testrunde 2 mit 20/40/80/160 und einem Leuchtkern am Licht.
+
+**Testrunde 2 (2024, feste Kamera, nachts): Luminanz der hellsten Pixel**, Maßstab die Runway-Feuer = 144.
+
+    Nacht-Multiplikator     20    40    80   160        Licht (K = Kern-Multiplikator, I = Stärke)
+    Würfel (Signalorange)   85   112   142   173        K100_I100   38     K400_I400    97
+    Säule  (Alpha unten     111  138   168   195        K100_I400   99     K400_I1600  176
+            0,85)
+
+Das Ziel „mindestens so hell wie die Feuer" trifft bei Würfeln ab etwa 80, bei Säulen schon knapp darunter.
+Beim Licht trägt die STÄRKE die Helligkeit: bei I = 400 ergab der Kern-Multiplikator 100 → 400 keinen
+messbaren Unterschied (99 gegen 97), von I = 400 auf 1600 stieg der Wert von 97 auf 176.
+
+**Endgültige Vorgabewerte:** `EMISSIVE_NACHT` = 80, `SAEULE_ALPHA_UNTEN` = 0,85, `LICHT_KERN_NACHT` = 400,
+`LICHT_STAERKE` = 1600. `EMISSIVE_TAG` bleibt 1,0. Die Vorgabe stand zuerst auf 120 (etwas über dem Ziel);
+nach der Endabnahme in MSFS 2024 und 2020 (alle 15 Marken laden, Bild gut) war der Nutzer der Meinung „fast
+ein bisschen zu hell, vielleicht reicht der 80er-Wert auch" — **80 ist gewählt**, es liegt bei den Runway-
+Feuern (Würfel 142, Säule 168 gegen 144). Die Stufen 120 und 160 sind nur gemessen (160) bzw. aus den
+Stufen gefolgert (120), nicht gewählt. Das Licht bleibt bei K400/I1600 („lass das Licht wie es ist, ist
+okay dass es in 2020 heller ist"). Die Testtitel sind mit `MIT_TESTTITELN = False` abgeschaltet und bleiben
+im Generator für eine spätere Nachmessung.
+
+⚠ **Die Friesenfarben bleiben Friesenfarben.** Ein Farbkanal kann nicht über 1,0 hinaus: Signalorange
+(255, 106, 19) hat im R-Kanal schon 1,0 (linear), und `emissiveFactor` wird auf 1,0 geklemmt. Mehr
+Helligkeit kann bei solchen Farben nur über den Multiplikator kommen, den der Simulator als Bloom/
+Tone-Mapping auf dem Bildschirm sichtbar macht — der Farbton wandert dabei Richtung Weiß. Die Farbwerte
+selbst werden nicht verändert; der Multiplikator hebt nur die Helligkeit.
+
+DIE SÄULE — EIN SCHEINWERFERSTRAHL AUS 100 STAPELN (Flugtest MSFS 2020, 20.09.2026)
+------------------------------------------------------------------------------------
 Die erste Fassung (0,8 m breit, überall gleich hell) lud und stand; der Nutzer wollte sie breiter und
 wie einen Scheinwerferstrahl: unten hell, nach oben stetig schwächer, oben praktisch ausgeblendet.
 
 ⚠ **Der Verlauf steckt in den MATERIALIEN, nicht in Vertexfarben.** `COLOR_0` kommt in Asobos
 Modellen vor (z. B. `ASO_Aircraft_Caddy`), aber dass ein Vertex-Alpha in einem `BLEND`-Material
 zuverlässig wirkt, ist damit NICHT belegt — und ein Fehlschlag wäre still (die Säule stünde einfach
-überall gleich deckend da). Also: **25 Segmente zu je 4 m**, jedes eine eigene Primitive mit eigenem
-Material, dessen `baseColorFactor`-Alpha und `emissiveFactor` je Segment abgestuft sind. Ungemessen
-bleibt, wie sichtbar die 4-m-Stufen im Flug sind; der Regler dafür ist `SAEULE_SEGMENTE`.
+überall gleich deckend da). Also: **100 Segmente zu je 1 m**, jedes eine eigene Primitive mit eigenem
+Material, dessen `baseColorFactor`-Alpha und `emissiveFactor` je Segment abgestuft sind.
+
+Die erste Fassung hatte 25 Segmente zu je 4 m; in MSFS 2024 waren die **waagerechten Stufen sichtbar**
+(Endabnahme 20.09.2026). Deshalb 100 × 1 m — Regler `SAEULE_SEGMENTE`. Die Größe je Säule wächst dabei
+etwa auf das Vierfache (gemessen in der Ausgabe: s. Test/Bericht). ⚠ **Was zum Compiler belegt ist und was
+nicht** (ausgezählt an 130 Asobo-`*LOD00.gltf` im MSFS-2020-Bestand): Asobo-Modelle haben bis zu 437
+Primitiven je glTF, aber verteilt auf viele Knoten (höchstens 22 je Mesh) und höchstens 42 Materialien.
+Eine Säule mit 100 Primitiven in EINEM Mesh und 100 Materialien liegt darüber; ob der 2024er Compiler das
+klaglos annimmt, ist UNGEMESSEN (mit 25 tat er es). Fällt es durch, wäre der nächste Schritt ein Knoten je
+Segment (wie bei Asobo: etwa ein Knoten je Primitive) oder weniger Materialstufen.
 
 Der Verlauf, mit t = Höhe der Segmentmitte / 100 m:
 
-    Alpha     = ALPHA_UNTEN + (ALPHA_OBEN − ALPHA_UNTEN) · t        linear, 0,55 → 0,02
+    Alpha     = ALPHA_UNTEN + (ALPHA_OBEN − ALPHA_UNTEN) · t        linear, 0,85 → 0,02
     Emissive  = Farbe · (1 − t)^1,2                                 oben fast nichts mehr
 
 Die Breite wächst gleichmäßig von 4 m (unten) auf 6 m (oben), gemessen über die Ecken des
@@ -93,6 +169,8 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import stat
 import struct
 from pathlib import Path
 
@@ -110,22 +188,55 @@ SAEULE_HOEHE = 100.0
 SAEULE_BREITE_UNTEN = 4.0
 SAEULE_BREITE_OBEN = 6.0
 SAEULE_ECKEN = 8
-#: Stapel: 25 Segmente à 4 m, je eine Primitive mit eigenem Material (s. Kopfkommentar).
-SAEULE_SEGMENTE = 25
+#: Stapel: 100 Segmente à 1 m, je eine Primitive mit eigenem Material (s. Kopfkommentar). Vorher 25 × 4 m:
+#: In MSFS 2024 waren die waagerechten Stufen sichtbar.
+SAEULE_SEGMENTE = 100
 #: Deckkraft unten und oben (linear dazwischen) und der Exponent des Eigenlichts.
-SAEULE_ALPHA_UNTEN = 0.55
+#: Alpha unten 0,85 (vorher 0,55): Nach dem 2024-Nachttest sind die Säulen zu dunkel; mehr Deckkraft
+#: bringt mehr Leuchtfläche. Der Nutzer korrigiert den Wert nach der Messung (`FrsTestSaeule_*_A85`).
+SAEULE_ALPHA_UNTEN = 0.85
 SAEULE_ALPHA_OBEN = 0.02
 SAEULE_EMISSIV_EXPONENT = 1.2
 #: Wie stark der Würfel von selbst leuchtet, damit er nachts nicht schwarz ist (Anteil der Farbe).
 WUERFEL_EIGENLICHT = 0.35
 
+#: `ASOBO_material_emissive` (nur MSFS 2024 wertet sie aus; 2020 kennt sie nicht): Multiplikatoren auf
+#: das Eigenlicht bei Tag und bei Nacht. 80 nach Testrunde 2 und der Endabnahme (Würfel 80 → Luminanz 142,
+#: Säule 168; Runway-Feuer 144; Nutzer: 120 sei „fast ein bisschen zu hell, vielleicht reicht der 80er-Wert
+#: auch"). 120 und 160 sind nur gemessen. Die Farbwerte bleiben Friesenfarben — bei R-Kanal nahe 1,0 wirkt
+#: mehr Helligkeit nur über Bloom und Tone-Mapping (s. Kopfkommentar).
+EMISSIVE_TAG = 1.0
+EMISSIVE_NACHT = 80.0
+
 #: Das Punktlicht: warmweiß wie die Lichter im Nachtbild, Rundumstrahler, nur nachts.
 LICHT_FARBE = (1.0, 0.84, 0.6)
-LICHT_STAERKE = 8.0          # Nutzerwunsch nach dem 2020er Nachttest (vorher 5,0) — der Regler für den Flugtest
+#: Lichtstärke des `ASOBO_macro_light`: 5,0 → 8,0 (2020er Nachttest) → 50,0 (2024er Nachttest) → 400,0
+#: (Testrunde 1: „auch I100 noch viel dunkler als die Runway-Feuer") → 1600,0 (Testrunde 2: K400_I400
+#: Luminanz 97, K400_I1600 176 gegen 144 bei den Runway-Feuern).
+LICHT_STAERKE = 1600.0
 LICHT_KEGEL = 360            # Rundumstrahler, wie `Point.NNN` bei Asobo
-LICHT_HOEHE = 0.3            # Meter über dem Boden
+LICHT_HOEHE = 0.3            # Meter über dem Boden: Mitte des Leuchtkerns und Ort des Punktlichts
+#: Der Leuchtkern: 0,2-m-Würfel, warmweiß wie das Licht, `emissiveFactor` voll; `LICHT_KERN_NACHT` ist sein
+#: `emissiveNightMultiplier`. 400 ist der Wert der Testrunde 2; bei I = 400 machte K 100 → 400 keinen
+#: messbaren Unterschied (99 gegen 97), die Helligkeit kommt vom Lichtfleck (`LICHT_STAERKE`).
+LICHT_KERN_KANTE = 0.2
+LICHT_KERN_NACHT = 400.0
+#: Unterkante des Kerns über dem Boden, sodass seine MITTE auf `LICHT_HOEHE` liegt.
+LICHT_KERN_UNTEN = round(LICHT_HOEHE - LICHT_KERN_KANTE / 2.0, 6)
 
 HERSTELLER_ORDNER = "FrsMarke"
+
+#: ⭐ TESTTITEL für den Helligkeitsabgleich in MSFS 2024 — mit EINEM Wort abschaltbar. An: `sim.cfg` führt
+#: hinter den 15 endgültigen Titeln zusätzlich die Titel aus `testtitel()`; aus: nur die 15, und die
+#: Ordner der Testtitel werden gelöscht, damit der Paketbau sie nicht als Beiwerk mitnimmt.
+MIT_TESTTITELN = False
+#: Testrunde 2 (nach Runde 1: Multiplikator wirkt, aber 12 ist zu dunkel): Würfel und Säulen mit 20/40/80/160,
+#: die Säulen mit Alpha unten 0,85 (unabhängig vom endgültigen `SAEULE_ALPHA_UNTEN`, damit die Reihe
+#: vergleichbar bleibt). Das Licht als Paare `(Kern-Multiplikator K, Lichtstärke I)`.
+TEST_ALPHA = 0.85
+TEST_MULTIPLIKATOREN = (20, 40, 80, 160)
+TEST_LICHTER = ((100, 100), (100, 400), (400, 400), (400, 1600))
+TEST_FARBE = "signalorange"
 
 #: Würfel- und Säulenfarben: die Friesenfarben und Scheinwerferweiß.
 MARKEN_FARBEN = {**FARBEN, "weiss": WEISS}
@@ -145,9 +256,28 @@ TITEL_LICHT = "FrsLicht_Warm"
 
 
 def alle_titel() -> list[str]:
-    """Die Titel in der Reihenfolge der sim.cfg: erst Würfel, dann Säulen, dann das Licht."""
+    """Die ENDGÜLTIGEN Titel in der Reihenfolge der sim.cfg: erst Würfel, dann Säulen, dann das Licht."""
     return ([titel_wuerfel(n) for n in WUERFEL_FARBEN] + [titel_saeule(n) for n in SAEULEN_FARBEN]
             + [TITEL_LICHT])
+
+
+def testtitel() -> list[tuple[str, str, dict]]:
+    """Die Testtitel: `(Titel, Ordner, Parameter)`, in der Reihenfolge der sim.cfg hinter den endgültigen.
+
+    Würfel und Säulen in Signalorange mit `nacht` = Nacht-Multiplikator 20/40/80/160, die Säule dazu mit
+    `alpha` unten 0,85; das Licht mit `kern` (Nacht-Multiplikator des Leuchtkerns, K) und `staerke`
+    (Lichtstärke des Macro-Lights, I).
+    """
+    raus = []
+    for m in TEST_MULTIPLIKATOREN:
+        raus.append((f"FrsTestWuerfel_M{m}", f"test_wuerfel_m{m}", {"art": "wuerfel", "nacht": float(m)}))
+    for m in TEST_MULTIPLIKATOREN:
+        raus.append((f"FrsTestSaeule_M{m}", f"test_saeule_m{m}",
+                     {"art": "saeule", "nacht": float(m), "alpha": TEST_ALPHA}))
+    for k, i in TEST_LICHTER:
+        raus.append((f"FrsTestLicht_K{k}_I{i}", f"test_licht_k{k}_i{i}",
+                     {"art": "licht", "kern": float(k), "staerke": float(i)}))
+    return raus
 
 
 # --------------------------------------------------------------------------- Farben
@@ -212,16 +342,17 @@ def segment_flaechen(ecken: int, y0: float, y1: float) -> list:
     return raus
 
 
-def saeule_stufen() -> list[tuple[float, float, float, float]]:
+def saeule_stufen(alpha_unten: float | None = None) -> list[tuple[float, float, float, float]]:
     """Die Stapel der Säule: `(y0, y1, alpha, eigenlicht)` je Segment, von unten nach oben.
 
     `t` ist die Höhe der Segmentmitte im Verhältnis zur Säulenhöhe.
     """
     h = SAEULE_HOEHE / SAEULE_SEGMENTE
+    unten = SAEULE_ALPHA_UNTEN if alpha_unten is None else alpha_unten
     raus = []
     for i in range(SAEULE_SEGMENTE):
         t = (i + 0.5) / SAEULE_SEGMENTE
-        alpha = SAEULE_ALPHA_UNTEN + (SAEULE_ALPHA_OBEN - SAEULE_ALPHA_UNTEN) * t
+        alpha = unten + (SAEULE_ALPHA_OBEN - unten) * t
         raus.append((i * h, (i + 1) * h, round(alpha, 6), round((1.0 - t) ** SAEULE_EMISSIV_EXPONENT, 6)))
     return raus
 
@@ -229,8 +360,14 @@ def saeule_stufen() -> list[tuple[float, float, float, float]]:
 # --------------------------------------------------------------------------- glTF
 
 def _gltf(knoten: str, bin_datei: str, gruppen: list, *,
-          licht: dict | None = None, lichtposition: tuple | None = None) -> tuple[str, bytes]:
-    """Baut das glTF: ein Mesh-Knoten, optional dazu ein Lichtknoten. Gibt (JSON, Rohpuffer).
+          licht: dict | None = None, lichtposition: tuple | None = None,
+          knotenposition: tuple | None = None) -> tuple[str, bytes]:
+    """Baut das glTF: ein Mesh-Knoten; mit `licht` heißt er `Light` und trägt das Punktlicht als Kind.
+    Gibt (JSON, Rohpuffer).
+
+    Mit `licht` folgt der Aufbau Asobos Seilwinde `ESW_2B`: Wurzelknoten `Light` MIT Mesh (hier der
+    Leuchtkern), darunter der Lichtknoten `Point` (ohne Mesh). `knotenposition` verschiebt den Wurzelknoten,
+    `lichtposition` liegt relativ dazu.
 
     `gruppen` ist eine Liste `(flaechen, material)` — je Gruppe EINE Primitive mit eigenem Material
     (so entsteht die abgestufte Säule; Würfel und Licht haben genau eine). Jede Primitive hat ihre
@@ -299,17 +436,19 @@ def _gltf(knoten: str, bin_datei: str, gruppen: list, *,
 
     knoten_liste = [{"mesh": 0, "name": knoten}]
     verwendet = ["ASOBO_normal_map_convention"]
-    if any("ASOBO_material_invisible" in m.get("extensions", {}) for m in materialien):
-        verwendet.append("ASOBO_material_invisible")
+    for erweiterung in ("ASOBO_material_emissive", "ASOBO_material_invisible"):
+        if any(erweiterung in m.get("extensions", {}) for m in materialien):
+            verwendet.append(erweiterung)
     if licht is not None:
-        # Wie bei Asobos Seilwinde: ein Knoten `Light` ohne Mesh, darunter das Licht als `Point`.
-        knoten_liste += [
-            {"name": "Light", "children": [2]},
+        # Wie bei Asobos Seilwinde: Wurzelknoten `Light` MIT Mesh, darunter das Licht als `Point`.
+        knoten_liste = [
+            {"mesh": 0, "name": "Light", "translation": list(knotenposition or (0.0, 0.0, 0.0)),
+             "children": [1]},
             {"name": "Point", "translation": list(lichtposition or (0.0, 0.0, 0.0)),
              "extensions": {"ASOBO_macro_light": licht}},
         ]
         verwendet.append("ASOBO_macro_light")
-    wurzeln = [0] if licht is None else [0, 1]
+    wurzeln = [0]
 
     gltf = {
         "asset": {"version": "2.0", "generator": "FriesenBruegge marken_bauen",
@@ -329,7 +468,12 @@ def _gltf(knoten: str, bin_datei: str, gruppen: list, *,
 
 
 def material_farbe(name: str, rgb: tuple[int, int, int], *, eigenlicht: float,
-                   alpha: float = 1.0) -> dict:
+                   alpha: float = 1.0, nacht: float | None = None) -> dict:
+    """Ein Farbmaterial. `nacht` ist der `emissiveNightMultiplier` (Vorgabe `EMISSIVE_NACHT`).
+
+    Die Erweiterung `ASOBO_material_emissive` steht an JEDEM Material dieser Funktion (Würfel und
+    Säulen); das unsichtbare Trägermaterial des Lichts hat sie nicht.
+    """
     lin = farbe_linear(rgb)
     m = {
         "name": name,
@@ -337,6 +481,9 @@ def material_farbe(name: str, rgb: tuple[int, int, int], *, eigenlicht: float,
                                  "roughnessFactor": 0.85},
         "emissiveFactor": [round(min(1.0, k * eigenlicht), 6) for k in lin],
         "doubleSided": alpha < 1.0,
+        "extensions": {"ASOBO_material_emissive": {
+            "emissiveDayMultiplier": EMISSIVE_TAG,
+            "emissiveNightMultiplier": EMISSIVE_NACHT if nacht is None else nacht}},
     }
     if alpha < 1.0:
         m["alphaMode"] = "BLEND"
@@ -346,11 +493,29 @@ def material_farbe(name: str, rgb: tuple[int, int, int], *, eigenlicht: float,
 MATERIAL_UNSICHTBAR = {"name": "Invisible", "extensions": {"ASOBO_material_invisible": {}}}
 
 
-def licht_erweiterung() -> dict:
+def material_kern(name: str, nacht: float | None = None) -> dict:
+    """Das Material des Leuchtkerns: Warmweiß (`LICHT_FARBE`), `emissiveFactor` VOLL, deckend.
+
+    Die Farbe steht als Faktor (0–1, linear), wie sie auch im Macro-Light steht. `nacht` ist der
+    `emissiveNightMultiplier` (Vorgabe `LICHT_KERN_NACHT`).
+    """
+    return {
+        "name": name,
+        "pbrMetallicRoughness": {"baseColorFactor": list(LICHT_FARBE) + [1.0], "metallicFactor": 0.0,
+                                 "roughnessFactor": 0.85},
+        "emissiveFactor": list(LICHT_FARBE),
+        "doubleSided": False,
+        "extensions": {"ASOBO_material_emissive": {
+            "emissiveDayMultiplier": EMISSIVE_TAG,
+            "emissiveNightMultiplier": LICHT_KERN_NACHT if nacht is None else nacht}},
+    }
+
+
+def licht_erweiterung(staerke: float | None = None) -> dict:
     """Der Eintrag `ASOBO_macro_light` des Punktlichts — die Form stammt von Asobos `Point.NNN`."""
     return {
         "color": list(LICHT_FARBE),
-        "intensity": LICHT_STAERKE,
+        "intensity": LICHT_STAERKE if staerke is None else staerke,
         "cone_angle": LICHT_KEGEL,
         "has_simmetry": False,
         "flash_frequency": 0.0,
@@ -379,11 +544,74 @@ def _modell_schreiben(wurzel: Path, ordner: str, kennung: str, gltf_json: str, p
     (ziel / f"{kennung}.bin").write_bytes(puffer)
 
 
-def marken_schreiben(wurzel: Path) -> int:
+def _wuerfel(wurzel: Path, kennung: str, ordner: str, rgb, nacht: float | None = None) -> None:
+    j, p = _gltf(f"frs_{ordner}", f"{kennung}.bin",
+                 [(wuerfel_flaechen(WUERFEL_KANTE),
+                   material_farbe(kennung, rgb, eigenlicht=WUERFEL_EIGENLICHT, nacht=nacht))])
+    _modell_schreiben(wurzel, ordner, kennung, j, p)
+
+
+def _saeule(wurzel: Path, kennung: str, ordner: str, rgb, nacht: float | None = None,
+            alpha_unten: float | None = None) -> None:
+    gruppen = [(segment_flaechen(SAEULE_ECKEN, y0, y1),
+                material_farbe(f"{kennung}_{i:02d}", rgb, eigenlicht=licht_anteil, alpha=alpha, nacht=nacht))
+               for i, (y0, y1, alpha, licht_anteil) in enumerate(saeule_stufen(alpha_unten))]
+    j, p = _gltf(f"frs_{ordner}", f"{kennung}.bin", gruppen)
+    _modell_schreiben(wurzel, ordner, kennung, j, p)
+
+
+def _licht(wurzel: Path, kennung: str, ordner: str, staerke: float | None = None,
+           kern: float | None = None) -> None:
+    """Das Punktlicht mit Leuchtkern: `Light` (0,2-m-Würfel, warmweiß, emissiv) trägt `Point` als Kind.
+
+    Der Kern hat seinen Ursprung in der Mitte der Unterseite; der Wurzelknoten hebt ihn so an, dass seine
+    MITTE auf `LICHT_HOEHE` (0,3 m) liegt, und das Punktlicht sitzt relativ dazu in dieser Mitte.
+    """
+    j, p = _gltf(f"frs_{ordner}", f"{kennung}.bin",
+                 [(wuerfel_flaechen(LICHT_KERN_KANTE), material_kern(f"{kennung}_Kern", kern))],
+                 licht=licht_erweiterung(staerke),
+                 knotenposition=(0.0, LICHT_KERN_UNTEN, 0.0),
+                 lichtposition=(0.0, round(LICHT_KERN_KANTE / 2.0, 6), 0.0))
+    _modell_schreiben(wurzel, ordner, kennung, j, p)
+
+
+def _testordner_loeschen(wurzel: Path, behalten: set[str] = frozenset()) -> None:
+    """Räumt Testordner weg: alle `model.test_*` außer den `behalten`. Nie ein endgültiger Ordner.
+
+    Aus (Schalter aus): `behalten` ist leer, alle Testordner gehen. An: Es bleiben die der aktuellen
+    Testreihe; die einer FRÜHEREN Reihe (Testrunde 1 → 2) gehen, sonst nähme der Paketbau sie als
+    Beiwerk mit, obwohl die sim.cfg sie nicht mehr nennt.
+
+    Nicht per `rmtree` auf den ganzen Baum (OneDrive verweigerte das am 20.09.2026 mitten im Löschen,
+    `paket_bauen.seehund_schreiben`): Datei für Datei, dann der leere Ordner; ein Fehler bleibt stehen.
+    """
+    for d in sorted(wurzel.glob("model.test_*")):
+        if d.name in behalten:
+            continue
+        for f in d.iterdir():
+            _loesche(f.unlink, f)
+        _loesche(d.rmdir, d)
+
+
+def _loesche(aktion, pfad: Path) -> None:
+    """Führt `unlink`/`rmdir` aus; verweigert Windows es wegen `ReadOnly` (OneDrive, 20.09.2026: ein
+    Ordner der vorigen Testreihe ließ sich nur nach `Remove-Item -Force` löschen), wird das Attribut
+    aufgehoben und es folgt ein zweiter Versuch."""
+    try:
+        aktion()
+    except PermissionError:
+        os.chmod(pfad, stat.S_IREAD | stat.S_IWRITE)
+        aktion()
+
+
+def marken_schreiben(wurzel: Path, mit_testtiteln: bool | None = None) -> int:
     """Schreibt alle Marken-SimObjects nach `wurzel` (= `…/SimObjects/Misc/FrsMarke`).
 
-    Gibt die Zahl der Titel zurück.
+    `mit_testtiteln` (Vorgabe `MIT_TESTTITELN`) hängt die Testtitel an die sim.cfg hinter die
+    endgültigen; die Dateien der endgültigen Titel sind davon unabhängig. Gibt die Zahl der Titel zurück.
     """
+    if mit_testtiteln is None:
+        mit_testtiteln = MIT_TESTTITELN
     wurzel.mkdir(parents=True, exist_ok=True)
     teile = ["[VERSION]", "Major=1", "Minor=0", ""]
     n = 0
@@ -395,26 +623,28 @@ def marken_schreiben(wurzel: Path) -> int:
 
     for name, rgb in WUERFEL_FARBEN.items():
         kennung, ordner = titel_wuerfel(name), f"wuerfel_{name}"
-        j, p = _gltf(f"frs_wuerfel_{name}", f"{kennung}.bin",
-                     [(wuerfel_flaechen(WUERFEL_KANTE),
-                       material_farbe(kennung, rgb, eigenlicht=WUERFEL_EIGENLICHT))])
-        _modell_schreiben(wurzel, ordner, kennung, j, p)
+        _wuerfel(wurzel, kennung, ordner, rgb)
         eintrag(kennung, ordner)
 
     for name, rgb in SAEULEN_FARBEN.items():
         kennung, ordner = titel_saeule(name), f"saeule_{name}"
-        gruppen = [(segment_flaechen(SAEULE_ECKEN, y0, y1),
-                    material_farbe(f"{kennung}_{i:02d}", rgb, eigenlicht=licht_anteil, alpha=alpha))
-                   for i, (y0, y1, alpha, licht_anteil) in enumerate(saeule_stufen())]
-        j, p = _gltf(f"frs_saeule_{name}", f"{kennung}.bin", gruppen)
-        _modell_schreiben(wurzel, ordner, kennung, j, p)
+        _saeule(wurzel, kennung, ordner, rgb)
         eintrag(kennung, ordner)
 
-    # Das Punktlicht: ein winziger unsichtbarer Träger (5 cm) und der Lichtknoten darüber.
-    j, p = _gltf("frs_licht_warm", f"{TITEL_LICHT}.bin", [(wuerfel_flaechen(0.05), MATERIAL_UNSICHTBAR)],
-                 licht=licht_erweiterung(), lichtposition=(0.0, LICHT_HOEHE, 0.0))
-    _modell_schreiben(wurzel, "licht_warm", TITEL_LICHT, j, p)
+    _licht(wurzel, TITEL_LICHT, "licht_warm")
     eintrag(TITEL_LICHT, "licht_warm")
+
+    if mit_testtiteln:
+        rgb = MARKEN_FARBEN[TEST_FARBE]
+        for kennung, ordner, par in testtitel():
+            if par["art"] == "wuerfel":
+                _wuerfel(wurzel, kennung, ordner, rgb, nacht=par["nacht"])
+            elif par["art"] == "saeule":
+                _saeule(wurzel, kennung, ordner, rgb, nacht=par["nacht"], alpha_unten=par["alpha"])
+            else:
+                _licht(wurzel, kennung, ordner, staerke=par["staerke"], kern=par["kern"])
+            eintrag(kennung, ordner)
+    _testordner_loeschen(wurzel, {f"model.{o}" for _t, o, _p in testtitel()} if mit_testtiteln else set())
 
     # Ohne diesen Block erkennt der Package Builder gar nichts (`paket_bauen.simobjects_schreiben`).
     # Gleiche Werte wie beim Rauch: `StaticObject`, und die Animationsentfernung so groß, dass ein

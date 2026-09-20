@@ -2,7 +2,7 @@
 <AssetPackage Version="0.1.0">
 	<ItemSettings>
 		<ContentType>MISC</ContentType>
-		<Title>friesenrauch</Title>
+		<Title>friesenmarken</Title>
 		<Manufacturer/>
 		<Creator>devprops</Creator>
 	</ItemSettings>
@@ -12,21 +12,13 @@
 	</Flags>
 	<PackageOrderHint>MISC</PackageOrderHint>
 	<AssetGroups>
-		<AssetGroup Name="SimObjects">
+		<AssetGroup Name="MarkenObjects">
 			<Type Version="1">SimObject</Type>
 			<Flags>
 				<FSXCompatibility>false</FSXCompatibility>
 			</Flags>
-			<AssetDir>PackageSources\SimObjects\Misc\FrsRauch\</AssetDir>
-			<OutputDir>SimObjects\Misc\FrsRauch\</OutputDir>
-		</AssetGroup>
-		<AssetGroup Name="SeehundObjects">
-			<Type Version="1">SimObject</Type>
-			<Flags>
-				<FSXCompatibility>false</FSXCompatibility>
-			</Flags>
-			<AssetDir>PackageSourcesSeehund\SimObjects\Misc\FrsSeehund\</AssetDir>
-			<OutputDir>SimObjects\Misc\FrsSeehund\</OutputDir>
+			<AssetDir>PackageSources\SimObjects\Misc\FrsMarke\</AssetDir>
+			<OutputDir>SimObjects\Misc\FrsMarke\</OutputDir>
 		</AssetGroup>
 	</AssetGroups>
 </AssetPackage>

@@ -29,7 +29,9 @@ und es besser auf den Wind reagiert"*).
 |---|---|
 | [`rauch_bauen.py`](rauch_bauen.py) | schreibt die sechs Effekt-XMLs (Partikel, Physik, Farben) |
 | [`paket_bauen.py`](paket_bauen.py) | Material, Trägermodell, SimObjects, Projektdatei für `fspackagetool` |
-| [`bauen.ps1`](bauen.ps1) | ruft beide auf, startet den Package Builder und **räumt den Simulator hinterher ab** |
+| [`bauen.ps1`](bauen.ps1) | Rauch + Seehund mit dem **2020er SDK** aus `FriesenRauch.xml`: startet den Package Builder und **räumt den Simulator hinterher ab** |
+| [`marken_bauen.py`](marken_bauen.py) | schreibt die Marken (Würfel, Lichtsäulen, Punktlicht, dazu die Testtitel) nach `PackageSources/SimObjects/Misc/FrsMarke/` |
+| [`bauen_marken.ps1`](bauen_marken.ps1) | die Marken mit dem **2024er SDK** aus `FriesenMarken.xml` (eigener Bau, eigenes Teilpaket `devprops-friesenmarken`) |
 | `rauch_msfs.png` | die Textur — **eine** Wolke, kein Atlas (s. unten) |
 
 Erst `python paket_bauen.py` (schreibt Quellen, Paketdefinitionen und den abgedunkelten Seehund
@@ -39,9 +41,44 @@ Sekunden; der Simulator beendet sich nicht von selbst, deshalb räumt das Skript
 `fspackagetool`, `FlightSimulator`, `gamelaunchhelper` und `gamingservicesui`. Wer nur das
 Werkzeug beendet, lässt den Simulator stehen, und der nächste Bau schreibt dann **nichts** (gemessen
 20.09.2026). Das Skript bricht ab, wenn schon ein Simulator läuft (`-Trotzdem` erzwingt es). Der
-2024er Weg (`C:\MSFS 2024 SDK`, Start von `FlightSimulator2024`) steht nur noch in der Git-Historie.
+2024er Weg (`C:\MSFS 2024 SDK`, Start von `FlightSimulator2024`) gilt nur noch für die Marken
+(`bauen_marken.ps1`, s. nächster Abschnitt).
 
 ⚠ **Niemals bauen, während jemand im Simulator sitzt.**
+
+### Zwei SDKs: Rauch und Seehund mit dem 2020er, die Marken mit dem 2024er
+
+| Teil | SDK | Skript / Projekt | Teilpaket |
+|---|---|---|---|
+| Rauch, Seehund | **2020er** (`D:\MSFS SDK`) | `bauen.ps1` / `FriesenRauch.xml` | `devprops-friesenrauch`, `-mat`, `-vfx` |
+| Marken | **2024er** (`C:\MSFS 2024 SDK`) | `bauen_marken.ps1` / `FriesenMarken.xml` | `devprops-friesenmarken` |
+
+**Warum zwei?** Die Marken tragen an jedem Material `ASOBO_material_emissive` (`emissiveNightMultiplier`),
+den einzigen Regler für ihre Helligkeit in MSFS 2024. **Der 2020er Compiler entfernt diese Erweiterung**:
+Im Quell-glTF steht `emissiveNightMultiplier 6.0`, das fertige `FrsTestWuerfel_M6.gltf` hat nur
+`emissiveFactor`, und `extensionsUsed` führt nur `ASOBO_normal_map_convention` und `asobo_optimized`
+(gemessen am 2020er Bau, 20.09.2026) — der Multiplikator wirkte in keinem Simulator. Rauch und Seehund
+dürfen dagegen **nicht** mit dem 2024er SDK gebaut werden: Dessen Toolchain macht aus PNG-Texturen
+`.KTX2` (MSFS 2020 liest sie nicht: rosa Seehunde) und kennt nur die 2024er Behavior-Vorlage
+(`ASOBO_VFX_Template`, mit der MSFS 2020 nicht raucht).
+
+Zusammen ins Paket kommen sie in `msfs/paket.ps1`: **vier Teile** (drei Rauch, einer Marken) werden zu
+einem Community-Paket `friesenbruegge` verschmolzen. Liegt in einem alten Rauchteil noch
+`SimObjects\Misc\FrsMarke`, räumt `paket.ps1` den Ordner weg; die Marken kommen allein aus dem Markenteil.
+Die Zwischenordner der beiden Toolchains sind getrennt (`_PackageInt` und `_PackageInt2024`).
+
+⚠ **Ungemessen:** ob ein mit dem 2024er SDK kompiliertes, textur- und behaviorfreies Modell in MSFS 2020
+lädt. Die Marken haben weder Textur noch Behavior — genau das, woran die 2024er Toolchain Rauch und
+Seehund für 2020 unbrauchbar machte —, aber gemessen ist es erst im Flug.
+
+**Der 2024er Bau zeigt den Xbox-Startbildschirm** (Prozess `gamingservicesui`), nicht den laufenden
+Simulator, und dieses Fenster bleibt nach dem Bau stehen. Das Aufräumen der vier Prozesse (`fspackagetool`,
+`FlightSimulator2024`, `gamelaunchhelper`, `gamingservicesui`) ist deshalb **Pflicht**: `bauen_marken.ps1`
+macht es in einem `finally` — auch bei Timeout, Fehler oder Strg+C. Der 2020er Bau (`bauen.ps1`) läuft
+dagegen ohne Fenster.
+
+`bauen_marken.ps1` prüft nach dem Bau selbst, ob `ASOBO_material_emissive` im FERTIGEN glTF jedes Würfel-
+und Säulenmodells steht (Exit 2, wenn nicht).
 
 ---
 

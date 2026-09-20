@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Version="2" Name="FriesenMarken" FolderName="Packages" MetadataFolderName="PackagesMetadata">
+	<OutputDirectory>.</OutputDirectory>
+	<TemporaryOutputDirectory>_PackageInt2024</TemporaryOutputDirectory>
+	<Packages>
+		<Package>PackageDefinitions\devprops-friesenmarken.xml</Package>
+	</Packages>
+</Project>

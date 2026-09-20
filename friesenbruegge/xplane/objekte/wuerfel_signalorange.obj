@@ -3,7 +3,8 @@ I
 OBJ
 # Die FriesenBruegge -- Wuerfel, Kante 3 m, Friesenfarbe.
 
-TEXTURE	
+TEXTURE	marken_weiss.png
+TEXTURE_LIT	wuerfel_signalorange_LIT.png
 POINT_COUNTS	24 0 0 36
 
 VT	-1.5000	0.0000	1.5000	0.0000	0.0000	1.0000	0.5000	0.5000
@@ -42,5 +43,4 @@ IDX	22
 IDX	23
 
 ATTR_diffuse_rgb	1.0000 0.4157 0.0745
-ATTR_emission_rgb	0.3500 0.1455 0.0261
 TRIS	0 36

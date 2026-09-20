@@ -10,8 +10,11 @@ braucht, damit `AICreateSimulatedObject` einen Titel wie `FrsRauch_Signalrot` an
       SimObjects/Misc/FrsSeehund/               der Seehund, drei Größen (14.09.2026)
       SimObjects/Misc/FrsMarke/                 Würfel, Lichtsäulen, Punktlicht (20.09.2026,
                                                 `marken_bauen.py`)
-    PackageDefinitions/                         drei Pakete
-    FriesenRauch.xml                            das Projekt für fspackagetool
+    PackageDefinitions/                         vier Pakete: drei Rauch, eines Marken
+    FriesenRauch.xml                            Projekt für fspackagetool 2020: Rauch + Seehund
+    FriesenMarken.xml                           Projekt für fspackagetool 2024: die Marken
+                                                (der 2020er Compiler entfernt
+                                                `ASOBO_material_emissive`, s. `definitionen_schreiben`)
 
 ⚠⚠ EIGENE MODELLE MIT TEXTUR: ZWEI STILLE FALLEN, BEIDE OHNE FEHLERMELDUNG
 ==========================================================================
@@ -525,9 +528,21 @@ def definitionen_schreiben() -> None:
           # deshalb in einen eigenen Schritt.
           gruppe("SeehundObjects", "SimObject",
                  "PackageSourcesSeehund\\SimObjects\\Misc\\FrsSeehund\\",
-                 "SimObjects\\Misc\\FrsSeehund\\") +
-          # Die Marken (Würfel, Lichtsäulen, Punktlicht) liegen im SELBEN Teilpaket, in einer
-          # dritten Gruppe — aus demselben Grund wie der Seehund: ein Paket, nicht vier.
+                 "SimObjects\\Misc\\FrsSeehund\\"))
+
+    # ⭐ DIE MARKEN SIND EIN EIGENES TEILPAKET (20.09.2026) — und werden mit dem 2024er SDK gebaut.
+    #
+    # Sie lagen zuerst als dritte Gruppe im Rauch-Teilpaket. Der 2020er Compiler ENTFERNT aber
+    # `ASOBO_material_emissive` aus dem fertigen Material (Quelle: emissiveNightMultiplier 6.0; das
+    # kompilierte `FrsTestWuerfel_M6.gltf` hat nur `emissiveFactor` und in `extensionsUsed` nur
+    # `ASOBO_normal_map_convention`/`asobo_optimized`) — der Nacht-Multiplikator wirkte damit in
+    # keinem Simulator. Rauch und Seehund MÜSSEN dagegen weiter mit dem 2020er SDK gebaut werden
+    # (die 2024er Toolchain macht KTX2-Texturen und kennt nur die 2024er Behavior-Vorlage; beides
+    # läuft in MSFS 2020 nicht, s. LIESMICH). Zwei SDKs heißt zwei Projektdateien: Der Rauch baut mit
+    # `bauen.ps1` aus `FriesenRauch.xml`, die Marken mit `bauen_marken.ps1` aus `FriesenMarken.xml`.
+    # Die Zwischenordner sind getrennt (`_PackageInt` und `_PackageInt2024`): Beide Toolchains legen
+    # dort ihre eigenen Zwischenformate ab, und eine Mischung wäre ein stiller Fehler.
+    paket(f"{HERSTELLER}-friesenmarken.xml", "friesenmarken", "MISC",
           gruppe("MarkenObjects", "SimObject",
                  f"PackageSources\\SimObjects\\Misc\\{MARKEN_ORDNER}\\",
                  f"SimObjects\\Misc\\{MARKEN_ORDNER}\\"))
@@ -543,7 +558,16 @@ def definitionen_schreiben() -> None:
         f"\t\t<Package>PackageDefinitions\\{HERSTELLER}-friesenrauch-mat.xml</Package>\n"
         f"\t\t<Package>PackageDefinitions\\{HERSTELLER}-friesenrauch.xml</Package>\n"
         "\t</Packages>\n</Project>\n", encoding="utf-8", newline="\r\n")
-    print("  3 Paketdefinitionen + Projektdatei")
+    (HIER / "FriesenMarken.xml").write_text(
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        '<Project Version="2" Name="FriesenMarken" FolderName="Packages" '
+        'MetadataFolderName="PackagesMetadata">\n'
+        "\t<OutputDirectory>.</OutputDirectory>\n"
+        "\t<TemporaryOutputDirectory>_PackageInt2024</TemporaryOutputDirectory>\n"
+        "\t<Packages>\n"
+        f"\t\t<Package>PackageDefinitions\\{HERSTELLER}-friesenmarken.xml</Package>\n"
+        "\t</Packages>\n</Project>\n", encoding="utf-8", newline="\r\n")
+    print("  4 Paketdefinitionen (drei Rauch, eine Marken) + zwei Projektdateien")
 
 
 def seehund_schreiben() -> None:
@@ -576,9 +600,9 @@ def main() -> None:
     print(f"  {n} Marken (Würfel, Säulen, Licht) nach SimObjects/Misc/{MARKEN_ORDNER}")
     definitionen_schreiben()
     print("\nJetzt bauen:")
-    print(r"  .\bauen.ps1")
-    print("  ⚠ startet MSFS 2020 im Baumodus (ohne Fenster) und beendet es danach selbst.")
-    print("    Nicht aufrufen, waehrend jemand fliegt -- erst ansagen.")
+    print(r"  .\bauen.ps1          Rauch + Seehund, 2020er SDK (startet MSFS 2020 im Baumodus, ohne Fenster)")
+    print(r"  .\bauen_marken.ps1   Marken, 2024er SDK (zeigt den Xbox-Startbildschirm; das Skript schliesst ihn)")
+    print("  ⚠ Nicht aufrufen, waehrend jemand fliegt -- erst ansagen.")
 
 
 if __name__ == "__main__":

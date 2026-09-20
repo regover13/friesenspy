@@ -10,7 +10,8 @@
   }
  },
  "extensionsUsed": [
-  "ASOBO_normal_map_convention"
+  "ASOBO_normal_map_convention",
+  "ASOBO_material_emissive"
  ],
  "scene": 0,
  "scenes": [
@@ -61,7 +62,13 @@
     0.050445,
     0.002279
    ],
-   "doubleSided": false
+   "doubleSided": false,
+   "extensions": {
+    "ASOBO_material_emissive": {
+     "emissiveDayMultiplier": 1.0,
+     "emissiveNightMultiplier": 80.0
+    }
+   }
   }
  ],
  "accessors": [

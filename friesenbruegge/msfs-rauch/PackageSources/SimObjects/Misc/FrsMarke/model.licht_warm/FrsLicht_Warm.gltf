@@ -11,15 +11,14 @@
  },
  "extensionsUsed": [
   "ASOBO_normal_map_convention",
-  "ASOBO_material_invisible",
+  "ASOBO_material_emissive",
   "ASOBO_macro_light"
  ],
  "scene": 0,
  "scenes": [
   {
    "nodes": [
-    0,
-    1
+    0
    ],
    "name": "Scene"
   }
@@ -27,19 +26,21 @@
  "nodes": [
   {
    "mesh": 0,
-   "name": "frs_licht_warm"
-  },
-  {
    "name": "Light",
+   "translation": [
+    0.0,
+    0.2,
+    0.0
+   ],
    "children": [
-    2
+    1
    ]
   },
   {
    "name": "Point",
    "translation": [
     0.0,
-    0.3,
+    0.1,
     0.0
    ],
    "extensions": {
@@ -49,7 +50,7 @@
       0.84,
       0.6
      ],
-     "intensity": 8.0,
+     "intensity": 1600.0,
      "cone_angle": 360,
      "has_simmetry": false,
      "flash_frequency": 0.0,
@@ -79,9 +80,28 @@
  ],
  "materials": [
   {
-   "name": "Invisible",
+   "name": "FrsLicht_Warm_Kern",
+   "pbrMetallicRoughness": {
+    "baseColorFactor": [
+     1.0,
+     0.84,
+     0.6,
+     1.0
+    ],
+    "metallicFactor": 0.0,
+    "roughnessFactor": 0.85
+   },
+   "emissiveFactor": [
+    1.0,
+    0.84,
+    0.6
+   ],
+   "doubleSided": false,
    "extensions": {
-    "ASOBO_material_invisible": {}
+    "ASOBO_material_emissive": {
+     "emissiveDayMultiplier": 1.0,
+     "emissiveNightMultiplier": 400.0
+    }
    }
   }
  ],
@@ -92,14 +112,14 @@
    "count": 24,
    "type": "VEC3",
    "min": [
-    -0.025,
+    -0.1,
     0.0,
-    -0.025
+    -0.1
    ],
    "max": [
-    0.025,
-    0.05,
-    0.025
+    0.1,
+    0.2,
+    0.1
    ]
   },
   {

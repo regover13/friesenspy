@@ -2,15 +2,30 @@
 """Die X-Plane-Marken der FriesenBrügge: Würfel, Lichtsäulen, ein Licht (20.09.2026).
 
 Nutzerwunsch: *„Würfel in den Friesenfarben. Säule in Weiß + Friesenfarben"*, *„Würfel ca. 3 m"*, *„ein einfaches
-Licht"*. Nach dem MSFS-Flugtest ist die Säule ein **Scheinwerferstrahl**: 100 m, Achteck unten 4 m / oben 6 m, Deckkraft
-0,55 → 0,02 (Textur, `v` = Höhe) und Leuchten `(1 − t)^1,2` in 20 gestapelten Abschnitten. Das Weiß ist warm
-(`WEISS` = 255/240/200), es gibt sieben Würfel und sieben Säulen. Eigene OBJ8-Dateien, erzeugt von
-`friesenbruegge/xplane/marken_bauen.py`.
+Licht"*. Die Säule ist ein **Scheinwerferstrahl**: 100 m, Achteck unten 4 m / oben 6 m, Deckkraft 0,55 → 0,02
+(Albedo-Textur, `v` = Höhe) und Leuchten `(1 − t)^1,2` (LIT-Textur). Das Weiß ist warm (`WEISS` = 255/240/200), es gibt
+sieben Würfel und sieben Säulen. Eigene OBJ8-Dateien, erzeugt von `friesenbruegge/xplane/marken_bauen.py`.
+
+⭐ **Die Nachthelligkeit kommt aus der LIT-Textur, nicht aus `ATTR_emission_rgb`, und NICHT aus `GLOBAL_luminance`.**
+Der erste Flug (20.09.2026, nachts) zeigte die Marken „viel zu dunkel"; die OBJ8-Spezifikation führt
+`ATTR_emission_rgb` als „[deprecated]", das Leuchten steckt in `TEXTURE_LIT`. Die Würfel hatten außerdem keine
+Albedo-Textur und waren bei Tag fast schwarz. Die Testleiter im X-Plane-Flug (nachts) hat gemessen:
+
+| Stufe (Signalorange)                 | Luminanz | Aufhellung neben der Säule |
+|--------------------------------------|----------|----------------------------|
+| `Lstd` — ohne `GLOBAL_luminance`     | 125      | 49                         |
+| `L2500` (überbelichtet, gelb-weiß)   | ~250     | 73                         |
+| `L40000` (überbelichtet, gelb-weiß)  | ~250     | 220                        |
+| Bezug: Runway-Feuer ~144–153, Hintergrund 24                                  |
+
+Deshalb stehen Würfel und Säulen **ohne** `GLOBAL_luminance`, das Licht auf 4500 cd (Laminars Randfeuer) mit 9000 cd im
+Lichtfleck. Die Testleiter ist abgeschaltet (`MIT_TESTOBJEKTEN = False`); ihre Erzeugung ist hier weiter gebunden.
 
 ⚠ **X-Plane wurde nicht gestartet.** Was hier gebunden ist, ist das, was sich ohne Simulator prüfen lässt: Format,
-Zählungen, Maße, Farben, Flächenrichtung — und dass die Lichtzeilen die Parameterzahl haben, die `lights.txt` der
-Installation verlangt. Ob es nachts leuchtet, sagt nur ein Flug.
+Zählungen, Maße, Farben, Flächenrichtung, Texturen — und dass die Lichtzeilen die Parameterzahl haben, die `lights.txt`
+der Installation verlangt. Ob es nachts leuchtet, sagt nur ein Flug.
 """
+import hashlib
 import importlib.util
 import math
 import re
@@ -46,7 +61,7 @@ def _lesen(pfad: Path) -> dict:
     zeilen = pfad.read_text(encoding="utf-8").splitlines()
     assert zeilen[:3] == ["I", "800", "OBJ"], f"{pfad.name}: Kopf"
     o = {"vt": [], "idx": [], "tris": None, "abschnitte": [], "attr": {}, "lichter": [], "punkte": None,
-         "textur": None}
+         "textur": None, "lit": None, "nits": None, "zeilen": zeilen}
     for z in zeilen[3:]:
         teile = z.split()
         if not teile or teile[0].startswith("#"):
@@ -54,6 +69,10 @@ def _lesen(pfad: Path) -> dict:
         k = teile[0]
         if k == "TEXTURE":
             o["textur"] = teile[1] if len(teile) > 1 else ""
+        elif k == "TEXTURE_LIT":
+            o["lit"] = teile[1]
+        elif k == "GLOBAL_luminance":
+            o["nits"] = int(teile[1])
         elif k == "POINT_COUNTS":
             o["punkte"] = tuple(int(x) for x in teile[1:5])
         elif k == "VT":
@@ -64,13 +83,12 @@ def _lesen(pfad: Path) -> dict:
             o["idx"].append(int(teile[1]))
         elif k == "TRIS":
             o["tris"] = (int(teile[1]), int(teile[2]))
-            # Was für DIESEN Abschnitt gilt: der zuletzt gesetzte Emissivwert (Attribute wirken auf das folgende TRIS).
-            o["abschnitte"].append((int(teile[1]), int(teile[2]), o["attr"].get("ATTR_emission_rgb")))
-        elif k in ("ATTR_diffuse_rgb", "ATTR_emission_rgb"):
+            o["abschnitte"].append((int(teile[1]), int(teile[2]), None))
+        elif k == "ATTR_diffuse_rgb":
             o["attr"][k] = tuple(float(x) for x in teile[1:4])
         elif k == "LIGHT_PARAM":
             o["lichter"].append((teile[1], teile[2:]))
-        elif k in ("ATTR_no_cull", "ATTR_blend", "ATTR_LOD"):
+        elif k in ("ATTR_no_cull", "ATTR_blend", "ATTR_LOD", "ATTR_emission_rgb"):
             o["attr"][k] = teile[1:]
     return o
 
@@ -91,14 +109,22 @@ FRIESEN = ["navy", "hellblau", "rot", "orange", "signalrot", "signalorange"]
 WUERFEL = FRIESEN + ["weiss"]
 SAEULEN = FRIESEN + ["weiss"]
 WEISS = (255, 240, 200)                 # „Scheinwerferweiß" — identisch zur MSFS-Seite
+ALLE_OBJ = [f"wuerfel_{n}" for n in WUERFEL] + [f"saeule_{n}" for n in SAEULEN]
 
 
 def _farbe(n, farben):
     return WEISS if n == "weiss" else farben[n]
 
 
-def _tris_gesamt(o):
-    return sum(a[1] for a in o["abschnitte"])
+def _lit(farbe):
+    """Leuchtfarbe: Farbton der Friesenfarbe, größter Kanal auf 255 gezogen (Gegenstück zu `lit_farbe`)."""
+    m = max(farbe)
+    return tuple(round(c * 255.0 / m) for c in farbe)
+
+
+def _bild(name: str):
+    from PIL import Image
+    return Image.open(OBJEKTE / name)
 
 
 # ---- die Dateimenge ---------------------------------------------------------------------
@@ -109,13 +135,24 @@ def test_es_gibt_sieben_wuerfel_sieben_saeulen_und_ein_licht():
         assert f"wuerfel_{n}.obj" in da
     for n in SAEULEN:
         assert f"saeule_{n}.obj" in da
-    assert "licht_warm.obj" in da and "marken.png" in da
+    assert "licht_warm.obj" in da
     eigene = {n for n in da if n.endswith(".obj") and n.split("_")[0] in ("wuerfel", "saeule", "licht")}
     assert len(eigene) == 15, "7 Würfel + 7 Säulen + 1 Licht"
 
 
+def test_jede_textur_die_ein_objekt_nennt_liegt_daneben():
+    """Ein Objekt ohne seine Textur zeichnet X-Plane weiß oder gar nicht — und niemand merkt es beim Bau."""
+    for p in sorted(OBJEKTE.glob("*.obj")):
+        if p.name.split("_")[0] not in ("wuerfel", "saeule", "licht", "test"):
+            continue
+        o = _lesen(p)
+        for tex in (o["textur"], o["lit"]):
+            if tex:
+                assert (OBJEKTE / tex).exists(), f"{p.name}: {tex} fehlt"
+
+
 def test_der_workflow_kopiert_den_ganzen_objekte_ordner():
-    """Neue Dateien kommen so von allein ins Plugin — kein Namenskatalog, der nachgezogen werden müsste."""
+    """Neue Dateien (auch die PNG) kommen so von allein ins Plugin — kein Namenskatalog, der nachgezogen werden müsste."""
     yml = (WURZEL / ".github" / "workflows" / "bruegge-xplane.yml").read_text(encoding="utf-8")
     assert "cp friesenbruegge/xplane/objekte/* FriesenBruegge/objekte/" in yml
 
@@ -134,20 +171,19 @@ def test_das_scheinwerferweiss_ist_eine_konstante_fuer_saeule_und_wuerfel(marken
 
 # ---- Format aller Mesh-Dateien ---------------------------------------------------------
 
-@pytest.mark.parametrize("name", [f"wuerfel_{n}" for n in WUERFEL] + [f"saeule_{n}" for n in SAEULEN])
+@pytest.mark.parametrize("name", ALLE_OBJ)
 def test_zaehlungen_und_indizes_stimmen(name):
     o = _lesen(OBJEKTE / f"{name}.obj")
     assert o["punkte"] == (len(o["vt"]), 0, 0, len(o["idx"])), "POINT_COUNTS = VT / 0 / 0 / IDX"
     assert len(o["idx"]) % 3 == 0 and all(0 <= i < len(o["vt"]) for i in o["idx"])
-    # Die TRIS-Abschnitte schließen lückenlos aneinander und decken alle Indizes ab.
     nächster = 0
     for start, anzahl, _ in o["abschnitte"]:
         assert start == nächster and anzahl % 3 == 0
         nächster += anzahl
-    assert nächster == len(o["idx"])
+    assert nächster == len(o["idx"]), "die TRIS-Abschnitte decken alle Indizes lückenlos ab"
 
 
-@pytest.mark.parametrize("name", [f"wuerfel_{n}" for n in WUERFEL] + [f"saeule_{n}" for n in SAEULEN])
+@pytest.mark.parametrize("name", ALLE_OBJ)
 def test_normalen_sind_normiert_und_die_flaechen_zeigen_nach_aussen(name):
     """Vorderseite = gegen den Uhrzeigersinn von außen gesehen: (v1−v0)×(v2−v0) muss zur Normalen zeigen."""
     o = _lesen(OBJEKTE / f"{name}.obj")
@@ -159,6 +195,12 @@ def test_normalen_sind_normiert_und_die_flaechen_zeigen_nach_aussen(name):
         assert _dot(kreuz, a[3:6]) > 0, f"Dreieck {t // 3} zeigt nach innen"
 
 
+@pytest.mark.parametrize("name", ALLE_OBJ + ["licht_warm"])
+def test_kein_veraltetes_emissiv_mehr(name):
+    """`ATTR_emission_rgb` ist in X-Plane 12 „[deprecated]" (OBJ8-Spezifikation) — die Nacht kommt aus TEXTURE_LIT."""
+    assert "ATTR_emission_rgb" not in _lesen(OBJEKTE / f"{name}.obj")["attr"]
+
+
 # ---- Würfel ----------------------------------------------------------------------------
 
 @pytest.mark.parametrize("n", WUERFEL)
@@ -168,24 +210,35 @@ def test_der_wuerfel_ist_drei_meter_und_steht_auf_dem_ursprung(n):
     assert (min(xs), max(xs)) == (-1.5, 1.5) and (min(zs), max(zs)) == (-1.5, 1.5)
     assert (min(ys), max(ys)) == (0.0, 3.0), "Ursprung Mitte der Unterseite"
     assert (len(o["vt"]), len(o["idx"])) == (24, 36), "sechs Flächen mit eigenen Ecken, zwölf Dreiecke"
-    assert o["textur"] == "", "massiver Würfel, keine Textur"
 
 
 @pytest.mark.parametrize("n", WUERFEL)
-def test_die_wuerfelfarbe_ist_die_friesenfarbe_mit_leichtem_leuchten(n, farben):
+def test_der_wuerfel_hat_eine_albedo_und_eine_leuchtfarbe(n, farben):
+    """Bei Tag: weiße Albedo × ATTR_diffuse_rgb (wie die Säulen, dort im Flug in Ordnung). Bei Nacht: TEXTURE_LIT."""
     o = _lesen(OBJEKTE / f"wuerfel_{n}.obj")
-    soll = tuple(c / 255.0 for c in _farbe(n, farben))
-    assert o["attr"]["ATTR_diffuse_rgb"] == pytest.approx(soll, abs=1e-3)
-    assert o["attr"]["ATTR_emission_rgb"] == pytest.approx(tuple(c * 0.35 for c in soll), abs=1e-3)
+    farbe = _farbe(n, farben)
+    assert o["textur"] == "marken_weiss.png", "ohne Textur war der Würfel bei Tag fast schwarz"
+    assert o["attr"]["ATTR_diffuse_rgb"] == pytest.approx(tuple(c / 255.0 for c in farbe), abs=1e-3)
+    assert o["lit"] == f"wuerfel_{n}_LIT.png"
+    assert o["nits"] is None and "GLOBAL_luminance" not in "\n".join(o["zeilen"]), \
+        "gemessen: jede Stufe ab 2500 Nits überbelichtet, ohne die Zeile stimmt die Farbe"
+    bild = _bild(o["lit"])
+    assert bild.size == (4, 4) and bild.mode == "RGB"
+    assert bild.getpixel((1, 1)) == _lit(farbe), "Farbton der Friesenfarbe, voll hell"
 
 
-def test_die_sechs_friesenwuerfel_sind_unveraendert():
-    """Der Koordinator, 20.09.2026: „Die Würfel sind gut und bleiben UNVERÄNDERT" — Prüfsumme des Stands vom Flugtest."""
-    import hashlib
-    erwartet = {"navy": "469987de4544278a", "hellblau": "c94e836ae4c4531b", "rot": "25d99db8608fe673",
-                "orange": "6cd77388e35d1f6e", "signalrot": "1083ae8f7fe4dd4d", "signalorange": "180812c58f23f173"}
-    for n, h in erwartet.items():
-        assert hashlib.sha256((OBJEKTE / f"wuerfel_{n}.obj").read_bytes()).hexdigest()[:16] == h, n
+def test_die_albedo_der_wuerfel_ist_opak_weiss():
+    bild = _bild("marken_weiss.png")
+    assert bild.size == (4, 4) and bild.mode == "RGB"
+    assert all(bild.getpixel((x, y)) == (255, 255, 255) for x in range(4) for y in range(4))
+
+
+def test_die_wuerfelgeometrie_ist_unveraendert():
+    """Der Koordinator: „Die Würfel sind gut und bleiben UNVERÄNDERT" — Eckpunkte und Indizes des Flugtest-Stands."""
+    def geo(n):
+        zeilen = _lesen(OBJEKTE / f"wuerfel_{n}.obj")["zeilen"]
+        return hashlib.sha256("\n".join(z for z in zeilen if z.startswith(("VT", "IDX"))).encode()).hexdigest()[:16]
+    assert {geo(n) for n in WUERFEL} == {"73f8424c26802bc0"}, "alle sieben teilen dieselbe Geometrie"
 
 
 # ---- Säulen ----------------------------------------------------------------------------
@@ -205,53 +258,57 @@ def test_die_saeule_ist_hundert_meter_hoch_und_weitet_von_vier_auf_sechs_meter_a
     ys = [v[1] for v in o["vt"]]
     assert (min(ys), max(ys)) == (0.0, 100.0)
     seiten = list(_seite(o))
-    assert len(seiten) == 20 * 8 * 4, "zwanzig Abschnitte, acht Seiten, vier Ecken"
+    assert len(seiten) == 8 * 4, "acht Seitenflächen zu je vier Ecken — ein einziger Körper"
+    abstaende = []
     for v, nh in seiten:
         betrag = math.hypot(nh[0], nh[2])
         abstand = _dot(v[:3], (nh[0] / betrag, 0.0, nh[2] / betrag))
         assert abstand == pytest.approx(2.0 + v[1] / 100.0, abs=2e-3), "linear von 2 m auf 3 m"
-    unten = [a for v, nh in seiten if v[1] == 0.0 for a in [_dot(v[:3], (nh[0] / math.hypot(nh[0], nh[2]), 0.0, nh[2] / math.hypot(nh[0], nh[2])))]]
-    oben = [a for v, nh in seiten if v[1] == 100.0 for a in [_dot(v[:3], (nh[0] / math.hypot(nh[0], nh[2]), 0.0, nh[2] / math.hypot(nh[0], nh[2])))]]
-    assert unten and oben and max(unten) == pytest.approx(2.0, abs=1e-3) and min(oben) == pytest.approx(3.0, abs=1e-3)
-    assert len(o["vt"]) == 648 and len(o["idx"]) == 978, "20×8×2 Dreiecke + Deckel (6)"
+        abstaende.append((v[1], abstand))
+    assert max(a for y, a in abstaende if y == 0.0) == pytest.approx(2.0, abs=1e-3)
+    assert min(a for y, a in abstaende if y == 100.0) == pytest.approx(3.0, abs=1e-3)
+    assert (len(o["vt"]), len(o["idx"])) == (40, 66), "8 Seiten (16 Dreiecke) + Deckel (6)"
 
 
 @pytest.mark.parametrize("n", SAEULEN)
 def test_die_v_koordinate_laeuft_mit_der_hoehe(n):
-    """Nur so kann der senkrechte Alpha-Verlauf der Textur nach oben ausblenden."""
+    """Nur so können die Texturen (Alpha und LIT) nach oben ausblenden."""
     o = _lesen(OBJEKTE / f"saeule_{n}.obj")
     for v in o["vt"]:
         assert v[6] == pytest.approx(0.5) and v[7] == pytest.approx(v[1] / 100.0, abs=1e-4)
 
 
 @pytest.mark.parametrize("n", SAEULEN)
-def test_das_leuchten_faellt_von_abschnitt_zu_abschnitt_bis_null(n, farben):
-    """Zwanzig Abschnitte mit (1 − t)^1,2, t = Höhe der Mitte; dazu der Deckel bei t = 1 ohne Leuchten."""
+def test_die_saeule_hat_albedo_diffuse_und_lit_textur(n, farben):
     o = _lesen(OBJEKTE / f"saeule_{n}.obj")
-    soll = tuple(c / 255.0 for c in _farbe(n, farben))
-    assert len(o["abschnitte"]) == 21
-    faktoren = []
-    for k, (start, anzahl, em) in enumerate(o["abschnitte"]):
-        t = 1.0 if k == 20 else (k + 0.5) / 20.0
-        erwartet = (1.0 - t) ** 1.2
-        assert em == pytest.approx(tuple(c * erwartet for c in soll), abs=2e-4), f"Abschnitt {k}"
-        faktoren.append(erwartet)
-    assert all(a > b for a, b in zip(faktoren, faktoren[1:])), "streng monoton fallend"
-    assert faktoren[0] > 0.95 and faktoren[-1] == 0.0
-    assert o["attr"]["ATTR_diffuse_rgb"] == pytest.approx(soll, abs=1e-3)
+    farbe = _farbe(n, farben)
+    assert o["textur"] == "marken.png", "die Albedo trägt den Alpha-Verlauf"
+    assert o["attr"]["ATTR_diffuse_rgb"] == pytest.approx(tuple(c / 255.0 for c in farbe), abs=1e-3)
+    assert o["lit"] == f"saeule_{n}_LIT.png"
+    assert o["nits"] is None and "GLOBAL_luminance" not in "\n".join(o["zeilen"]), \
+        "gemessen: jede Stufe ab 2500 Nits überbelichtet, ohne die Zeile stimmt die Farbe"
+    assert "ATTR_no_cull" in o["attr"] and "ATTR_blend" in o["attr"], "halbtransparent, von innen wie außen sichtbar"
+    assert len(o["abschnitte"]) == 1, "ein Körper, ein TRIS — der Verlauf steckt in der Textur"
 
 
 @pytest.mark.parametrize("n", SAEULEN)
-def test_die_saeule_blendet_und_ist_von_innen_wie_aussen_sichtbar(n):
-    o = _lesen(OBJEKTE / f"saeule_{n}.obj")
-    assert o["textur"] == "marken.png", "die Textur trägt den Alpha-Verlauf"
-    assert "ATTR_no_cull" in o["attr"] and "ATTR_blend" in o["attr"]
+def test_das_leuchten_der_saeule_faellt_in_der_lit_textur_von_unten_nach_oben(n, farben):
+    """(1 − t)^1,2 in die LIT-Textur gebacken: unten volle Leuchtfarbe, oben null, dazwischen streng fallend."""
+    bild = _bild(f"saeule_{n}_LIT.png")
+    assert bild.size == (4, 256) and bild.mode == "RGB"
+    farbe = _lit(_farbe(n, farben))
+    zeilen = [bild.getpixel((1, y)) for y in range(256)]                   # von oben nach unten
+    assert zeilen[-1] == farbe and zeilen[0] == (0, 0, 0)
+    hell = [max(z) for z in zeilen]
+    assert all(a <= b for a, b in zip(hell, hell[1:])), "nach oben nie heller"
+    for y in (64, 128, 192):
+        t = (255 - y) / 255.0
+        assert zeilen[y] == tuple(round(c * (1.0 - t) ** 1.2) for c in farbe), f"Zeile {y}"
 
 
-def test_die_textur_hat_den_senkrechten_alpha_verlauf():
+def test_die_albedo_textur_hat_den_senkrechten_alpha_verlauf():
     """Unten 0,55, oben 0,02, dazwischen stetig fallend; die letzte Bildzeile ist v = 0 (OBJ8: Ursprung unten links)."""
-    from PIL import Image
-    bild = Image.open(OBJEKTE / "marken.png")
+    bild = _bild("marken.png")
     assert bild.size == (4, 256) and bild.mode == "RGBA"
     alpha = [bild.getpixel((1, y))[3] for y in range(256)]              # von oben nach unten
     assert alpha[-1] == round(0.55 * 255) and alpha[0] == round(0.02 * 255)
@@ -280,22 +337,97 @@ def test_die_parameterzahl_stimmt_mit_lights_txt_ueberein():
                 re.finditer(r"^LIGHT_PARAM_DEF[ \t]+(\S+)[ \t]+(\d+)", text, re.M)}
     else:  # ohne X-Plane-Installation: der Stand vom 20.09.2026
         soll = {"spot_params_bb_pm": 8, "spot_params_sp_pm": 9}
-    o = _lesen(OBJEKTE / "licht_warm.obj")
-    for name, p in o["lichter"]:
-        assert name in soll, f"{name}: keine Vorlage in lights.txt"
-        assert len(p) - 3 == soll[name], f"{name}: {len(p) - 3} Werte statt {soll[name]}"
+    for datei in ["licht_warm"]:
+        for name, p in _lesen(OBJEKTE / f"{datei}.obj")["lichter"]:
+            assert name in soll, f"{name}: keine Vorlage in lights.txt"
+            assert len(p) - 3 == soll[name], f"{datei}/{name}: {len(p) - 3} Werte statt {soll[name]}"
 
 
-def test_das_licht_ist_um_das_1_6fache_heller():
-    """Nach dem 2020er Nachttest: MSFS-Stärke 5,0 → 8,0 (×1,6), hier 500 → 800 und 1000 → 1600 cd (ungemessen)."""
+def test_das_licht_hat_die_staerke_von_laminars_pistenrandfeuer():
+    """Maßstab: `edge_w` in `lights.txt` (Zeile 572) hat 4500 cd. Nachtprüfung des Nutzers: „höchstens das zweitdunkelste"
+    der Lichtleiter (2000 / **4500** / 8000 / 32000 / 128000) — also 4500 cd im Glühpunkt und 9000 cd im Lichtfleck."""
     o = _lesen(OBJEKTE / "licht_warm.obj")
     bb, sp = (p for _, p in o["lichter"])
-    assert bb[6] == "800cd" and sp[7] == "1600cd"
+    assert bb[6] == "4500cd" and sp[7] == "9000cd"
+    if LIGHTS_TXT.exists():
+        assert re.search(r"^BILLBOARD_HW[ \t]+edge_w[ \t].*\b4500cd", LIGHTS_TXT.read_text(encoding="utf-8", errors="replace"), re.M)
 
 
 def test_das_licht_sieht_man_weit():
     o = _lesen(OBJEKTE / "licht_warm.obj")
     assert o["attr"]["ATTR_LOD"] == ["0", "10000"]
+
+
+# ---- die Testleiter (abgeschaltet, aber erzeugbar) ---------------------------------------
+
+LEITER_NITS = ["L2500", "L5000", "L10000", "L20000", "L40000", "Lstd"]
+LEITER_CD = [2000, 4500, 8000, 32000, 128000]
+
+
+@pytest.fixture()
+def leiter(marken, tmp_path, monkeypatch):
+    """Die Testleiter in ein Wegwerf-Verzeichnis erzeugen — sie liegt nicht mehr im Repo."""
+    monkeypatch.setattr(marken, "ZIEL", tmp_path)
+    monkeypatch.setattr(marken, "MIT_TESTOBJEKTEN", True)
+    marken.main()
+    return tmp_path
+
+
+def test_die_testleiter_ist_abgeschaltet_und_im_repo_gelöscht(marken):
+    """`MIT_TESTOBJEKTEN = False`: keine test_*-Dateien im Repo (und damit keine im Plugin)."""
+    assert marken.MIT_TESTOBJEKTEN is False
+    assert list(OBJEKTE.glob("test_*.obj")) == []
+
+
+def test_die_testleiter_ist_vollstaendig(leiter):
+    da = {p.name for p in leiter.glob("test_*.obj")}
+    soll = {f"test_wuerfel_{k}.obj" for k in LEITER_NITS} | {f"test_saeule_{k}.obj" for k in LEITER_NITS}         | {f"test_licht_L{cd}.obj" for cd in LEITER_CD}
+    assert da == soll
+
+
+@pytest.mark.parametrize("art", ["wuerfel", "saeule"])
+def test_die_leiter_stuft_nur_die_nits_ab_und_nimmt_die_signalorange_texturen(art, leiter):
+    """Alles außer `GLOBAL_luminance` ist dasselbe wie beim echten Signalorange-Objekt — sonst misst die Leiter etwas anderes."""
+    echt = _lesen(leiter / f"{art}_signalorange.obj")
+    for k in LEITER_NITS:
+        o = _lesen(leiter / f"test_{art}_{k}.obj")
+        assert o["nits"] == (None if k == "Lstd" else int(k[1:]))
+        assert (o["textur"], o["lit"]) == (echt["textur"], echt["lit"])
+        assert o["vt"] == echt["vt"] and o["idx"] == echt["idx"]
+        assert o["attr"] == echt["attr"]
+    assert echt["lit"] == f"{art}_signalorange_LIT.png"
+    assert _lesen(leiter / f"test_{art}_Lstd.obj")["nits"] == echt["nits"] is None,         "die gemessen richtige Stufe ist die Endfassung"
+
+
+def test_die_lichtleiter_stuft_die_candela_ab_und_der_fleck_bleibt_doppelt(leiter):
+    for cd in LEITER_CD:
+        bb, sp = (p for _, p in _lesen(leiter / f"test_licht_L{cd}.obj")["lichter"])
+        assert bb[6] == f"{cd}cd" and sp[7] == f"{2 * cd}cd"
+
+
+def test_die_testleiter_verschwindet_mit_einem_schalter(marken, tmp_path, monkeypatch):
+    """`MIT_TESTOBJEKTEN = False`: keine test_*-Dateien mehr, und vorhandene werden gelöscht."""
+    monkeypatch.setattr(marken, "ZIEL", tmp_path)
+    monkeypatch.setattr(marken, "MIT_TESTOBJEKTEN", True)
+    marken.main()
+    assert len(list(tmp_path.glob("test_*.obj"))) == 17
+    monkeypatch.setattr(marken, "MIT_TESTOBJEKTEN", False)
+    marken.main()
+    assert list(tmp_path.glob("test_*.obj")) == []
+    assert (tmp_path / "wuerfel_navy.obj").exists() and (tmp_path / "licht_warm.obj").exists()
+
+
+def test_die_endwerte_sind_die_gemessen_richtigen(marken):
+    """Nachtprüfung: ohne `GLOBAL_luminance` Luminanz 125 (Runway-Feuer ~150), ab 2500 Nits überbelichtet; Licht 4500 cd."""
+    assert marken.WUERFEL_NITS is None and marken.SAEULE_NITS is None
+    assert marken.LICHT_CD == 4500 and marken.LICHTFLECK_CD == 9000
+    assert marken.TEST_NITS == (2500, 5000, 10000, 20000, 40000) and marken.TEST_CD == tuple(LEITER_CD)
+
+
+def test_die_messung_steht_im_kopfkommentar_des_generators(marken):
+    doc = marken.__doc__
+    for muster in (r"`Lstd`.*\|\s*\*\*125\*\*", r"\*\*49\*\*", r"L2500.*73", r"L40000.*220", r"144–153", "Hintergrund"):
+        assert re.search(muster, doc), f"Messwert fehlt im Kopfkommentar: {muster}"
 
 
 # ---- der Generator ---------------------------------------------------------------------
@@ -305,6 +437,6 @@ def test_die_dateien_im_repo_sind_die_des_generators(marken, tmp_path, monkeypat
     monkeypatch.setattr(marken, "ZIEL", tmp_path)
     marken.main()
     erzeugt = {p.name for p in tmp_path.iterdir()}
-    assert len(erzeugt) == 16, "15 Objekte + marken.png"
+    assert len(erzeugt) == 15 + 16, "15 Objekte + 16 Texturen, ohne Testobjekte"
     for name in erzeugt:
         assert (tmp_path / name).read_bytes() == (OBJEKTE / name).read_bytes(), name

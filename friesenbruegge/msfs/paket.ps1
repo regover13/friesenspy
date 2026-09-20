@@ -105,8 +105,12 @@ Copy-Item $wasm "$paket\modules\bruegge.wasm" -Force
 # Bruegge faellt dann auf Fremdtitel zurueck (Campout, SayIntentions -- die kaum jemand
 # installiert hat) oder meldet GATTUNG_UNBEKANNT.
 #
-# Gebaut werden die drei Teile im Project Editor (`msfs-rauch\FriesenRauch.xml`), nicht
-# hier -- `fspackagetool.exe` ist ohne laufenden Simulator nur ein Wrapper, der nichts tut.
+# Gebaut werden die Teile nicht hier -- `fspackagetool.exe` ist ohne laufenden Simulator nur ein
+# Wrapper, der nichts tut --, sondern in zwei Laeufen mit ZWEI SDKs:
+#   * Rauch + Seehund (drei Teile)  `msfs-rauch\bauen.ps1`         2020er SDK, `FriesenRauch.xml`
+#   * Marken (ein Teil)             `msfs-rauch\bauen_marken.ps1`  2024er SDK, `FriesenMarken.xml`
+# Die Marken tragen `ASOBO_material_emissive`, und der 2020er Compiler entfernt sie (20.09.2026);
+# Rauch und Seehund laufen dagegen nur mit der 2020er Toolchain (KTX2, Behavior-Vorlage).
 # Fehlen sie, bricht das Skript NICHT ab: Ein Bruegge-Update soll auch dann moeglich sein,
 # wenn gerade kein Rauch neu gebaut wurde. Es sagt aber deutlich, was fehlt.
 #
@@ -115,8 +119,13 @@ Copy-Item $wasm "$paket\modules\bruegge.wasm" -Force
 # Teil, und im verschmolzenen Paket zaehlt allein die gemeinsame layout.json weiter unten.
 # ---------------------------------------------------------------------------------------
 $rauchQuelle = Join-Path (Split-Path $PSScriptRoot -Parent) "msfs-rauch\Packages"
+# ⭐ VIER TEILE (seit 20.09.2026): die drei Rauchteile und `devprops-friesenmarken`. Die Marken stehen
+# ZULETZT und mit Absicht: Alte Builds trugen sie noch im Rauchteil (`SimObjects\Misc\FrsMarke`, mit dem
+# 2020er SDK gebaut, ohne Emissive-Multiplikator); die Schleife raeumt diesen Ordner nach jedem
+# Rauchteil weg, und erst danach kommt die richtige Fassung aus dem Markenteil.
+$markenPaket = "devprops-friesenmarken"
 $rauchPakete = @("devprops-friesenrauch", "devprops-friesenrauch-mat",
-                 "devprops-friesenrauch-vfx")
+                 "devprops-friesenrauch-vfx", $markenPaket)
 # (Bis 20.09.2026 gewann hier der hoehere Wert der Rauch-Teile, weil sie mit dem 2024er SDK
 # gebaut waren. Jetzt baut das 2020er SDK -- s. bauen.ps1 und die Schleife unten.)
 # ⭐ EINE ZAHL FUER BEIDE SIMULATOREN (16.09.2026) -- hier stand sie je Schalter verschieden.
@@ -143,10 +152,21 @@ $rauchDa = 0
 foreach ($rp in $rauchPakete) {
     $pfad = Join-Path $rauchQuelle $rp
     if (-not (Test-Path (Join-Path $pfad "manifest.json"))) {
-        Write-Warning ("Rauchpaket fehlt: $rp -- bauen mit msfs-rauch" + [char]92 + "bauen.ps1")
+        $bauSkript = if ($rp -eq $markenPaket) { "bauen_marken.ps1" } else { "bauen.ps1" }
+        Write-Warning ("Teilpaket fehlt: $rp -- bauen mit msfs-rauch" + [char]92 + $bauSkript)
         continue
     }
     Get-ChildItem $pfad -Directory | Copy-Item -Destination $paket -Recurse -Force
+    if ($rp -ne $markenPaket) {
+        # Ein alter Rauch-Build kann noch `SimObjects\Misc\FrsMarke` tragen (die Marken lagen bis
+        # 20.09.2026 als dritte Gruppe im Rauchteil). Bliebe der Ordner, kennte der Simulator jeden
+        # Marken-Titel doppelt, und Reste ohne Emissive-Multiplikator koennten die neuen ueberdecken.
+        $alteMarken = Join-Path $paket "SimObjects\Misc\FrsMarke"
+        if (Test-Path $alteMarken) {
+            Remove-Item $alteMarken -Recurse -Force
+            Write-Output "Alte Marken aus $rp entfernt (kommen jetzt aus $markenPaket)"
+        }
+    }
     # ⚠ DIE MINDESTVERSION DER TEILE ZAEHLT NICHT MEHR (20.09.2026). Seit die Teile mit dem
     # MSFS-2020-SDK gebaut werden, tragen ihre Manifeste `minimum_game_version 1.39.12` (die
     # Fassung dieses SDK) und keine `minimum_compatibility_version`. Uebernaehme das Paket den
@@ -157,9 +177,9 @@ foreach ($rp in $rauchPakete) {
     $rauchDa++
 }
 if ($rauchDa -eq $rauchPakete.Count) {
-    Write-Output "Rauch aufgenommen: alle $rauchDa Teile"
+    Write-Output "Rauch und Marken aufgenommen: alle $rauchDa Teile"
 } else {
-    Write-Warning "Nur $rauchDa von $($rauchPakete.Count) Rauchteilen -- das Paket bleibt unvollstaendig."
+    Write-Warning "Nur $rauchDa von $($rauchPakete.Count) Teilen (Rauch, Seehund, Marken) -- das Paket bleibt unvollstaendig."
 }
 # (Bis 20.09.2026 stand hier: "Der Rauch ist fuer MSFS 2024 kompiliert und in MSFS 2020 UNGEPRUEFT."
 # Er ist jetzt mit dem 2020er SDK gebaut und in BEIDEN Simulatoren im Flug belegt.)
@@ -259,6 +279,10 @@ Rauchsaeulen (FrsRauch_*)
     Eigenes Werk, devprops. Textur und Partikelsystem von Hand erzeugt
     (msfs-rauch/rauch_bauen.py, msfs-rauch/paket_bauen.py).
 
+Wuerfel, Lichtsaeulen, Punktlicht (FrsWuerfel_*, FrsSaeule_*, FrsLicht_Warm)
+    Eigenes Werk, devprops. Reine Farbmodelle ohne Textur
+    (msfs-rauch/marken_bauen.py).
+
 Alles Uebrige verweist nur auf Titel, die im Simulator bereits vorhanden sind --
 mitgeliefert wird davon nichts.
 "@
@@ -303,7 +327,7 @@ Write-Output ""
 # Effektbibliothek doppelt.
 #
 # Geloescht wird nur, was sich im eigenen Manifest als unseres ausweist -- Creator
-# `devprops` und ein Titel, der mit `friesenrauch` beginnt. Alles andere im
+# `devprops` und ein Titel, der mit `friesenrauch` oder `friesenmarken` beginnt. Alles andere im
 # Community-Ordner gehoert jemand anderem und wird nicht angefasst.
 # ---------------------------------------------------------------------------------------
 foreach ($rp in $rauchPakete) {
@@ -311,7 +335,7 @@ foreach ($rp in $rauchPakete) {
     $altManifest = Join-Path $altPfad "manifest.json"
     if (-not (Test-Path $altManifest)) { continue }
     $am = [System.IO.File]::ReadAllText($altManifest) | ConvertFrom-Json
-    if ($am.creator -eq 'devprops' -and $am.title -like 'friesenrauch*') {
+    if ($am.creator -eq 'devprops' -and ($am.title -like 'friesenrauch*' -or $am.title -like 'friesenmarken*')) {
         Remove-Item $altPfad -Recurse -Force
         Write-Output "Alten Einzelordner entfernt: $rp (steckt jetzt in friesenbruegge)"
     } else {
