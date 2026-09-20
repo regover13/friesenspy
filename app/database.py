@@ -1004,6 +1004,11 @@ _BRUEGGE_MIGRATIONS = [
         status      TEXT NOT NULL DEFAULT 'aktiv',
         angelegt_am TEXT
     )""",
+    # 20.09.2026: Wie hoch ueber dem Gelaende der BEZUGSPUNKT des Modells liegt (ft). Fuer
+    # Tiere, Fahrzeuge und Personen 0; bei Flugzeugmodellen 3 bis 12 ft (Fahrwerkshoehe), gemessen
+    # an der Hoehe, die der Simulator beim Aufsetzen zurueckmeldete. Gebraucht, weil Objekte
+    # jetzt standardmaessig auf FESTER Hoehe stehen und eingefroren werden (s. `admin_bruegge_soll_setzen`).
+    "ALTER TABLE bruegge_art ADD COLUMN boden_versatz_ft REAL NOT NULL DEFAULT 0",
     # ------------------------------------------------------------------------------------
     # 17.09.2026: EINE GELOESTE BINDUNG WIRD ERINNERT, NICHT VERGESSEN.
     #
@@ -3551,6 +3556,7 @@ def bruegge_arten_uebersicht(conn: sqlite3.Connection) -> list[dict]:
     """
     rows = conn.execute(
         "SELECT g.art AS art, g.bedeutung, g.status AS art_status, "
+        "       g.boden_versatz_ft AS boden_versatz_ft, "
         "       COUNT(k.titel) AS titel_gesamt, "
         "       SUM(CASE WHEN k.status = 'aktiv' THEN 1 ELSE 0 END) AS aktiv, "
         "       SUM(CASE WHEN k.simulator LIKE 'msfs%' AND k.status = 'aktiv' "
@@ -3563,7 +3569,7 @@ def bruegge_arten_uebersicht(conn: sqlite3.Connection) -> list[dict]:
         "                THEN 1 ELSE 0 END) AS aus_addon "
         "FROM bruegge_art g "
         "LEFT JOIN bruegge_katalog k ON k.art = g.art "
-        "GROUP BY g.art, g.bedeutung, g.status ORDER BY g.art"
+        "GROUP BY g.art, g.bedeutung, g.status, g.boden_versatz_ft ORDER BY g.art"
     ).fetchall()
     zustaende = bruegge_arten_zustand(conn)
     raus = []
@@ -3593,8 +3599,33 @@ def bruegge_arten_uebersicht(conn: sqlite3.Connection) -> list[dict]:
     return raus
 
 
+def bruegge_art_versatz(conn: sqlite3.Connection, art: str) -> float:
+    """Der Hoehen-Versatz einer Art in ft (`bruegge_art.boden_versatz_ft`); unbekannt = 0."""
+    r = conn.execute("SELECT boden_versatz_ft FROM bruegge_art WHERE art = ?", (art,)).fetchone()
+    return float(r[0] or 0.0) if r else 0.0
+
+
+def bruegge_gelaende_am_piloten(conn: sqlite3.Connection, cid: int) -> dict | None:
+    """Gelaendehoehe (ft MSL), Simulator und Lage des Piloten -- oder None, wenn er nicht meldet.
+
+    Dieselbe Rechnung wie `gelaendehoehe()` in der Bruegge: MSL minus AGL, ein leicht negativer
+    Wert (ueber Wasser meldet MSFS manchmal AGL < 0) gilt als 0. **Sie gilt nur in der NAEHE des
+    Piloten** -- das Gelaende ein paar Kilometer weiter kennt niemand ohne Hoehenmodell (13.09.2026:
+    zwoelf Objekte in einem 180-m-Raster, eines versunken, eines sauber, eines schwebend).
+    """
+    r = conn.execute("SELECT lat, lon, alt_msl_ft, alt_agl_ft, simulator FROM bruegge_positions "
+                     "WHERE cid = ?", (int(cid),)).fetchone()
+    if not r or r[2] is None or r[3] is None:
+        return None
+    h = float(r[2]) - float(r[3])
+    if -50.0 < h < 0.0:
+        h = 0.0
+    return {"lat": float(r[0]), "lon": float(r[1]), "hoehe": h, "simulator": r[4] or ""}
+
+
 def bruegge_art_setzen(conn: sqlite3.Connection, art: str, *,
-                           bedeutung: str | None = ..., status: str | None = ...) -> None:
+                           bedeutung: str | None = ..., status: str | None = ...,
+                           boden_versatz_ft: float = ...) -> None:
     """Eine Art anlegen oder aendern (kein commit).
 
     Damit ist eine NEUE GATTUNG eine Zeile in der Datenbank -- kein Client-Release, kein
@@ -3609,6 +3640,8 @@ def bruegge_art_setzen(conn: sqlite3.Connection, art: str, *,
         setz.append("bedeutung = ?"); werte.append(bedeutung)
     if status is not ...:
         setz.append("status = ?"); werte.append(status)
+    if boden_versatz_ft is not ...:
+        setz.append("boden_versatz_ft = ?"); werte.append(float(boden_versatz_ft))
     if setz:
         conn.execute(f"UPDATE bruegge_art SET {', '.join(setz)} WHERE art = ?",
                      werte + [art])

@@ -1644,11 +1644,11 @@
                    der Simulator die Höhe (11.09.2026 gemessen -- 0 und 500 ft ergaben
                    dasselbe Ergebnis). Deshalb sperrt der Haken das Feld. -->
               <label style="color:#8aa0b8;font-size:0.78rem;display:flex;align-items:center;gap:4px;"
-                     title="OnGround=1 — der Simulator setzt das Objekt selbst auf den Boden. Trifft bis 10 km Entfernung. Ohne den Haken zählt die Höhe rechts.">
-                <input type="checkbox" id="bg-auf-boden" checked> auf den Boden
+                     title="OnGround=1 — der Simulator setzt das Objekt selbst auf den Boden. Trifft bis 10 km Entfernung, aber Flugzeugmodelle (Hubschrauber, C172, Pitts …) hüpfen dabei. Ohne den Haken steht das Objekt auf fester Höhe (leer = automatisch) und wird eingefroren.">
+                <input type="checkbox" id="bg-auf-boden"> auf den Boden setzen
               </label>
-              <input id="bg-hoehe" type="number" step="1" placeholder="Höhe ft MSL" disabled
-                     title="Höhe über Meer in Fuß. Nur wenn „auf den Boden“ abgewählt ist."
+              <input id="bg-hoehe" type="number" step="1" placeholder="leer = automatisch"
+                     title="Feste Höhe über Meer in Fuß. LEER = automatisch: Gelände am Piloten plus Versatz der Art (bis 3 km Entfernung, MSFS). Ohne den Haken „auf den Boden setzen“ steht das Objekt eingefroren auf dieser Höhe -- das ist die Vorgabe, weil Flugzeugmodelle sonst hüpfen."
                      style="width:120px;padding:6px;">
               <!-- Ohne Kurs steht jedes Objekt nach NORDEN: Der Server schickt dann
                    `kurs: null`, und die Brügge macht daraus 0. Bei einem einzelnen Tier
@@ -2680,7 +2680,14 @@
           body: JSON.stringify({
             art: art,
             lat: lat, lon: lon, cid: cid ? parseInt(cid, 10) : null,
-            auf_boden: document.getElementById('bg-auf-boden').checked,
+            // Nur MITSCHICKEN, wenn der Nutzer etwas entschieden hat: Haken = aufsetzen, Höhe = feste
+            // Höhe. Sonst FEHLT das Feld, und der Server entscheidet (Gelände am Piloten, sonst
+            // Aufsetzen). Ein `false` ohne Zahl würde als "ausdrücklich nicht aufsetzen" gelten --
+            // und weit weg vom Piloten stünde das Objekt dann in der Luft oder im Boden.
+            auf_boden: (function () {
+              if (document.getElementById('bg-auf-boden').checked) return true;
+              return isFinite(parseFloat(document.getElementById('bg-hoehe').value)) ? false : undefined;
+            })(),
             // Beides mitschicken: Der Server würfelt, wenn `kurs_zufall` steht, sonst
             // nimmt er `kurs`. Gewürfelt wird DORT und nicht hier, damit der künftige
             // Kieker dasselbe bekommt, ohne durch den Browser zu müssen.
@@ -2994,6 +3001,14 @@
       return '<tr>'
         + '<td><code>' + escH(a.art) + '</code>'
           + (a.addon ? ' <span style="color:#f0ad4e;font-size:0.72rem;">Addon</span>' : '')
+          // Höhen-Versatz: wie hoch der Bezugspunkt des Modells über dem Gelände liegt. Bei Tieren,
+          // Fahrzeugen und Personen 0, bei Flugzeugmodellen 3 bis 12 ft (Fahrwerkshöhe) -- nötig,
+          // weil Objekte auf fester Höhe stehen (die Vorgabe seit dem 20.09.2026).
+          + '<div style="font-size:0.72rem;color:#8aa0b8;white-space:nowrap;" '
+          + 'title="Wie hoch der Bezugspunkt des Modells über dem Gelände liegt (ft). Tiere, Fahrzeuge, Personen: 0. Flugzeugmodelle: 3 bis 12.">'
+          + 'Versatz <input class="bg-a-versatz" type="number" step="0.1" data-art="' + escA(a.art)
+          + '" value="' + escA(String(a.boden_versatz_ft || 0))
+          + '" style="width:54px;font-size:0.72rem;padding:1px 3px;"> ft</div>'
           + '</td>'
         // Die Bedeutung ist Freitext und wird beim Verlassen des Feldes gespeichert —
         // ein eigener Speichern-Knopf je Zeile wäre eine Spalte mehr auf einer Tabelle,
@@ -3065,10 +3080,16 @@
       // Beim Verlassen des Feldes, und nur wenn sich wirklich etwas geändert hat: Sonst
       // schriebe jeder Klick durch die Tabelle eine Zeile in die Datenbank.
       tab.addEventListener('focusin', function (e) {
-        if (e.target.classList.contains('bg-a-bedeutung')) e.target.dataset.vorher = e.target.value;
+        if (e.target.classList.contains('bg-a-bedeutung')
+            || e.target.classList.contains('bg-a-versatz')) e.target.dataset.vorher = e.target.value;
       });
       tab.addEventListener('focusout', function (e) {
         const el = e.target;
+        if (el.classList.contains('bg-a-versatz')) {
+          if (el.value === (el.dataset.vorher || '') || el.value === '') return;
+          bgArtSpeichern({ art: el.dataset.art, boden_versatz_ft: parseFloat(el.value) });
+          return;
+        }
         if (!el.classList.contains('bg-a-bedeutung')) return;
         if (el.value === (el.dataset.vorher || '')) return;
         bgArtSpeichern({ art: el.dataset.art, bedeutung: el.value });
