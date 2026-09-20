@@ -12,7 +12,7 @@ und werden vorher eigens besprochen — die Hauptnummer gehört an die sichtbare
 |---|---|---|
 | **Suchen** | Eventbeginn | Havarist an alle Brüggen (Art je Simulator) |
 | **Gefunden** | tiefer, langsamer Überflug im Fundradius | `gefunden_am`/`gefunden_von`; **`rauch_signalorange`** neben den Havaristen |
-| **Aufgenommen** | im Umkreis des Havaristen, **nach** dem Fund: *an Land* eine Landung nach den Regeln des Projekts · *im Wasser* unter 30 kt | `aufgenommen_am`/`aufgenommen_von`; Fackel wechselt auf **`rauch_hellblau`** |
+| **Aufgenommen** | im Umkreis des Havaristen, **nach** dem Fund: *Haken an* eine Landung nach den Regeln des Projekts · *Haken aus* unter 30 kt | `aufgenommen_am`/`aufgenommen_von`; Fackel wechselt auf **`rauch_hellblau`** |
 | **Eingeliefert** | Landung des **Aufnehmenden** an irgendeinem registrierten Platz | `eingeliefert_am`/`_von`/`_icao`; gewertet ist die Zeit **vom Fund bis zu dieser Landung** |
 
 Der Aufnehmende muss nicht der Finder sein (#21). Der Überflug des Finders ist nicht gleichzeitig
@@ -29,19 +29,28 @@ ein Fliegerverein sucht Flieger. Daraus folgen drei Vorgaben, die nicht kosmetis
 * **Vorgabe-Art ist `flugzeug_echo`** (kleines Flugzeug am Boden). `wilga` ist die
   dramatischere Wahl: das ist die Vereinsmaschine **D-EFRS**, und sie zu suchen erklärt sich
   ohne ein Wort. Ebenso möglich: `flugzeug_ga`, `hubschrauber`, `segelflugzeug`.
-* **Der Haken heißt `im_wasser` und ist standardmäßig AUS.** Eine abgestürzte Maschine liegt
-  meist an Land, und dann muss zum Aufnehmen jemand **dort** landen — nicht auf dem nächsten
-  Platz, sondern an der Unglücksstelle. Liegt der Havarist im Wasser, genügt ein zweiter
-  tiefer, langsamer Überflug.
+* **Der Haken heißt „Landung zur Rettung nötig" und ist standardmäßig AN.** Eine abgestürzte
+  Maschine liegt meist an Land, und dann muss zum Aufnehmen jemand **dort** landen — nicht auf
+  dem nächsten Platz, sondern an der Unglücksstelle. Ist er aus, genügt ein Schwebeflug.
 
-  **Der Haken benennt eine Tatsache, nicht eine Regel**, und das ist Absicht: Der Admin setzt
-  den Punkt von Hand und sieht dabei, ob dort Wasser ist. „Landung zur Rettung nötig" hieß
-  zuerst umgekehrt — die Folge statt der Ursache — und war schwerer zu beantworten.
+  ⚠ **Der Haken ist die REGEL, nicht das Gelände** — und das ist der Kern. Ein Zwischenentwurf
+  nannte ihn `im_wasser`, weil der Admin die Tatsache ja sieht. Das hat einen Fall weggenommen:
+  **Ein Wrack am Waldrand liegt an Land und ist trotzdem nicht landbar**, und dort ist die
+  Rettung per Winde über dem Schwebeflug genau richtig. Umgekehrt genauso — ein Wrack im Wasser
+  *mit* verlangter Landung ist ein Wasserflugzeug-Abend. Beides ist mit der Regel sagbar, mit
+  dem Gelände nicht:
 
-  ⚠ **Die Regel wird NICHT aus der Art abgeleitet.** Das lag nahe („Bootsart ⇒ keine Landung")
-  und ist falsch: Ein im Wasser notgelandetes Flugzeug bleibt ein Flugzeug, und wer die Art
-  wechselt, um das Objekt hübscher zu machen, würde sonst versehentlich die Wertung kippen. Der
-  Haken schlägt die Art nur vor.
+  | Wo der Havarist liegt | Haken | Wie gerettet wird | Wer kann es |
+  |---|---|---|---|
+  | an Land, landbar | **an** | Landung am Wrack, Vollstopp | jeder |
+  | an Land, nicht landbar (Wald, Hang) | **aus** | Schwebeflug darüber | Hubschrauber |
+  | im Wasser | **aus** | Schwebeflug oder Wasserung | Hubschrauber, Wasserflugzeug |
+  | im Wasser, absichtlich streng | **an** | Wasserung mit Vollstopp | nur Wasserflugzeug |
+
+  ⚠ **Und die Regel wird NICHT aus der Art abgeleitet.** Das lag nahe („Bootsart ⇒ keine
+  Landung") und ist falsch: Ein im Wasser notgelandetes Flugzeug bleibt ein Flugzeug, und wer
+  die Art wechselt, um das Objekt hübscher zu machen, würde sonst versehentlich die Wertung
+  kippen. Die Art ist ein eigenes Feld.
 * **Das Objekt steht auf dem Boden** (OnGround, wie seit 15.6.1 bei den Booten), mit dem
   `boden_versatz_ft` seiner Art — bei `flugzeug_echo` 3,9 ft.
 
@@ -72,8 +81,8 @@ niemand geht leer aus, der eine Fläche abgeflogen und nichts gefunden hat.
 | **Fundradius** | **1,71 km — gerechnet, nicht eingestellt** | Korridor + halbe Zelldiagonale |
 | Höhenschranke | **1.000 ft AGL über dem Havaristen**, einstellbar | s. unten — der Server kennt die Höhe des Havaristen |
 | Geschwindigkeit | 30–140 kt | unten, damit ein geparktes Flugzeug nicht seine Zelle abdeckt |
-| Aufnehmen an Land | `< 2 kt` und `< 300 ft` AGL | die Landeregeln des Projekts, s. unten |
-| Aufnehmen im Wasser | `< 30 kt` und `< 300 ft` AGL | Schwebeflug — verlangt einen Hubschrauber |
+| Aufnehmen mit Landung | `< 2 kt` und `< 300 ft` AGL | die Landeregeln des Projekts, s. unten |
+| Aufnehmen ohne Landung | `< 30 kt` und `< 300 ft` AGL | Schwebeflug — verlangt einen Hubschrauber |
 
 ### Die Höhenschranke ist AGL über dem Havaristen
 
@@ -111,7 +120,8 @@ Frage „ist er tief über der Unglücksstelle hinweggeflogen?".
 
 ### Aufnehmen benutzt die Landeregeln des Projekts
 
-**Keine eigenen Schwellen.** Für das Aufnehmen an Land gilt, was im Projekt eine Landung ist:
+**Keine eigenen Schwellen.** Ist der Haken „Landung zur Rettung nötig" gesetzt, gilt, was im
+Projekt eine Landung ist:
 
 | Konstante in `app/gps_legs.py` | Wert | Bedeutung |
 |---|---|---|
@@ -127,11 +137,11 @@ AGL-Guard verletzt → bleibt AIRBORNE (Absturz/Hover nie als Landung)". Die Au�
 ist genau der Fall, den sie absichtlich nicht zählt, und diese Absicht ist richtig: sonst würde
 jeder Absturz als Landung gewertet. Deshalb dieselben **Regeln** statt derselben Funktion.
 
-**Im Wasser gilt `< 30 kt` statt `< 2 kt`** — ein Schwebeflug über der Unglücksstelle. Damit
-verlangt die Wasser-Rettung praktisch **einen Hubschrauber**: Ein Flächenflugzeug kommt nicht
+**Ohne den Haken gilt `< 30 kt` statt `< 2 kt`** — ein Schwebeflug über der Unglücksstelle.
+Damit verlangt diese Fassung praktisch **einen Hubschrauber**: Ein Flächenflugzeug kommt nicht
 unter 30 kt, ohne zu landen. Ein Wasserflugzeug erfüllt die Bedingung ebenfalls, weil eine
-Wasserung unter 2 kt endet. **Das muss im Admin dabeistehen**, sonst legt jemand einen Suchflug
-über See an, den nur Hubschrauberpiloten abschließen können, ohne es zu wissen.
+Wasserung unter 2 kt endet. **Das muss im Admin dabeistehen**, sonst legt jemand ein Event an,
+das nur Hubschrauberpiloten abschließen können, ohne es zu wissen.
 
 ⚠ **Bei 15 s Abtastung kann ein sehr kurzer Stopp durchfallen.** Eine Rettungslandung dauert
 länger als einen Messabstand, der Fall ist also theoretisch — festgehalten, weil er beim
@@ -194,7 +204,7 @@ CREATE TABLE IF NOT EXISTS suchflug_events (
     havarist_verdeckt INTEGER DEFAULT 0,    -- 1 = gewürfelt, auch im Admin verborgen
     havarist_grund_ft REAL,                 -- Geländehöhe MSL an der Unglücksstelle
     havarist_grund_quelle TEXT,             -- 'gemessen' | 'admin' | 'platz'
-    im_wasser       INTEGER DEFAULT 0,      -- 1 = im Wasser: Aufnehmen per Überflug, ohne Landung
+    landung_noetig  INTEGER DEFAULT 1,      -- 0 = Schwebeflug genügt (Winde, Wasserung)
     -- Latches
     gefunden_am     TEXT,  gefunden_von     INTEGER,
     aufgenommen_am  TEXT,  aufgenommen_von  INTEGER,
@@ -226,7 +236,7 @@ Im Poller, im vorhandenen Takt (15 s) — ein Job `_check_suchflug`, nach dem Mu
 1. **Abdeckung** — `abdeckung(spuren, zellen_aus_box(...), fenster)`.
 2. **Fund** — dieselbe Funktion, ein Ziel mit dem gerechneten Fundradius, dasselbe Fenster.
 3. **Aufnehmen** — dasselbe Ziel, nur Spurenpunkte **nach** `gefunden_am`, mit
-   `Fenster(hoehe_max_ft=_GPS_GROUND_AGL_FT, gs_max_kt=2 bzw. 30, gs_min_kt=0)`. Die
+   `Fenster(hoehe_max_ft=_GPS_GROUND_AGL_FT, gs_max_kt=_GPS_BLOCK_GS_KT bzw. 30, gs_min_kt=0)`. Die
    Untergrenze muss dabei auf 0 — sonst schlösse das Suchfenster (30 kt) den Stillstand aus,
    der hier gerade gefragt ist.
 4. **Einliefern** — Landung des Aufnehmenden aus `canonicalize_legs`, erster Zielpunkt nach
@@ -246,10 +256,10 @@ Ein Bereich wie bei Bummel und Kutter: Sektor durch zwei Ecken auf der Karte, Ze
 Korridor, Höhen- und Geschwindigkeitsfenster, Art des Havaristen, Haken „Havarist liegt im
 Wasser", Kalendertermin, Push. Dazu:
 
-* **Neben dem Haken „im Wasser" steht, was er bedeutet:** *„Aufnehmen ohne Landung — unter
-  30 kt über der Unglücksstelle. Das verlangt einen Hubschrauber oder ein Wasserflugzeug."*
-  Und ohne Haken: *„Aufnehmen verlangt eine Landung an der Unglücksstelle (Vollstopp unter
-  300 ft AGL) — sieh nach, ob dort jemand landen kann."*
+* **Neben dem Haken steht, was er bedeutet.** Gesetzt: *„Aufnehmen verlangt eine Landung an der
+  Unglücksstelle (Vollstopp unter 300 ft AGL) — sieh nach, ob dort jemand landen kann."* Nicht
+  gesetzt: *„Aufnehmen per Schwebeflug, unter 30 kt über der Unglücksstelle. Das verlangt einen
+  Hubschrauber oder ein Wasserflugzeug."*
 
 * **Die Lage des Havaristen setzt der Admin von Hand** auf die Karte — das ist die Vorgabe. Sie
   ist dort auch sichtbar, denn wer das Event anlegt, weiß es ohnehin.
@@ -270,9 +280,10 @@ Wasser", Kalendertermin, Push. Dazu:
   aufgelöst ist (Fund oder `dtend`). Ein Würfel, dessen Ergebnis der Admin nachsehen kann, wäre
   wertlos — deshalb gehören beide Teile zusammen und sind ein Knopf, nicht zwei Felder.
 
-  **Würfeln ist nur bei gesetztem Haken „im Wasser" erlaubt.** An Land muss der Punkt eine
+  **Würfeln ist nur erlaubt, wenn keine Landung verlangt ist.** Sonst müsste der Punkt eine
   Stelle treffen, an der jemand landen kann — das weiß der Server nicht, und ein gewürfeltes
-  Wrack im Wald wäre ein unlösbarer Abend.
+  Wrack im Wald wäre ein unlösbarer Abend. Die Sperre hängt damit an der Regel, nicht am
+  Gelände, und das ist dieselbe Unterscheidung wie beim Haken selbst.
 
 * **Die erwartete Suchdauer** als Hinweis neben der Sektorgröße, aus Kantenlänge, Korridor und
   angenommenen 110 kt — sonst setzt niemand einen Sektor, der zur Abendlänge passt.
