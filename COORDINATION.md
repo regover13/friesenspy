@@ -6,6 +6,45 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-20 (nachmittags) — Admin-Seite in Bereiche geteilt, 15.8.0
+
+**Angefasst:** `app/static/admin.html`, `README.md`, `tests/test_admin_tabs.py` (neu, 14 Tests),
+`app/CHANGELOG.json`. **Nicht angefasst:** `app/abdeckung.py`, `docs/architecture.md`.
+
+Die Admin-Seite trägt jetzt sechs Bereiche (Events, Stammdaten, Karten, Mitteilungen, Brügge,
+Betrieb) und im Events-Bereich eine zweite Reihe je Event-Typ. **Wer einen neuen Eventtyp baut,
+legt dort einen `.typ-btn` mit `data-typ="…"` und daneben ein `.typ-panel` mit `id="typ-…"` an
+und trägt ihn in `_typLader` ein — mehr ist es nicht.** Ein Chip ohne Inhalt dahinter gehört
+nicht hinein; die vier noch nicht gebauten Typen stehen deshalb noch nicht in der Leiste.
+
+**Zwei Dinge, die man wissen sollte, bevor man dort etwas ergänzt:**
+
+1. **Der Tab-Block steht bewusst ganz unten im `<script>`.** Er liest `_bgKarte` und `_dfsKarte`,
+   und ein `let` ist vor seiner Zeile nicht lesbar. Weiter oben eingesetzt legt er beim ersten
+   Tab-Wechsel die ganze Seite lahm — `node --check` findet das nicht, das ist ein TDZ-Fehler
+   zur Laufzeit. Geprüft wurde er deshalb mit einer DOM-Attrappe, die ihn wirklich ausführt.
+2. ⚠ **Ein Bereich mit Leaflet-Karte muss beim Zurückkehren neu vermessen werden.** Leaflet
+   rechnet seine Größe beim Erzeugen aus und misst 0 Pixel, solange der Kasten `display:none`
+   ist. `tabOeffnen` ruft dafür `invalidateSize()`; wer einen dritten Kartenbereich ergänzt,
+   trägt ihn dort ein, sonst bleibt die Karte grau.
+
+**Der eigentliche Fund war nicht die Unübersichtlichkeit.** Brügge und Kniebrett fragten im
+Zehn-Sekunden-Takt ab Seitenaufruf — zwölf Anfragen je Minute, dauerhaft, **auch während die
+Anmeldemaske offen stand und niemand angemeldet war**. Beide Taktgeber hängen jetzt an ihrem
+Bereich (`bgStart`/`bgStop`, `kbStart`/`kbStop`) und halten an, sobald er weggeht. Der
+Backfill-Status ist die bewusste Ausnahme und läuft weiter beim Anmelden: Ein im Hintergrund
+laufender Backfill soll sich zeigen, ohne dass jemand erst den richtigen Bereich sucht.
+
+Die 17 Panel-Blöcke sind byteweise unverändert umgezogen; belegt ist das dadurch, dass jeder
+Block im neuen Aufbau genau einmal wiedergefunden wurde. Ob ein Panel INNERHALB eines Bereichs
+liegt, prüft der Test mit einem Parser und nicht mit Textsuche — das ist eine Frage der
+Verschachtelung, und die beantwortet keine Zeichenkette.
+
+**Beim Rebase:** Der Konflikt in `app/CHANGELOG.json` zwischen 15.6.1 (origin) und 15.7.0
+(Abdeckungskern) war ein reiner Einfüge-Konflikt, beide Einträge sind erhalten.
+
+---
+
 ## 2026-09-20 (abends) — Abdeckungskern gebaut (`app/abdeckung.py`), 15.7.0
 
 **Angefasst:** `app/abdeckung.py` (neu), `tests/test_abdeckung.py` (neu, 40 Tests),
