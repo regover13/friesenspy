@@ -1,6 +1,10 @@
 # Mehr Arten für die FriesenBrügge
 
 > Stand 15.09.2026 · **umgesetzt** — aus 17 anforderbaren Arten sind **37** geworden
+>
+> ⭐ **Nachtrag 20.09.2026:** Es sind **56 Arten** in der Datenbank (sieben neu, s. unten), und die Regel
+> „beide Simulatoren müssen etwas zeigen können“ gilt nicht mehr — s. `CLAUDE.md`, Abschnitt Arten.
+> Der Text darunter beschreibt den Stand vom 15.09.
 
 Anlass war ein Satz des Nutzers: *„16 Arten waren viel zu wenig für so viele Objekte!"*
 Er hatte recht, und die Zahl war zwischenzeitlich sogar gesunken.
@@ -9,6 +13,52 @@ Er hatte recht, und die Zahl war zwischenzeitlich sogar gesunken.
 **beide** Simulatoren etwas aus ihr zeigen können, und sie darf **kein Fremdpaket**
 brauchen. Alles unten ist daran gemessen — und beide Brücken bekommen heute exakt dieselben
 37 Arten.
+
+---
+
+## Nachtrag 20.09.2026 — sieben neue Arten, und was mit dem Rest der MSFS-2020-Titel wurde
+
+Der MSFS-2020-Katalog ist durchgemessen (2 773 Urteile, davon 225 „steht“; Community-Titel werden nie geprüft). Von
+den 346 bestandenen waren **164 ohne Art**. **138 haben jetzt eine**, 26 bleiben **bewusst** ohne:
+
+| Art | neu? | Titel | wo sie geht |
+|---|---|---|---|
+| `marshaller` | ✅ | 24 (`Marshaller_*`, ohne den Stab) | MSFS 2020 + 2024 |
+| `pilot` | ✅ | 26 (`Pilot_*`, auch Uniform und Segelflug) | MSFS 2020 + 2024 |
+| `bodenpersonal` | ✅ | 25 (`Tarmac_*` und `Wing_Runner`) | MSFS 2020 + 2024 |
+| `tier_afrika` | ✅ | 28 (Elefant, Giraffe, Nashorn, Flusspferd) | **nur MSFS 2020** — in 2024 sind alle durchgefallen |
+| `wal` | ✅ | 1 (`HumpbackWhale`) | MSFS 2020 + 2024; nur über See sinnvoll (nicht gemessen) |
+| `bordtreppe` | ✅ | 3 MSFS + 4 X-Plane (`pax_stairs_1`, `_up1`, `_up2`, `Stair_Maint_1`) | **überall** |
+| `seilwinde` | ✅ | 3 (`TT:WINCH.*`) | MSFS 2020 + 2024 |
+| `flugplatzfahrzeug` | | +11 Nachrücker (Pushback, Catering, Gepäckschlepper, Treppen-Lader …) | |
+| `tankwagen` | | +2 (`ASO_FuelTruck01/02_Black`) | |
+| `flugzeug_echo` | | +3 (C172 AirTraffic 01/03, klassische C172) | |
+| `flagge` | | +10 (Ländermasten aus dem Segelflug-Paket, `Flag_*`) | |
+| `tier_gross` | | +2 (`SyrianBear`, `PolarBear` — beide nur in 2020 gemessen) | |
+
+**Warum mit „Nachrücker“:** Die Brügge nimmt aus einer Art immer Rang 1 (s. unten). Was hinten angehängt wird, ändert
+nichts an dem, was heute gesetzt wird — es greift erst, wenn ein Titel davor ausfällt. Das ist der sichere Weg, alles
+Brauchbare unterzubringen.
+
+**Bewusst ohne Art (26):** Schwimmer- und Kufenversionen der C172 (12) und der Schleppflieger — am Boden falsch;
+Flusspferd unter und im Wasser (4); `L_VR_Controller`, `R_VR_Controller`, `VRLeftHand`, `VRRightHand`,
+`Marshaller_Stick`, `Optical_Landing_System`, `Parachute`, `Smoke_Volcano`, `VfxSpawner` — Werkzeugobjekte, keine Szenerie.
+
+**X-Plane hat für die drei Personenarten, die Winde und den Wal nichts:** Im Dateibaum
+(`Resources/default scenery`, 7 995 `.obj`) gesucht nach `people`, `person`, `pilot`, `marshal`, `winch`, `whale`,
+`elephant`, `giraffe`, `worker`, `crew`, `passenger` — Treffer sind nur `Boats_Crew_*` (Schiffsteile), `Whaler_*` (Fangschiffe),
+`crew_car*` und `EDDM_Control_Tower_Workers.obj`. Die Arten tragen das in ihrer Bedeutung, damit im Admin niemand
+nach einem X-Plane-Titel sucht.
+
+**Zustand:** Die sechs neuen MSFS-Arten stehen im Admin nicht unter „überall“ (X-Plane fehlt), sind aber anforderbar.
+`bordtreppe` ist die einzige, die es in allen dreien gibt (23 Arten sind jetzt „überall“, vorher 22).
+
+**Wo sie wirklich nur DB-Zeilen sind:** Es gab dafür kein Release der Brügge — Arten sind Datenbankzeilen (s.
+`app/bruegge_arten.py`, „die Erstbefüllung, nicht die Wahrheit“). Eine frisch angelegte Datenbank kennt sie deshalb nicht;
+die Sicherung vor der Zuordnung liegt auf dem Server als `/opt/friesenspy/data/zuordnen_backup_20260920_084216.json`.
+
+**Größe der Titelliste** (`ANTWORT_PUFFER` 49 152 Bytes): jetzt **5,5 kB** MSFS 2020, **6,3 kB** MSFS 2024, **9,9 kB** X-Plane
+(20 %) — gemessen am 20.09.2026 mit `bruegge_titel_fuer` auf den echten Daten.
 
 ---
 
@@ -145,8 +195,9 @@ warten auf den Tag, an dem MSFS etwas Vergleichbares bekommt oder wir es bauen.
 ## Die Grenze, die das Wachstum irgendwann stoppt
 
 Die Titelliste geht als Wörterbuch **einmal je Antwort** hinaus und muss in
-`ANTWORT_PUFFER` passen — **49152 Bytes**, in beiden Brügge-Fassungen. Bei 37 Arten braucht
-X-Plane rund 7,7 kB (15 % des Puffers), MSFS 2,5 kB.
+`ANTWORT_PUFFER` passen — **49152 Bytes**, in beiden Brügge-Fassungen. Bei 37 Arten brauchte
+X-Plane rund 7,7 kB (15 % des Puffers), MSFS 2,5 kB. (Stand 20.09.2026 mit 56 Arten: 9,9 kB
+X-Plane, 5,5 bzw. 6,3 kB MSFS.)
 
 **X-Plane ist der teure Fall, um das Dreifache:** Dort ist der Bezeichner ein Dateipfad, und
 `Resources/default scenery/` allein wiederholt sich in jeder Zeile — bei 73 Titeln sind das

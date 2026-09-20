@@ -6,6 +6,22 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-20 — Prüfwerkzeug neu gefasst, 136 Titel eingeordnet, sieben neue Arten
+
+**Angefasst:** `scripts/katalog_durchpruefen.py` (neu gefasst), `tests/test_bruegge_titel_lauf.py` (+7 Tests),
+`docs/bruegge-arten-ausbau.md`, `app/CHANGELOG.json`. In der Datenbank: sieben neue Arten und 138 Zuordnungen
+(`marshaller`, `pilot`, `bodenpersonal`, `tier_afrika`, `wal`, `bordtreppe`, `seilwinde` und Nachrücker in fünf
+bestehenden) — Sicherung vorher: `/opt/friesenspy/data/zuordnen_backup_20260920_084216.json`.
+
+⚠ **Fünfte Narbe des Prüfwerkzeugs — in MSFS 2020 lieferte es je 12er-Block genau drei Fehlschläge**, bei Titeln, die
+einzeln nachweislich standen. Der alte Lauf nahm in JEDEM Block dieselben Objekt-IDs und las nach fester Wartezeit,
+ohne zu prüfen, ob die Zeile frisch ist. Jetzt: **eine ID je Titel und Lauf**, **nur Meldungen nach dem Block-Start**,
+**200er Blöcke** (= `SOLL_MAX` der Brügge), Community-Titel **nie**. Ein solcher Lauf ging in MSFS 2020 ohne den
+Fehler durch. **Bewiesen ist der Zusammenhang, nicht der Mechanismus** — dass die ID-Wiederverwendung die Ursache war,
+ist die naheliegende, aber ungeprüfte Erklärung.
+Die neuen Tests sind gegen fünf entfernte Fixes gegengeprüft (Frische, Community, eindeutige IDs, Zuordnung
+zurückschreiben, ladendes Objekt ≠ Urteil) und werden alle rot.
+
 ## 2026-09-16 (mittags, zweite Sitzung) — Fassungshinweis gebaut, v14.52.0
 
 **Angefasst:** `app/database.py` (Migration `bruegge_zuordnung.bruegge_version`, zwei

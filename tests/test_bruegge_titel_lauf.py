@@ -334,3 +334,133 @@ def test_das_werkzeug_kann_sich_auf_zugeordnete_titel_beschraenken(conn):
         "SELECT titel FROM bruegge_katalog WHERE art IS NOT NULL").fetchall()}
     assert all(t in tragen for _, t in zugeordnet)
     assert "WT_OhneArt" not in {t for _, t in zugeordnet}
+
+
+def test_das_werkzeug_laesst_community_titel_aus(conn):
+    """Nutzerregel 20.09.2026: fremde Pakete gehoeren nicht in den Lauf. Am selben Tag wurden
+    4 465 Community-Titel mitgeprueft und ihre Urteile wieder geloescht."""
+    w = _werkzeug()
+    db.katalog_eintragen(conn, [
+        {"simulator": "msfs2024", "titel": "WC_Bord", "quelle": "bord"},
+        {"simulator": "msfs2024", "titel": "WC_Fremd", "quelle": "community"},
+    ])
+    conn.commit()
+    for alle in (False, True):
+        offen = {t for _, t in w._offene_titel(conn, "msfs2020", alle, False)}
+        assert "WC_Bord" in offen
+        assert "WC_Fremd" not in offen, "Community-Titel werden nie geprueft"
+
+
+def test_das_werkzeug_kann_nach_kategorie_filtern(conn):
+    w = _werkzeug()
+    db.katalog_eintragen(conn, [
+        {"simulator": "msfs2024", "titel": "WK_Schiff", "quelle": "bord", "kategorie": "ships"},
+        {"simulator": "msfs2024", "titel": "WK_Auto", "quelle": "bord", "kategorie": "GroundVehicles"},
+    ])
+    conn.commit()
+    ohne = {t for _, t in w._offene_titel(conn, "msfs2020", False, False, ohne_kategorie=("ships",))}
+    nur = {t for _, t in w._offene_titel(conn, "msfs2020", False, False, nur_kategorie=("ships",))}
+    assert "WK_Auto" in ohne and "WK_Schiff" not in ohne
+    assert "WK_Schiff" in nur and "WK_Auto" not in nur
+
+
+def test_das_raster_steht_hinter_dem_piloten_und_jeder_punkt_ist_eigen(conn):
+    """Nutzerregel: Testobjekte direkt HINTER den Piloten, eng zusammen. Mit `vor` davor."""
+    w = _werkzeug()
+    # Kurs 090 = nach Osten: „hinter ihm" ist westlich, also kleinere Laenge.
+    hinten = list(w._raster(53.0, 8.0, 90.0, 45, 12.0, 30.0, 20, False))
+    assert len(set(hinten)) == 45, "jedes Objekt braucht seinen eigenen Platz"
+    assert all(lon < 8.0 for _, lon in hinten)
+    vorn = list(w._raster(53.0, 8.0, 90.0, 45, 12.0, 30.0, 20, True))
+    assert all(lon > 8.0 for _, lon in vorn)
+    # 45 Objekte in Reihen zu 20 = drei Reihen: die Tiefe waechst um 12 m je Reihe.
+    tiefen = sorted({round((8.0 - lon) * 111320.0 * 0.6018, 0) for _, lon in hinten})
+    assert len(tiefen) == 3
+
+
+def test_nur_frische_meldungen_zaehlen(conn):
+    """Eine Zeile aus einem frueheren Block sagt nichts ueber den Titel, der HEUTE unter dieser id
+    steht -- der alte Lauf las ohne diese Pruefung (3 Fehlschlaege je 12er-Block in MSFS 2020)."""
+    w = _werkzeug()
+    conn.executemany(
+        "INSERT INTO bruegge_steht (kennung, id, cid, zustand, fehler, gemeldet_am) "
+        "VALUES ('k', ?, 1, ?, ?, ?)",
+        [("p-zzpruef_A_000", "fehlgeschlagen", "EXCEPTION_22", "2026-09-20T08:00:00Z"),   # alt
+         ("p-zzpruef_A_001", "steht", None, "2026-09-20T08:05:00Z"),                       # frisch
+         ("p-anderer_000", "steht", None, "2026-09-20T08:05:00Z")])                        # fremd
+    conn.commit()
+    m = w._frische_meldungen(conn, "p-zzpruef_A_", "2026-09-20T08:04:00Z")
+    assert set(m) == {"p-zzpruef_A_001"}
+
+
+@pytest.mark.parametrize("zustand,fehler,soll", [
+    ("steht", None, "steht"),
+    ("fehlgeschlagen", "EXCEPTION_22", "fehlgeschlagen"),
+    ("fehlgeschlagen", "NOCH_NICHT_GESETZT", None),      # laedt noch: kein Urteil ueber den Titel
+    ("fehlgeschlagen", "MODELLBESTAND_VOLL", None),
+    ("fehlgeschlagen", "KEINE_ANTWORT", None),
+    ("verschwunden", None, None),
+])
+def test_urteil_aus_der_meldung(conn, zustand, fehler, soll):
+    assert _werkzeug()._urteil((zustand, fehler, None)) == soll
+
+
+def test_ein_lauf_schreibt_urteile_nimmt_eindeutige_ids_und_stellt_die_zuordnung_wieder_her(
+        conn, monkeypatch):
+    """Der ganze Lauf gegen eine vorgetaeuschte Bruegge (die Wartezeit antwortet)."""
+    w = _werkzeug()
+    pfad = conn.execute("PRAGMA database_list").fetchone()[2]
+    monkeypatch.setattr(w, "DB", pfad)
+    db.bruegge_art_setzen(conn, "lt_art", bedeutung="Test")
+    db.katalog_eintragen(conn, [
+        {"simulator": "msfs2024", "titel": t, "quelle": "bord", "kategorie": "lt"}
+        for t in ("LT_Geht1", "LT_Geht2", "LT_Kaputt", "LT_Laedt", "LT_Zugeordnet")]
+        + [{"simulator": "msfs2024", "titel": "LT_Fremd", "quelle": "community",
+            "kategorie": "lt"}])
+    db.bruegge_katalog_setzen(conn, "msfs2024", "LT_Zugeordnet", art="lt_art", rang=3,
+                              status="aktiv")
+    db.bruegge_position_schreiben(conn, 1, {"lat": 53.7, "lon": 7.9, "kurs": 90.0},
+                                  "msfs2020", "k1")
+    conn.commit()
+
+    gesehen: list[str] = []
+    antwort = {"LT_Kaputt": ("fehlgeschlagen", "EXCEPTION_22"),
+               "LT_Laedt": ("fehlgeschlagen", "NOCH_NICHT_GESETZT")}
+
+    def bruegge(_sekunden):
+        c = db.get_connection(pfad)
+        try:
+            for oid, art in c.execute("SELECT id, art FROM bruegge_soll").fetchall():
+                titel = c.execute("SELECT titel FROM bruegge_katalog WHERE art = ?",
+                                  (art,)).fetchone()[0]
+                gesehen.append(oid)
+                z, f = antwort.get(titel, ("steht", None))
+                c.execute("INSERT OR REPLACE INTO bruegge_steht (kennung, id, cid, zustand, "
+                          "hoehe_ft, fehler, gemeldet_am) VALUES ('k1', ?, 1, ?, 4.0, ?, ?)",
+                          (oid, z, f, db._now_utc()))
+            c.commit()
+        finally:
+            c.close()
+
+    monkeypatch.setattr(w.time, "sleep", bruegge)
+    w.lauf(1, "msfs2020", block=2, warten_s=5, hinten_m=30, abstand_m=12, spalten=20, vor=False,
+           alle=False, grenze=None, nur_kategorie=("lt",))
+
+    u = {t: _urteile(conn, t).get("msfs2020") for t in
+         ("LT_Geht1", "LT_Geht2", "LT_Kaputt", "LT_Laedt", "LT_Zugeordnet", "LT_Fremd")}
+    assert u["LT_Geht1"][0] == "steht" and u["LT_Geht2"][0] == "steht"
+    assert u["LT_Kaputt"][:2] == ("fehlgeschlagen", "EXCEPTION_22")
+    assert u["LT_Laedt"] is None, "ein ladendes Objekt ist kein Urteil"
+    assert u["LT_Zugeordnet"][0] == "steht"
+    assert u["LT_Fremd"] is None, "Community wird nie geprueft"
+
+    # Fuenf Titel in Bloecken zu zwei = drei Bloecke; keine id darf in zweien vorkommen.
+    assert len(gesehen) >= 5 and len(set(gesehen)) == 5, \
+        "jeder Titel eine eigene Objekt-id, ueber alle Bloecke"
+
+    # Alles wieder aufgeraeumt, die urspruengliche Zuordnung zurueck.
+    assert not conn.execute("SELECT 1 FROM bruegge_art WHERE art LIKE 'zzpruef_%'").fetchall()
+    assert not conn.execute("SELECT 1 FROM bruegge_soll").fetchall()
+    z = conn.execute("SELECT art, rang, status FROM bruegge_katalog "
+                     "WHERE titel = 'LT_Zugeordnet'").fetchone()
+    assert tuple(z) == ("lt_art", 3, "aktiv"), "der Lauf darf keine Zuordnung zerstoeren"
