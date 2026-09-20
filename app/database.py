@@ -759,10 +759,15 @@ CREATE INDEX IF NOT EXISTS idx_bruegge_zuordnung_cid ON bruegge_zuordnung(cid);
 CREATE TABLE IF NOT EXISTS bruegge_soll (
     -- Fuer WELCHEN Simulator gilt der Eintrag? NULL = fuer alle.
     --
-    -- Gebraucht, weil eine Art nicht in jedem Simulator einen aktiven Titel hat: `boot_klein`
-    -- fehlt in MSFS 2024, `schiff_segel` in MSFS 2020. Ohne diese Spalte erschiene ein solches
-    -- Objekt bei einem Teil der Piloten stumm nicht -- der Server schickt die Art, die Bruegge
-    -- findet keinen Titel und schweigt. Mit ihr setzt der Server je Simulator eine passende Art.
+    -- Gebraucht, weil eine Art nicht in jedem Simulator einen aktiven Titel hat -- und zwar
+    -- MSFS gegen X-Plane: `flugzeug_klassik` hat keinen X-Plane-Titel, `segelflugzeug` keinen
+    -- in MSFS 2020. Ohne diese Spalte erschiene ein solches Objekt bei einem Teil der Piloten
+    -- stumm nicht: Der Server schickt die Art, die Bruegge findet keinen Titel und schweigt.
+    --
+    -- ⚠ ZWISCHEN MSFS 2020 UND 2024 GIBT ES DIESE LUECKE NICHT. Beide schoepfen aus EINEM
+    -- Titelvorrat (`_BRUEGGE_TOPF`: `k.simulator IN ('msfs2020','msfs2024')`) -- ein Titel, der
+    -- nur unter msfs2020 im Katalog steht, geht auch an eine 2024er Bruegge. Wer die
+    -- Katalogluecke fuer eine Auslieferungsluecke haelt, baut eine Ersetzung, die nichts tut.
     -- Die Spalte steht bewusst OBEN: Sie ist eine Sichtbarkeitsbedingung wie `cid`, kein Detail.
     id            TEXT PRIMARY KEY,
     simulator     TEXT,
@@ -808,6 +813,11 @@ CREATE TABLE IF NOT EXISTS bruegge_steht (
     -- einem vierten, soll er ankommen und sichtbar sein, statt am CHECK zu scheitern.
     zustand     TEXT NOT NULL,
     hoehe_ft    REAL,                -- nur bei "steht": wo der Simulator das Objekt hinsetzte
+    -- Ob `hoehe_ft` eine MESSUNG ist. X-Plane probt das Gelaende selbst und bekommt ohne
+    -- geladenes Terrain Meereshoehe -- die Meldung sieht dann genau wie ein Wattobjekt auf
+    -- 0,0 ft aus (PROTOKOLL.md, Abschnitt 1). MSFS sendet das Feld nicht; NULL heisst deshalb
+    -- "gilt als Messung", NICHT "geraten". Nur eine ausdrueckliche 0 ist ein Rateergebnis.
+    hoehe_gemessen INTEGER,
     seit_s      INTEGER,             -- wie lange es schon steht bzw. weg ist
     fehler      TEXT,                -- nur bei "fehlgeschlagen", z. B. KEINE_ANTWORT
     gemeldet_am TEXT NOT NULL,
@@ -1005,6 +1015,7 @@ _AIP_CHARTS_MIGRATIONS = [
 
 _BRUEGGE_SOLL_MIGRATIONS = [
     "ALTER TABLE bruegge_soll ADD COLUMN simulator TEXT",
+    "ALTER TABLE bruegge_steht ADD COLUMN hoehe_gemessen INTEGER",
 ]
 
 _PANEL_DIAG_MIGRATIONS = [
@@ -3367,10 +3378,12 @@ def bruegge_steht_melden(conn: sqlite3.Connection, kennung: str, cid: int | None
             continue
         conn.execute(
             "INSERT OR REPLACE INTO bruegge_steht "
-            "  (kennung, id, cid, zustand, hoehe_ft, seit_s, fehler, gemeldet_am) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "  (kennung, id, cid, zustand, hoehe_ft, hoehe_gemessen, seit_s, fehler, "
+            "   gemeldet_am) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (kennung, obj_id, cid, zustand,
              _als_zahl(eintrag.get("hoehe_ft")),
+             _als_ganzzahl(eintrag.get("hoehe_gemessen")),
              _als_ganzzahl(eintrag.get("seit_s")),
              (str(eintrag.get("fehler"))[:120] if eintrag.get("fehler") else None),
              jetzt),
@@ -9678,6 +9691,160 @@ def compute_reddung_stand(conn: sqlite3.Connection, ev: dict) -> dict:
         "sektor": {k: ev[k] for k in ("sued", "west", "nord", "ost")},
         "dauer_min": dauer,
     }
+
+
+#: Die drei Simulatoren, für die ein Havarist gesetzt werden kann.
+_REDDUNG_SIMULATOREN = ("msfs2020", "msfs2024", "xplane12")
+
+#: Vorgabe-Art des Havaristen. Ein Fliegerverein sucht Flieger, und `flugzeug_echo` hat
+#: aktive Titel in allen drei Simulatoren.
+_HAVARIST_VORGABE_ART = "flugzeug_echo"
+
+#: Ersatz je Art, wenn sie in einem Simulator keinen aktiven Titel hat. Ohne das erschiene das
+#: Objekt bei einem Teil der Piloten stumm nicht -- der Server schickt die Art, die Brügge
+#: findet keinen Titel und schweigt.
+#:
+#: ⚠ Wirksam wird das praktisch nur zwischen MSFS und X-Plane: Die beiden MSFS teilen sich
+#: einen Titelvorrat (s. Kommentar an ``bruegge_soll.simulator``). Die Bootsarten stehen hier
+#: trotzdem -- sie haben in jedem Topf Lücken, nur nicht die, die man zuerst vermutet.
+_HAVARIST_ERSATZ = {
+    "boot_klein": ("schiff_segel", "schnellboot", "boot_gross"),
+    "boot_gross": ("schiff_segel", "schiff_tanker", "boot_klein"),
+    "schiff_segel": ("boot_klein", "schnellboot", "boot_gross"),
+    "schnellboot": ("boot_klein", "schiff_segel", "boot_gross"),
+    "segelflugzeug": ("flugzeug_echo",),
+    "flugzeug_klassik": ("flugzeug_echo",),
+}
+
+#: So weit darf der meldende Pilot höchstens weg sein, damit seine Höhenmeldung als Messung
+#: gilt. Belegt sind brauchbare Werte bis 200 km; der erste falsche lag bei 691 km (Bodensee,
+#: 2.106 statt 1.297 ft). Dazwischen ist eine Lücke -- 200 km ist die belegte Grenze, nicht
+#: die gemessene Kante.
+_GRUND_MESS_MAX_KM = 200.0
+
+#: Die Fackel steht NEBEN dem Havaristen, nicht in ihm -- sonst steckt die Rauchsäule im Wrack.
+_FACKEL_VERSATZ_GRAD = 0.0003    # ~33 m nach Norden
+
+
+def _art_je_simulator(conn: sqlite3.Connection, art: str) -> dict[str, str | None]:
+    """Welche Art ist in welchem Simulator setzbar? ``None`` = dort gibt es keine."""
+    ergebnis: dict[str, str | None] = {}
+    for sim in _REDDUNG_SIMULATOREN:
+        vorhanden = bruegge_titel_fuer(conn, sim)
+        if art in vorhanden:
+            ergebnis[sim] = art
+            continue
+        ergebnis[sim] = next((e for e in _HAVARIST_ERSATZ.get(art, ()) if e in vorhanden), None)
+    return ergebnis
+
+
+def _reddung_soll_setzen(conn: sqlite3.Connection, basis_id: str, art: str,
+                         lat: float, lon: float, gilt_bis: str) -> list[str]:
+    """Eine Zeile, wenn die Art überall geht -- sonst eine je Simulator.
+
+    Der Normalfall ist EINE Zeile mit ``simulator = NULL``; die Aufspaltung entsteht nur bei
+    einer lückenhaften Art. Wo es auch keinen Ersatz gibt, bleibt der Simulator leer: besser
+    nichts als eine Zeile, die die Brügge nicht setzen kann.
+    """
+    je_sim = _art_je_simulator(conn, art)
+    if set(je_sim.values()) == {art}:
+        bruegge_soll_setzen(conn, basis_id, art, lat, lon, auf_boden=True,
+                            gilt_bis=gilt_bis, simulator=None)
+        for sim in _REDDUNG_SIMULATOREN:
+            bruegge_soll_loeschen(conn, f"{basis_id}-{sim}")
+        return [basis_id]
+    ids: list[str] = []
+    for sim in _REDDUNG_SIMULATOREN:
+        sid = f"{basis_id}-{sim}"
+        gewaehlt = je_sim.get(sim)
+        if gewaehlt is None:
+            bruegge_soll_loeschen(conn, sid)
+            continue
+        bruegge_soll_setzen(conn, sid, gewaehlt, lat, lon, auf_boden=True,
+                            gilt_bis=gilt_bis, simulator=sim)
+        ids.append(sid)
+    bruegge_soll_loeschen(conn, basis_id)
+    return ids
+
+
+def reddung_objekte_abgleichen(conn: sqlite3.Connection, ev: dict) -> list[str]:
+    """Havarist und Fackel in ``bruegge_soll`` auf den Stand des Events bringen.
+
+    Vollständiger Abgleich, kein Strom von Befehlen (PROTOKOLL.md, Abschnitt 2): Die Funktion
+    darf in jedem Poller-Takt laufen und schreibt denselben Zustand.
+
+    Die Fackel folgt den Latches -- orange nach dem Fund, hellblau nach der Aufnahme, und
+    gleich hellblau, wenn der Abend mit dem Fund endet. Orange heißt „gefunden, noch nicht
+    gerettet"; stünde es noch da, wenn nichts mehr zu tun ist, wäre das eine falsche Auskunft
+    an alle, die noch in der Luft sind.
+
+    ``gilt_bis`` ist das Eventende -- damit räumt sich der Havarist von selbst weg, auch wenn
+    niemand mehr hinsieht.
+    """
+    basis = f"reddung-{ev['id']}"
+    hav_id, fackel_id = f"{basis}-havarist", f"{basis}-fackel"
+
+    def weg(basis_id: str) -> None:
+        bruegge_soll_loeschen(conn, basis_id)
+        for sim in _REDDUNG_SIMULATOREN:
+            bruegge_soll_loeschen(conn, f"{basis_id}-{sim}")
+
+    if ev.get("aufgeloest_am") or ev.get("havarist_lat") is None \
+            or ev.get("havarist_lon") is None:
+        weg(hav_id)
+        weg(fackel_id)
+        return []
+
+    lat, lon = float(ev["havarist_lat"]), float(ev["havarist_lon"])
+    gilt_bis = ev["dtend"]
+    ids = _reddung_soll_setzen(conn, hav_id,
+                               ev.get("havarist_art") or _HAVARIST_VORGABE_ART,
+                               lat, lon, gilt_bis)
+
+    fackel = None
+    if ev.get("aufgenommen_am") or (ev.get("gefunden_am") and not ev.get("aufnehmen_noetig")):
+        fackel = "rauch_hellblau"
+    elif ev.get("gefunden_am"):
+        fackel = "rauch_signalorange"
+    if fackel:
+        ids += _reddung_soll_setzen(conn, fackel_id, fackel,
+                                    lat + _FACKEL_VERSATZ_GRAD, lon, gilt_bis)
+    else:
+        weg(fackel_id)
+    return ids
+
+
+def reddung_grund_lernen(conn: sqlite3.Connection, ev: dict) -> bool:
+    """Die Geländehöhe an der Unglücksstelle aus einer Brügge-Rückmeldung lernen.
+
+    Zwei Vorbehalte aus PROTOKOLL.md, und beide sind Fallstricke:
+
+    * ``hoehe_gemessen = 0`` heißt „die Höhe ist geraten" (X-Plane ohne geladenes Gelände).
+      Solche Meldungen sehen genau wie ein Wattobjekt auf 0,0 ft aus. ``NULL`` dagegen heißt
+      „altes Feld oder MSFS" und gilt als Messung.
+    * Aus der Ferne antwortet der Simulator aus einer groben Geländestufe -- am Bodensee
+      2.106 ft statt 1.297 ft bei 691 km. Deshalb muss der meldende Pilot nah sein.
+
+    Geprüft wird gegen seine AKTUELLE Position aus ``bruegge_positions``: Die Brügge meldet im
+    Sekundentakt, Meldung und Position liegen also Sekunden auseinander.
+    """
+    from app.geo import haversine
+    if ev.get("havarist_lat") is None:
+        return False
+    basis = f"reddung-{ev['id']}-havarist"
+    rows = conn.execute(
+        "SELECT s.hoehe_ft, s.hoehe_gemessen, p.lat, p.lon FROM bruegge_steht s "
+        "JOIN bruegge_positions p ON p.cid = s.cid "
+        "WHERE s.zustand = 'steht' AND (s.id = ? OR s.id LIKE ?) AND s.hoehe_ft IS NOT NULL "
+        "ORDER BY s.gemeldet_am DESC", (basis, basis + "-%")).fetchall()
+    for hoehe, gemessen, plat, plon in rows:
+        if gemessen == 0:
+            continue
+        if haversine(float(plat), float(plon),
+                     float(ev["havarist_lat"]), float(ev["havarist_lon"])) > _GRUND_MESS_MAX_KM:
+            continue
+        return reddung_grund_merken(conn, ev["id"], float(hoehe), "gemessen")
+    return False
 
 
 def aggregate_bummel_kpis(views: list[dict]) -> dict:
