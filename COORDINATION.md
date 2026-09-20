@@ -6,6 +6,39 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-20 (abends) — Abdeckungskern gebaut (`app/abdeckung.py`), 15.7.0
+
+**Angefasst:** `app/abdeckung.py` (neu), `tests/test_abdeckung.py` (neu, 40 Tests),
+`docs/architecture.md`, `app/CHANGELOG.json`. **Nicht angefasst:** `app/static/admin.html` und
+`tests/test_admin_tabs.py` lagen beim Rebase als fremde, uncommittete Arbeit im Baum — bleiben
+liegen.
+
+Der Suchflug hat die Forumsumfrage gewonnen. Gebaut ist zuerst nur der gemeinsame Rechenkern
+für **Zählflug (#20), Deichkontrolle (#22) und Suchflug (#21)** — reine Funktionen, keine
+Datenbank, nichts Sichtbares. Wer an einem dieser Eventtypen weiterbaut, nimmt diesen Kern und
+schneidet ihn nicht neu.
+
+**Drei Dinge, die man wissen sollte, bevor man ihn benutzt:**
+
+1. **Ein Ziel ist immer ein Kreis** (Punkt + Radius). Zellraster und Linienabschnitte entstehen
+   aus `zellen_aus_box` / `abschnitte_aus_linie` als gewöhnliche Kreise. Der Havarist des
+   Suchflugs ist kein Sonderfall, nur ein engerer Radius in derselben Liste.
+2. ⚠ **`abstand_zu_strecke_km` ohne `bezug_lat` urteilt anders als `abdeckung`.** Der Einzelabstand
+   nimmt die Breite seines Ziels, der Lauf das Mittel aller Ziele; über einen 40-km-Sektor sind
+   das 0,25 % Maßstabsunterschied — genug, damit ein Ziel am Rand seines Radius einmal so und
+   einmal anders entschieden wird. In Betrieb hieße das: bei 1 Hz gefunden, in der Abendbilanz
+   nicht. Immer `bezug_lat=bezugsbreite(ziele)` mitgeben.
+3. **Gerechnet wird gegen Strecken, nicht gegen Punkte** — gemessen liegen aufeinanderfolgende
+   Positionen im Median 0,95 km auseinander (p99 2,45 km, Ausreißer bis 12,6 km). Ein Fundradius
+   unter ~1,3 km ist punktweise nicht entscheidbar. Wer eine Umkreisprüfung ergänzt, darf nicht
+   auf die Punkte zurückfallen.
+
+Die 40 Tests sind gegen **zehn entschärfte Fassungen** gegengeprüft und werden alle rot. Der
+zehnte Durchlauf hat dabei einen Mangel im Test selbst gefunden: Eine Stichprobe von 300
+Zufallspunkten ließ ein abgerundetes Zellraster durchgehen, das den Rand der Box abschneidet —
+der unversorgte Streifen ist 0,26 × 0,9 km groß, die Box 22 × 33 km. **Der schlimmste Fall einer
+Flächenabdeckung liegt immer in einer Ecke und gehört gerastert geprüft, nicht ausgelost.**
+
 ## 2026-09-20 — Prüfwerkzeug neu gefasst, 136 Titel eingeordnet, sieben neue Arten
 
 **Angefasst:** `scripts/katalog_durchpruefen.py` (neu gefasst), `tests/test_bruegge_titel_lauf.py` (+7 Tests),

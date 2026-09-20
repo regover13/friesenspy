@@ -320,6 +320,42 @@ Marshallinseln, Aleuten). Nutzer-Entscheidung 16.08.2026: nicht in dieser Umstel
 - `nearest_airport_icao(lat, lon, max_km)` / `nearest_airport_icao_fast(lat, lon, max_km)` — nächstgelegener Flugplatz im Umkreis. Überspringen beim `airportsdata`-Scan jeden Code, der in `_CUSTOM_AIRPORTS` steckt (`icao in _CUSTOM_AIRPORTS`) — sonst würde eine falsche `airportsdata`-Position (Fund: EBUL) weiter konkurrieren, statt vollständig von der korrekten Custom-Position verdrängt zu werden. Custom wird danach linear nachgeprüft (Distanz-Gleichstand gewinnt Custom). Seit v8.7.0/#62 zählt dabei pro Custom-Code ein eigener `radius_km` statt des übergebenen `max_km`, wenn gesetzt (`None` = unverändert `max_km`) — ein Kandidat mit größerem eigenen Radius ist auch jenseits von `max_km` zulässig, gewinnt aber weiterhin nur bei kürzerer Distanz als der bisher beste Treffer (Fund: EHAM/Schiphol, s. Tabelle oben).
 - `filter_event_pilots(rows, icao_list, radius_km, start_utc, end_utc)` — filtert `position_history`-Zeilen auf Piloten die im Zeitfenster innerhalb von `radius_km` um einen der ICAOs waren (liefert nur die cid-Menge; die Flug-Dicts selbst kommen seit v8.3.0 aus `canonicalize_legs`, s. u.)
 
+### `app/abdeckung.py` (seit 20.09.2026)
+
+Die gemeinsame Abdeckungsrechnung der drei geplanten Eventtypen — Zählflug (#20),
+Deichkontrolle (#22), Suchflug (#21). **Reine Funktionen, kein Datenbankzugriff:** Der
+Aufrufer holt die Spuren, das Modul rechnet.
+
+- `abdeckung(spuren, ziele, fenster) -> Abdeckung` — wer hat welches Ziel **zuerst** tief und
+  langsam überflogen? Ergebnis: Treffer je Ziel (Schlüssel, CID, Zeitstempel), offene Ziele,
+  Zahl der Erstabdeckungen je Pilot, Gruppenanteil 0..1.
+- `abstand_zu_strecke_km(...)` — Einzelabstand Ziel zur **Strecke** A–B, für die Prüfung im
+  Sekundentakt (~1 µs). ⚠ `bezug_lat=bezugsbreite(ziele)` mitgeben, sonst urteilt sie anders
+  als der Lauf (0,25 % Maßstabsunterschied über einen 40-km-Sektor reichen dafür).
+- `zellen_aus_box(...)` / `abschnitte_aus_linie(...)` — Sektor bzw. Linie in gewöhnliche
+  Kreisziele schneiden. Zellkante über dem doppelten Korridor lässt Löcher **zwischen** den
+  Zellen, die niemand füllen kann.
+
+**Ein Ziel ist immer ein Kreis** (Punkt + Radius). Der Havarist des Suchflugs ist darin nichts
+Besonderes, nur ein engerer Radius in derselben Liste — und das Ergebnis nennt Schlüssel,
+niemals Koordinaten (die Verdeckungsanforderung aus #21 gilt damit auf Modulebene, nicht erst
+in der API; ein Test hält es fest).
+
+Gerechnet wird gegen **Strecken, nicht gegen Punkte**. Grund ist die Abtastdichte: gemessen am
+20.09.2026 über 40.570 Punktpaare der Produktion (unter 4.000 ft, in Bewegung) liegen
+aufeinanderfolgende Positionen im Median 0,95 km auseinander (p90 1,35 km, p99 2,45 km,
+Ausreißer bis 12,6 km) bei 15 s Abstand. **Punktweise wäre ein Fundradius unter ~1,3 km nicht
+entscheidbar** — der Pilot rutscht zwischen zwei Messungen über das Ziel hinweg.
+
+Zwei Kappungen, und beide braucht es: `luecke_max_s` (60 s) für Löcher im Abtaststrom,
+`sprung_max_km` (6 km) für das, was *innerhalb* der erlaubten Zeit unmöglich ist (Ladevorgang,
+Slew). Ohne die zweite gilt die Luftlinie eines 12-km-Sprungs als abgesucht.
+
+Laufzeit an einem realistischen Abend (10 Piloten, 2 h, 4.790 Segmente gegen 420 Zellen):
+**68 ms** mit Kachelfilter, 1.393 ms ohne. Die Gleichheit beider Wege gegen Zufallsdaten ist
+der wichtigste Test des Moduls — ein Filterfehler tarnt sich sonst als fehlende Abdeckung, die
+niemandem auffällt.
+
 ### `app/teamspeak.py`
 
 TeamSpeak-ServerQuery-Client für die TS-Login-Benachrichtigung (Phase 1). Baut pro Poll eine kurzlebige ServerQuery-Verbindung auf (kein dauerhafter Event-Thread, kein TS-Client-Prozess).

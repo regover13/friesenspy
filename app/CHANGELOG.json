@@ -1,5 +1,14 @@
 [
   {
+    "version": "15.7.0",
+    "date": "2026-09-20",
+    "highlight": false,
+    "title": "Erster Baustein für den Suchflug",
+    "items": [
+      "🚨 Der **Suchflug** hat die Umfrage im Forum gewonnen — hier ist das erste Stück davon. Es ist die Rechnung, die beantwortet, welche Fläche eine Gruppe abgesucht hat und wer eine Stelle zuerst überflogen hat: tief und langsam genug, und geprüft gegen die geflogene Strecke statt gegen einzelne Messpunkte — sonst rutscht man zwischen zwei Positionsmeldungen unbemerkt über das Ziel hinweg. Dieselbe Rechnung wird später der Zählflug und die Deichkontrolle brauchen; sie entsteht deshalb einmal für alle drei. **Zu sehen ist davon noch nichts** — das kommt mit dem Eventtyp selbst."
+    ]
+  },
+  {
     "version": "15.6.1",
     "date": "2026-09-20",
     "highlight": false,
