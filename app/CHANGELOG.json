@@ -1,5 +1,15 @@
 [
   {
+    "version": "15.5.1",
+    "date": "2026-09-20",
+    "highlight": false,
+    "title": "Tiere einzeln wählbar, Lücken-Filter mit UND oder ODER",
+    "items": [
+      "🌉 Elefant, Giraffe, Nashorn und Flusspferd sind jetzt vier einzelne Objektarten statt einer Sammelart „afrikanische Tiere“. So lässt sich gezielt eine Giraffe oder ein Nashorn hinstellen, und es kommt nicht mehr immer der Elefant. Es gibt sie in MSFS 2020 und MSFS 2024.",
+      "🌉 Im Admin verknüpft der Filter „Lücke in“ die angehakten Simulatoren jetzt wahlweise mit UND oder ODER. Vorgabe ist UND."
+    ]
+  },
+  {
     "version": "15.5.0",
     "date": "2026-09-20",
     "highlight": false,

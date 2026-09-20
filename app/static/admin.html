@@ -1813,15 +1813,22 @@
 
             <!-- Wo fehlt einer Art noch etwas? (Nutzer, 20.09.2026: „wie kann ich hier filtern,
                  welcher Art noch Zuordnungen fehlen?") Ohne Haken steht die ganze Liste da.
-                 Mit Haken bleiben die Arten, die in EINEM der angehakten Simulatoren eine
-                 Lücke haben (ODER, nicht UND -- wer eine Lücke sucht, will die Vereinigung).
-                 Das Gegenstück zum Picker oben: Der nimmt nur, was UEBERALL geht. -->
+                 Mit Haken bleiben die Arten mit Lücke -- in ALLEN angehakten Simulatoren (UND,
+                 die Vorgabe) oder in EINEM davon (ODER); die Auswahl steht daneben. Nutzerwunsch
+                 20.09.2026: erst als ODER gebaut, dann "soll UND verknüpft sein", dann "ein UND
+                 oder ODER zur Auswahl". Das Gegenstück zum Picker oben: Der nimmt nur, was
+                 UEBERALL geht. -->
             <div id="bg-a-luecke" style="display:flex;flex-wrap:wrap;gap:4px 10px;
                  align-items:center;font-size:0.78rem;color:#8aa0b8;margin:8px 0 4px;">
               <span>Lücke in:</span>
               <label><input type="checkbox" data-luecke="msfs2020"> MSFS 2020</label>
               <label><input type="checkbox" data-luecke="msfs2024"> MSFS 2024</label>
               <label><input type="checkbox" data-luecke="xplane12"> X-Plane 12</label>
+              <select id="bg-a-luecke-mit" style="width:auto;font-size:0.78rem;"
+                      title="Verknüpfung der angehakten Simulatoren">
+                <option value="und">UND — in allen angehakten</option>
+                <option value="oder">ODER — in mindestens einem</option>
+              </select>
               <select id="bg-a-luecke-was" style="width:auto;font-size:0.78rem;">
                 <option value="nicht">geht nicht (✕)</option>
                 <option value="auch">auch noch ungeprüft (?)</option>
@@ -2848,24 +2855,26 @@
     // ---- Filter über der ARTEN-Tabelle: „Lücke in: …" (Nutzer, 20.09.2026) ------------------
     // Rein und ohne DOM, damit tests/test_admin_arten_luecke.py sie ausführen kann.
 
-    /** Hat die Art in EINEM der Simulatoren `sims` eine Lücke? `kann_nicht` = kein aktiver Titel
+    /** Hat die Art in JEDEM (UND) oder in MINDESTENS EINEM (`oder`) der Simulatoren `sims` eine
+     *  Lücke? `kann_nicht` = kein aktiver Titel
      *  oder alle durchgefallen -- das sind die fehlenden Zuordnungen. Mit `auch` zählt
      *  `ungeprueft` mit (Titel da, aber noch nie belegt). Fehlt der Zustand ganz, ist es eine Lücke. */
-    function bgArtHatLuecke(a, sims, auch) {
-      return sims.some(function (sim) {
+    function bgArtHatLuecke(a, sims, auch, oder) {
+      const luecke = function (sim) {
         const z = a.zustand && a.zustand[sim];
         return auch ? z !== 'kann' : (z === 'kann_nicht' || !z);
-      });
+      };
+      return oder ? sims.some(luecke) : sims.every(luecke);
     }
 
     /** Die Arten, die die Tabelle zeigt. Ohne Haken: alle. Mit Haken: nur Arten mit Lücke,
      *  und die vom Nutzer abgeschalteten nur auf Wunsch -- sie haben überall eine Lücke, weil
      *  sie gewollt leer sind, und würden jede Liste zumüllen. */
-    function bgArtenGefiltert(alle, sims, auch, mitAbgeschalteten) {
+    function bgArtenGefiltert(alle, sims, auch, mitAbgeschalteten, oder) {
       if (!sims.length) return alle;
       return alle.filter(function (a) {
         if (!mitAbgeschalteten && (a.art_status || 'aktiv') !== 'aktiv') return false;
-        return bgArtHatLuecke(a, sims, auch);
+        return bgArtHatLuecke(a, sims, auch, oder);
       });
     }
 
@@ -2877,7 +2886,9 @@
         .map(function (c) { return c.dataset.luecke; });
       const was = document.getElementById('bg-a-luecke-was');
       const aus = document.getElementById('bg-a-luecke-aus');
-      return { sims: sims, auch: !!was && was.value === 'auch', aus: !!aus && aus.checked };
+      const mit = document.getElementById('bg-a-luecke-mit');
+      return { sims: sims, auch: !!was && was.value === 'auch', aus: !!aus && aus.checked,
+               oder: !!mit && mit.value === 'oder' };
     }
 
     function bgLueckeBedienung() {
@@ -2942,11 +2953,12 @@
         return;
       }
       const f = bgLueckeLesen();
-      const zeigen = bgArtenGefiltert(_bgArtenAlle, f.sims, f.auch, f.aus);
+      const zeigen = bgArtenGefiltert(_bgArtenAlle, f.sims, f.auch, f.aus, f.oder);
       const lz = document.getElementById('bg-a-luecke-zahlen');
       if (lz) {
         lz.textContent = f.sims.length
           ? zeigen.length + ' von ' + _bgArtenAlle.length + ' Arten mit Lücke'
+            + (f.sims.length > 1 ? (f.oder ? ' (in mindestens einem angehakten)' : ' (in allen angehakten)') : '')
           : '';
       }
       koerper.innerHTML = zeigen.length

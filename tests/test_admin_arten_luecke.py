@@ -42,14 +42,14 @@ ARTEN = [
 ]
 
 
-def _lauf(sims, auch=False, aus=False, arten=None) -> list[str]:
+def _lauf(sims, auch=False, aus=False, arten=None, oder=False) -> list[str]:
     js = """
 'use strict';
 %s
 const arten = %s;
-console.log(JSON.stringify(bgArtenGefiltert(arten, %s, %s, %s).map(a => a.art)));
+console.log(JSON.stringify(bgArtenGefiltert(arten, %s, %s, %s, %s).map(a => a.art)));
 """ % (_quelle(), json.dumps(ARTEN if arten is None else arten), json.dumps(sims),
-       json.dumps(auch), json.dumps(aus))
+       json.dumps(auch), json.dumps(aus), json.dumps(oder))
     p = subprocess.run([_NODE, "-e", js], capture_output=True, text=True, timeout=20)
     assert p.returncode == 0, p.stderr
     return json.loads(p.stdout.strip().splitlines()[-1])
@@ -65,10 +65,22 @@ class TestLueckenAuswahl:
         assert _lauf(["msfs2020"]) == ["nur_20_fehlt", "beide_fehlen"]
         assert _lauf(["xplane12"]) == ["nur_xp_fehlt", "beide_fehlen"]
 
-    def test_mehrere_haken_sind_eine_vereinigung(self):
-        """Wer eine Lücke sucht, will jede Art, der IRGENDWO etwas fehlt -- nicht nur die,
-        der es in allen angehakten Simulatoren fehlt (das wäre der Picker mit umgedrehtem Vorzeichen)."""
-        assert _lauf(["msfs2020", "xplane12"]) == ["nur_20_fehlt", "nur_xp_fehlt", "beide_fehlen"]
+    def test_vorgabe_ist_und(self):
+        """Nutzerwunsch 20.09.2026: "soll UND verknüpft sein". Mit zwei Haken bleiben nur die Arten,
+        die in BEIDEN eine Lücke haben."""
+        assert _lauf(["msfs2020", "xplane12"]) == ["beide_fehlen"]
+        assert _lauf(["msfs2020", "msfs2024"]) == [], \
+            "keine Art fehlt in 2020 UND 2024 zugleich -- die Schnittmenge ist leer, nicht die Vereinigung"
+
+    def test_oder_ist_waehlbar(self):
+        """"ein UND oder ODER zur Auswahl": ODER zeigt jede Art, der in MINDESTENS EINEM etwas fehlt."""
+        assert _lauf(["msfs2020", "xplane12"], oder=True) == \
+            ["nur_20_fehlt", "nur_xp_fehlt", "beide_fehlen"]
+        assert _lauf(["msfs2020", "msfs2024"], oder=True) == ["nur_20_fehlt", "beide_fehlen"]
+
+    def test_bei_einem_haken_sind_und_und_oder_gleich(self):
+        for sim in ("msfs2020", "msfs2024", "xplane12"):
+            assert _lauf([sim]) == _lauf([sim], oder=True)
 
     def test_ungeprueft_ist_standardmaessig_keine_luecke(self):
         """„Zuordnung fehlt" heißt: kein Titel oder alle durchgefallen. Ein noch nicht
@@ -94,6 +106,8 @@ class TestEinbau:
         for sim in ("msfs2020", "msfs2024", "xplane12"):
             assert f'data-luecke="{sim}"' in ADMIN
         assert 'id="bg-a-luecke-was"' in ADMIN and 'id="bg-a-luecke-aus"' in ADMIN
+        assert 'id="bg-a-luecke-mit"' in ADMIN, "die Wahl zwischen UND und ODER"
+        assert '<option value="und">' in ADMIN and '<option value="oder">' in ADMIN
 
     def test_die_tabelle_zeichnet_die_gefilterte_liste_und_der_filter_ist_verdrahtet(self):
         z = ADMIN.index("function bgArtenZeichnen()")
@@ -101,3 +115,13 @@ class TestEinbau:
         assert "bgArtenGefiltert(_bgArtenAlle" in koerper
         assert "zeigen.map(bgArtZeile)" in koerper and "_bgArtenAlle.map(bgArtZeile)" not in koerper
         assert "bgLueckeBedienung();" in ADMIN
+
+    def test_die_und_oder_wahl_wird_aus_der_seite_gelesen_und_weitergereicht(self):
+        """Die reine Funktion kann perfekt sein, und die Auswahl kommt trotzdem nie an -- dann bliebe
+        der Filter dauerhaft auf UND, egal was im Feld steht."""
+        lesen = ADMIN[ADMIN.index("function bgLueckeLesen()"):ADMIN.index("function bgLueckeBedienung()")]
+        assert "getElementById('bg-a-luecke-mit')" in lesen
+        assert "mit.value === 'oder'" in lesen and "oder:" in lesen
+        z = ADMIN.index("function bgArtenZeichnen()")
+        koerper = ADMIN[z:ADMIN.index("function bgArtZeile(", z)]
+        assert "f.auch, f.aus, f.oder" in koerper
