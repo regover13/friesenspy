@@ -757,7 +757,15 @@ CREATE INDEX IF NOT EXISTS idx_bruegge_zuordnung_cid ON bruegge_zuordnung(cid);
 -- Simulator, der Server kennt ihn nicht. Die Pruefliste steht in `app/main.py`
 -- (`_BRUEGGE_GATTUNGEN`); dieser Kommentar ist nur Beschreibung, keine zweite Wahrheit.
 CREATE TABLE IF NOT EXISTS bruegge_soll (
+    -- Fuer WELCHEN Simulator gilt der Eintrag? NULL = fuer alle.
+    --
+    -- Gebraucht, weil eine Art nicht in jedem Simulator einen aktiven Titel hat: `boot_klein`
+    -- fehlt in MSFS 2024, `schiff_segel` in MSFS 2020. Ohne diese Spalte erschiene ein solches
+    -- Objekt bei einem Teil der Piloten stumm nicht -- der Server schickt die Art, die Bruegge
+    -- findet keinen Titel und schweigt. Mit ihr setzt der Server je Simulator eine passende Art.
+    -- Die Spalte steht bewusst OBEN: Sie ist eine Sichtbarkeitsbedingung wie `cid`, kein Detail.
     id            TEXT PRIMARY KEY,
+    simulator     TEXT,
     cid           INTEGER,          -- NULL = fuer alle Bruegge
     art           TEXT NOT NULL,
     lat           REAL NOT NULL,
@@ -993,6 +1001,10 @@ _AIP_CHARTS_MIGRATIONS = [
     # in upsert_aip_chart sieht davon nichts. Eine Handkorrektur kann also auch ohne jedes
     # Ueberschreiben verlorengehen.
     "ALTER TABLE aip_charts ADD COLUMN seite_url TEXT NOT NULL DEFAULT ''",
+]
+
+_BRUEGGE_SOLL_MIGRATIONS = [
+    "ALTER TABLE bruegge_soll ADD COLUMN simulator TEXT",
 ]
 
 _PANEL_DIAG_MIGRATIONS = [
@@ -1308,6 +1320,11 @@ def init_db(db_path: str) -> None:
             except sqlite3.OperationalError:
                 pass
         for stmt in _PANEL_DIAG_MIGRATIONS:
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass
+        for stmt in _BRUEGGE_SOLL_MIGRATIONS:
             try:
                 conn.execute(stmt)
             except sqlite3.OperationalError:
@@ -3219,19 +3236,33 @@ def bruegge_aufraeumen(conn: sqlite3.Connection,
     return cur.rowcount or 0
 
 
-def bruegge_soll_fuer(conn: sqlite3.Connection, cid: int) -> list[dict]:
+def bruegge_soll_fuer(conn: sqlite3.Connection, cid: int,
+                      simulator: str | None = None) -> list[dict]:
     """Was soll bei diesem Piloten stehen?
 
     Abgelaufene Eintraege fallen weg, ohne geloescht zu werden -- ein Event kann so vorbereitet
     und mit einem Zeitfenster versehen werden, ohne dass jemand hinterherraeumen muss.
+
+    ``simulator`` filtert zusaetzlich: Ein Eintrag mit gesetztem ``simulator`` gilt nur dort.
+    Ohne Angabe kommt alles -- abwaertskompatibel, damit ein aelterer Aufrufer nicht still
+    Objekte verliert.
     """
     now = _now_utc()
-    rows = conn.execute(
-        "SELECT id, art, lat, lon, kurs, erwartete_hoehe_ft, auf_boden FROM bruegge_soll "
-        "WHERE (cid IS NULL OR cid = ?) AND (gilt_bis IS NULL OR gilt_bis > ?) "
-        "ORDER BY id",
-        (int(cid), now),
-    ).fetchall()
+    if simulator:
+        rows = conn.execute(
+            "SELECT id, art, lat, lon, kurs, erwartete_hoehe_ft, auf_boden FROM bruegge_soll "
+            "WHERE (cid IS NULL OR cid = ?) AND (gilt_bis IS NULL OR gilt_bis > ?) "
+            "  AND (simulator IS NULL OR simulator = ?) "
+            "ORDER BY id",
+            (int(cid), now, simulator),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, art, lat, lon, kurs, erwartete_hoehe_ft, auf_boden FROM bruegge_soll "
+            "WHERE (cid IS NULL OR cid = ?) AND (gilt_bis IS NULL OR gilt_bis > ?) "
+            "ORDER BY id",
+            (int(cid), now),
+        ).fetchall()
     return [_row_to_dict(r) for r in rows]
 
 
@@ -3241,19 +3272,25 @@ def bruegge_soll_setzen(conn: sqlite3.Connection, kennung_id: str, art: str,
                         erwartete_hoehe_ft: float | None = None,
                         gilt_bis: str | None = None,
                         bemerkung: str | None = None,
-                        auf_boden: bool = False) -> None:
-    """Ein Objekt anfordern (kein commit). Gleiche ``id`` ueberschreibt."""
+                        auf_boden: bool = False,
+                        simulator: str | None = None) -> None:
+    """Ein Objekt anfordern (kein commit). Gleiche ``id`` ueberschreibt.
+
+    ``simulator`` schraenkt die Sichtbarkeit ein (``None`` = fuer alle). ⚠ Das ON CONFLICT
+    zieht die Spalte mit: Ohne das blieb ein alter Filter stehen, und das Objekt verschwaende
+    fuer zwei Drittel der Piloten, ohne dass irgendwo ein Fehler auftaucht.
+    """
     conn.execute(
         "INSERT INTO bruegge_soll (id, cid, art, lat, lon, kurs, erwartete_hoehe_ft, "
-        "                          angelegt_am, gilt_bis, bemerkung, auf_boden) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+        "                          angelegt_am, gilt_bis, bemerkung, auf_boden, simulator) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(id) DO UPDATE SET cid = excluded.cid, art = excluded.art, "
         "    lat = excluded.lat, lon = excluded.lon, kurs = excluded.kurs, "
         "    erwartete_hoehe_ft = excluded.erwartete_hoehe_ft, "
         "    gilt_bis = excluded.gilt_bis, bemerkung = excluded.bemerkung, "
-        "    auf_boden = excluded.auf_boden",
+        "    auf_boden = excluded.auf_boden, simulator = excluded.simulator",
         (kennung_id, cid, art, float(lat), float(lon), kurs, erwartete_hoehe_ft,
-         _now_utc(), gilt_bis, bemerkung, 1 if auf_boden else 0),
+         _now_utc(), gilt_bis, bemerkung, 1 if auf_boden else 0, simulator),
     )
 
 

@@ -1683,7 +1683,7 @@ async def bruegge_melden(request: Request):
                 "bemerkung": f"von einer Bruegge gemeldet ({simulator})",
             }])
 
-        soll = bruegge_soll_fuer(conn, cid)
+        soll = bruegge_soll_fuer(conn, cid, simulator)
         # Die Titel zu den angeforderten Arten -- fuer DIESEN Simulator, und nur zu dem, was
         # wirklich angefordert ist. Alles mitzuschicken waere bequemer und kostete 914 Bytes
         # statt ~200; der Puffer traegt das, aber die Bruegge kann mit Titeln zu Arten, die
