@@ -26,7 +26,7 @@ den 346 bestandenen waren **164 ohne Art**. **138 haben jetzt eine**, 26 bleiben
 | `marshaller` | ✅ | 24 (`Marshaller_*`, ohne den Stab) | MSFS 2020 + 2024 |
 | `pilot` | ✅ | 26 (`Pilot_*`, auch Uniform und Segelflug) | MSFS 2020 + 2024 |
 | `bodenpersonal` | ✅ | 25 (`Tarmac_*` und `Wing_Runner`) | MSFS 2020 + 2024 |
-| `tier_afrika` | ✅ | 28 (Elefant, Giraffe, Nashorn, Flusspferd) | **nur MSFS 2020** — in 2024 sind alle durchgefallen |
+| `tier_afrika` | ✅ | 28 aus 2020 (`AfricanElephant` …) + 6 aus 2024 (`LAfricanaMale`, `EMaximusMale`, `HAmphibiusMale`, `CSimumMale`, `GGiraffaMale`, `GCamelopardalisMale`) | **MSFS 2020 und 2024**, jeweils mit eigenen Titeln — die 2020er Titel gibt es in 2024 nicht |
 | `wal` | ✅ | 1 (`HumpbackWhale`) | MSFS 2020 + 2024; nur über See sinnvoll (nicht gemessen) |
 | `bordtreppe` | ✅ | 3 MSFS + 4 X-Plane (`pax_stairs_1`, `_up1`, `_up2`, `Stair_Maint_1`) | **überall** |
 | `seilwinde` | ✅ | 3 (`TT:WINCH.*`) | MSFS 2020 + 2024 |
@@ -49,6 +49,26 @@ Flusspferd unter und im Wasser (4); `L_VR_Controller`, `R_VR_Controller`, `VRLef
 `elephant`, `giraffe`, `worker`, `crew`, `passenger` — Treffer sind nur `Boats_Crew_*` (Schiffsteile), `Whaler_*` (Fangschiffe),
 `crew_car*` und `EDDM_Control_Tower_Workers.obj`. Die Arten tragen das in ihrer Bedeutung, damit im Admin niemand
 nach einem X-Plane-Titel sucht.
+
+**Wo fehlt einer Art noch etwas? — der Filter „Lücke in“** (Nutzerfrage 20.09.2026, im Admin über der Tabelle
+„ARTEN“): Ohne Haken steht die ganze Liste da. Mit Haken bleiben die Arten, die in **einem** der angehakten
+Simulatoren eine Lücke haben (ODER — wer Lücken sucht, will die Vereinigung; der Picker bei „Objekte anfordern“
+macht das Gegenteil und verlangt UND). „Lücke“ heißt **geht nicht (✕)**: kein aktiver Titel oder alle durchgefallen —
+die fehlenden Zuordnungen. Ein noch ungeprüfter Titel (?) ist zugeordnet und zählt nur mit dem Schalter „auch noch
+ungeprüft“. Abgeschaltete Arten (`fahrzeug`, `robbe`, `test_tank`) sind überall leer und erscheinen nur mit „auch
+abgeschaltete“. Die Auswahl ist eine reine Funktion (`bgArtenGefiltert` in `admin.html`) und wird in
+`tests/test_admin_arten_luecke.py` unter Node ausgeführt.
+
+**Der Simulator nennt seine Titel selbst — `SimConnect_EnumerateSimObjectsAndLiveries` (MSFS 2024).** Von der Platte lassen
+sich die Titel gestreamter 2024er Pakete nicht lesen (`StreamedPackages` enthält nur wenige Dateien, die Virtual File System zeigt
+leere Platzhalter, manche mit Schloss). Der Simulator kennt sie aber, und diese Funktion liefert sie: `ANIMAL` 1 030 Titel,
+`GROUND` 522, `ALL` 7 503 — davon **775 / 102 / 1 633 dem Katalog unbekannt**. `friesenbruegge/probe-msfs/titel_aufzaehlen.py`
+(reines `ctypes`, kein Kompilieren) fragt sie ab. Die Tiere heißen in 2024 nach der Art:
+`LAfricana…` (Afrikanischer Elefant), `EMaximus…` (Asiatischer), `HAmphibius…` (Flusspferd), `CSimum…` (Breitmaulnashorn),
+`GGiraffa…` und `GCamelopardalis…` (Giraffen), `PLeo…` (Löwe), dazu `ahqa …` (Zebra, Robbe, Walross, Seelöwe). Diese sechs wurden
+am 20.09.2026 im Flug hinter dem Piloten gesehen, und sie zeigten genau das, was der Name sagt.
+⚠ **Grenze:** Die Aufzählung deckt nicht jede Kategorie ab. Die eigenen `FrsRauch_*`/`FrsSeehund_*` (Misc) fehlen in `ALL`, obwohl sie
+installiert sind und stehen — wer sie dort sucht, findet sie nicht.
 
 **Zustand:** Die sechs neuen MSFS-Arten stehen im Admin nicht unter „überall“ (X-Plane fehlt), sind aber anforderbar.
 `bordtreppe` ist die einzige, die es in allen dreien gibt (23 Arten sind jetzt „überall“, vorher 22).

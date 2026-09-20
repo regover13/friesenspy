@@ -1811,6 +1811,25 @@
               <button class="btn btn-sm" id="bg-a-anlegen">Anlegen</button>
             </div>
 
+            <!-- Wo fehlt einer Art noch etwas? (Nutzer, 20.09.2026: „wie kann ich hier filtern,
+                 welcher Art noch Zuordnungen fehlen?") Ohne Haken steht die ganze Liste da.
+                 Mit Haken bleiben die Arten, die in EINEM der angehakten Simulatoren eine
+                 Lücke haben (ODER, nicht UND -- wer eine Lücke sucht, will die Vereinigung).
+                 Das Gegenstück zum Picker oben: Der nimmt nur, was UEBERALL geht. -->
+            <div id="bg-a-luecke" style="display:flex;flex-wrap:wrap;gap:4px 10px;
+                 align-items:center;font-size:0.78rem;color:#8aa0b8;margin:8px 0 4px;">
+              <span>Lücke in:</span>
+              <label><input type="checkbox" data-luecke="msfs2020"> MSFS 2020</label>
+              <label><input type="checkbox" data-luecke="msfs2024"> MSFS 2024</label>
+              <label><input type="checkbox" data-luecke="xplane12"> X-Plane 12</label>
+              <select id="bg-a-luecke-was" style="width:auto;font-size:0.78rem;">
+                <option value="nicht">geht nicht (✕)</option>
+                <option value="auch">auch noch ungeprüft (?)</option>
+              </select>
+              <label><input type="checkbox" id="bg-a-luecke-aus"> auch abgeschaltete</label>
+              <span id="bg-a-luecke-zahlen" style="color:#cfe0f2;"></span>
+            </div>
+
             <div class="table-wrap" style="max-height:420px;overflow:auto;">
               <table>
                 <thead>
@@ -2728,6 +2747,7 @@
       bgTitelBedienung();
       bgArtenBedienung();
       bgSimFilterBedienung();
+      bgLueckeBedienung();
       bgPilotenLaden().then(bgCidPicker);
       bgLaden();
       setInterval(bgLaden, 10000);
@@ -2825,6 +2845,47 @@
       }).join(' ');
     }
 
+    // ---- Filter über der ARTEN-Tabelle: „Lücke in: …" (Nutzer, 20.09.2026) ------------------
+    // Rein und ohne DOM, damit tests/test_admin_arten_luecke.py sie ausführen kann.
+
+    /** Hat die Art in EINEM der Simulatoren `sims` eine Lücke? `kann_nicht` = kein aktiver Titel
+     *  oder alle durchgefallen -- das sind die fehlenden Zuordnungen. Mit `auch` zählt
+     *  `ungeprueft` mit (Titel da, aber noch nie belegt). Fehlt der Zustand ganz, ist es eine Lücke. */
+    function bgArtHatLuecke(a, sims, auch) {
+      return sims.some(function (sim) {
+        const z = a.zustand && a.zustand[sim];
+        return auch ? z !== 'kann' : (z === 'kann_nicht' || !z);
+      });
+    }
+
+    /** Die Arten, die die Tabelle zeigt. Ohne Haken: alle. Mit Haken: nur Arten mit Lücke,
+     *  und die vom Nutzer abgeschalteten nur auf Wunsch -- sie haben überall eine Lücke, weil
+     *  sie gewollt leer sind, und würden jede Liste zumüllen. */
+    function bgArtenGefiltert(alle, sims, auch, mitAbgeschalteten) {
+      if (!sims.length) return alle;
+      return alle.filter(function (a) {
+        if (!mitAbgeschalteten && (a.art_status || 'aktiv') !== 'aktiv') return false;
+        return bgArtHatLuecke(a, sims, auch);
+      });
+    }
+
+    /** Was im Filter über der Tabelle angehakt ist. */
+    function bgLueckeLesen() {
+      const sims = Array.prototype.slice.call(
+        document.querySelectorAll('#bg-a-luecke input[data-luecke]'))
+        .filter(function (c) { return c.checked; })
+        .map(function (c) { return c.dataset.luecke; });
+      const was = document.getElementById('bg-a-luecke-was');
+      const aus = document.getElementById('bg-a-luecke-aus');
+      return { sims: sims, auch: !!was && was.value === 'auch', aus: !!aus && aus.checked };
+    }
+
+    function bgLueckeBedienung() {
+      document.querySelectorAll('#bg-a-luecke input, #bg-a-luecke select').forEach(function (e) {
+        e.addEventListener('change', bgArtenZeichnen);
+      });
+    }
+
     /** Picker und Zahlenzeile neu aufsetzen, wenn ein Haken wechselt. */
     function bgSimFilterAnwenden() {
       _bgArten = _bgArtenAlle.filter(function (a) { return a.anforderbar && bgSimPasst(a); });
@@ -2880,7 +2941,17 @@
         koerper.innerHTML = '<tr><td colspan="5" class="empty-hint">Noch keine Art.</td></tr>';
         return;
       }
-      koerper.innerHTML = _bgArtenAlle.map(bgArtZeile).join('');
+      const f = bgLueckeLesen();
+      const zeigen = bgArtenGefiltert(_bgArtenAlle, f.sims, f.auch, f.aus);
+      const lz = document.getElementById('bg-a-luecke-zahlen');
+      if (lz) {
+        lz.textContent = f.sims.length
+          ? zeigen.length + ' von ' + _bgArtenAlle.length + ' Arten mit Lücke'
+          : '';
+      }
+      koerper.innerHTML = zeigen.length
+        ? zeigen.map(bgArtZeile).join('')
+        : '<tr><td colspan="5" class="empty-hint">Keine Art mit Lücke in den angehakten Simulatoren.</td></tr>';
     }
 
     function bgArtZeile(a) {
