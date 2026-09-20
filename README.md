@@ -336,9 +336,26 @@ Der **FriesenKutter** ist ein kleines „FSE für Friesen": ein Transportflug-Ev
 
 Die Admin-Seite ist unter `/admin` erreichbar und passwortgeschützt. Das Passwort wird über `ADMIN_PASSWORD` in `config.env` gesetzt (leer = Admin-Bereich deaktiviert; niemals in git). Der Login setzt ein signiertes httponly-Cookie (`fs_admin`), das für die Browsersitzung gültig bleibt — ein Passwort- oder Key-Wechsel invalidiert alle bestehenden Cookies sofort.
 
+### Wie die Seite aufgeteilt ist
+
+Oben steht eine Leiste mit sechs Bereichen: **Events · Stammdaten · Karten · Mitteilungen ·
+Brügge · Betrieb**. Früher stand alles untereinander auf einer einzigen langen Seite.
+
+Im Bereich **Events** liegt darunter eine zweite Reihe — ein Knopf je Event-Typ, derzeit
+**🏁 Bummel** und **🦐 Kutter**. Jeder weitere Typ bekommt dort seinen eigenen Knopf, und alles,
+was zu ihm gehört, steht dahinter beieinander.
+
+**Der offene Bereich steht in der Adresszeile.** Lädst du die Seite neu, landest du wieder dort,
+wo du warst, und du kannst dir eine Stelle als Link ablegen — `…/admin#tab=events&typ=kutter`
+führt direkt zum Kutter.
+
+**Jeder Bereich holt seine Daten erst, wenn du ihn zum ersten Mal öffnest.** Das Anmelden geht
+dadurch spürbar schneller. Die beiden Bereiche, die sich laufend selbst auffrischen — Brügge und
+Kniebrett — tun das nur, solange sie zu sehen sind.
+
 ### Board-Login (Forum-SSO, optional)
 
-Ist der **Board-Login** aktiv (Admin-Tab → „Board-Login“, Standard AUS), ist die gesamte App nur für eingeloggte Forum-Mitglieder (`board.friesenflieger.de`, phpBB) sichtbar. Der Login läuft im Forum — das Passwort erreicht FriesenSpy nie: eine kleine Bridge-Datei `sso.php` (aus `deploy/forum/`, neben phpBB kopiert) liefert per Redirect ein kurzlebiges, HMAC-signiertes Token mit Benutzername, VATSIM-CID (aus dem Forum-Profil) und Admin-Flag (Forum-Gruppe „Events“). FriesenSpy prüft es (`SSO_SECRET`, Frische ≤ 60 s, Einmal-Nonce, `state`) und legt eine eigene kurze Session (`fs_user`) an. Das `ADMIN_PASSWORD` bleibt als Break-glass-Zugang erhalten. Details: `docs/superpowers/specs/2026-07-13-forum-sso-design.md` und `deploy/forum/README.md`.
+Ist der **Board-Login** aktiv (Admin → „Betrieb“ → „Board-Login“, Standard AUS), ist die gesamte App nur für eingeloggte Forum-Mitglieder (`board.friesenflieger.de`, phpBB) sichtbar. Der Login läuft im Forum — das Passwort erreicht FriesenSpy nie: eine kleine Bridge-Datei `sso.php` (aus `deploy/forum/`, neben phpBB kopiert) liefert per Redirect ein kurzlebiges, HMAC-signiertes Token mit Benutzername, VATSIM-CID (aus dem Forum-Profil) und Admin-Flag (Forum-Gruppe „Events“). FriesenSpy prüft es (`SSO_SECRET`, Frische ≤ 60 s, Einmal-Nonce, `state`) und legt eine eigene kurze Session (`fs_user`) an. Das `ADMIN_PASSWORD` bleibt als Break-glass-Zugang erhalten. Details: `docs/superpowers/specs/2026-07-13-forum-sso-design.md` und `deploy/forum/README.md`.
 
 ### Rund um den FriesenBummel
 - **Rennen manuell anlegen** — auch ohne Kalender-Termin, mit frei wählbarer Strecke, Start- und (optionalem) Endtermin sowie Anwesenheitsradius. Ein fehlendes `dtend` wird auf Mitternacht UTC des Starttags gesetzt.

@@ -814,10 +814,96 @@
       flex-wrap: wrap;
     }
 
+    /* =====================================================================
+       TABS — sechs Gruppen oben, die Event-Typen darunter.
+       Gleiche Klassen und Maße wie in `index.html`, damit Admin und App sich
+       gleich bedienen. Die Variablen stimmen in beiden Dateien überein.
+       ===================================================================== */
+    .tab-nav {
+      display: flex;
+      gap: 0;
+      border-bottom: 1px solid var(--green-dim);
+      flex-wrap: wrap;
+      position: sticky;
+      top: 0;
+      z-index: 900;
+      background: var(--bg-body);
+    }
+
+    .tab-btn {
+      font-family: var(--text-display);
+      font-size: 0.8rem;
+      font-weight: 500;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--text-label);
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      padding: 14px 24px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      position: relative;
+      top: 1px;
+    }
+
+    .tab-btn:hover {
+      color: var(--green);
+      background: var(--green-faint);
+      box-shadow: 0 0 15px rgba(45,156,219,0.15);
+    }
+
+    .tab-btn.active {
+      color: var(--green);
+      background: rgba(45,156,219,0.08);
+      border-bottom: 2px solid var(--green);
+      text-shadow: 0 0 8px rgba(45,156,219,0.5);
+    }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* Die zweite Ebene: die Event-Typen. Bewusst flacher als die Gruppenleiste —
+       sie ist eine Unterteilung, keine zweite Hauptnavigation. */
+    .typ-nav {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin: 20px 0 4px;
+    }
+
+    .typ-btn {
+      font-family: var(--text-display);
+      font-size: 0.72rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-label);
+      background: var(--bg-panel);
+      border: 1px solid var(--green-dim);
+      border-radius: 14px;
+      padding: 7px 16px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .typ-btn:hover { color: var(--green); background: var(--green-faint); }
+
+    .typ-btn.active {
+      color: var(--green);
+      background: rgba(45,156,219,0.12);
+      border-color: var(--green);
+      box-shadow: 0 0 10px rgba(45,156,219,0.25);
+    }
+
+    .typ-panel { display: none; }
+    .typ-panel.active { display: block; }
+
     @media (max-width: 640px) {
       .race-card-header { flex-direction: column; }
       .form-grid { grid-template-columns: 1fr; }
       .login-box { padding: 24px 20px; }
+      .tab-btn { padding: 10px 12px; font-size: 0.7rem; letter-spacing: 0.08em; }
+      .typ-btn { padding: 6px 12px; font-size: 0.66rem; }
     }
     /* #78: mobil-tauglicher Frachtart-Picker (ersetzt die native datalist). */
     /* ⚠ z-index MUSS über Leaflet liegen. Leaflet vergibt seinen Ebenen 200–700 und den
@@ -891,7 +977,32 @@
         </div>
       </header>
 
+      <!-- ================================================================
+           Die Gruppenleiste. Reihenfolge = Reihenfolge der Bereiche unten.
+           Ein neuer Event-Typ gehört NICHT hierher, sondern in die Typ-Leiste
+           im Events-Bereich.
+           ================================================================ -->
+      <div class="tab-nav">
+        <button class="tab-btn active" data-tab="events">🗓 Events</button>
+        <button class="tab-btn" data-tab="stammdaten">Stammdaten</button>
+        <button class="tab-btn" data-tab="karten">Karten</button>
+        <button class="tab-btn" data-tab="mitteilungen">Mitteilungen</button>
+        <button class="tab-btn" data-tab="bruegge">🌉 Brügge</button>
+        <button class="tab-btn" data-tab="betrieb">Betrieb</button>
+      </div>
+
       <div style="padding-top:24px;">
+        <div class="tab-panel active" id="tab-events">
+
+          <!-- Die zweite Ebene: ein Chip je Event-Typ. Bummel und Kutter sind da;
+               Kieker, Suchflug, Deichkontrolle und Baake kommen mit ihrem Typ dazu.
+               Ein Chip ohne Inhalt dahinter ist eine Einladung ins Leere. -->
+          <div class="typ-nav">
+            <button class="typ-btn active" data-typ="bummel">🏁 Bummel</button>
+            <button class="typ-btn" data-typ="kutter">🦐 Kutter</button>
+          </div>
+
+          <div class="typ-panel active" id="typ-bummel">
 
         <!-- VORSCHAU (erscheint oberhalb der Liste) -->
         <div id="preview-panel" class="hidden">
@@ -960,6 +1071,9 @@
             <div class="empty-hint">Lade Rennen...</div>
           </div>
         </div>
+          </div>
+
+          <div class="typ-panel" id="typ-kutter">
 
         <!-- FRIESENKUTTER — EVENTS -->
         <div class="panel">
@@ -1113,6 +1227,11 @@
           </p>
           <div id="ke-payloads-container" class="scroll-list"><div class="empty-hint">Lade Zuladungen…</div></div>
         </div>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="tab-stammdaten">
+
 
         <!-- MUSTER-INFOS (aircraft_types, Task 8 Plan B) -->
         <div class="panel">
@@ -1154,63 +1273,6 @@
           <div id="mi-container" class="scroll-list"><div class="empty-hint">Lade Muster…</div></div>
         </div>
 
-        <!-- HINWEIS-BANNER -->
-        <div class="panel">
-          <div class="panel-title"><span>Hinweis-Banner (App-Startseite)</span></div>
-          <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
-            Welcher Changelog-Eintrag wird den Nutzern als Banner gezeigt?
-          </p>
-          <div id="banner-options" class="scroll-list"><div class="empty-hint">Lade…</div></div>
-          <div style="margin-top:12px;">
-            <button class="btn btn-primary btn-sm" id="banner-save-btn">Speichern</button>
-          </div>
-        </div>
-
-        <!-- BENACHRICHTIGUNG SENDEN -->
-        <div class="panel">
-          <div class="panel-title"><span>Benachrichtigung senden</span></div>
-          <div style="margin-bottom:18px;">
-            <button class="btn btn-sm" id="push-test-btn">&#x1F514; Test an mich</button>
-            <span style="color:#8aa0b8;font-size:0.8rem;margin-left:8px;">Nur an dieses Gerät (Push muss in der App aktiv sein).</span>
-          </div>
-          <div style="margin-bottom:18px;">
-            <button class="btn btn-sm" id="panel-notify-test-btn">&#x1F6E9;&#xFE0F; Test ins Kniebrett</button>
-            <span style="color:#8aa0b8;font-size:0.8rem;margin-left:8px;">Erscheint nur im eigenen MSFS-Tablet — der Simulator muss laufen und FriesenSpy geladen sein.</span>
-          </div>
-          <div class="form-section-title">Broadcast an Abonnenten</div>
-          <div class="form-grid" style="margin:10px 0 12px;">
-            <div class="form-group">
-              <label for="bc-title">Titel</label>
-              <input type="text" id="bc-title" placeholder="z.B. FriesenFlieger-News" />
-            </div>
-            <div class="form-group">
-              <label for="bc-audience">Zielgruppe</label>
-              <select id="bc-audience">
-                <option value="all">Alle Abonnenten</option>
-                <option value="events">Nur Events-Abonnenten</option>
-              </select>
-            </div>
-          </div>
-          <div class="form-group" style="margin-bottom:12px;">
-            <label for="bc-body">Nachricht</label>
-            <input type="text" id="bc-body" placeholder="Text der Benachrichtigung" />
-          </div>
-          <button class="btn btn-primary btn-sm" id="bc-send-btn">Broadcast senden</button>
-        </div>
-
-        <!-- STATSIM-BACKFILL -->
-        <div class="panel">
-          <div class="panel-title"><span>StatSim-GPS-Track-Nachladen</span></div>
-          <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
-            Lädt GPS-Tracks für StatSim-Flüge nach, die noch keinen lokalen Track haben (z.&nbsp;B.
-            Flüge mit fremdem Callsign, die vor dem Backfill-Fix übersprungen wurden). Läuft im
-            Hintergrund am Stück durch statt nur alle 10 Minuten häppchenweise.
-          </p>
-          <div style="margin-bottom:8px;">
-            <button class="btn btn-sm" id="statsim-backfill-btn">⟳ Backfill starten</button>
-            <span id="statsim-backfill-status" style="color:#8aa0b8;font-size:0.82rem;margin-left:10px;"></span>
-          </div>
-        </div>
 
         <!-- PILOTEN -->
         <div class="panel">
@@ -1235,19 +1297,6 @@
         </div>
 
         <!-- ERGÄNZUNGS-FLUGPLÄTZE (custom_airports, #50) -->
-        <!-- BOARD-LOGIN (v9) -->
-        <div class="panel">
-          <div class="panel-title"><span>🔐 Board-Login</span></div>
-          <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
-            Ist der Board-Login an, ist FriesenSpy nur für eingeloggte Forum-Mitglieder sichtbar
-            (Admin = Forum-Gruppe „Events"). Das Admin-Passwort bleibt als Notzugang bestehen.
-          </p>
-          <label style="display:flex;gap:8px;align-items:center;margin-bottom:8px;cursor:pointer;">
-            <input type="checkbox" id="forumLoginToggle" />
-            <span>Board-Login aktiv</span>
-          </label>
-          <p id="forumLoginState" style="color:#8aa0b8;font-size:0.82rem;margin:0;">…</p>
-        </div>
 
         <div class="panel">
           <div class="panel-title"><span>🛬 Flugplätze (Ergänzungen)</span></div>
@@ -1286,6 +1335,10 @@
           </div>
           <div id="ap-container" class="scroll-list"><div class="empty-hint">Lade Flugplätze…</div></div>
         </div>
+        </div>
+
+        <div class="tab-panel" id="tab-karten">
+
 
         <!-- AIP-VFR-LINKS (Karten-Links, amtliche DFS-AIP) -->
         <div class="panel">
@@ -1307,6 +1360,7 @@
           </div>
           <div id="al-container" class="scroll-list"><div class="empty-hint">Lade Links…</div></div>
         </div>
+
 
         <!-- AIP-SICHTFLUGKARTEN -->
         <div class="panel">
@@ -1458,115 +1512,60 @@
 
           </div>
         </div>
-
-        <!-- ERKENNUNGSLÜCKEN (v8.6.0) -->
-        <!-- ERKENNUNGSLÜCKEN (v8.6.0) -->
-        <div class="panel">
-          <div class="panel-title"><span>🔍 Erkennungslücken (Start/Landung)</span></div>
-          <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
-            Flüge, deren GPS-Start oder -Landung trotz bekanntem Flugplan fehlt — meist ein
-            Hinweis auf einen fehlenden Flugplatz oben. Die Prüfung rechnet den GESAMTEN
-            Flugbestand neu durch und ist deshalb teuer (mehrere Sekunden) — sie lädt daher
-            NICHT automatisch beim Öffnen dieser Seite, sondern nur auf Klick. Wird ein Platz
-            ergänzt, verschwindet der betroffene Flug beim nächsten „Aktualisieren". „Geprüft"
-            blendet einen Einzelfall dauerhaft aus, wenn er KEIN Datenfehler ist (z. B. Absturz
-            oder abgerissene Aufzeichnung).
-          </p>
-          <button class="btn btn-sm" id="dg-refresh-btn" style="margin-bottom:10px;">🔍 Jetzt prüfen</button>
-          <div id="dg-container" class="scroll-list"><div class="empty-hint">Noch nicht geprüft.</div></div>
         </div>
 
+        <div class="tab-panel" id="tab-mitteilungen">
+
+
+        <!-- HINWEIS-BANNER -->
         <div class="panel">
-          <div class="panel-title"><span>📋 Kniebrett meldet Positionen</span></div>
+          <div class="panel-title"><span>Hinweis-Banner (App-Startseite)</span></div>
           <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
-            Das MSFS-Kniebrett führt Sim-Verkehr und VATSIM-Verkehr zusammen und kennt dadurch
-            die Position <b>aller Friesen in seiner Reichweite</b> auf die Sekunde genau (gemessen
-            bis 92&nbsp;km). Meldet es sie zurück, erscheinen diese Piloten für alle anderen in
-            Echtzeit auf der Karte — auch die, die selbst nichts installiert haben.
-            <b>Genau deshalb ist der Schalter hier.</b>
+            Welcher Changelog-Eintrag wird den Nutzern als Banner gezeigt?
           </p>
-
-          <div style="margin-bottom:14px;">
-            <div style="font-size:0.85rem;color:#cfe0f2;margin-bottom:6px;">Was darf gemeldet werden?</div>
-            <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
-              <button class="btn btn-sm kb-modus" data-modus="aus">aus</button>
-              <button class="btn btn-sm kb-modus" data-modus="eigene">nur eigene Position</button>
-              <button class="btn btn-sm kb-modus" data-modus="alle">alle erkannten Friesen</button>
-              <button class="btn btn-sm kb-modus" data-modus="fremd">auch Fremdverkehr</button>
-              <span id="kb-modus-wert" class="mono" style="color:#8aa0b8;font-size:0.78rem;">…</span>
-            </div>
-            <p style="color:#6b7d8f;font-size:0.78rem;margin:8px 0 0;">
-              Wirkt binnen zehn Sekunden für alle, ohne Deploy und ohne dass jemand etwas neu
-              installiert — das Kniebrett fragt ohnehin ständig, und über die Antwort kommt die
-              Abschaltung an. Auf <i>aus</i> fragt es nur noch einmal pro Minute.
-              <br>⚠ <b>Auch Fremdverkehr</b> treibt die Menge: Friesen sind eine Handvoll,
-              fremde Flugzeuge im Umkreis können vierzig sein — und der Sekundenstrom geht an
-              <i>jede</i> offene Karte, nicht nur an die des Melders.
-            </p>
+          <div id="banner-options" class="scroll-list"><div class="empty-hint">Lade…</div></div>
+          <div style="margin-top:12px;">
+            <button class="btn btn-primary btn-sm" id="banner-save-btn">Speichern</button>
           </div>
+        </div>
 
-          <div style="margin-bottom:14px;">
-            <label style="font-size:0.85rem;color:#cfe0f2;">
-              Takt: <b id="kb-takt-wert">1</b> s
-            </label>
-            <input type="range" id="kb-takt" min="1" max="5" value="1"
-                   style="width:100%;margin:6px 0;">
-            <div style="display:flex;gap:8px;align-items:center;">
-              <button class="btn btn-sm" id="kb-takt-speichern">Takt setzen</button>
-              <span style="color:#8aa0b8;font-size:0.78rem;">
-                Drossel bei Last — die Karte wird dadurch gröber, nicht falsch. Weiter als
-                5&nbsp;s geht bewusst nicht: Ab dort beginnt der Punkt zu blinken, weil er
-                schneller verfällt, als die nächste Meldung kommt. Wer mehr will, schaltet aus.
-              </span>
-            </div>
+
+        <!-- BENACHRICHTIGUNG SENDEN -->
+        <div class="panel">
+          <div class="panel-title"><span>Benachrichtigung senden</span></div>
+          <div style="margin-bottom:18px;">
+            <button class="btn btn-sm" id="push-test-btn">&#x1F514; Test an mich</button>
+            <span style="color:#8aa0b8;font-size:0.8rem;margin-left:8px;">Nur an dieses Gerät (Push muss in der App aktiv sein).</span>
           </div>
-
-          <div style="border-top:1px solid #22303f;padding-top:12px;margin-bottom:14px;">
-            <div style="font-size:0.85rem;color:#cfe0f2;margin-bottom:8px;">
-              Einzelne Piloten begrenzen
+          <div style="margin-bottom:18px;">
+            <button class="btn btn-sm" id="panel-notify-test-btn">&#x1F6E9;&#xFE0F; Test ins Kniebrett</button>
+            <span style="color:#8aa0b8;font-size:0.8rem;margin-left:8px;">Erscheint nur im eigenen MSFS-Tablet — der Simulator muss laufen und FriesenSpy geladen sein.</span>
+          </div>
+          <div class="form-section-title">Broadcast an Abonnenten</div>
+          <div class="form-grid" style="margin:10px 0 12px;">
+            <div class="form-group">
+              <label for="bc-title">Titel</label>
+              <input type="text" id="bc-title" placeholder="z.B. FriesenFlieger-News" />
             </div>
-            <p style="color:#6b7d8f;font-size:0.78rem;margin:0 0 8px;">
-              Für den Fall, dass es bei <i>einem</i> klemmt. Der globale Schalter oben bleibt
-              dabei die Obergrenze: Steht er auf <i>nur eigene</i>, meldet auch ein Pilot mit
-              <i>alle</i> nur sich selbst. Kein Eintrag heißt „folgt dem globalen Wert“.
-              <br>Zur Auswahl steht, <b>wer ein Kniebrett hat</b> — nicht die ganze
-              Mitgliederliste. Dahinter steht, wann es zuletzt angemeldet war.
-            </p>
-            <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;">
-              <select id="kb-pilot" style="min-width:290px;padding:6px;"></select>
-              <select id="kb-pilot-modus" style="padding:6px;">
-                <option value="aus">aus</option>
-                <option value="eigene">nur eigene Position</option>
-                <option value="alle">alle erkannten Friesen</option>
-                <option value="fremd">auch Fremdverkehr</option>
+            <div class="form-group">
+              <label for="bc-audience">Zielgruppe</label>
+              <select id="bc-audience">
+                <option value="all">Alle Abonnenten</option>
+                <option value="events">Nur Events-Abonnenten</option>
               </select>
-              <button class="btn btn-sm" id="kb-pilot-setzen">setzen</button>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead><tr><th>Pilot</th><th>darf</th><th></th></tr></thead>
-                <tbody id="kb-piloten"><tr><td colspan="3" class="empty-hint">Lädt …</td></tr></tbody>
-              </table>
             </div>
           </div>
-
-          <div style="border-top:1px solid #22303f;padding-top:12px;">
-            <div style="font-size:0.85rem;color:#cfe0f2;margin-bottom:8px;">
-              Wer versorgt gerade wen?
-            </div>
-            <p style="color:#6b7d8f;font-size:0.78rem;margin:0 0 8px;">
-              Die Frage, die man sonst nirgends beantwortet bekommt: Auf der Karte sieht man den
-              Punkt, nicht seine Quelle. Steht hier nichts, läuft die Karte auf VATSIM — das ist
-              kein Fehler, sondern der Normalzustand ohne offenes Kniebrett.
-            </p>
-            <div class="table-wrap">
-              <table>
-                <thead><tr><th>gezeigt wird</th><th>Quelle</th><th>gemeldet von</th><th>Alter</th></tr></thead>
-                <tbody id="kb-live"><tr><td colspan="4" class="empty-hint">Lädt …</td></tr></tbody>
-              </table>
-            </div>
+          <div class="form-group" style="margin-bottom:12px;">
+            <label for="bc-body">Nachricht</label>
+            <input type="text" id="bc-body" placeholder="Text der Benachrichtigung" />
           </div>
+          <button class="btn btn-primary btn-sm" id="bc-send-btn">Broadcast senden</button>
         </div>
+        </div>
+
+        <div class="tab-panel" id="tab-bruegge">
+
+        <!-- FRIESENBRÜGGE -->
 
         <div class="panel">
           <div class="panel-title"><span>🌉 FriesenBrügge</span></div>
@@ -1859,6 +1858,151 @@
               </table>
             </div>
           </div>
+        </div>
+        </div>
+
+        <div class="tab-panel" id="tab-betrieb">
+
+
+        <!-- STATSIM-BACKFILL -->
+        <div class="panel">
+          <div class="panel-title"><span>StatSim-GPS-Track-Nachladen</span></div>
+          <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
+            Lädt GPS-Tracks für StatSim-Flüge nach, die noch keinen lokalen Track haben (z.&nbsp;B.
+            Flüge mit fremdem Callsign, die vor dem Backfill-Fix übersprungen wurden). Läuft im
+            Hintergrund am Stück durch statt nur alle 10 Minuten häppchenweise.
+          </p>
+          <div style="margin-bottom:8px;">
+            <button class="btn btn-sm" id="statsim-backfill-btn">⟳ Backfill starten</button>
+            <span id="statsim-backfill-status" style="color:#8aa0b8;font-size:0.82rem;margin-left:10px;"></span>
+          </div>
+        </div>
+
+
+        <!-- BOARD-LOGIN (v9) -->
+        <div class="panel">
+          <div class="panel-title"><span>🔐 Board-Login</span></div>
+          <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
+            Ist der Board-Login an, ist FriesenSpy nur für eingeloggte Forum-Mitglieder sichtbar
+            (Admin = Forum-Gruppe „Events"). Das Admin-Passwort bleibt als Notzugang bestehen.
+          </p>
+          <label style="display:flex;gap:8px;align-items:center;margin-bottom:8px;cursor:pointer;">
+            <input type="checkbox" id="forumLoginToggle" />
+            <span>Board-Login aktiv</span>
+          </label>
+          <p id="forumLoginState" style="color:#8aa0b8;font-size:0.82rem;margin:0;">…</p>
+        </div>
+
+
+        <!-- ERKENNUNGSLÜCKEN (v8.6.0) -->
+        <div class="panel">
+          <div class="panel-title"><span>🔍 Erkennungslücken (Start/Landung)</span></div>
+          <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
+            Flüge, deren GPS-Start oder -Landung trotz bekanntem Flugplan fehlt — meist ein
+            Hinweis auf einen fehlenden Flugplatz oben. Die Prüfung rechnet den GESAMTEN
+            Flugbestand neu durch und ist deshalb teuer (mehrere Sekunden) — sie lädt daher
+            NICHT automatisch beim Öffnen dieser Seite, sondern nur auf Klick. Wird ein Platz
+            ergänzt, verschwindet der betroffene Flug beim nächsten „Aktualisieren". „Geprüft"
+            blendet einen Einzelfall dauerhaft aus, wenn er KEIN Datenfehler ist (z. B. Absturz
+            oder abgerissene Aufzeichnung).
+          </p>
+          <button class="btn btn-sm" id="dg-refresh-btn" style="margin-bottom:10px;">🔍 Jetzt prüfen</button>
+          <div id="dg-container" class="scroll-list"><div class="empty-hint">Noch nicht geprüft.</div></div>
+        </div>
+
+        <!-- KNIEBRETT MELDET POSITIONEN -->
+
+        <div class="panel">
+          <div class="panel-title"><span>📋 Kniebrett meldet Positionen</span></div>
+          <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
+            Das MSFS-Kniebrett führt Sim-Verkehr und VATSIM-Verkehr zusammen und kennt dadurch
+            die Position <b>aller Friesen in seiner Reichweite</b> auf die Sekunde genau (gemessen
+            bis 92&nbsp;km). Meldet es sie zurück, erscheinen diese Piloten für alle anderen in
+            Echtzeit auf der Karte — auch die, die selbst nichts installiert haben.
+            <b>Genau deshalb ist der Schalter hier.</b>
+          </p>
+
+          <div style="margin-bottom:14px;">
+            <div style="font-size:0.85rem;color:#cfe0f2;margin-bottom:6px;">Was darf gemeldet werden?</div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+              <button class="btn btn-sm kb-modus" data-modus="aus">aus</button>
+              <button class="btn btn-sm kb-modus" data-modus="eigene">nur eigene Position</button>
+              <button class="btn btn-sm kb-modus" data-modus="alle">alle erkannten Friesen</button>
+              <button class="btn btn-sm kb-modus" data-modus="fremd">auch Fremdverkehr</button>
+              <span id="kb-modus-wert" class="mono" style="color:#8aa0b8;font-size:0.78rem;">…</span>
+            </div>
+            <p style="color:#6b7d8f;font-size:0.78rem;margin:8px 0 0;">
+              Wirkt binnen zehn Sekunden für alle, ohne Deploy und ohne dass jemand etwas neu
+              installiert — das Kniebrett fragt ohnehin ständig, und über die Antwort kommt die
+              Abschaltung an. Auf <i>aus</i> fragt es nur noch einmal pro Minute.
+              <br>⚠ <b>Auch Fremdverkehr</b> treibt die Menge: Friesen sind eine Handvoll,
+              fremde Flugzeuge im Umkreis können vierzig sein — und der Sekundenstrom geht an
+              <i>jede</i> offene Karte, nicht nur an die des Melders.
+            </p>
+          </div>
+
+          <div style="margin-bottom:14px;">
+            <label style="font-size:0.85rem;color:#cfe0f2;">
+              Takt: <b id="kb-takt-wert">1</b> s
+            </label>
+            <input type="range" id="kb-takt" min="1" max="5" value="1"
+                   style="width:100%;margin:6px 0;">
+            <div style="display:flex;gap:8px;align-items:center;">
+              <button class="btn btn-sm" id="kb-takt-speichern">Takt setzen</button>
+              <span style="color:#8aa0b8;font-size:0.78rem;">
+                Drossel bei Last — die Karte wird dadurch gröber, nicht falsch. Weiter als
+                5&nbsp;s geht bewusst nicht: Ab dort beginnt der Punkt zu blinken, weil er
+                schneller verfällt, als die nächste Meldung kommt. Wer mehr will, schaltet aus.
+              </span>
+            </div>
+          </div>
+
+          <div style="border-top:1px solid #22303f;padding-top:12px;margin-bottom:14px;">
+            <div style="font-size:0.85rem;color:#cfe0f2;margin-bottom:8px;">
+              Einzelne Piloten begrenzen
+            </div>
+            <p style="color:#6b7d8f;font-size:0.78rem;margin:0 0 8px;">
+              Für den Fall, dass es bei <i>einem</i> klemmt. Der globale Schalter oben bleibt
+              dabei die Obergrenze: Steht er auf <i>nur eigene</i>, meldet auch ein Pilot mit
+              <i>alle</i> nur sich selbst. Kein Eintrag heißt „folgt dem globalen Wert“.
+              <br>Zur Auswahl steht, <b>wer ein Kniebrett hat</b> — nicht die ganze
+              Mitgliederliste. Dahinter steht, wann es zuletzt angemeldet war.
+            </p>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;">
+              <select id="kb-pilot" style="min-width:290px;padding:6px;"></select>
+              <select id="kb-pilot-modus" style="padding:6px;">
+                <option value="aus">aus</option>
+                <option value="eigene">nur eigene Position</option>
+                <option value="alle">alle erkannten Friesen</option>
+                <option value="fremd">auch Fremdverkehr</option>
+              </select>
+              <button class="btn btn-sm" id="kb-pilot-setzen">setzen</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Pilot</th><th>darf</th><th></th></tr></thead>
+                <tbody id="kb-piloten"><tr><td colspan="3" class="empty-hint">Lädt …</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div style="border-top:1px solid #22303f;padding-top:12px;">
+            <div style="font-size:0.85rem;color:#cfe0f2;margin-bottom:8px;">
+              Wer versorgt gerade wen?
+            </div>
+            <p style="color:#6b7d8f;font-size:0.78rem;margin:0 0 8px;">
+              Die Frage, die man sonst nirgends beantwortet bekommt: Auf der Karte sieht man den
+              Punkt, nicht seine Quelle. Steht hier nichts, läuft die Karte auf VATSIM — das ist
+              kein Fehler, sondern der Normalzustand ohne offenes Kniebrett.
+            </p>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>gezeigt wird</th><th>Quelle</th><th>gemeldet von</th><th>Alter</th></tr></thead>
+                <tbody id="kb-live"><tr><td colspan="4" class="empty-hint">Lädt …</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
         </div>
 
       </div>
@@ -2199,20 +2343,19 @@
     function showAdmin() {
       document.getElementById('login-screen').classList.add('hidden');
       document.getElementById('admin-ui').classList.remove('hidden');
-      loadBanner();
-      loadForumLogin();
-      loadPilots();
-      loadKutterAdmin();
-      loadCustomAirports();
-      loadAirportLinks();
-      loadDfsCharts();
-      miLoad();
-      // Erkennungslücken NICHT automatisch laden -- der Check rechnet den gesamten
+      // Hier wird NICHTS mehr geladen. Jeder Bereich holt sich sein Zeug, wenn er zum
+      // ersten Mal geöffnet wird (siehe `_tabLader`). Vorher standen an dieser Stelle acht
+      // Ladevorgänge, von denen man sieben nicht ansah.
+      //
+      // Erkennungslücken laden auch dann nicht von selbst -- der Check rechnet den gesamten
       // Flugbestand neu durch (mehrere Sekunden) und läuft nur auf expliziten Klick
       // ("🔍 Jetzt prüfen" / dg-refresh-btn).
-      // Falls ein Backfill schon vor dem (Neu-)Laden dieser Seite lief (z. B. anderer Tab,
-      // vorheriger Login) — Status sofort zeigen und Polling bei Bedarf fortsetzen.
+      //
+      // Der Backfill-Status ist die Ausnahme und gehört an KEINEN Tab: Lief ein Backfill
+      // schon vor dem (Neu-)Laden dieser Seite (z. B. anderer Tab, vorheriger Login), soll
+      // er sich zeigen, ohne dass jemand erst den richtigen Bereich sucht.
       _pollStatsimBackfillStatus();
+      tabAnfangOeffnen();
     }
 
     document.getElementById('login-form').addEventListener('submit', async e => {
@@ -2233,7 +2376,6 @@
       if (res.ok) {
         document.getElementById('pw-input').value = '';
         showAdmin();
-        loadRaces();
       } else {
         document.getElementById('login-error').textContent = 'Falsches Passwort.';
       }
@@ -2247,7 +2389,7 @@
     async function checkAuth() {
       try {
         const res = await fetch('/api/admin/me', { credentials: 'same-origin' });
-        if (res.ok) { showAdmin(); loadRaces(); }
+        if (res.ok) showAdmin();
         else showLogin();
       } catch { showLogin(); }
     }
@@ -2518,15 +2660,33 @@
       //
       // ⚠ Sie fuellt aber NICHT die Auswahl -- die kommt aus `/api/admin/kniebrett` und
       // enthaelt nur, wer ein Kniebrett hat. Von 64 Piloten waren das am 15.09.2026 VIER.
-      (async function () {
-        try {
-          const r = await fetch('/api/admin/pilots', { credentials: 'same-origin' });
-          if (r.ok) _kbPiloten = await r.json();
-        } catch (e) { /* dann stehen im Auswahlfeld nur die CIDs, der Rest funktioniert */ }
-        kbLaden();
-      })();
-      setInterval(kbLaden, 10000);
+      // Geladen wird erst, wenn der Betriebs-Bereich offen ist -- siehe `kbStart`.
     })();
+
+    // Der Takt läuft nur, solange jemand hinsieht. Vorher fragte dieses Panel alle zehn
+    // Sekunden, auch während die Anmeldemaske offen stand und niemand angemeldet war.
+    let _kbErstGeholt = false;
+    let _kbTakt = null;
+
+    function kbStart() {
+      if (!_kbErstGeholt) {
+        _kbErstGeholt = true;
+        (async function () {
+          try {
+            const r = await fetch('/api/admin/pilots', { credentials: 'same-origin' });
+            if (r.ok) _kbPiloten = await r.json();
+          } catch (e) { /* dann stehen im Auswahlfeld nur die CIDs, der Rest funktioniert */ }
+          kbLaden();
+        })();
+      } else {
+        kbLaden();
+      }
+      if (!_kbTakt) _kbTakt = setInterval(kbLaden, 10000);
+    }
+
+    function kbStop() {
+      if (_kbTakt) { clearInterval(_kbTakt); _kbTakt = null; }
+    }
 
     // ---------------------------------------------------------------- Brügge
     async function bgLaden() {
@@ -2758,17 +2918,33 @@
         nachziehenK();
       }
 
-      // Erst laden, dann den Picker aufsetzen — die Arten kommen seit dem 14.09.2026 vom
-      // Server und stehen nicht mehr im Quelltext.
-      bgArtenLaden().then(function () { bgArtPicker(); bgTitelLaden(); });
       bgTitelBedienung();
       bgArtenBedienung();
       bgSimFilterBedienung();
       bgLueckeBedienung();
-      bgPilotenLaden().then(bgCidPicker);
-      bgLaden();
-      setInterval(bgLaden, 10000);
+      // Die Bedienung wird hier aufgesetzt, GELADEN wird erst beim Öffnen -- `bgStart`.
     })();
+
+    // Wie beim Kniebrett: Der 10-Sekunden-Takt gehört an den sichtbaren Bereich, nicht an
+    // den Seitenaufruf. Beides zusammen waren zwölf Anfragen je Minute, dauerhaft.
+    let _bgErstGeholt = false;
+    let _bgTakt = null;
+
+    function bgStart() {
+      if (!_bgErstGeholt) {
+        _bgErstGeholt = true;
+        // Erst laden, dann den Picker aufsetzen — die Arten kommen seit dem 14.09.2026 vom
+        // Server und stehen nicht mehr im Quelltext.
+        bgArtenLaden().then(function () { bgArtPicker(); bgTitelLaden(); });
+        bgPilotenLaden().then(bgCidPicker);
+      }
+      bgLaden();
+      if (!_bgTakt) _bgTakt = setInterval(bgLaden, 10000);
+    }
+
+    function bgStop() {
+      if (_bgTakt) { clearInterval(_bgTakt); _bgTakt = null; }
+    }
 
     // Karte und Marken leben ausserhalb der Schliessung, damit `bgLaden` sie nachziehen kann.
     let _bgKarte = null;
@@ -6124,6 +6300,114 @@
       const res = await api('POST', '/api/admin/transport/quips-enabled', { enabled: desired });
       if (!res || !res.ok) { toast('Fehler.', true); e.target.checked = !desired; return; }
       toast(desired ? 'KI-Sprüche aktiviert.' : 'KI-Sprüche deaktiviert.');
+    });
+
+    // ====================================================================
+    // TABS — sechs Gruppen oben, im Events-Bereich ein Chip je Typ
+    // ====================================================================
+    // Dieser Block steht bewusst GANZ UNTEN: Er greift auf `_bgKarte` und `_dfsKarte` zu,
+    // und ein `let` ist vor seiner Zeile nicht lesbar. Weiter oben eingesetzt legt er beim
+    // ersten Tab-Wechsel die ganze Seite lahm.
+
+    /** Welche Bereiche schon geladen haben. Schlüssel: 'events', 'typ:kutter', … */
+    const _geladen = new Set();
+    let _tabAktiv = null;
+    let _typAktiv = null;
+
+    /**
+     * Was ein Bereich beim ERSTEN Öffnen holt. `null` heißt: holt sich selbst oder
+     * wartet auf einen Klick — nicht: vergessen.
+     */
+    function _tabLader(tab) {
+      return ({
+        events:       null,   // die Typ-Leiste lädt je Typ, siehe `_typLader`
+        stammdaten:   function () { loadPilots(); loadCustomAirports(); miLoad(); },
+        karten:       function () { loadAirportLinks(); loadDfsCharts(); },
+        mitteilungen: function () { loadBanner(); },
+        bruegge:      null,   // `bgStart()` holt beim ersten Mal selbst, siehe `_tabTakt`
+        betrieb:      function () { loadForumLogin(); },
+      })[tab];
+    }
+
+    function _typLader(typ) {
+      return ({
+        bummel: function () { loadRaces(); },
+        kutter: function () { loadKutterAdmin(); },
+      })[typ];
+    }
+
+    /** Zwei Bereiche fragen im Takt. Der läuft nur, solange man sie ansieht. */
+    function _tabTakt(tab, an) {
+      if (tab === 'bruegge') { an ? bgStart() : bgStop(); }
+      if (tab === 'betrieb') { an ? kbStart() : kbStop(); }
+    }
+
+    function tabOeffnen(tab, typ) {
+      if (!document.getElementById('tab-' + tab)) tab = 'events';
+      if (_tabAktiv && _tabAktiv !== tab) _tabTakt(_tabAktiv, false);
+
+      document.querySelectorAll('.tab-btn').forEach(function (b) {
+        b.classList.toggle('active', b.dataset.tab === tab);
+      });
+      document.querySelectorAll('.tab-panel').forEach(function (el) {
+        el.classList.toggle('active', el.id === 'tab-' + tab);
+      });
+      _tabAktiv = tab;
+
+      if (!_geladen.has(tab)) {
+        _geladen.add(tab);
+        const holen = _tabLader(tab);
+        if (holen) holen();
+      }
+      _tabTakt(tab, true);
+
+      if (tab === 'events') typOeffnen(typ || _typAktiv || 'bummel');
+      else _hashSchreiben();
+
+      // Leaflet rechnet seine Größe beim Erzeugen aus und misst 0 Pixel, solange der
+      // Kasten `display:none` ist. Beim Zurückkehren auf einen Bereich mit Karte muss sie
+      // deshalb neu vermessen werden — sonst bleibt sie grau.
+      setTimeout(function () {
+        if (tab === 'bruegge' && _bgKarte) _bgKarte.invalidateSize();
+        if (tab === 'karten' && _dfsKarte) _dfsKarte.invalidateSize();
+      }, 60);
+    }
+
+    function typOeffnen(typ) {
+      if (!document.getElementById('typ-' + typ)) typ = 'bummel';
+      document.querySelectorAll('.typ-btn').forEach(function (b) {
+        b.classList.toggle('active', b.dataset.typ === typ);
+      });
+      document.querySelectorAll('.typ-panel').forEach(function (el) {
+        el.classList.toggle('active', el.id === 'typ-' + typ);
+      });
+      _typAktiv = typ;
+
+      if (!_geladen.has('typ:' + typ)) {
+        _geladen.add('typ:' + typ);
+        const holen = _typLader(typ);
+        if (holen) holen();
+      }
+      _hashSchreiben();
+    }
+
+    // Der geöffnete Bereich steht im Hash. Damit übersteht er ein Neuladen, und man kann
+    // sich eine Stelle verlinken — dasselbe Muster wie `#tab=events&bummel=…` in der App.
+    function _hashSchreiben() {
+      const h = '#tab=' + _tabAktiv + (_tabAktiv === 'events' ? '&typ=' + _typAktiv : '');
+      history.replaceState(null, '', location.pathname + location.search + h);
+    }
+
+    function tabAnfangOeffnen() {
+      const w = new URLSearchParams(location.hash.replace(/^#/, ''));
+      tabOeffnen(w.get('tab') || 'events', w.get('typ'));
+    }
+
+    document.querySelectorAll('.tab-btn').forEach(function (b) {
+      b.addEventListener('click', function () { tabOeffnen(b.dataset.tab); });
+    });
+    document.querySelectorAll('.typ-btn').forEach(function (b) {
+      b.addEventListener('click', function () { typOeffnen(b.dataset.typ); });
     });
 
     // ====================================================================
