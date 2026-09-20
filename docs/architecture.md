@@ -392,6 +392,67 @@ Laufzeit an einem realistischen Abend (10 Piloten, 2 h, 4.790 Segmente gegen 420
 der wichtigste Test des Moduls — ein Filterfehler tarnt sich sonst als fehlende Abdeckung, die
 niemandem auffällt.
 
+### `app/reddung.py` (seit 20.09.2026)
+
+Die Parameter einer **FriesenReddung** (#21) — reine Rechnung, keine Datenbank. Die Abdeckung
+selbst rechnet `app/abdeckung.py`; dieses Modul entscheidet nur, mit welchen Werten.
+
+- `fundradius_km(korridor, kante)` — **`korridor + kante/√2`**, bei 1,0/1,0 km also 1,71 km.
+  ⚠ **Nie einstellbar machen.** Eine abgedeckte Zelle heißt „ein Track lief im Korridor an ihrem
+  MITTELPUNKT vorbei"; ein Havarist in der Zellecke ist die halbe Zelldiagonale weiter weg. Mit
+  dieser Formel garantiert volle Abdeckung den Fund — mit einem freien Wert kann der Admin einen
+  Fortschrittsbalken erzeugen, der lügt.
+- `hoehe_schranke_msl(ev)` — die Höhenschranke ist **AGL über dem Havaristen**, nicht MSL:
+  `havarist_grund_ft + hoehe_max_ft`. Das ist die richtige Bezugsgröße für „ist er tief über der
+  Unglücksstelle hinweggeflogen?".
+- `fenster_suchen` / `fenster_aufnehmen` / `zellen_fuer` / `havarist_ziel`.
+
+⚠ **`fenster_aufnehmen` MUSS `gs_min_kt = 0` setzen** — die Suchuntergrenze von 30 kt (gegen
+geparkte Flugzeuge) würde sonst genau den Stillstand ausschließen, der beim Aufnehmen gefragt
+ist. Und die Landeschwellen kommen **importiert** aus `app/gps_legs.py` (`_GPS_BLOCK_GS_KT` 2 kt,
+`_GPS_GROUND_AGL_FT` 300 ft), nie abgeschrieben. `detect_gps_legs` selbst ist nicht benutzbar:
+Die Funktion verlangt für eine Landung einen Platz im Umkreis („Absturz/Hover nie als Landung") —
+die Außenlandung am Wrack ist genau der Fall, den sie absichtlich nicht zählt.
+
+### Die FriesenReddung im Betrieb (`reddung_events`, Poller, Objekte)
+
+Vier Stufen, alle als Latch: **gefunden → aufgenommen → eingeliefert**, dazu **aufgelöst**. Der
+Poller-Job `_check_reddung` (`app/poller.py`, 60-s-Takt) rechnet sie in einer Reihenfolge, die
+keine Geschmacksfrage ist:
+
+1. **Grundhöhe lernen** (`reddung_grund_lernen`) — sie verschiebt die Höhenschranke aller
+   folgenden Prüfungen. Wer sie danach lernt, wertet einen ganzen Takt mit der falschen.
+2. **Fund** — `abdeckung()` gegen `havarist_ziel(ev)` mit dem Suchfenster.
+3. **Einliefern** — ⚠ **VOR dem Verfall.** Hat der Poller einmal stillgestanden und rechnet nach,
+   ist der Pilot längst gelandet *und* abgemeldet; prüft der Verfall zuerst, löscht er die
+   Aufnahme, bevor die Landung gesehen wird, und die Rettung ist verloren, obwohl sie
+   stattgefunden hat.
+4. **Verfall der Aufnahme** — Auslöser ist die Abmeldung, nicht eine Zeitschwelle; die Schonfrist
+   von zehn Minuten fängt nur den Absturz zum Desktop mit Wiederanmeldung.
+5. **Auflösen** und 6. **Objektabgleich** (zuletzt, damit die Fackel den Stand nach allen
+   Latches zeigt).
+
+`reddung_objekte_abgleichen` setzt Havarist und Fackel in `bruegge_soll` — **vollständiger
+Abgleich, kein Strom von Befehlen** (PROTOKOLL Abschnitt 2), darf also in jedem Takt laufen.
+Fackel orange nach dem Fund, hellblau nach der Aufnahme, und gleich hellblau, wenn der Abend mit
+dem Fund endet. `gilt_bis` ist das Eventende, damit das Wrack sich von selbst wegräumt.
+
+**Neu und für andere Eventtypen nutzbar: `bruegge_soll.simulator`** (NULL = für alle). Eine Art
+ohne aktiven Titel in einem Simulator erscheint dort sonst stumm nicht. ⚠ Der Schnitt liegt
+**zwischen MSFS und X-Plane**, nicht zwischen den beiden MSFS: `_BRUEGGE_TOPF` liefert
+`msfs2020` und `msfs2024` aus **einem** Titelvorrat.
+
+**Ebenfalls neu: `bruegge_steht.hoehe_gemessen`.** Das Protokoll definiert das Feld, die
+X-Plane-Brügge sendet es, und der Server hat es bis dahin weggeworfen. `0` heißt „geraten"
+(Gelände nicht geladen) und sieht genau wie ein Wattobjekt auf 0,0 ft aus; `NULL` heißt „MSFS
+oder alte Meldung" und gilt als Messung. Dazu die zweite Schranke aus dem Protokoll: Eine
+Höhenmeldung zählt nur von einem Piloten näher als 200 km (am Bodensee gemessen 2.106 ft statt
+1.297 ft bei 691 km).
+
+⚠ **`reddung_events.havarist_lat/lon` gehen an die FriesenBrügge und in den Admin — an keinen
+Endpunkt, den ein Browser eines Piloten erreicht.** `compute_reddung_stand` gibt sie nie heraus;
+zwei Tests halten das fest (`tests/test_reddung_db.py`, `tests/test_reddung_api.py`).
+
 ### `app/teamspeak.py`
 
 TeamSpeak-ServerQuery-Client für die TS-Login-Benachrichtigung (Phase 1). Baut pro Poll eine kurzlebige ServerQuery-Verbindung auf (kein dauerhafter Event-Thread, kein TS-Client-Prozess).

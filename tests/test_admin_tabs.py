@@ -17,7 +17,9 @@ ADMIN = ADMIN_PFAD.read_text(encoding="utf-8")
 SKRIPT = "\n".join(re.findall(r"<script>(.*?)</script>", ADMIN, re.S))
 
 GRUPPEN = ["events", "stammdaten", "karten", "mitteilungen", "bruegge", "betrieb"]
-TYPEN = ["bummel", "kutter"]
+#: Reihenfolge der Chips in der Typ-Leiste. Waechst mit jedem neuen Eventtyp --
+#: "reddung" kam am 20.09.2026 dazu (FriesenReddung, #21).
+TYPEN = ["bummel", "kutter", "reddung"]
 
 
 def _rumpf(name: str) -> str:
@@ -99,8 +101,13 @@ def test_kein_panel_steht_ausserhalb_eines_tabs():
 
 
 def test_alle_panels_sind_noch_da():
-    """Beim Umsortieren darf keines verlorengehen — 16 Panels plus die Wertungs-Vorschau."""
-    assert len(_baum().panels) == 17
+    """Beim Umsortieren darf keines verlorengehen — 17 Panels plus die Wertungs-Vorschau.
+
+    Die Zahl ist ein Bestandswaechter: Sie steigt, wenn jemand bewusst ein Panel ergaenzt (am
+    20.09.2026 die FriesenReddung, von 17 auf 18), und faellt nur, wenn beim Umsortieren eines
+    verlorengegangen ist. Genau deshalb steht hier eine Zahl und keine Untergrenze.
+    """
+    assert len(_baum().panels) == 18
 
 
 # --------------------------------------------------- Laden erst beim Oeffnen

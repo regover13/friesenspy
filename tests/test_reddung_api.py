@@ -189,3 +189,55 @@ def test_der_stand_traegt_die_koordinate_nicht(db):
     assert ev["havarist_lat"] == 53.72
     text = json.dumps(ev["stand"])
     assert "53.72" not in text and "7.25" not in text
+
+
+# --- Admin-Oberflaeche (Quelltext-Wachen) ---------------------------------
+#
+# Am Quelltext verankert, nicht an Zeichenzahlen oder Reihenfolgen: geprueft werden Bezeichner
+# und die Texte, die ein Veranstalter lesen MUSS, damit er kein unloesbares Event anlegt.
+
+import pathlib
+
+ADMIN = pathlib.Path("app/static/admin.html")
+
+
+def test_der_chip_fuer_die_reddung_steht_in_der_typ_leiste():
+    q = ADMIN.read_text(encoding="utf-8")
+    assert 'data-typ="reddung"' in q
+    assert 'id="typ-reddung"' in q
+
+
+def test_der_typ_hat_einen_lader():
+    """Ein Chip ohne Inhalt dahinter ist eine Einladung ins Leere (Kommentar im Admin)."""
+    q = ADMIN.read_text(encoding="utf-8")
+    assert "reddung: function" in q and "loadReddung" in q
+
+
+def test_der_alte_arbeitstitel_steht_nicht_mehr_im_admin():
+    assert "Suchflug" not in ADMIN.read_text(encoding="utf-8")
+
+
+def test_neben_dem_landehaken_steht_was_er_bedeutet():
+    """Sonst legt jemand ein Event an, das nur Hubschrauberpiloten abschliessen koennen,
+    ohne es zu wissen (Spec, Abschnitt 4)."""
+    q = ADMIN.read_text(encoding="utf-8")
+    assert "Hubschrauber" in q and "Wasserflugzeug" in q
+    assert "Vollstopp" in q
+
+
+def test_der_fundradius_wird_angezeigt_und_nicht_eingegeben():
+    """Er ist gerechnet. Ein Eingabefeld dafuer waere der Weg zum luegenden Balken."""
+    q = ADMIN.read_text(encoding="utf-8")
+    assert 'id="rd-fundradius"' in q
+    assert 'id="rd-fundradius-input"' not in q
+    assert "Math.SQRT2" in q, "der Fundradius wird im Admin gerechnet, nicht getippt"
+
+
+def test_die_herkunft_der_grundhoehe_steht_neben_der_zahl():
+    assert "havarist_grund_quelle" in ADMIN.read_text(encoding="utf-8")
+
+
+def test_die_hoehenschranke_ist_als_AGL_beschriftet():
+    """MSL waere die falsche Auskunft -- gemessen wird ueber dem Havaristen."""
+    q = ADMIN.read_text(encoding="utf-8")
+    assert "ft AGL" in q and "über dem Havaristen" in q

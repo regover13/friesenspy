@@ -19,9 +19,11 @@ VATSIM Live-Tracker für die FriesenFlieger Virtual Airline. Zeigt wer von der G
 - [🏁 FriesenBummel](#-friesenbummel)
   - [Badge fürs Forum](#badge-fürs-forum)
 - [🦐 FriesenKutter (Transportflüge)](#-friesenkutter-transportflüge)
+- [🚨 FriesenReddung (Suchen und Retten)](#-friesenreddung-suchen-und-retten)
 - [🔧 Verwaltung (Admin)](#-verwaltung-admin)
   - [Board-Login (Forum-SSO, optional)](#board-login-forum-sso-optional)
   - [Rund um den FriesenBummel](#rund-um-den-friesenbummel)
+  - [Rund um die FriesenReddung](#rund-um-die-friesenreddung)
   - [Flugbetrieb und Daten](#flugbetrieb-und-daten)
   - [Kniebrett](#kniebrett)
   - [Diagnose](#diagnose)
@@ -332,6 +334,46 @@ Der **FriesenKutter** ist ein kleines „FSE für Friesen": ein Transportflug-Ev
 
 ---
 
+## 🚨 FriesenReddung (Suchen und Retten)
+
+Die **FriesenReddung** („Reddung" ist Platt für Rettung) ist ein Event-Typ, dessen Reiz im
+**Suchen** liegt: Irgendwo im Suchsektor liegt ein Havarist — meist eine abgestürzte oder
+notgelandete Maschine. Bekannt ist nur der Sektor. Die Gruppe fliegt hinaus, teilt ihn
+untereinander auf und sucht ihn ab.
+
+**So läuft es:**
+
+1. **Suchen.** Wer tief und langsam über eine Stelle fliegt, hat sie abgesucht. Der
+   Fortschritt gehört der **Gruppe**: Wer eine Fläche abfliegt und nichts findet, hat den
+   Sektor für alle verkleinert — das zählt genauso wie der Fund selbst. Daneben steht, wer
+   welche Fläche als Erster abgesucht hat.
+2. **Gefunden.** Wer den Havaristen in engem Umkreis und niedriger Höhe passiert, hat ihn für
+   **alle** gefunden. Von da an steht eine **orange Rauchfackel** daneben — weithin sichtbar,
+   damit die anderen ihn anfliegen können.
+3. **Aufnehmen.** Jetzt muss jemand hin und den Piloten aufnehmen — **nicht zwingend der
+   Finder**: Der sitzt vielleicht im falschen Flugzeug oder hat nicht mehr genug Sprit. Liegt
+   das Wrack an Land, verlangt das eine **Landung an der Unglücksstelle**; über Wasser oder an
+   einer Stelle, an der niemand aufsetzen kann, genügt ein **Schwebeflug** darüber — dafür
+   braucht es dann einen Hubschrauber. Sobald aufgenommen ist, wechselt die Fackel auf
+   **hellblau**.
+4. **Einliefern.** Wer aufgenommen hat, bringt den Piloten zu **irgendeinem** Platz. Gewertet
+   wird die Zeit vom Fund bis zu dieser Landung.
+
+Ein Abend kann auch mit dem Fund enden — das entscheidet der Veranstalter beim Anlegen, so wie
+er festlegt, ob zum Aufnehmen gelandet werden muss.
+
+**Findet niemand, endet der Abend ehrlich:** Zum Eventende wird die Lage des Havaristen
+veröffentlicht, und die Bilanz nennt, wie viel vom Sektor abgesucht war.
+
+**Was du dafür brauchst:** die **FriesenBrügge** (siehe *Sim-Brügge* weiter unten). Sie stellt
+Wrack und Fackeln in deinen Simulator — ohne sie siehst du nichts davon, auch wenn dein Überflug gewertet wird.
+
+> **Noch nicht zu sehen:** Sektor, Fortschritt und Fackeln laufen bereits auf dem Server, und
+> ein Event lässt sich im Admin anlegen. Die Ansicht für Mitglieder — Sektor und abgesuchte
+> Fläche auf der Karte und im Kniebrett — kommt als nächster Schritt.
+
+---
+
 ## 🔧 Verwaltung (Admin)
 
 Die Admin-Seite ist unter `/admin` erreichbar und passwortgeschützt. Das Passwort wird über `ADMIN_PASSWORD` in `config.env` gesetzt (leer = Admin-Bereich deaktiviert; niemals in git). Der Login setzt ein signiertes httponly-Cookie (`fs_admin`), das für die Browsersitzung gültig bleibt — ein Passwort- oder Key-Wechsel invalidiert alle bestehenden Cookies sofort.
@@ -371,6 +413,37 @@ Ist der **Board-Login** aktiv (Admin → „Betrieb“ → „Board-Login“, St
 - **Hinweis-Banner steuern** — bestimmen, welcher Changelog-Eintrag als Startseiten-Banner erscheint: `auto` (neuester Highlight-Eintrag), `off` (kein Banner) oder eine konkrete Version.
 - **Push-Test & Broadcast** — eine Test-Benachrichtigung nur ans eigene Gerät senden oder eine freie Nachricht (Titel + Text) an alle Abonnenten bzw. nur Events-Abonnenten.
 - **Piloten-Verwaltung** — bekannte Piloten auflisten, manuell anlegen oder umbenennen und löschen (Namenspflege; **keine** Mitglieder-Allowlist — Friesen werden weiter über das Callsign-Präfix `FRS` erkannt).
+
+### Rund um die FriesenReddung
+- **Event anlegen** — Name, Zeitfenster und der **Suchsektor** als Rechteck (vier Koordinaten).
+  Daneben stehen **Zellkante** und **Korridor**: Die Zellkante bestimmt, wie fein der Sektor in
+  Felder zerlegt wird, der Korridor, wie weit seitlich ein Überflug noch zählt. Gleiche Werte
+  ergeben ein lückenloses Raster; eine Kante über dem doppelten Korridor lässt Löcher
+  *zwischen* den Feldern, die niemand füllen kann.
+- **Der Fundradius wird angezeigt, nicht eingegeben.** Er ergibt sich aus Korridor und
+  Zellkante. Das ist Absicht: Sonst könnte „100 % abgesucht" neben „nicht gefunden" stehen —
+  ein abgesuchtes Feld heißt nur, dass jemand an seiner *Mitte* vorbeigeflogen ist, und ein
+  Havarist in der Feldecke ist weiter weg. So wie es ist, gilt: Sektor vollständig abgesucht
+  heißt gefunden.
+- **Die erwartete Suchdauer** steht daneben — aus Sektorgröße und Korridor, gerechnet für fünf
+  Piloten bei 110 kt. Ein 40-×-40-km-Sektor ist damit rund eine halbe Stunde Arbeit; 20 × 20 km
+  wären nach zehn Minuten vorbei.
+- **Höhenschranke in Fuß AGL über dem Havaristen** (Vorgabe 1.000), dazu ein
+  Geschwindigkeitsfenster (30–140 kt). Die Untergrenze verhindert, dass ein geparktes Flugzeug
+  sein Feld den ganzen Abend abdeckt. Die Geländehöhe an der Unglücksstelle lernt FriesenSpy
+  aus der Rückmeldung der FriesenBrügge, die das Wrack hinstellt; neben der Zahl steht, ob sie
+  gemessen oder geschätzt ist.
+- **Lage und Art des Havaristen** — die Stelle wird **von Hand** gesetzt: Ob dort Wasser liegt
+  und ob jemand landen kann, sieht nur ein Mensch. Als Art kommen alle Objektarten der
+  FriesenBrügge in Frage; die Vorgabe ist ein kleines Flugzeug, `wilga` ist die Vereinsmaschine
+  D-EFRS.
+- **Zwei Haken für den Zuschnitt des Abends** — „Aufnehmen nötig" (aus: der Abend endet mit dem
+  Fund) und „Landung zur Rettung nötig" (aus: ein Schwebeflug genügt, verlangt dann aber einen
+  Hubschrauber). Was der Haken bedeutet, steht im Admin direkt daneben.
+- **Aufnahme freigeben** — wer aufgenommen hat und dann ohne Landung verschwindet, blockiert
+  sonst den ganzen Abend. Das erledigt FriesenSpy nach zehn Minuten Funkstille von selbst
+  (abschaltbar), und der Knopf daneben tut es sofort.
+- **Push je Event** und **Löschen** — Löschen nimmt Wrack und Fackeln aus allen Simulatoren mit.
 
 ### Flugbetrieb und Daten
 

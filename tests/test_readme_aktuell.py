@@ -90,9 +90,14 @@ class TestTabZahl:
 
 # ------------------------------------------------------------------- Admin-Bereiche
 class TestAdminAufbau:
-    """Die Admin-Seite wächst: Vier weitere Event-Typen sind geplant (Kieker, Suchflug,
-    Deichkontrolle, Baake). Jeder bringt einen Knopf mit — und jeder ist eine Gelegenheit,
-    das Handbuch stehenzulassen. Genau das fängt diese Wache."""
+    """Die Admin-Seite wächst: Drei weitere Event-Typen sind geplant (Kieker, Deichkontrolle,
+    Baake). Jeder bringt einen Knopf mit — und jeder ist eine Gelegenheit, das Handbuch
+    stehenzulassen. Genau das fängt diese Wache.
+
+    Die FriesenReddung hat sie am 20.09.2026 prompt gefangen: Der Plan für den Eventtyp hatte
+    ausdrücklich KEINE README-Änderung vorgesehen, mit der Begründung, sichtbar sei ja nur der
+    Admin-Bereich. Die Wache hier war anderer Meinung, und sie hatte recht -- ein Eventtyp, den
+    ein Veranstalter anlegen kann, gehört ins Handbuch."""
 
     def test_jeder_bereich_steht_in_der_readme(self, readme, admin_html):
         assert fehlende_admin_bereiche(readme, admin_html) == []
@@ -113,4 +118,4 @@ class TestAdminAufbau:
         assert "Kieker" in fehlende_admin_eventtypen(readme, mehr)
 
     def test_findet_die_eventtypen_ueberhaupt(self, admin_html):
-        assert eventtypen_der_adminseite(admin_html) == ["Bummel", "Kutter"]
+        assert eventtypen_der_adminseite(admin_html) == ["Bummel", "Kutter", "Reddung"]

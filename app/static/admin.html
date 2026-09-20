@@ -994,12 +994,13 @@
       <div style="padding-top:24px;">
         <div class="tab-panel active" id="tab-events">
 
-          <!-- Die zweite Ebene: ein Chip je Event-Typ. Bummel und Kutter sind da;
-               Kieker, Suchflug, Deichkontrolle und Baake kommen mit ihrem Typ dazu.
+          <!-- Die zweite Ebene: ein Chip je Event-Typ. Bummel, Kutter und FriesenReddung
+               sind da; Kieker, Deichkontrolle und Baake kommen mit ihrem Typ dazu.
                Ein Chip ohne Inhalt dahinter ist eine Einladung ins Leere. -->
           <div class="typ-nav">
             <button class="typ-btn active" data-typ="bummel">🏁 Bummel</button>
             <button class="typ-btn" data-typ="kutter">🦐 Kutter</button>
+            <button class="typ-btn" data-typ="reddung">🚨 Reddung</button>
           </div>
 
           <div class="typ-panel active" id="typ-bummel">
@@ -1226,6 +1227,154 @@
             dort speichern.
           </p>
           <div id="ke-payloads-container" class="scroll-list"><div class="empty-hint">Lade Zuladungen…</div></div>
+        </div>
+          </div>
+
+          <div class="typ-panel" id="typ-reddung">
+
+        <!-- FRIESENREDDUNG — SUCH- UND RETTUNGSEVENTS -->
+        <div class="panel">
+          <div class="panel-title">
+            <span>🚨 FriesenReddung &ndash; Such- und Rettungsevents</span>
+            <button class="btn btn-sm btn-primary" id="rd-toggle-form-btn">+ Neues Event</button>
+          </div>
+          <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
+            Irgendwo im Sektor liegt ein Havarist &ndash; meist eine abgestürzte Maschine. Die
+            Gruppe teilt sich auf und sucht. Wer tief und langsam darüber hinwegfliegt, hat ihn
+            für alle gefunden; dann steht eine orange Rauchfackel daneben.
+          </p>
+          <div id="rd-form" class="hidden">
+            <div class="new-race-form-inner">
+              <div class="form-section-title" id="rd-form-title">Neues Event anlegen</div>
+              <div class="form-grid" style="margin-bottom:14px;">
+                <div class="form-group">
+                  <label for="rd-name">Name</label>
+                  <input type="text" id="rd-name" placeholder="z.B. Vermisste Wilga" required />
+                </div>
+                <div class="form-group">
+                  <label for="rd-art">Art des Havaristen</label>
+                  <select id="rd-art"><option value="">flugzeug_echo (Vorgabe)</option></select>
+                  <p class="form-hint">
+                    Ein Fliegerverein sucht Flieger. <code>wilga</code> ist die
+                    Vereinsmaschine D-EFRS &ndash; sie zu suchen erklärt sich ohne ein Wort.
+                  </p>
+                </div>
+                <div class="form-group">
+                  <label for="rd-dtstart">Start (UTC)</label>
+                  <input type="datetime-local" id="rd-dtstart" data-end="rd-dtend" required />
+                </div>
+                <div class="form-group">
+                  <label for="rd-dtend">Ende (UTC, optional)</label>
+                  <input type="datetime-local" id="rd-dtend" />
+                </div>
+              </div>
+
+              <div class="form-section-title">Suchsektor</div>
+              <div class="form-grid" style="margin-bottom:14px;">
+                <div class="form-group">
+                  <label for="rd-sued">Süd (Breite)</label>
+                  <input type="number" step="0.0001" id="rd-sued" placeholder="53.54" required />
+                </div>
+                <div class="form-group">
+                  <label for="rd-nord">Nord (Breite)</label>
+                  <input type="number" step="0.0001" id="rd-nord" placeholder="53.90" required />
+                </div>
+                <div class="form-group">
+                  <label for="rd-west">West (Länge)</label>
+                  <input type="number" step="0.0001" id="rd-west" placeholder="6.95" required />
+                </div>
+                <div class="form-group">
+                  <label for="rd-ost">Ost (Länge)</label>
+                  <input type="number" step="0.0001" id="rd-ost" placeholder="7.55" required />
+                </div>
+                <div class="form-group">
+                  <label for="rd-kante">Zellkante (km)</label>
+                  <input type="number" step="0.1" id="rd-kante" value="1.0" />
+                </div>
+                <div class="form-group">
+                  <label for="rd-korridor">Korridor (km)</label>
+                  <input type="number" step="0.1" id="rd-korridor" value="1.0" />
+                  <p class="form-hint">
+                    Zellkante gleich Korridor ergibt ein lückenloses Raster. Eine Kante über
+                    dem doppelten Korridor lässt Löcher <em>zwischen</em> den Zellen, die
+                    niemand füllen kann.
+                  </p>
+                </div>
+              </div>
+              <p class="hint" id="rd-rechnung" style="margin:0 0 14px;"></p>
+
+              <div class="form-section-title">Wertungsfenster</div>
+              <div class="form-grid" style="margin-bottom:14px;">
+                <div class="form-group">
+                  <label for="rd-hoehe">Höhenschranke (ft AGL über dem Havaristen)</label>
+                  <input type="number" step="50" id="rd-hoehe" value="1000" />
+                  <p class="form-hint">
+                    Nicht MSL: Der Server kennt die Geländehöhe an der Unglücksstelle und
+                    rechnet sie dazu. Sie kommt aus der Rückmeldung der FriesenBrügge, die das
+                    Wrack hinstellt.
+                  </p>
+                </div>
+                <div class="form-group">
+                  <label for="rd-gsmax">Höchstgeschwindigkeit (kt)</label>
+                  <input type="number" step="5" id="rd-gsmax" value="140" />
+                </div>
+                <div class="form-group">
+                  <label for="rd-gsmin">Mindestgeschwindigkeit (kt)</label>
+                  <input type="number" step="5" id="rd-gsmin" value="30" />
+                  <p class="form-hint">
+                    Ohne Untergrenze deckt ein geparktes Flugzeug seine Zelle den ganzen Abend
+                    ab.
+                  </p>
+                </div>
+              </div>
+
+              <div class="form-section-title">Lage des Havaristen</div>
+              <div class="form-grid" style="margin-bottom:14px;">
+                <div class="form-group">
+                  <label for="rd-hav-lat">Breite</label>
+                  <input type="number" step="0.0001" id="rd-hav-lat" placeholder="53.72" />
+                </div>
+                <div class="form-group">
+                  <label for="rd-hav-lon">Länge</label>
+                  <input type="number" step="0.0001" id="rd-hav-lon" placeholder="7.25" />
+                  <p class="form-hint">
+                    Von Hand setzen. Ob dort Wasser liegt und ob jemand landen kann, sieht nur
+                    ein Mensch &ndash; und über die Entfernung zum Platz bestimmst du gleich
+                    mit, wie lang der Abend wird.
+                  </p>
+                </div>
+              </div>
+
+              <div class="form-section-title">Wie der Abend endet</div>
+              <div style="margin-bottom:14px;">
+                <label class="check-line">
+                  <input type="checkbox" id="rd-aufnehmen-noetig" checked /> Aufnehmen nötig
+                </label>
+                <p class="form-hint" style="margin:2px 0 10px 24px;">
+                  Ist der Haken aus, endet der Abend mit dem Fund &ndash; keine Aufnahme, keine
+                  Einlieferung.
+                </p>
+                <label class="check-line">
+                  <input type="checkbox" id="rd-landung-noetig" checked /> Landung zur Rettung nötig
+                </label>
+                <p class="form-hint" id="rd-landung-hint" style="margin:2px 0 10px 24px;"></p>
+                <label class="check-line">
+                  <input type="checkbox" id="rd-aufnahme-verfaellt" checked />
+                  Aufnahme verfällt, wenn der Aufnehmende abmeldet
+                </label>
+                <p class="form-hint" style="margin:2px 0 0 24px;">
+                  Sonst blockiert ein verschwundener Pilot die Einlieferung für den ganzen
+                  Abend. Freigeben geht daneben auch von Hand.
+                </p>
+              </div>
+
+              <div class="form-actions">
+                <button class="btn btn-primary" id="rd-save-btn">Speichern</button>
+                <button class="btn" id="rd-cancel-btn">Abbrechen</button>
+              </div>
+            </div>
+          </div>
+          <div id="rd-liste" class="scroll-list"><div class="empty-hint">Lade Events…</div></div>
         </div>
           </div>
         </div>
@@ -6365,10 +6514,199 @@
       })[tab];
     }
 
+    // ---------------------------------------------------------------------
+    // FriesenReddung (#21)
+    // ---------------------------------------------------------------------
+    //
+    // ⚠ Der Fundradius wird GERECHNET, nicht getippt: Korridor + halbe Zelldiagonale. Ein
+    // Eingabefeld dafuer waere der Weg zu einem Fortschrittsbalken, der luegt -- eine
+    // abgedeckte Zelle heisst nur, dass ein Track im Korridor an ihrem MITTELPUNKT vorbeilief,
+    // und ein Havarist in der Zellecke ist noch die halbe Zelldiagonale weiter weg.
+
+    let _rdEvents = [];
+
+    const _RD_HINT_LANDUNG = 'Aufnehmen verlangt eine Landung an der Unglücksstelle '
+      + '(Vollstopp unter 300 ft AGL) — sieh nach, ob dort jemand landen kann.';
+    const _RD_HINT_SCHWEBE = 'Aufnehmen per Schwebeflug, unter 30 kt über der Unglücksstelle. '
+      + 'Das verlangt einen Hubschrauber oder ein Wasserflugzeug.';
+
+    function _rdZahl(id, vorgabe) {
+      const el = document.getElementById(id);
+      const v = el ? parseFloat(el.value) : NaN;
+      return isFinite(v) ? v : vorgabe;
+    }
+
+    /** Fundradius und erwartete Suchdauer -- beides gerechnet, beides nur Anzeige. */
+    function _rdRechnung() {
+      const el = document.getElementById('rd-rechnung');
+      if (!el) return;
+      const kante = _rdZahl('rd-kante', 1), korridor = _rdZahl('rd-korridor', 1);
+      const radius = korridor + kante / Math.SQRT2;
+      const sued = _rdZahl('rd-sued', NaN), nord = _rdZahl('rd-nord', NaN);
+      const west = _rdZahl('rd-west', NaN), ost = _rdZahl('rd-ost', NaN);
+      let dauer = '';
+      if (isFinite(sued) && isFinite(nord) && isFinite(west) && isFinite(ost)
+          && nord > sued && ost > west) {
+        const hoch = (nord - sued) * 111.32;
+        const breit = (ost - west) * 111.32 * Math.cos((sued + nord) / 2 * Math.PI / 180);
+        // Ein Pilot streicht bei 110 kt (204 km/h) einen Streifen von 2 x Korridor ab.
+        const minuten = (hoch * breit) / (204 * 2 * korridor * 5) * 60;
+        dauer = ' · Sektor ' + hoch.toFixed(0) + ' × ' + breit.toFixed(0)
+          + ' km, mit fünf Piloten bei 110 kt etwa ' + minuten.toFixed(0) + ' Min zum Absuchen';
+      }
+      el.innerHTML = 'Fundradius <strong id="rd-fundradius">' + radius.toFixed(2)
+        + ' km</strong> (Korridor + halbe Zelldiagonale, gerechnet)' + dauer;
+    }
+
+    /** Der aeussere Haken sperrt den inneren, und der Hinweis wechselt mit ihm. */
+    function _rdHinweise() {
+      const auf = document.getElementById('rd-aufnehmen-noetig');
+      const lnd = document.getElementById('rd-landung-noetig');
+      const hint = document.getElementById('rd-landung-hint');
+      if (!auf || !lnd || !hint) return;
+      lnd.disabled = !auf.checked;
+      hint.textContent = !auf.checked
+        ? 'Ohne Aufnahme ohne Bedeutung — der Abend endet mit dem Fund.'
+        : (lnd.checked ? _RD_HINT_LANDUNG : _RD_HINT_SCHWEBE);
+    }
+
+    async function _rdArtenLaden() {
+      const sel = document.getElementById('rd-art');
+      if (!sel || sel.dataset.geladen) return;
+      const res = await api('GET', '/api/admin/bruegge/arten');
+      if (!res || !res.ok) return;
+      const daten = await res.json();
+      const arten = (daten.arten || daten || []).filter(function (a) {
+        return (a.status || 'aktiv') === 'aktiv';
+      });
+      arten.forEach(function (a) {
+        const o = document.createElement('option');
+        o.value = a.art;
+        o.textContent = a.art + (a.bedeutung ? ' — ' + a.bedeutung : '');
+        sel.appendChild(o);
+      });
+      sel.dataset.geladen = '1';
+    }
+
+    function _rdWer(x) {
+      if (!x) return '<span class="hint">—</span>';
+      return escH(x.name) + ' <span class="hint">' + escH((x.ts || '').slice(11, 16)) + ' UTC</span>';
+    }
+
+    async function loadReddung() {
+      _rdRechnung();
+      _rdHinweise();
+      _rdArtenLaden();
+      const res = await api('GET', '/api/admin/reddung/events');
+      if (!res || !res.ok) return;
+      _rdEvents = (await res.json()).events || [];
+      const c = document.getElementById('rd-liste');
+      if (!_rdEvents.length) {
+        c.innerHTML = '<div class="empty-hint">Noch keine Events.</div>';
+        return;
+      }
+      c.innerHTML = _rdEvents.map(function (ev) {
+        const st = ev.stand || {};
+        const anteil = Math.round((st.anteil || 0) * 100);
+        const beitraege = (st.je_pilot || []).filter(function (x) { return x.zellen > 0; })
+          .map(function (x) { return escH(x.name) + ' ' + x.zellen; }).join(', ') || '—';
+        // Die Herkunft der Grundhoehe gehoert NEBEN die Zahl: Ohne Bruegge-Messung ist sie
+        // geschaetzt, und ueber Land kann sie um mehr als die Hoehenschranke danebenliegen.
+        const grund = (ev.havarist_grund_ft === null || ev.havarist_grund_ft === undefined)
+          ? '<span class="hint">unbekannt</span>'
+          : Math.round(ev.havarist_grund_ft) + ' ft <span class="hint">('
+            + escH(ev.havarist_grund_quelle || '?') + ')</span>';
+        const ort = (ev.havarist_lat === null || ev.havarist_lat === undefined)
+          ? '<span style="color:#e0a33e">⚠ noch nicht gesetzt</span>'
+          : Number(ev.havarist_lat).toFixed(4) + ' / ' + Number(ev.havarist_lon).toFixed(4);
+        const dauer = (st.dauer_min === null || st.dauer_min === undefined)
+          ? '' : ' <span class="hint">(' + st.dauer_min + ' Min ab Fund)</span>';
+        return '<div class="list-row" style="padding:10px 0;border-bottom:1px solid #1e2b3a;">'
+          + '<div><strong>' + escH(ev.name) + '</strong> <span class="hint">'
+          + escH((ev.dtstart || '').replace('T', ' ').slice(0, 16)) + ' UTC</span>'
+          + (ev.aufgeloest_am ? ' <span class="badge badge-done">aufgelöst</span>' : '')
+          + (ev.push_enabled ? '' : ' <span class="hint">· Push aus</span>')
+          + '</div>'
+          + '<div class="hint" style="margin:4px 0;">' + anteil + ' % abgesucht ('
+          + (st.abgedeckt || 0) + ' von ' + (st.zellen || 0) + ' Zellen), Fundradius '
+          + (st.fundradius_km === undefined ? '?' : st.fundradius_km) + ' km</div>'
+          + '<table style="font-size:0.8rem;"><tbody>'
+          + '<tr><td style="padding-right:10px;">Beiträge</td><td>' + beitraege + '</td></tr>'
+          + '<tr><td>Gefunden</td><td>' + _rdWer(st.gefunden) + '</td></tr>'
+          + '<tr><td>Aufgenommen</td><td>' + _rdWer(st.aufgenommen) + '</td></tr>'
+          + '<tr><td>Eingeliefert</td><td>' + _rdWer(st.eingeliefert)
+          + (st.eingeliefert && st.eingeliefert.icao ? ' in ' + escH(st.eingeliefert.icao) : '')
+          + dauer + '</td></tr>'
+          + '<tr><td>Havarist</td><td>' + ort + ' · ' + escH(ev.havarist_art || 'flugzeug_echo')
+          + ' · Gelände ' + grund + '</td></tr>'
+          + '</tbody></table>'
+          + '<div style="margin-top:6px;">'
+          + '<button class="btn btn-sm" onclick="rdFreigeben(' + ev.id + ')">Aufnahme freigeben</button> '
+          + '<button class="btn btn-sm" onclick="rdPush(' + ev.id + ','
+          + (ev.push_enabled ? 'false' : 'true') + ')">Push '
+          + (ev.push_enabled ? 'aus' : 'an') + '</button> '
+          + '<button class="btn btn-sm btn-danger" onclick="rdLoeschen(' + ev.id + ')">Löschen</button>'
+          + '</div></div>';
+      }).join('');
+    }
+
+    async function rdFreigeben(id) {
+      const res = await api('POST', '/api/admin/reddung/events/' + id + '/aufnahme-freigeben');
+      if (res && res.ok) { toast('Aufnahme freigegeben'); loadReddung(); }
+    }
+
+    async function rdPush(id, an) {
+      const res = await api('POST', '/api/admin/reddung/events/' + id + '/push', { enabled: an });
+      if (res && res.ok) loadReddung();
+    }
+
+    async function rdLoeschen(id) {
+      if (!confirm('Event löschen? Havarist und Fackel werden aus den Simulatoren genommen.')) return;
+      const res = await api('DELETE', '/api/admin/reddung/events/' + id);
+      if (res && res.ok) { toast('Gelöscht'); loadReddung(); }
+    }
+
+    async function rdSpeichern() {
+      const dtstart = document.getElementById('rd-dtstart').value;
+      const dtend = document.getElementById('rd-dtend').value;
+      if (!dtstart) { toast('Start fehlt.', true); return; }
+      if (endNotAfterStart(dtstart, dtend)) {
+        toast('Enddatum muss nach dem Startdatum liegen.', true);
+        return;
+      }
+      const koerper = {
+        name: document.getElementById('rd-name').value.trim() || 'FriesenReddung',
+        dtstart: localToIso(dtstart),
+        dtend: dtend ? localToIso(dtend) : null,
+        sued: _rdZahl('rd-sued', NaN), nord: _rdZahl('rd-nord', NaN),
+        west: _rdZahl('rd-west', NaN), ost: _rdZahl('rd-ost', NaN),
+        kante_km: _rdZahl('rd-kante', 1), korridor_km: _rdZahl('rd-korridor', 1),
+        hoehe_max_ft: _rdZahl('rd-hoehe', 1000),
+        gs_max_kt: _rdZahl('rd-gsmax', 140), gs_min_kt: _rdZahl('rd-gsmin', 30),
+        aufnehmen_noetig: document.getElementById('rd-aufnehmen-noetig').checked ? 1 : 0,
+        landung_noetig: document.getElementById('rd-landung-noetig').checked ? 1 : 0,
+        aufnahme_verfaellt: document.getElementById('rd-aufnahme-verfaellt').checked ? 1 : 0,
+      };
+      const art = document.getElementById('rd-art').value;
+      if (art) koerper.havarist_art = art;
+      const lat = _rdZahl('rd-hav-lat', NaN), lon = _rdZahl('rd-hav-lon', NaN);
+      if (isFinite(lat) && isFinite(lon)) {
+        koerper.havarist_lat = lat;
+        koerper.havarist_lon = lon;
+      }
+      const res = await api('POST', '/api/admin/reddung/events', koerper);
+      if (res && res.ok) {
+        toast('Event angelegt');
+        document.getElementById('rd-form').classList.add('hidden');
+        loadReddung();
+      }
+    }
+
     function _typLader(typ) {
       return ({
         bummel: function () { loadRaces(); },
         kutter: function () { loadKutterAdmin(); },
+        reddung: function () { loadReddung(); },
       })[typ];
     }
 
@@ -6442,6 +6780,30 @@
     document.querySelectorAll('.tab-btn').forEach(function (b) {
       b.addEventListener('click', function () { tabOeffnen(b.dataset.tab); });
     });
+    // FriesenReddung: Rechnung und Hinweise haengen an den Eingaben, nicht am Speichern --
+    // der Veranstalter soll sehen, was seine Werte bedeuten, BEVOR er ein Event anlegt.
+    ['rd-kante', 'rd-korridor', 'rd-sued', 'rd-nord', 'rd-west', 'rd-ost'].forEach(function (id) {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('input', _rdRechnung);
+    });
+    ['rd-aufnehmen-noetig', 'rd-landung-noetig'].forEach(function (id) {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('change', _rdHinweise);
+    });
+    (function () {
+      const t = document.getElementById('rd-toggle-form-btn');
+      if (t) t.addEventListener('click', function () {
+        document.getElementById('rd-form').classList.toggle('hidden');
+        _rdArtenLaden();
+      });
+      const sp = document.getElementById('rd-save-btn');
+      if (sp) sp.addEventListener('click', rdSpeichern);
+      const ab = document.getElementById('rd-cancel-btn');
+      if (ab) ab.addEventListener('click', function () {
+        document.getElementById('rd-form').classList.add('hidden');
+      });
+    })();
+
     document.querySelectorAll('.typ-btn').forEach(function (b) {
       b.addEventListener('click', function () { typOeffnen(b.dataset.typ); });
     });

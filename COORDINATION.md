@@ -6,6 +6,42 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-20 (nachts) — FriesenReddung: Server und Admin, 15.11.0
+
+**Angefasst:** `app/reddung.py` (neu), `app/database.py` (Tabelle `reddung_events`, Spalten
+`bruegge_soll.simulator` und `bruegge_steht.hoehe_gemessen`), `app/poller.py` (`_check_reddung`),
+`app/main.py` (sechs Admin-Endpunkte), `app/static/admin.html` (Typ „🚨 Reddung"), `README.md`,
+`docs/architecture.md`, vier neue Testdateien (+94 Tests).
+
+Der Eventtyp hieß im Entwurf „Suchflug" und heißt jetzt **FriesenReddung** (Platt für Rettung).
+Issue #21 trägt noch den Arbeitstitel.
+
+**Drei Dinge, die man wissen muss, bevor man hier weiterbaut:**
+
+1. ⚠ **Der Fundradius wird GERECHNET** (`korridor + kante/√2`). Macht ihn jemand einstellbar,
+   lügt der Fortschrittsbalken: Eine abgedeckte Zelle heißt nur, dass ein Track im Korridor an
+   ihrem MITTELPUNKT vorbeilief.
+2. ⚠ **Die Höhenschranke ist AGL über dem Havaristen.** Die Grundhöhe lernt der Server aus
+   `bruegge_steht.hoehe_ft` — aber nur mit `hoehe_gemessen != 0` und nur von einem Piloten näher
+   als 200 km. Beide Vorbehalte stehen in `friesenbruegge/PROTOKOLL.md`.
+3. ⚠ **`compute_reddung_stand` gibt NIE eine Koordinate heraus.** Sie rechnet den Fund auch
+   nicht — das tut der Poller. So ist die Verdeckung eine Eigenschaft des Aufbaus und nicht der
+   Sorgfalt.
+
+**Zwei eigene Behauptungen richtiggestellt**, beide standen vorher in dieser Datei bzw. in der
+Spec:
+
+* Die Bootsart-Lücke „fehlt in MSFS 2024" ist eine **Katalog**-Lücke, keine Auslieferungslücke:
+  `_BRUEGGE_TOPF` liefert MSFS 2020 und 2024 aus **einem** Titelvorrat. Der echte Schnitt ist
+  MSFS gegen X-Plane.
+* Die Fackeln fehlen **nicht** für MSFS 2020. Sie sind eigene Objekte der Brügge, die sie selbst
+  kennt; der Katalog steuert sie nicht.
+
+**Ein Fund für den Namenswächter:** `test_readme_aktuell.py::TestAdminAufbau` verlangt, dass
+jeder Eventtyp mit Chip im Admin auch im README-Kapitel „Verwaltung (Admin)" beschrieben ist.
+Mein Plan hatte ausdrücklich keine README-Änderung vorgesehen („sichtbar ist nur der Admin") —
+die Wache war anderer Meinung und hatte recht.
+
 ## 2026-09-20 (abends) — Brügge 1.16.0, 2020er Airliner, Sonde bleibt gestrichen, 15.9.0
 
 **Angefasst:** `friesenbruegge/msfs/bruegge.cpp` (`objekt_festhalten` friert jetzt jedes Objekt beim Anlegen ein, 1.16.0),
