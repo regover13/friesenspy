@@ -12,8 +12,8 @@ und werden vorher eigens besprochen — die Hauptnummer gehört an die sichtbare
 |---|---|---|
 | **Suchen** | Eventbeginn | Havarist an alle Brüggen (Art je Simulator) |
 | **Gefunden** | tiefer, langsamer Überflug im Fundradius | `gefunden_am`/`gefunden_von`; **`rauch_signalorange`** neben den Havaristen |
-| **Aufgenommen** | im Umkreis des Havaristen, **nach** dem Fund: *Haken an* eine Landung nach den Regeln des Projekts · *Haken aus* unter 30 kt | `aufgenommen_am`/`aufgenommen_von`; Fackel wechselt auf **`rauch_hellblau`** |
-| **Eingeliefert** | Landung des **Aufnehmenden** an irgendeinem registrierten Platz | `eingeliefert_am`/`_von`/`_icao`; gewertet ist die Zeit **vom Fund bis zu dieser Landung** |
+| **Aufgenommen** | *nur wenn `aufnehmen_noetig`* — im Umkreis des Havaristen, **nach** dem Fund: *Haken an* eine Landung nach den Regeln des Projekts · *Haken aus* unter 30 kt | `aufgenommen_am`/`aufgenommen_von`; Fackel wechselt auf **`rauch_hellblau`** |
+| **Eingeliefert** | *nur wenn `aufnehmen_noetig`* — Landung des **Aufnehmenden** an irgendeinem registrierten Platz | `eingeliefert_am`/`_von`/`_icao`; gewertet ist die Zeit **vom Fund bis zu dieser Landung** |
 
 **Aufnehmen darf irgendeiner.** Das ist eine Teamleistung, und der Finder kann es unter Umständen
 gar nicht — er sitzt im falschen Flugzeug, steht zu weit weg, oder hat nicht mehr genug Sprit.
@@ -44,6 +44,23 @@ zurück auf **orange**, und ein Push sagt, dass die Rettung wieder offen ist.
 **Ohne den Haken bleibt die Aufnahme stehen, bis der Admin sie freigibt.** Der Knopf dafür muss
 es in beiden Fällen geben — sonst hängt ein Abend an einer Automatik, die im Einzelfall falsch
 liegt.
+
+### Ein Abend kann mit dem Fund enden
+
+**Haken „Aufnehmen nötig", Vorgabe an.** Ist er aus, ist der Fund der Schluss: keine Aufnahme,
+keine Einlieferung. Gewertet sind dann die Abdeckung, der Finder und die Zeit. Das ist der
+kurze Abend — eine Stunde suchen, jemand findet, fertig.
+
+Die beiden Haken verschachteln sich:
+
+| `aufnehmen_noetig` | `landung_noetig` | Der Abend |
+|---|---|---|
+| **aus** | (im Admin gesperrt) | endet mit dem Fund |
+| an | an | Landung am Wrack, dann einliefern |
+| an | aus | Schwebeflug, dann einliefern |
+
+**Die Fackel wird dann gleich hellblau.** Orange heißt „gefunden, noch nicht gerettet" — wenn
+nichts mehr zu tun ist, wäre das eine falsche Auskunft an alle, die noch in der Luft sind.
 
 **Findet niemand:** Bei `dtend` wird die Lage aufgelöst und veröffentlicht, die Fackeln werden
 zurückgenommen, die Bilanz sagt „nicht gefunden" und nennt die erreichte Abdeckung.
@@ -230,6 +247,7 @@ CREATE TABLE IF NOT EXISTS suchflug_events (
     havarist_art    TEXT,                   -- Art aus bruegge_art; NULL = 'flugzeug_echo'
     havarist_grund_ft REAL,                 -- Geländehöhe MSL an der Unglücksstelle
     havarist_grund_quelle TEXT,             -- 'gemessen' | 'admin' | 'platz'
+    aufnehmen_noetig INTEGER DEFAULT 1,     -- 0 = der Abend endet mit dem Fund
     landung_noetig  INTEGER DEFAULT 1,      -- 0 = Schwebeflug genügt (Winde, Wasserung)
     -- Latches
     gefunden_am     TEXT,  gefunden_von     INTEGER,
@@ -262,12 +280,13 @@ Im Poller, im vorhandenen Takt (15 s) — ein Job `_check_suchflug`, nach dem Mu
 
 1. **Abdeckung** — `abdeckung(spuren, zellen_aus_box(...), fenster)`.
 2. **Fund** — dieselbe Funktion, ein Ziel mit dem gerechneten Fundradius, dasselbe Fenster.
-3. **Aufnehmen** — dasselbe Ziel, nur Spurenpunkte **nach** `gefunden_am`, mit
+3. **Aufnehmen** — entfällt bei `aufnehmen_noetig = 0`; dann schließt der Fund den Abend ab.
+   Sonst dasselbe Ziel, nur Spurenpunkte **nach** `gefunden_am`, mit
    `Fenster(hoehe_max_ft=_GPS_GROUND_AGL_FT, gs_max_kt=_GPS_BLOCK_GS_KT bzw. 30, gs_min_kt=0)`. Die
    Untergrenze muss dabei auf 0 — sonst schlösse das Suchfenster (30 kt) den Stillstand aus,
    der hier gerade gefragt ist.
-4. **Einliefern** — Landung des Aufnehmenden aus `canonicalize_legs`, erster Zielpunkt nach
-   `aufgenommen_am`.
+4. **Einliefern** — entfällt ebenso; sonst die Landung des Aufnehmenden aus
+   `canonicalize_legs`, erster Zielpunkt nach `aufgenommen_am`.
 
 Jede Stufe setzt ihren Latch über eine Funktion, die nur beim ersten Mal schreibt (Muster
 `_set_transport_latch`) und dabei die Fackel tauscht. Push je Stufe, wenn `push_enabled`.
@@ -283,6 +302,8 @@ Ein Bereich wie bei Bummel und Kutter: Sektor durch zwei Ecken auf der Karte, Ze
 Korridor, Höhen- und Geschwindigkeitsfenster, Art des Havaristen, Haken „Havarist liegt im
 Wasser", Kalendertermin, Push. Dazu:
 
+* **„Aufnehmen nötig" sperrt den Haken darunter**, wenn er aus ist — sonst stellt jemand eine
+  Landung ein, die nie geprüft wird, und wundert sich.
 * **Neben dem Haken steht, was er bedeutet.** Gesetzt: *„Aufnehmen verlangt eine Landung an der
   Unglücksstelle (Vollstopp unter 300 ft AGL) — sieh nach, ob dort jemand landen kann."* Nicht
   gesetzt: *„Aufnehmen per Schwebeflug, unter 30 kt über der Unglücksstelle. Das verlangt einen
