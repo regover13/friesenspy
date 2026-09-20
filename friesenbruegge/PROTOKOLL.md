@@ -3,11 +3,13 @@
 **Der Vertrag zwischen dem FriesenSpy-Server und einer Brügge im Simulator.**
 Verbindlich für alle Umsetzungen — MSFS 2020, MSFS 2024, X-Plane 12.
 
-> Stand 20.09.2026 · Protokollfassung **2** · ✅ **im Flug abgenommen** — Server, MSFS **1.17.0** und X-Plane **1.3.1**
+> Stand 20.09.2026 · Protokollfassung **2** · ✅ **im Flug abgenommen** — Server, MSFS **1.17.0** und X-Plane **1.4.0**
 >
-> ⭐ **1.17.0 (20.09.2026): Marken** — Würfel, Lichtsäulen und ein Licht als eigene Objekte in MSFS 2020/2024 und X-Plane
-> (Arten `wuerfel_*`, `saeule_*`, `licht`; s. `docs/bruegge-arten-ausbau.md`). Das Modul ist gegenüber 1.16.0 unverändert, neu ist
-> das Teilpaket `devprops-friesenmarken` (mit dem 2024er SDK gebaut).
+> ⭐ **MSFS 1.17.0 und X-Plane 1.4.0 (20.09.2026): Marken** — Würfel, Lichtsäulen und ein Licht als eigene Objekte in MSFS 2020/2024
+> und X-Plane (Arten `wuerfel_*`, `saeule_*`, `licht`; s. `docs/bruegge-arten-ausbau.md`). Die Module sind unverändert, neu sind die
+> Objekte: in MSFS das Teilpaket `devprops-friesenmarken` (mit dem 2024er SDK gebaut), in X-Plane 31 Dateien unter `objekte/`.
+> ⚠ X-Plane stand vor der Anhebung auf **1.3.1** — mit den Marken unter derselben Nummer wäre das Update für die Pilotenmeldung
+> unsichtbar gewesen (Nutzer, 20.09.2026: *„wie hieß die Vorgängerversion?“*).
 >
 > ⭐ **1.16.0 (20.09.2026): Jedes Objekt wird sofort eingefroren, wenn es seine ID bekommt** — nicht mehr nur mit
 > `auf_boden=false` und Höhe. Grund: Flugzeugmodelle und Bodenfahrzeuge hüpfen und rollen mit `OnGround=1` von der
