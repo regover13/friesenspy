@@ -1,11 +1,24 @@
 [
   {
+    "version": "15.15.0",
+    "date": "2026-09-20",
+    "highlight": false,
+    "title": "Ohne FriesenBrügge keine FriesenReddung — und der Hinweis, der es rechtzeitig sagt",
+    "items": [
+      "🚨 **Bei einer FriesenReddung ist die FriesenBrügge Voraussetzung, nicht Empfehlung.** Sie ist es, die Wrack und Rauchsäulen in deinen Simulator stellt — ohne sie fliegst du über einen leeren Sektor, in dem es nichts zu finden gibt. **Deshalb wird ohne sie auch nichts gewertet:** Deine abgeflogene Fläche zählt nicht mit, denn angesehen hat sie niemand. Das gilt nur hier — **FriesenBummel und FriesenKutter bleiben, wie sie sind**, dort werten wir Flugbewegungen aus, und dafür genügt VATSIM.",
+      "🚨 **Läuft eine FriesenReddung und deine FriesenBrügge meldet nicht, sagt es dir die Live-Ansicht** — unten links, mit dem Namen des Events und dem Weg zur Download-Seite, auf der Website wie im Kniebrett. Der Hinweis meldet sich im Minutentakt nach, denn ein Event kann beginnen, während die Seite längst offen ist, und verschwindet, sobald deine FriesenBrügge das erste Mal gemeldet hat. Ein Klick auf das × legt ihn für dieses Event weg.",
+      "🔎 **Schweigt deine FriesenBrügge kurz, springt VATSIM ein.** Ein Verbindungsabriss oder eine Sim-Pause soll kein Loch in die abgeflogene Fläche reißen — maßgeblich ist, ob du an diesem Abend überhaupt gemeldet hast, nicht ob du gerade in dieser Minute meldest.",
+      "🧭 **Als Havarist stehen nur noch Arten zur Wahl, die jeder Pilot sieht** — in allen drei Simulatoren darstellbar und ohne Zusatzpaket. Vorher zeigte die Liste alles Angeschaltete: Man konnte einen Havaristen wählen, den nur ein Simulator kennt, und ein Pilot mit FriesenBrügge wäre über einen leeren Sektor geflogen — gewertet, aber ohne jede Chance. Aufgefallen an der `wilga`: In MSFS 2024 ist sie ein Kaufmodell, in MSFS 2020 eine Cessna 152 und in X-Plane eine PA-28. Sie ist jetzt abgeschaltet. Die bisherigen Events sind nicht betroffen — sie nutzen die Vorgabe, und die ist überall Bordmaterial.",
+      "🔧 **Richtigstellung zu 15.14.0:** Dort stand, wer ohne FriesenBrügge fliege, werde „weiter gewertet, nur gröber“. Das war sachlich falsch — ohne sie steht im Simulator nichts, was sich finden ließe. Handbuch und Hinweistext sagen es jetzt richtig."
+    ]
+  },
+  {
     "version": "15.14.0",
     "date": "2026-09-20",
     "highlight": false,
     "title": "Die FriesenBrügge wertet mit, und der Havarist erscheint erst aus der Nähe",
     "items": [
-      "🌉 **Bei einer FriesenReddung zählt jetzt die FriesenBrügge**, wo sie da ist. Sie meldet jede Sekunde und mit der echten Höhe; VATSIM nur alle 15 Sekunden, und dazwischen liegt bei Reisegeschwindigkeit fast ein Kilometer. Für einen Fund, der 150 Meter verlangt, ist das der Unterschied zwischen gemessen und geschätzt. **Wer ohne Brügge fliegt, wird weiter gewertet** — nur gröber.",
+      "🌉 **Bei einer FriesenReddung zählt jetzt die FriesenBrügge**, wo sie da ist. Sie meldet jede Sekunde und mit der echten Höhe; VATSIM nur alle 15 Sekunden, und dazwischen liegt bei Reisegeschwindigkeit fast ein Kilometer. Für einen Fund, der 150 Meter verlangt, ist das der Unterschied zwischen gemessen und geschätzt. **Wer ohne FriesenBrügge fliegt, wird weiter gewertet** — nur gröber.",
       "🚨 **Der Havarist wird erst aus der Nähe in den Simulator gestellt** — einen Kilometer seitlich, keinen Kilometer höher. Der Grund sind Werkzeuge wie LittleNavMap: Sie lesen den Simulator direkt und zeigen ein Flugzeug als Flugzeug, auch wenn unsere eigene Karte es ausblendet. Von weitem stünde dort die Lage, die das Event verbirgt. **Nach dem Fund fällt der Riegel** — dann sollen Wrack und Rauchsäule weithin zu sehen sein.",
       "🔧 Zwei Fehler behoben: „Aufnahme freigeben\" stand auch bei einem abgeschlossenen Fall zur Verfügung und konnte eine Einlieferung **ohne** Aufnahme hinterlassen; und nach dem Ende eines Events blieben Wrack und Fackel als Einträge stehen, weil ein aufgelöstes Event gar nicht mehr geprüft wurde."
     ]

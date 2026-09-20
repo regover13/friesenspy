@@ -371,8 +371,26 @@ er festlegt, ob zum Aufnehmen gelandet werden muss.
 veröffentlicht — die rote Fackel markiert die Stelle —, und die Bilanz nennt, wie viel vom
 Sektor abgeflogen war.
 
-**Was du dafür brauchst:** die **FriesenBrügge** (siehe *Sim-Brügge* weiter unten). Sie stellt
-Wrack und Fackeln in deinen Simulator — ohne sie siehst du nichts davon, auch wenn dein Überflug gewertet wird.
+**Was du dafür brauchst: die FriesenBrügge** (siehe *Sim-Brügge* weiter unten) — und zwar
+zwingend. Sie ist es, die Wrack und Rauchsäulen in deinen Simulator stellt. Ohne sie fliegst du
+über einen leeren Sektor: Da ist nichts, was du finden könntest. **Deshalb wird ohne sie auch
+nichts gewertet** — deine abgeflogene Fläche zählt nicht mit, denn angesehen hat sie niemand.
+
+Das unterscheidet die FriesenReddung von FriesenBummel und FriesenKutter: Dort werten wir
+Flugbewegungen aus, und dafür genügt VATSIM. Hier stellen wir etwas in den Simulator, und das
+geht nur über die FriesenBrügge.
+
+Sie ist auch die genauere Quelle: Sie meldet im Sekundentakt und mit echter Höhe, VATSIM nur
+alle 15 Sekunden — dazwischen liegt bei Reisegeschwindigkeit fast ein Kilometer. Für einen
+Fund, der 150 Meter verlangt, ist das der Unterschied zwischen gemessen und geschätzt.
+Schweigt deine Brügge einmal kurz, springt VATSIM ein und füllt die Lücke.
+
+**Fehlt sie, sagt es dir die Live-Ansicht — solange du noch etwas ändern kannst.** Läuft eine
+FriesenReddung und deine FriesenBrügge meldet nicht, erscheint unten links ein Hinweis mit dem
+Namen des Events und dem Weg zur Download-Seite; auf der Website und im Kniebrett. Er meldet
+sich im Minutentakt nach, denn ein Event kann beginnen, während die Seite längst offen ist, und
+verschwindet, sobald deine FriesenBrügge das erste Mal gemeldet hat. Ein Klick auf das × legt
+ihn für dieses Event weg — beim nächsten meldet er sich wieder.
 
 > **Noch nicht zu sehen:** Sektor, Fortschritt und Fackeln laufen bereits auf dem Server, und
 > ein Event lässt sich im Admin anlegen. Die Ansicht für Mitglieder — Sektor und abgesuchte
@@ -441,9 +459,12 @@ Ist der **Board-Login** aktiv (Admin → „Betrieb“ → „Board-Login“, St
   Geschwindigkeitsfenster (30–140 kt) — die Untergrenze verhindert, dass ein geparktes Flugzeug
   sein Feld den ganzen Abend abdeckt.
 - **Lage und Art des Havaristen** — die Stelle wird **von Hand** gesetzt: Ob dort Wasser liegt
-  und ob jemand landen kann, sieht nur ein Mensch. Als Art kommen alle Objektarten der
-  FriesenBrügge in Frage; die Vorgabe ist ein kleines Flugzeug, `wilga` ist die Vereinsmaschine
-  D-EFRS.
+  und ob jemand landen kann, sieht nur ein Mensch. Zur Auswahl stehen **nur Arten, die jeder
+  Pilot sieht**: solche, die alle drei Simulatoren setzen können und kein Zusatzpaket
+  brauchen. Die Vorgabe ist ein kleines Flugzeug. Der Grund für die Einschränkung ist die
+  Wertung — wer mit FriesenBrügge über einen Sektor fliegt, in dem sein Simulator nichts
+  darstellen kann, wird gewertet, hat aber keine Chance. Vermisst du eine Art, steht der
+  Grund unter *FriesenBrügge → Arten*.
 - **Zwei Haken für den Zuschnitt des Abends** — „Aufnehmen nötig" (aus: der Abend endet mit dem
   Fund) und „Landung zur Rettung nötig" (aus: ein Schwebeflug genügt, verlangt dann aber einen
   Hubschrauber). Was der Haken bedeutet, steht im Admin direkt daneben.
@@ -461,10 +482,11 @@ Flugzeug. Von weitem stünde dort die Lage, die das Event verbirgt. Wer näher a
 ist, hätte das Wrack ohnehin gesehen. **Nach dem Fund fällt der Riegel** — dann sollen Wrack und
 Rauchsäule von weitem zu sehen sein.
 
-**Und die FriesenBrügge trägt die Wertung, wo sie da ist:** Sie meldet im Sekundentakt und mit
-echter Höhe, VATSIM nur alle 15 Sekunden — zwischen zwei VATSIM-Punkten liegt fast ein
-Kilometer. Für den Fund, der 150 Meter verlangt, ist das der Unterschied zwischen genau und
-geschätzt. Wer ohne Brügge fliegt, wird trotzdem gewertet, nur gröber.
+**Ohne FriesenBrügge keine Teilnahme** (Begründung oben im Eventkapitel): Wer sie nicht
+laufen hat, sieht einen leeren Sektor und wird auch nicht gewertet. Als Veranstalter musst du
+dafür nichts einstellen — wer ohne fliegt, bekommt den Hinweis von allein in der Live-Ansicht,
+solange das Event läuft und noch nicht aufgelöst ist. Für einen Piloten mit Brügge füllt
+VATSIM weiterhin die Sekunden, in denen sie schweigt.
 
 ### Flugbetrieb und Daten
 
@@ -707,7 +729,7 @@ die beiden anderen sind gebaut und ungetestet, und das steht so auch auf der Dow
 Gedacht ist das für den geplanten FriesenKieker, bei dem aus der Luft gezählt wird. Der Server
 fordert dabei **Arten** an (`tier_gross`, `robbe`, `boot_klein` …), nie Modellnamen — und
 **liefert die Modelle seit dem 14.09.2026 gleich mit**. In MSFS ist ein `tier_gross` ein Bär,
-in X-Plane ein Hirsch; welche Titel dazugehören, steht auf dem Server, und die Brügge probiert
+in X-Plane ein Hirsch; welche Titel dazugehören, steht auf dem Server, und die FriesenBrügge probiert
 sie der Reihe nach.
 
 Vorher trug jede Brügge diese Zuordnung selbst — eine neue Art kostete damit ein Update für
@@ -719,7 +741,7 @@ Brügge weiß, was ein Windrad ist. Ältere Brüggen laufen unverändert weiter.
 
 #### Zwei Modelle bringt sie selbst mit
 
-Fast alles, was die Brügge setzt, liegt im Simulator schon — sie nennt nur den Titel. Zwei
+Fast alles, was die FriesenBrügge setzt, liegt im Simulator schon — sie nennt nur den Titel. Zwei
 Dinge gab es nirgends, und die entstanden deshalb hier:
 
 **Die Rauchsäulen** (sechs Farben, 90 m hoch, 30 Sekunden). Es gibt keine

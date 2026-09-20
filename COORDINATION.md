@@ -6,6 +6,65 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-20 (spaet) — Ohne FriesenBruegge keine FriesenReddung (15.15.0)
+
+**Angefasst:** `app/database.py` (`_reddung_punkte_mischen`), `app/main.py` (neu
+`GET /api/me/reddung`), `app/static/index.html`, `tests/test_reddung_db.py`,
+`tests/test_reddung_api.py`, README, CLAUDE.md, CHANGELOG.
+
+⚠ **Die FriesenBruegge ist bei der Reddung Teilnahmevoraussetzung.** Wer nicht gemeldet hat,
+wird nicht gewertet -- `_reddung_punkte_mischen(..., gemeldet_seit=...)` wirft seine
+VATSIM-Punkte weg. Die stehende Regel samt Abgrenzung zu Bummel/Kutter steht jetzt in
+`CLAUDE.md` ("Die FriesenBruegge ist Pflicht, sobald ein Event etwas in den Simulator
+stellt"). **Bummel und Kutter bleiben unberuehrt** -- dort wird nichts in den Simulator
+gestellt, VATSIM genuegt.
+
+⚠ **Der Bezug ist der EVENTSTART, nicht der laufende Takt.** Sonst verliert ein Pilot mit
+Bruegge seine VATSIM-Lueckenfuellung, sobald sie einmal 30 Sekunden schweigt -- und genau
+dafuer ist VATSIM hier noch da.
+
+⚠ **`_REDDUNG_STAND_FASSUNG` wurde trotz Rechnungsaenderung NICHT erhoeht** -- Begruendung
+im Kommentar dort und in `CLAUDE.md`. `bruegge_spur` wird nach 12 Stunden aufgeraeumt; ein
+Neuberechnen haette die abgesuchte Flaeche von Event 2 auf null gesetzt (nachgesehen: die
+Spur ist bereits leer, und es lief kein Event, also gibt es keinen halben Stand nach alter
+Rechnung).
+
+⚠ **Die Havarist-Auswahl im Admin filtert jetzt auf `anforderbar && ueberall && !addon`**
+(vorher nur `status === 'aktiv'`). Dazu in `rdEdit` ein Auffangnetz: Steht die gespeicherte
+Art eines Events nicht in der gefilterten Liste, wird sie als markierte Option ergaenzt --
+sonst faellt `select.value` still auf leer und das naechste Speichern schreibt die Vorgabe.
+
+⚠ **`wilga` ist am 20.09.2026 abgeschaltet** (`bruegge_art.status='inaktiv'`, direkt in der
+Produktions-DB, auf Ansage des Nutzers). Grund: In MSFS 2024 ist sie ein Payware-Modell ohne
+Rueckfalltitel, in MSFS 2020 eine Cessna 152, in X-Plane eine PA-28. Rueckgaengig mit einem
+Klick im Admin. **Der dahinterliegende Katalogbefund steht in `CLAUDE.md`** -- `quelle=
+'community'` markiert auch unsere EIGENEN `Frs*`-Objekte, `addon` ist dadurch blind fuer
+Arten, die nur in einem Simulator Payware brauchen. Die saubere Trennung wurde bewusst
+zurueckgestellt.
+
+⚠ **Testhelfer `_angemeldet(conn, cid)`** meldet einen Piloten per Bruegge an -- bewusst
+AUSSERHALB des Sektors und auf dem Eventstart, sonst beansprucht `spanne` den ganzen
+Zeitraum fuer die Bruegge und verdraengt die VATSIM-Punkte des Tests. `_spur` und
+`_lange_spur` rufen ihn von allein; `_spur(..., bruegge=False)` ist der Gegenfall.
+
+⚠ **`/api/me/reddung` gibt KEINE Koordinate zurueck** — nur `laeuft`, `name` und ob die
+eigene Bruegge frisch meldet (90 s). Der Endpunkt ist fuer angemeldete Piloten offen; alles
+Ortsbezogene bleibt im Admin. Wer ihn erweitert, prueft das zuerst.
+
+⚠ **Aufgeloeste Events zaehlen nicht mehr mit.** Der Fall ist dann abgeschlossen, ein
+Hinweis waere nur noch ein Vorwurf.
+
+⚠ **Im Kniebrett steht die Adresse als TEXT, nicht als `<a>`** (`_PANEL_MODUS`). Hinter
+Coherent GT steht kein Browser; ein Link waere dort tot. Der Fassungshinweis daneben macht es
+seit v14.51.0 genauso — wer einen dritten solchen Kasten baut, folgt dem Muster.
+
+⚠ **Der Namenswaechter `test_auf_der_website_steht_der_volle_name` war rot** — der
+Changelog-Eintrag von 15.14.0 sagte "Bruegge" ohne "Friesen". Der Eintrag war schon gepusht:
+die volle Suite lief vor dem Changelog-Schreiben. **Nach dem Changelog-Eintrag mindestens
+diesen Test noch einmal laufen lassen.** Mit korrigiert: drei Stellen im Handbuch.
+
+---
+
 ## 2026-09-21 (nachts) — Die Bruegge wertet mit; Havarist nur aus der Naehe
 
 **Angefasst:** `app/database.py` (`bruegge_spur`, `nur_nah_m`, Mischer), `app/poller.py`,

@@ -1271,8 +1271,9 @@
                 </div>
                 <p class="form-hint" style="grid-column:1/-1;margin:0;">
                   Ein Fliegerverein sucht Flieger — die Vorgabe ist ein kleines Flugzeug.
-                  <code>wilga</code> ist die Vereinsmaschine D-EFRS; sie zu suchen erklärt sich
-                  ohne ein Wort.
+                  Die Liste zeigt <b>nur Arten, die jeder Pilot sieht</b>: in allen drei
+                  Simulatoren gesetzt und ohne Zusatzpaket. Wer hier etwas vermisst, findet
+                  den Grund unter <i>FriesenBrügge → Arten</i>.
                 </p>
               </div>
 
@@ -6715,8 +6716,17 @@
       const res = await api('GET', '/api/admin/bruegge/arten');
       if (!res || !res.ok) return;
       const daten = await res.json();
+      // ⚠ NUR Arten, die JEDER Pilot sieht -- `anforderbar` (angeschaltet und mit aktivem
+      // Titel), `ueberall` (alle drei Simulatoren koennen etwas setzen) und ohne Fremdpaket.
+      //
+      // Der Grund wiegt hier schwerer als in der Artenverwaltung: Seit dem 20.09.2026 ist die
+      // FriesenBruegge bei einer Reddung Teilnahmevoraussetzung UND traegt die Wertung. Eine
+      // Art, die nur ein Simulator setzen kann, laesst einen Piloten mit Bruegge ueber einen
+      // leeren Sektor fliegen -- gewertet, aber ohne jede Chance. Gefunden, weil `wilga` als
+      // Havarist vorgeschlagen war: Sie ist in MSFS 2024 ein Payware-Modell, in MSFS 2020
+      // eine Cessna 152 und in X-Plane eine PA-28.
       const arten = (daten.arten || daten || []).filter(function (a) {
-        return (a.status || 'aktiv') === 'aktiv';
+        return a.anforderbar && a.ueberall && !a.addon;
       });
       const gruppen = [[], [], []];
       arten.forEach(function (a) { gruppen[_rdArtGruppe(a.art)].push(a); });
@@ -6897,7 +6907,19 @@
       setz('rd-fund-radius', ev.fund_radius_m); setz('rd-fund-hoehe', ev.fund_hoehe_ft);
       setz('rd-hav-lat', ev.havarist_lat); setz('rd-hav-lon', ev.havarist_lon);
       const art = document.getElementById('rd-art');
-      if (art) art.value = ev.havarist_art || '';
+      if (art) {
+        // ⚠ Steht die gespeicherte Art nicht (mehr) in der gefilterten Liste, faellt `value`
+        // still auf leer -- und das naechste Speichern schriebe die Vorgabe zurueck, ohne
+        // dass es jemand merkt. Also als markierte Option ergaenzen statt verschlucken.
+        const soll = ev.havarist_art || '';
+        if (soll && !Array.prototype.some.call(art.options, function (o) { return o.value === soll; })) {
+          const o = document.createElement('option');
+          o.value = soll;
+          o.textContent = soll + ' — ⚠ nicht in allen Simulatoren';
+          art.insertBefore(o, art.firstChild.nextSibling);
+        }
+        art.value = soll;
+      }
       document.getElementById('rd-aufnehmen-noetig').checked = !!ev.aufnehmen_noetig;
       document.getElementById('rd-landung-noetig').checked = !!ev.landung_noetig;
       document.getElementById('rd-aufnahme-verfaellt').checked = !!ev.aufnahme_verfaellt;

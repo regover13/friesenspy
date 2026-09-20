@@ -218,6 +218,37 @@ def test_der_alte_arbeitstitel_steht_nicht_mehr_im_admin():
     assert "Suchflug" not in ADMIN.read_text(encoding="utf-8")
 
 
+def test_die_havarist_auswahl_zeigt_nur_arten_die_jeder_pilot_sieht():
+    """⚠ Vorher filterte die Liste allein auf `status === 'aktiv'` -- also nur darauf, ob der
+    Nutzer die Art abgeschaltet hat. Simulator-Tauglichkeit und Fremdpaket blieben aussen vor,
+    obwohl der Endpunkt beides mitliefert.
+
+    Das wiegt seit dem 20.09.2026 schwer: Die FriesenBruegge ist bei einer Reddung
+    Teilnahmevoraussetzung UND traegt die Wertung. Eine Art, die nur ein Simulator setzen
+    kann, laesst einen Piloten mit Bruegge ueber einen leeren Sektor fliegen -- gewertet, aber
+    ohne jede Chance. Aufgefallen an `wilga`: MSFS 2024 Payware, MSFS 2020 eine Cessna 152,
+    X-Plane eine PA-28.
+    """
+    q = ADMIN.read_text(encoding="utf-8")
+    stelle = q[q.index("async function _rdArtenLaden"):]
+    stelle = stelle[:stelle.index("sel.dataset.geladen = '1'")]
+    assert "a.anforderbar" in stelle, "abgeschaltete Arten und solche ohne Titel muessen raus"
+    assert "a.ueberall" in stelle, "eine Art, die nicht jeder Simulator setzen kann, ist untauglich"
+    assert "!a.addon" in stelle, "ein Fremdpaket hat nicht jeder"
+
+
+def test_eine_gespeicherte_art_geht_beim_bearbeiten_nicht_verloren():
+    """⚠ Die Liste ist gefiltert -- steht die Art eines bestehenden Events nicht darin, faellt
+    `select.value` still auf leer, und das naechste Speichern schriebe die Vorgabe zurueck.
+    Ein Havarist, der beim blossen Oeffnen des Formulars die Gestalt wechselt.
+    """
+    q = ADMIN.read_text(encoding="utf-8")
+    stelle = q[q.index("function rdEdit(id)"):]
+    stelle = stelle[:stelle.index("rd-aufnahme-verfaellt")]
+    assert "nicht in allen Simulatoren" in stelle, "die fehlende Art muss ergaenzt werden"
+    assert "insertBefore" in stelle
+
+
 def test_neben_dem_landehaken_steht_was_er_bedeutet():
     """Sonst legt jemand ein Event an, das nur Hubschrauberpiloten abschliessen koennen,
     ohne es zu wissen (Spec, Abschnitt 4)."""
@@ -417,3 +448,126 @@ def test_der_knopf_steht_nur_da_wenn_er_etwas_tun_kann():
     """Die erste Schranke sitzt in der Oberflaeche -- der Endpunkt ist die zweite."""
     q = ADMIN.read_text(encoding="utf-8")
     assert "ev.aufgenommen_am && !ev.eingeliefert_am && !ev.aufgeloest_am" in q
+
+
+# --- "FriesenBruegge fehlt" in der Live-Ansicht ---------------------------
+
+def test_der_hinweis_verlangt_eine_anmeldung(db):
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(main.meine_reddung(FakeReq(cookies={})))
+    assert e.value.status_code == 401
+
+
+@pytest.fixture
+def als_pilot(monkeypatch):
+    """Als eingeloggter Pilot mit CID 4711.
+
+    `_current_cid` verlangt einen aktiven Forum-Login und ein signiertes `fs_user`-Cookie --
+    das gehoert zu den Auth-Tests, nicht hierher. Geprueft wird die Logik des Endpunkts.
+    """
+    monkeypatch.setattr(main, "_current_cid", lambda request, settings: 4711)
+    return 4711
+
+
+def test_ohne_laufende_reddung_kein_hinweis(db, als_pilot):
+    _anlegen()                       # dtstart 2026-09-25, also nicht jetzt
+    d = asyncio.run(main.meine_reddung(FakeReq()))
+    assert d == {"laeuft": False}
+
+
+def _laufendes_event(db):
+    from datetime import datetime, timedelta, timezone
+    jetzt = datetime.now(timezone.utc)
+    def iso(x): return x.strftime("%Y-%m-%dT%H:%M:%SZ")
+    eid = _anlegen(dtstart=iso(jetzt - timedelta(hours=1)),
+                   dtend=iso(jetzt + timedelta(hours=1)))
+    return eid, jetzt, iso
+
+
+def _bruegge_meldet(vor_min=0):
+    from datetime import datetime, timedelta, timezone
+    from app.database import get_connection as _g
+    jetzt = datetime.now(timezone.utc) - timedelta(minutes=vor_min)
+    c = _g(main.get_settings().DB_PATH)
+    try:
+        c.execute("INSERT OR REPLACE INTO bruegge_positions (cid, lat, lon, gemeldet_am, "
+                  "simulator) VALUES (4711, 53.7, 7.2, ?, 'msfs2024')",
+                  (jetzt.strftime("%Y-%m-%dT%H:%M:%SZ"),))
+        c.commit()
+    finally:
+        c.close()
+
+
+def test_laufende_reddung_ohne_bruegge_gibt_den_hinweis(db, als_pilot):
+    """⭐ Der Hinweis muss VOR dem Flug kommen: Mit Bruegge wird sekundengenau gewertet, ohne
+    sie nur alle 15 Sekunden -- und ein Fund verlangt 150 Meter."""
+    _laufendes_event(db)
+    d = asyncio.run(main.meine_reddung(FakeReq()))
+    assert d["laeuft"] is True and d["bruegge"] is False
+    assert d["name"] == "Reddung Probe"
+
+
+def test_mit_meldender_bruegge_kein_hinweis(db, als_pilot):
+    _laufendes_event(db)
+    _bruegge_meldet()
+    d = asyncio.run(main.meine_reddung(FakeReq()))
+    assert d["laeuft"] is True and d["bruegge"] is True
+
+
+def test_eine_alte_meldung_zaehlt_nicht_als_bruegge(db, als_pilot):
+    """Ein geschlossener Simulator soll sofort auffallen -- die Bruegge meldet im Sekundentakt."""
+    _laufendes_event(db)
+    _bruegge_meldet(vor_min=10)
+    assert asyncio.run(main.meine_reddung(FakeReq()))["bruegge"] is False
+
+
+def test_der_hinweis_steht_in_der_oberflaeche():
+    q = pathlib.Path("app/static/index.html").read_text(encoding="utf-8")
+    assert 'id="reddung-hinweis"' in q and "_reddungHinweisPruefen" in q
+    assert "/api/me/reddung" in q
+    assert "setInterval(_reddungHinweisPruefen" in q, "ein Event kann spaeter beginnen"
+    assert 'href="/download"' in q, "ohne Weg zum Paket ist der Hinweis ein Vorwurf"
+
+
+def test_im_kniebrett_steht_die_adresse_statt_eines_links():
+    """Hinter Coherent GT steht kein Browser -- ein <a> laesst sich dort nicht oeffnen.
+
+    Der Fassungshinweis daneben macht es seit v14.51.0 genauso: auf der Website ein Link,
+    im Panel die nackte Adresse. Ein toter Link im Tablet ist schlimmer als kein Link --
+    der Pilot klickt und nichts passiert.
+    """
+    q = pathlib.Path("app/static/index.html").read_text(encoding="utf-8")
+    stelle = q[q.index("function _reddungHinweisPruefen"):]
+    stelle = stelle[:stelle.index("\n}")]
+    assert "_PANEL_MODUS" in stelle, "der Hinweis unterscheidet Website und Kniebrett nicht"
+    assert "friesenspy.devprops.de/download" in stelle, "im Panel fehlt die Adresse als Text"
+
+
+def test_der_hinweis_sagt_dass_ohne_bruegge_nichts_gewertet_wird():
+    """⚠ Genau hier stand am 20.09.2026 das Gegenteil -- "gewertet wirst du trotzdem, nur
+    groeber". Das war sachlich falsch: Wrack und Rauchsaeulen kommen ueber die FriesenBruegge
+    in den Simulator, ohne sie ist der Sektor leer. Seither zaehlt der Server die Spur eines
+    Piloten ohne Bruegge auch nicht mehr mit (`_reddung_punkte_mischen`, `gemeldet_seit`).
+
+    Der Text ist die einzige Stelle, an der der Pilot das rechtzeitig erfaehrt -- wer ihn
+    wieder aufweicht, verspricht eine Teilnahme, die es nicht gibt.
+    """
+    q = pathlib.Path("app/static/index.html").read_text(encoding="utf-8")
+    stelle = q[q.index("function _reddungHinweisPruefen"):]
+    stelle = stelle[:stelle.index("\n}")]
+    assert "mitgewertet wirst " in stelle and "du auch nicht" in stelle, \
+        "der Hinweis muss sagen, dass ohne FriesenBruegge nicht gewertet wird"
+    assert "nur gröber" not in stelle, "die widerlegte Fassung ist zurueck"
+
+
+def test_eine_aufgeloeste_reddung_gibt_keinen_hinweis_mehr(db, als_pilot):
+    """Der Fall ist abgeschlossen -- ein Hinweis waere dann nur noch ein Vorwurf."""
+    from app.database import get_connection as _g
+    eid, jetzt, iso = _laufendes_event(db)
+    c = _g(main.get_settings().DB_PATH)
+    try:
+        c.execute("UPDATE reddung_events SET aufgeloest_am = ? WHERE id = ?", (iso(jetzt), eid))
+        c.commit()
+    finally:
+        c.close()
+    assert asyncio.run(main.meine_reddung(FakeReq())) == {"laeuft": False}

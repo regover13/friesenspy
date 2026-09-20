@@ -2863,6 +2863,52 @@ def _bruegge_paket_zu(simulator: str | None) -> str:
     return "xplane" if str(simulator or "") == "xplane12" else "msfs"
 
 
+#: So frisch muss die letzte Bruegge-Meldung sein, damit sie als "laeuft" gilt.
+#: Die Bruegge meldet im Sekundentakt -- 90 s vertragen eine Menge Aussetzer und sind trotzdem
+#: kurz genug, dass ein geschlossener Simulator sofort auffaellt.
+_BRUEGGE_FRISCH_S = 90
+
+
+@app.get("/api/me/reddung")
+async def meine_reddung(request: Request):
+    """Läuft gerade eine FriesenReddung — und fehlt DIESEM Piloten die FriesenBrügge dafür?
+
+    ⭐ **Der Hinweis muss VOR dem Flug kommen, nicht hinterher in der Bilanz.** Bei einer
+    Reddung wertet der Server die Brügge aus, wo sie da ist: Sie meldet jede Sekunde und mit
+    der echten Höhe, VATSIM nur alle 15 Sekunden — dazwischen liegt bei Reisegeschwindigkeit
+    fast ein Kilometer. Für einen Fund, der 150 Meter verlangt, ist das der Unterschied
+    zwischen gemessen und geschätzt. Wer ohne Brügge fliegt, wird weiter gewertet, aber
+    gröber — und das soll er wissen, solange er noch etwas ändern kann.
+
+    Gibt ``{"laeuft": false}``, wenn gerade keine läuft. Sonst Name des Events und ob die
+    eigene Brügge meldet. **Keine Lage, nichts über den Havaristen.**
+    """
+    settings = get_settings()
+    try:
+        cid = _current_cid(request, settings)
+    except Exception:
+        cid = None
+    if cid is None:
+        raise HTTPException(status_code=401, detail="Nicht eingeloggt")
+    now = _now_iso()
+    conn = get_connection(settings.DB_PATH)
+    try:
+        laufend = [ev for ev in list_reddung_events(conn)
+                   if (ev.get("dtstart") or "") <= now <= (ev.get("dtend") or "")
+                   and not ev.get("aufgeloest_am")]
+        if not laufend:
+            return {"laeuft": False}
+        row = conn.execute("SELECT gemeldet_am FROM bruegge_positions WHERE cid = ?",
+                           (int(cid),)).fetchone()
+        grenze = (datetime.strptime(now, "%Y-%m-%dT%H:%M:%SZ")
+                  - timedelta(seconds=_BRUEGGE_FRISCH_S)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return {"laeuft": True,
+                "name": laufend[0].get("name") or "FriesenReddung",
+                "bruegge": bool(row and (row[0] or "") >= grenze)}
+    finally:
+        conn.close()
+
+
 @app.get("/api/me/fassungen")
 async def meine_fassungen(request: Request):
     """Welche Fassungen fliegt DIESER Pilot -- und sind sie noch aktuell?

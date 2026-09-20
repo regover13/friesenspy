@@ -2068,6 +2068,14 @@
       padding: 8px 12px;
     }
     .fassung-hinweis[hidden] { display: none; }
+    /* Der Reddung-Hinweis teilt die Machart, sitzt aber unten LINKS -- sonst verdeckt er den
+       Fassungshinweis, und beide sagen etwas anderes. Amber statt Rot: Es ist eine Empfehlung,
+       kein Fehler. Wer ohne FriesenBrügge fliegt, wird gewertet, nur gröber. */
+    .reddung-hinweis {
+      left: 12px; right: auto;
+      border-color: rgba(224, 163, 62, 0.55);
+      background: rgba(60, 42, 12, 0.94);
+    }
     .fassung-hinweis button {
       background: none;
       border: none;
@@ -9309,6 +9317,53 @@ function _fassungHinweisWeg() {
   if (kasten.dataset.stand) _prefSchreib(_FASSUNG_HINWEIS_KEY, kasten.dataset.stand);
 }
 
+let _reddungHinweisWeggeklickt = null;   // Name des Events, dessen Hinweis weggeklickt wurde
+
+function _reddungHinweisWeg() {
+  const k = document.getElementById('reddung-hinweis');
+  if (k) { _reddungHinweisWeggeklickt = k.dataset.event || ''; k.hidden = true; }
+}
+
+/**
+ * „FriesenBrügge fehlt" -- solange eine FriesenReddung läuft und die eigene nicht meldet.
+ *
+ * ⭐ **Die FriesenBrügge ist hier Voraussetzung, nicht Empfehlung.** Wrack und Rauchsäulen
+ * kommen über sie in den Simulator (`bruegge_soll`); ohne sie sieht der Pilot einen leeren
+ * Sektor und kann gar nichts finden. Seit dem 20.09.2026 zählt der Server seine Spur deshalb
+ * auch nicht mehr mit (`_reddung_punkte_mischen`, `gemeldet_seit`) -- sonst nähme er den
+ * anderen Fläche weg, die nie jemand angesehen hat.
+ *
+ * Deshalb muss der Hinweis VOR dem Flug kommen und nicht hinterher in der Bilanz: Er ist die
+ * einzige Stelle, an der es dem Piloten auffällt, solange er noch etwas ändern kann.
+ *
+ * Weggeklickt gilt je EVENT, nicht für immer: Beim nächsten Event kommt er wieder.
+ */
+function _reddungHinweisPruefen() {
+  const kasten = document.getElementById('reddung-hinweis');
+  if (!kasten) return;
+  fetch('/api/me/reddung', { credentials: 'same-origin' })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (d) {
+      if (!d || !d.laeuft || d.bruegge) { kasten.hidden = true; return; }
+      if (_reddungHinweisWeggeklickt === d.name) return;
+      kasten.dataset.event = d.name || '';
+      const text = document.getElementById('reddung-hinweis-text');
+      if (text) {
+        // ⚠ Im Kniebrett laesst sich kein Link oeffnen -- hinter Coherent GT steht kein
+        // Browser. Dort die Adresse als Text, genau wie beim Fassungshinweis darueber.
+        text.innerHTML = '🚨 <strong>' + escHtml(d.name) + '</strong> läuft — und deine '
+          + '<strong>FriesenBrügge</strong> meldet nicht. Ohne sie steht in deinem Simulator '
+          + 'weder das Wrack noch eine Rauchsäule: Der Sektor ist leer, und mitgewertet wirst '
+          + 'du auch nicht. '
+          + (_PANEL_MODUS
+             ? 'friesenspy.devprops.de/download'
+             : '<a href="/download" target="_blank" rel="noopener">Zur Download-Seite</a>');
+      }
+      kasten.hidden = false;
+    })
+    .catch(function () { /* still bleiben, der Hinweis ist kein Muss */ });
+}
+
 function _paketHinweisWeg() {
   const kasten = document.getElementById('panel-paket-hinweis');
   if (kasten) kasten.hidden = true;
@@ -15357,6 +15412,10 @@ const _prefsPromise = _prefVomServerHolen().then(function () {
 // seiner Zeile nicht ansprechbar, und ein Zugriff von weiter oben legte die ganze Seite lahm.
 // Einmal je Seitenaufbau genügt -- die gemeldete Fassung ändert sich nicht im Minutentakt.
 _prefsPromise.then(_fassungenPruefen).catch(() => {});
+// Der Reddung-Hinweis im Takt, nicht nur beim Laden: Ein Event kann beginnen, waehrend die
+// Seite schon offen ist -- und genau dann soll er kommen.
+_prefsPromise.then(_reddungHinweisPruefen).catch(() => {});
+setInterval(_reddungHinweisPruefen, 60000);
 
 // ==========================================================================
 //  NEUE-VERSION-HINWEIS (nur MSFS-EFB-Panel)
@@ -15875,6 +15934,11 @@ function _ziehAktualisierenBinden() {
      Steht AUSSERHALB von #app, sonst kappte dessen z-index:1 jeden Nachfahren auf Rang 1. -->
 <!-- Kein Verweis, sondern Text: Im Kniebrett laesst sich nichts herunterladen, die Adresse
      muss man am PC eintippen (dieselbe Ueberlegung wie beim Paket-Hinweis daneben). -->
+<div id="reddung-hinweis" class="fassung-hinweis reddung-hinweis" hidden>
+  <span id="reddung-hinweis-text"></span>
+  <button type="button" onclick="_reddungHinweisWeg()" aria-label="Hinweis ausblenden"><svg class="icon"><use href="#icon-x" xlink:href="#icon-x"/></svg></button>
+</div>
+
 <div id="fassung-hinweis" class="fassung-hinweis" hidden>
   <span id="fassung-hinweis-text"></span>
   <button type="button" onclick="_fassungHinweisWeg()" aria-label="Hinweis ausblenden"><svg class="icon"><use href="#icon-x" xlink:href="#icon-x"/></svg></button>

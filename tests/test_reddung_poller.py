@@ -54,10 +54,29 @@ def _event(pfad, *, start_vor_h=2.0, ende_in_h=2.0, **extra):
         c.close()
 
 
-def _punkte(pfad, cid, punkte, alt=900, gs=110):
+def _punkte(pfad, cid, punkte, alt=900, gs=110, bruegge=True):
+    """Eine VATSIM-Spur -- und die FriesenBruegge-Anmeldung dazu.
+
+    ⚠ Ohne Bruegge keine Teilnahme (Nutzerentscheidung 20.09.2026): Der Mischer wirft die
+    VATSIM-Punkte eines Piloten weg, der an diesem Abend nie gemeldet hat. Die Anmeldung
+    liegt deshalb bewusst AUSSERHALB des Sektors (Startplatz) und auf dem Eventstart -- eine
+    Meldung im Sektor wuerde ueber `spanne` den ganzen Zeitraum fuer die Bruegge beanspruchen
+    und genau die VATSIM-Punkte verdraengen, die der Test pruefen will.
+
+    ``bruegge=False`` ist der Gegenfall: jemand ohne FriesenBruegge, der nicht teilnimmt.
+    """
     c = get_connection(pfad)
     try:
         upsert_pilot(c, cid, f"Pilot {cid}")
+        if bruegge and punkte:
+            # ⚠ Auf dem Zeitstempel des ERSTEN Punktes, nicht davor: `gemeldet_seit` bezieht
+            # sich auf den Eventstart, und ein Test darf mit dem ersten Punkt genau darauf
+            # liegen -- eine Sekunde frueher fiele aus dem Event heraus und zaehlte nicht.
+            # Den VATSIM-Punkt verdraengt sie trotzdem nicht: Sie liegt AUSSERHALB des
+            # Sektors und taucht in der Zeitraum-Rechnung (`spanne`) deshalb gar nicht auf.
+            c.execute("INSERT OR REPLACE INTO bruegge_spur "
+                      "(cid, ts, lat, lon, alt_msl_ft, gs_kt) VALUES (?,?,?,?,?,?)",
+                      (cid, punkte[0][2], 48.1, 11.5, 1500, 0))
         for lat, lon, ts in punkte:
             c.execute("INSERT INTO position_history (cid, callsign, latitude, longitude, "
                       "altitude, groundspeed, heading, ts) VALUES (?,?,?,?,?,?,?,?)",

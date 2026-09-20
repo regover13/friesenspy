@@ -9815,8 +9815,9 @@ def _knapp_davor(ts: str) -> str:
 
 
 def _reddung_punkte_mischen(conn: sqlite3.Connection, von: str, bis: str,
-                            grenzen: tuple) -> dict[int, list]:
-    """Die Punkte je Pilot -- **FriesenBrügge bevorzugt, VATSIM als Rückfall.**
+                            grenzen: tuple, *,
+                            gemeldet_seit: str | None = None) -> dict[int, list]:
+    """Die Punkte je Pilot -- **FriesenBrügge bevorzugt, VATSIM nur als Lückenfüller.**
 
     Die Brügge ist die bessere Quelle, wo es sie gibt: 1 Hz statt 15 s (rund 50 m statt 950 m
     Punktabstand) und die echte MSL-Höhe statt der luftdruckabhängigen. Bei einem Fundradius
@@ -9828,10 +9829,26 @@ def _reddung_punkte_mischen(conn: sqlite3.Connection, von: str, bis: str,
     abdeckt, gilt ausschließlich sie; davor und danach VATSIM. Punktweise zu mischen erzeugte
     an jeder Naht einen Sprung zwischen zwei Höhenmessarten — und Höhen entscheiden hier über
     Treffer.
+
+    ⚠ **``gemeldet_seit`` schaltet VATSIM für Fremde ab.** Bei einer FriesenReddung ist die
+    Brügge keine Empfehlung, sondern Voraussetzung: Wrack und Rauchsäulen kommen über sie in
+    den Simulator (``bruegge_soll``). Wer ohne fliegt, sieht einen leeren Sektor — er *kann*
+    nichts finden, und seine VATSIM-Spur als abgesuchte Fläche zu zählen nähme den anderen
+    Fläche weg, die nie jemand angesehen hat. Nutzerentscheidung vom 20.09.2026:
+    *„Keine Teilnahme ohne Brügge! Wir stellen was in den Simulator!"*
+
+    Der Bezug ist der EVENTSTART, nicht dieser Takt. Sonst verlöre ein Pilot mit Brügge seine
+    Lückenfüllung, sobald sie einmal 30 Sekunden schweigt -- und genau dafür ist VATSIM hier
+    noch da. Gilt nur, wo der Aufrufer es setzt; ``reddung_spuren`` tut es, andere Eventtypen
+    (FriesenBummel, FriesenKutter) stellen nichts in den Simulator und bleiben unberührt.
     """
     sued, nord, west, ost = grenzen
     je_cid: dict[int, list] = {}
     spanne: dict[int, tuple[str, str]] = {}
+    mit_bruegge: set[int] | None = None
+    if gemeldet_seit is not None:
+        mit_bruegge = {int(r[0]) for r in conn.execute(
+            "SELECT DISTINCT cid FROM bruegge_spur WHERE ts > ?", (gemeldet_seit,)).fetchall()}
     for cid, lat, lon, alt, gs, ts in conn.execute(
             "SELECT cid, lat, lon, alt_msl_ft, gs_kt, ts FROM bruegge_spur "
             "WHERE ts > ? AND ts <= ? AND lat BETWEEN ? AND ? AND lon BETWEEN ? AND ? "
@@ -9847,6 +9864,8 @@ def _reddung_punkte_mischen(conn: sqlite3.Connection, von: str, bis: str,
             "WHERE ts > ? AND ts <= ? AND latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ? "
             "ORDER BY cid, ts", (von, bis, sued, nord, west, ost)).fetchall():
         cid = int(cid)
+        if mit_bruegge is not None and cid not in mit_bruegge:
+            continue                      # ohne Brügge keine Teilnahme -- s. Docstring
         if cid in spanne and spanne[cid][0] <= ts <= spanne[cid][1]:
             continue                      # in diesem Zeitraum gilt die Brügge
         je_cid.setdefault(cid, []).append(
@@ -9875,7 +9894,10 @@ def reddung_spuren(conn: sqlite3.Connection, start: str, end: str, *,
     grenzen = _reddung_grenzen(box) if box else (-90.0, 90.0, -180.0, 180.0)
     # `_knapp_davor`, weil `von` hier eine Fensterkante ist und kein zuletzt gerechneter Punkt:
     # Ein Punkt genau darauf gehoert dazu.
-    je_cid = _reddung_punkte_mischen(conn, _knapp_davor(von), end, grenzen)
+    # `start` und nicht `von`: `ab` schneidet fuers Aufnehmen vorn ab, wer teilnimmt entscheidet
+    # aber der ganze Abend. Sonst faellt heraus, wessen Bruegge vor dem Fund gemeldet hat.
+    je_cid = _reddung_punkte_mischen(conn, _knapp_davor(von), end, grenzen,
+                                     gemeldet_seit=_knapp_davor(start))
     return [(cid, punkte) for cid, punkte in je_cid.items()]
 
 
@@ -9883,6 +9905,17 @@ def reddung_spuren(conn: sqlite3.Connection, start: str, end: str, *,
 #: dann werfen alle Aufrufe den alten Stand weg und rechnen einmal neu. Eigene Zahl IM Payload
 #: und nicht ``_PROGRESS_SNAPSHOT_VERSION``: Die ist global und würde Bummel und Kutter mit
 #: entwerten.
+#:
+#: ⚠ **Beim Umstieg auf die Brügge-Pflicht (20.09.2026) bewusst NICHT erhöht.** Die Regel oben
+#: gilt weiter, hier aber richtete sie Schaden an: ``bruegge_spur`` wird nach 12 Stunden
+#: aufgeräumt (``bruegge_spur_aufraeumen``), ein abgeschlossenes Event hat also gar keine
+#: Brügge-Punkte mehr. Ein Neuberechnen fände nur noch VATSIM-Spuren vor, verwürfe sie
+#: mangels Brügge-Meldung -- und setzte die abgesuchte Fläche eines längst verkündeten Abends
+#: auf null. Genau der Fall, vor dem der Kommentar an ``_PROGRESS_SNAPSHOT_VERSION`` warnt.
+#: Die neue Regel greift deshalb ab dem nächsten fortgeschriebenen Takt; beim Umstieg lief
+#: kein Event (nachgesehen), es gibt also keinen halben Stand nach alter Rechnung.
+#: **Wer die Zahl künftig erhöht, prüft vorher, ob die Brügge-Spuren der betroffenen Events
+#: noch da sind.**
 _REDDUNG_STAND_FASSUNG = 1
 
 #: Bis hierher gilt ein Flugzeug als stehend (Einlieferung über die Brügge). Etwas großzügiger
@@ -9909,7 +9942,8 @@ def _reddung_punkte_neu(conn: sqlite3.Connection, ev: dict, von: str, bis: str,
     # davor stehen: Er baut das Segment ueber die Schnittkante, alles Aeltere waere Arbeit, die
     # mit jedem Takt wieder anfiele.
     frueher = _shift_iso(von, hours=-1.0 / 30.0)
-    je_cid = _reddung_punkte_mischen(conn, frueher, bis, grenzen)
+    je_cid = _reddung_punkte_mischen(conn, frueher, bis, grenzen,
+                                     gemeldet_seit=_knapp_davor(ev["dtstart"]))
     raus: list[tuple[int, list]] = []
     for cid, punkte in je_cid.items():
         neu = [pkt for pkt in punkte if pkt[4] > von]

@@ -177,13 +177,31 @@ def _kleiner_sektor(conn, **extra):
         havarist_lat=LAT, havarist_lon=LON, havarist_grund_ft=10.0, **extra)
 
 
-def _spur(conn, cid, punkte, alt=900, gs=110):
+def _spur(conn, cid, punkte, alt=900, gs=110, bruegge=True):
+    """Eine VATSIM-Spur -- und die Bruegge-Anmeldung dazu, denn ohne die zaehlt sie nicht.
+
+    ``bruegge=False`` ist der Gegenfall: jemand ohne FriesenBruegge, der nicht teilnimmt.
+    """
     upsert_pilot(conn, cid, f"Pilot {cid}")
+    if bruegge:
+        _angemeldet(conn, cid)
     for lat, lon, ts in punkte:
         conn.execute(
             "INSERT INTO position_history (cid, callsign, latitude, longitude, altitude, "
             "groundspeed, heading, ts) VALUES (?,?,?,?,?,?,?,?)",
             (cid, f"FRS{cid}", lat, lon, alt, gs, 90, ts))
+
+
+def _angemeldet(conn, cid):
+    """Dieser Pilot fliegt MIT FriesenBruegge -- die Voraussetzung fuer eine Reddung.
+
+    ⚠ Die Meldung liegt bewusst AUSSERHALB des Sektors (Startplatz) und auf dem Eventstart.
+    Eine Meldung im Sektor wuerde ueber `spanne` den ganzen Zeitraum fuer die Bruegge
+    beanspruchen und die VATSIM-Punkte des Tests verdraengen -- gemischt wird nach ZEITRAUM.
+    """
+    conn.execute("INSERT OR REPLACE INTO bruegge_spur (cid, ts, lat, lon, alt_msl_ft, gs_kt)"
+                 " VALUES (?,?,?,?,?,?)",
+                 (cid, _iso(JETZT - timedelta(hours=2)), 48.1, 11.5, 1500, 0))
 
 
 def _quer(vor_min=60):
@@ -288,9 +306,13 @@ def test_spuren_beginnen_erst_ab_einem_zeitpunkt_wenn_verlangt(conn):
     """Fuers Aufnehmen zaehlen nur Punkte NACH dem Fund."""
     _spur(conn, 111, [(LAT, LON, _iso(JETZT - timedelta(minutes=90))),
                       (LAT, LON, _iso(JETZT - timedelta(minutes=30)))])
-    alle = reddung_spuren(conn, _iso(JETZT - timedelta(hours=3)), _iso(JETZT))
+    # ⚠ Mit Sektor, wie im Betrieb: Ohne `box` laedt die Abfrage weltweit, und dann kommt die
+    # Bruegge-Anmeldung vom Startplatz als dritter Punkt mit.
+    box = (LAT - 2 * GRAD_KM_LAT, LON - 2 * GRAD_KM_LON,
+           LAT + 2 * GRAD_KM_LAT, LON + 2 * GRAD_KM_LON)
+    alle = reddung_spuren(conn, _iso(JETZT - timedelta(hours=3)), _iso(JETZT), box=box)
     danach = reddung_spuren(conn, _iso(JETZT - timedelta(hours=3)), _iso(JETZT),
-                            ab=_iso(JETZT - timedelta(minutes=60)))
+                            ab=_iso(JETZT - timedelta(minutes=60)), box=box)
     assert len(alle[0][1]) == 2 and len(danach[0][1]) == 1
 
 
@@ -308,6 +330,7 @@ from app.database import reddung_fortschreiben
 def _lange_spur(conn, cid, minuten=60, alt=900, gs=110):
     """Ost-West durch die Sektormitte, 1 km je 15 s, ueber `minuten` Minuten bis jetzt."""
     upsert_pilot(conn, cid, f"Pilot {cid}")
+    _angemeldet(conn, cid)
     t0 = JETZT - timedelta(minutes=minuten)
     schritte = minuten * 4
     for k in range(schritte):
@@ -349,6 +372,7 @@ def test_ein_ueberflug_genau_auf_der_schnittkante_geht_nicht_verloren(conn):
     eid = _kleiner_sektor(conn)
     upsert_pilot(conn, 111, "Pilot 111")
     # Zwei Punkte, 15 s auseinander, der Havarist genau in der Mitte dazwischen.
+    _angemeldet(conn, 111)                 # ohne FriesenBruegge keine Teilnahme
     vor = JETZT - timedelta(minutes=30)
     for lon_km, sek in ((-0.2, 0), (0.2, 15)):
         conn.execute(
@@ -426,12 +450,58 @@ def test_die_bruegge_wird_der_vatsim_spur_vorgezogen(conn):
     assert stand["fund"]["cid"] == 111
 
 
-def test_ohne_bruegge_bleibt_vatsim(conn):
-    """Wer keine Bruegge hat, wird trotzdem gewertet -- nur groeber."""
+def test_ohne_bruegge_keine_wertung(conn):
+    """⚠ **Keine Teilnahme ohne FriesenBruegge** (Nutzerentscheidung 20.09.2026).
+
+    Hier stand bis dahin das Gegenteil ("wird trotzdem gewertet, nur groeber"). Das war
+    sachlich falsch: Wrack und Rauchsaeulen kommen ueber die Bruegge in den Simulator. Wer
+    ohne fliegt, sieht einen leeren Sektor -- er KANN nichts finden. Seine VATSIM-Spur als
+    abgesuchte Flaeche zu zaehlen naehme den anderen Flaeche weg, die nie jemand angesehen hat.
+    """
     eid = _kleiner_sektor(conn)
+    _spur(conn, 222, _quer(30), bruegge=False)
+    stand = reddung_fortschreiben(conn, get_reddung_event(conn, eid), bis=_iso(JETZT))
+    assert stand["abgedeckt"] == 0, "ohne Bruegge wird keine Flaeche gutgeschrieben"
+    assert 222 not in stand["je_pilot"], "er taucht gar nicht erst auf"
+
+
+def test_wer_die_bruegge_hat_behaelt_die_vatsim_lueckenfuellung(conn):
+    """Die Bruegge schweigt bei jedem Verbindungsabriss und in jeder Sim-Pause.
+
+    Wer sie hat, soll deswegen kein Loch in seiner abgeflogenen Flaeche bekommen -- genau
+    dafuer ist VATSIM hier noch da. Der Bezug ist der EVENTSTART, nicht der laufende Takt:
+    Eine Meldung irgendwann am Abend genuegt.
+    """
+    eid = _kleiner_sektor(conn)
+    # Eine einzige Bruegge-Meldung, weit ab vom Sektor-Querflug und frueh am Abend --
+    # danach schweigt sie. `bruegge=False` unterdrueckt nur die Anmeldung des Helfers; die
+    # echte Meldung oben ist die, auf die es ankommt.
+    _spur_bruegge(conn, 222, [(LAT + 1.0 * GRAD_KM_LAT, LON,
+                               _iso(JETZT - timedelta(minutes=55)))])
+    _spur(conn, 222, _quer(30), bruegge=False)
+    stand = reddung_fortschreiben(conn, get_reddung_event(conn, eid), bis=_iso(JETZT))
+    assert stand["abgedeckt"] > 0, "seine VATSIM-Spur zaehlt weiter"
+    assert 222 in stand["je_pilot"]
+
+
+def test_ein_abgeschlossenes_event_behaelt_seinen_stand(conn):
+    """⚠ Der Grund, warum `_REDDUNG_STAND_FASSUNG` beim Umstieg NICHT erhoeht wurde.
+
+    `bruegge_spur` wird nach 12 Stunden weggeraeumt. Wuerde ein abgeschlossenes Event neu
+    gerechnet, faende es nur noch VATSIM-Spuren vor, verwuerfe sie mangels Bruegge-Meldung --
+    und setzte die abgesuchte Flaeche eines laengst verkuendeten Abends auf null.
+    """
+    eid = _kleiner_sektor(conn)
+    _spur_bruegge(conn, 222, [(LAT + 1.0 * GRAD_KM_LAT, LON,
+                               _iso(JETZT - timedelta(minutes=55)))])
     _spur(conn, 222, _quer(30))
     stand = reddung_fortschreiben(conn, get_reddung_event(conn, eid), bis=_iso(JETZT))
-    assert stand["abgedeckt"] > 0 and 222 in stand["je_pilot"]
+    abgedeckt = stand["abgedeckt"]
+    assert abgedeckt > 0
+    # Der Abend ist vorbei, die Sekundenspur wird aufgeraeumt.
+    conn.execute("DELETE FROM bruegge_spur")
+    spaeter = reddung_fortschreiben(conn, get_reddung_event(conn, eid), bis=_iso(JETZT))
+    assert spaeter["abgedeckt"] == abgedeckt, "der verkuendete Stand darf nicht schrumpfen"
 
 
 def test_vatsim_gilt_ausserhalb_der_bruegge_zeit(conn):

@@ -300,6 +300,37 @@ belassen es bei einer einfachen Hash-Aktualitätsprüfung.").
   durch — gemessen 28 Anfragen je Sekunde auf aip.dfs.de. In `_hole()` gebunden ist jeder
   Weg zur DFS gebremst, auch ein künftiger.
 
+## Die FriesenBrügge ist Pflicht, sobald ein Event etwas in den Simulator stellt (stehende Regel)
+
+**Die Trennlinie ist nicht „wie wichtig ist Genauigkeit", sondern: Stellen wir etwas in den
+Simulator?** Wenn ja, ist die FriesenBrügge Teilnahmevoraussetzung — sie ist der einzige Weg,
+auf dem ein Objekt dorthin kommt (`bruegge_soll`). Wer ohne fliegt, sieht einen leeren Sektor
+und kann das Gesuchte gar nicht finden; seine Spur als abgesuchte Fläche zu werten nähme den
+anderen Fläche weg, die nie jemand angesehen hat.
+
+| Eventtyp | Stellt etwas in den Simulator? | Wertung |
+|---|---|---|
+| FriesenBummel | nein | VATSIM genügt — **nicht anfassen** |
+| FriesenKutter | nein | VATSIM genügt — **nicht anfassen** |
+| FriesenReddung | ja (Wrack, Rauchsäulen) | nur wer per FriesenBrügge gemeldet hat |
+| Kieker, Deichkontrolle, Baake | noch offen | dieselbe Frage entscheidet es |
+
+Nutzerentscheidung vom 20.09.2026: *„Die Brügge ist zwingend für dieses Event! Keine Teilnahme
+ohne Brügge! Wir stellen was in den Simulator! Das geht nur mit Brügge!"* — und dazu: *„Dann
+lassen wir Bummel und Kutter so wie sie sind."*
+
+**VATSIM bleibt der Lückenfüller, aber nur für Teilnehmer.** Die Brügge schweigt bei jedem
+Verbindungsabriss und in jeder Sim-Pause; wer sie hat, soll deswegen kein Loch in seiner
+Fläche bekommen. Der Bezug ist der **Eventstart**, nicht der laufende Takt
+(`_reddung_punkte_mischen`, Parameter `gemeldet_seit`) — sonst verliert ein Pilot seine
+Lückenfüllung, sobald die Brügge einmal 30 Sekunden schweigt.
+
+⚠ **Vor dem Erhöhen von `_REDDUNG_STAND_FASSUNG` prüfen, ob die Brügge-Spuren der betroffenen
+Events noch da sind.** `bruegge_spur` wird nach 12 Stunden aufgeräumt. Ein Neuberechnen fände
+für ein abgeschlossenes Event nur VATSIM vor, verwürfe es mangels Brügge-Meldung — und setzte
+die abgesuchte Fläche eines längst verkündeten Abends auf null. Beim Umstieg selbst wurde die
+Zahl deshalb bewusst **nicht** erhöht.
+
 ## Die FriesenBrügge: Arten (stehende Regeln — IMMER einhalten)
 
 - **Eine Art hat je Simulator einen Zustand — und wird nur ganz gesperrt, wenn KEIN
@@ -326,6 +357,23 @@ belassen es bei einer einfachen Hash-Aktualitätsprüfung.").
   Rang 1** — sie rückt nur nach, wenn ein Titel scheitert. Wer gemischte Gruppen will (drei
   Kühe, ein Bulle), bekommt sie deshalb *nicht* über mehrere Titel in einer Art, sondern
   braucht ein Würfeln auf dem Server, wie es `kurs_zufall` für die Richtung schon tut.
+- ⚠ **`quelle='community'` heisst NICHT „Fremdpaket" — unsere eigenen Objekte stehen auch so
+  da.** Von 45 aktiven `community`-Titeln waren am 20.09.2026 **38 unsere eigenen** (`Frs*`,
+  sie kommen mit dem FriesenBrügge-Paket, das der Pilot ohnehin installiert). Echte
+  Fremdpakete sind nur sieben: vier `ahqa …`-Tiere, zwei `Windsock_…` und **`Wilga 80X:
+  D-EFRS (Modern)`**. Damit ist `addon` in `bruegge_arten_uebersicht` („braucht JEDER aktive
+  Titel ein Fremdpaket") blind für den Fall, der zählt: eine Art, die in *einem* Simulator
+  nur über Payware geht. **Wer hier rechnet, prüft je Simulator — und `community` allein
+  beantwortet die Frage nicht.** Eine saubere Trennung (eigener Quelle-Wert für die 38
+  `Frs*`-Zeilen) wurde am 20.09.2026 erwogen und vom Nutzer zurückgestellt; stattdessen wurde
+  `wilga` abgeschaltet.
+- ⚠ **Eine Art garantiert nicht, dass in allen Simulatoren dasselbe steht.** `wilga` war der
+  Lehrfall: MSFS 2024 die echte Wilga (Payware), MSFS 2020 eine **Cessna 152**, X-Plane eine
+  **PA-28**. `ueberall` war trotzdem `True` — jeder Simulator kann eben *etwas* setzen. Bei
+  einem generischen „kleines Flugzeug" ist das gleichgültig, bei einer benannten Maschine
+  trägt es die Geschichte des Events. **Die Spec-Notation `wilga (1/1/1)` heisst „je ein
+  Titel", nicht „dieselbe Maschine"** — genau so ist sie am 20.09.2026 falsch gelesen und als
+  Havarist empfohlen worden.
 - **Eine Verneinung ist nur so gut wie das Suchmuster.** „X-Plane hat kein …" war schon
   dreimal falsch: bei den Windrädern (`WindTbn2m5_100.obj` — weder `turbine` noch `windmill`
   trifft), bei den Fahrzeugen (300 Stück, nur in einem ungesuchten Zweig) und bei den großen
