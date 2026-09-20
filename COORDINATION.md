@@ -22,6 +22,18 @@ ist die naheliegende, aber ungeprüfte Erklärung.
 Die neuen Tests sind gegen fünf entfernte Fixes gegengeprüft (Frische, Community, eindeutige IDs, Zuordnung
 zurückschreiben, ladendes Objekt ≠ Urteil) und werden alle rot.
 
+## 2026-09-20 (nachmittags) — sechste Narbe des Prüfwerkzeugs: Artnamen über 23 Zeichen
+
+⚠ **Die Brügge speichert einen Artnamen in `char art[24]`** (`SollObjekt`, `friesenbruegge/msfs/bruegge.cpp`) — höchstens **23 Zeichen**.
+Die am Vormittag neu gefasste Fassung von `scripts/katalog_durchpruefen.py` nannte ihre Wegwerf-Arten `zzpruef_260920101751_001_000` (28 Zeichen);
+die Brügge schnitt ab, fand die Art nicht im Wörterbuch, und **jedes Objekt meldete `ART_UNBEKANNT`** — zwei Blöcke, 400 Titel, kein Urteil.
+Der Test mit der vorgetäuschten Brügge war grün, weil die nichts abschneidet. Jetzt: `zzp` + fünf Zeichen Laufkennung + 2 + 3 Ziffern = 13 Zeichen,
+und `tests/test_bruegge_titel_lauf.py` **liest die Grenze aus dem Quelltext beider Brügge** und hält die Namen dagegen (wird mit den langen Namen rot).
+Erst vermutet (Antwort zu groß, 94 % des Puffers), dann im Log widerlegt (kein `antwort_zu_gross`), dann im Quelltext gefunden.
+
+**Und `wal` (`HumpbackWhale`) ist wieder aus.** „Setzbar heißt nicht sichtbar“ stand seit dem 13.09. in `docs/architecture.md`; ich habe die Art am Morgen
+trotzdem angelegt. Urteil von Hand „unsichtbar“ für beide MSFS.
+
 ## 2026-09-16 (mittags, zweite Sitzung) — Fassungshinweis gebaut, v14.52.0
 
 **Angefasst:** `app/database.py` (Migration `bruegge_zuordnung.bruegge_version`, zwei

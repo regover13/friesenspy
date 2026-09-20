@@ -459,8 +459,52 @@ def test_ein_lauf_schreibt_urteile_nimmt_eindeutige_ids_und_stellt_die_zuordnung
         "jeder Titel eine eigene Objekt-id, ueber alle Bloecke"
 
     # Alles wieder aufgeraeumt, die urspruengliche Zuordnung zurueck.
-    assert not conn.execute("SELECT 1 FROM bruegge_art WHERE art LIKE 'zzpruef_%'").fetchall()
+    assert not conn.execute("SELECT 1 FROM bruegge_art WHERE art LIKE ?",
+                            (w.VORSATZ + "%",)).fetchall()
     assert not conn.execute("SELECT 1 FROM bruegge_soll").fetchall()
     z = conn.execute("SELECT art, rang, status FROM bruegge_katalog "
                      "WHERE titel = 'LT_Zugeordnet'").fetchone()
     assert tuple(z) == ("lt_art", 3, "aktiv"), "der Lauf darf keine Zuordnung zerstoeren"
+
+
+def _art_grenzen() -> dict[str, int]:
+    """Wie lang darf ein Artname sein? Aus dem QUELLTEXT beider Brueggen gelesen, nicht abgeschrieben."""
+    import pathlib
+    import re
+    wurzel = pathlib.Path(__file__).resolve().parent.parent / "friesenbruegge"
+    grenzen = {}
+    for name, pfad in (("msfs", wurzel / "msfs" / "bruegge.cpp"),
+                       ("xplane", wurzel / "xplane" / "bruegge.cpp")):
+        quelle = pfad.read_text(encoding="utf-8", errors="replace")
+        m = re.search(r"struct\s+SollObjekt\s*\{.*?char\s+art\[(\d+)\]", quelle, re.S)
+        if m:
+            grenzen[name] = int(m.group(1))
+    return grenzen
+
+
+def test_die_grenze_wird_aus_dem_quelltext_gelesen():
+    """Sonst pruefte der naechste Test gegen eine Zahl, die es gar nicht mehr gibt."""
+    g = _art_grenzen()
+    assert g.get("msfs", 0) >= 8, g
+
+
+def test_wegwerf_arten_passen_in_das_artfeld_der_bruegge():
+    """Am 20.09.2026: `zzpruef_260920101751_001_000` (28 Zeichen) gegen `char art[24]` -- die Bruegge
+    schnitt ab, fand die Art nicht im Woerterbuch, und 400 Titel meldeten `ART_UNBEKANNT`. Die
+    Gegenprobe mit vorgetaeuschter Bruegge war gruen, weil die nichts abschneidet."""
+    w = _werkzeug()
+    grenzen = _art_grenzen()
+    assert grenzen, "keine Artfeld-Grenze im Quelltext gefunden"
+    kleinste = min(grenzen.values()) - 1          # ein Byte gehoert dem Nullzeichen
+    # Der unguenstigste Fall: hoechste Blocknummer, hoechster Index, laengste Kennung.
+    for block_nr in (0, 9, 99):
+        for n in (0, 199):
+            name = w._art_name(w._kennung(35 ** 5 + 12345), block_nr, n)
+            assert len(name) <= kleinste, f"{name!r} ist {len(name)} Zeichen, erlaubt {kleinste}"
+            assert len("p-" + name) <= 39, "die Objekt-id (`char id[40]`) ist zu lang"
+
+
+def test_die_kennung_wechselt_und_bleibt_kurz():
+    w = _werkzeug()
+    a, b = w._kennung(1_000_000), w._kennung(1_000_001)
+    assert a != b and len(a) == len(b) == 5

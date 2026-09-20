@@ -1,5 +1,14 @@
 [
   {
+    "version": "15.5.2",
+    "date": "2026-09-20",
+    "highlight": false,
+    "title": "Buckelwal wieder herausgenommen",
+    "items": [
+      "🌉 Der Buckelwal ist wieder aus den Objektarten genommen. Er lässt sich im Simulator zwar anlegen, wird aber in keinem gezeichnet — man sähe nichts. Die übrigen neuen Arten bleiben."
+    ]
+  },
+  {
     "version": "15.5.1",
     "date": "2026-09-20",
     "highlight": false,

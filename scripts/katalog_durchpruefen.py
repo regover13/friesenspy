@@ -83,12 +83,37 @@ STOP = "/opt/friesenspy/data/katalog_durchpruefen.stop"
 
 #: Praefix der Wegwerf-Arten. Wird am Ende jedes Blocks wieder entfernt -- und beim Start
 #: eines Laufs vorsorglich auch, falls ein frueherer Lauf abgebrochen ist.
-VORSATZ = "zzpruef_"
+#:
+#: ⚠⚠ DER NAME DARF HOECHSTENS 23 ZEICHEN LANG SEIN. In der Bruegge steht `char art[24]`
+#: (`SollObjekt` in friesenbruegge/msfs/bruegge.cpp): Ein laengerer Name wird beim Einlesen
+#: ABGESCHNITTEN, findet sich dann nicht mehr im Woerterbuch, und jedes Objekt meldet
+#: `ART_UNBEKANNT`. Am 20.09.2026 passiert: Die neu gefasste Fassung nannte ihre Arten
+#: `zzpruef_260920101751_001_000` (28 Zeichen) -- 400 Titel ohne ein einziges Urteil, und der Test
+#: mit der vorgetaeuschten Bruegge war gruen, weil die nichts abschneidet. Der alte Lauf hatte
+#: `zzpruef_000` und ging. `tests/test_bruegge_titel_lauf.py` liest die Grenze aus dem
+#: Quelltext beider Brueggen und haelt die Namen dagegen.
+VORSATZ = "zzp"
 
 #: Mehr nimmt die Bruegge nicht an: ``SOLL_MAX`` in ``friesenbruegge/msfs/bruegge.cpp``. Ein
 #: groesserer Block wuerde lautlos abgeschnitten -- und die abgeschnittenen Titel gaelten als
 #: stumm, ohne dass es jemand merkt.
 BLOCK_MAX = 200
+
+
+def _kennung(sekunden: int) -> str:
+    """Fuenf Zeichen (Basis 36) aus der Uhrzeit: pro Lauf verschieden, ohne Namen zu verlaengern."""
+    ziffern = "0123456789abcdefghijklmnopqrstuvwxyz"
+    n = sekunden % (36 ** 5)
+    z = ""
+    for _ in range(5):
+        n, r = divmod(n, 36)
+        z = ziffern[r] + z
+    return z
+
+
+def _art_name(lauf_id: str, block_nr: int, n: int) -> str:
+    """Name einer Wegwerf-Art -- hoechstens 23 Zeichen (s. VORSATZ)."""
+    return f"{VORSATZ}{lauf_id}{block_nr:02d}{n:03d}"
 
 
 def _offene_titel(conn, simulator: str, alle: bool, nur_zugeordnet: bool,
@@ -222,7 +247,8 @@ def lauf(cid: int, simulator: str, block: int, warten_s: float, hinten_m: float,
             return 0
         # Eine Kennung je LAUF: Jede Objekt-id und jede Wegwerf-Art traegt sie, damit kein
         # Objekt eines frueheren Laufs oder Blocks mit einem heutigen verwechselt wird.
-        lauf_id = time.strftime("%y%m%d%H%M%S", time.gmtime())
+        # ⚠ KURZ, s. VORSATZ: 3 + 5 + 2 + 3 = 13 Zeichen je Art, hoechstens 23 erlaubt.
+        lauf_id = _kennung(int(time.time()))
         print(f"{len(titel)} Titel in {simulator}, Bloecke zu {block}, "
               f"hoechstens {warten_s:.0f} s je Block")
 
@@ -286,10 +312,10 @@ def lauf(cid: int, simulator: str, block: int, warten_s: float, hinten_m: float,
                         "AND quelle <> 'hand'", (t, simulator))
 
             seit = _now_utc()
-            praefix = f"p-{VORSATZ}{lauf_id}_{nr:03d}_"
+            praefix = f"p-{VORSATZ}{lauf_id}{nr:02d}"
             zu_id: dict[str, str] = {}
             for n, ((fundort, t), (zl, zo)) in enumerate(zip(teil, punkte)):
-                art = f"{VORSATZ}{lauf_id}_{nr:03d}_{n:03d}"
+                art = _art_name(lauf_id, nr, n)
                 bruegge_art_setzen(conn, art, bedeutung="Pruefbetrieb", status="aktiv")
                 bruegge_katalog_setzen(conn, fundort, t, art=art, rang=1, status="aktiv")
                 oid = "p-" + art

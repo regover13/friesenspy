@@ -27,7 +27,7 @@ den 346 bestandenen waren **164 ohne Art**. **138 haben jetzt eine**, 26 bleiben
 | `pilot` | ✅ | 26 (`Pilot_*`, auch Uniform und Segelflug) | MSFS 2020 + 2024 |
 | `bodenpersonal` | ✅ | 25 (`Tarmac_*` und `Wing_Runner`) | MSFS 2020 + 2024 |
 | `elefant`, `giraffe`, `nashorn`, `nilpferd` | ✅ | 14 / 6 / 9 / 5 — je ein Teil aus 2020 (`AfricanElephant`, `AfricanGiraffe`, `Rhino*`, `Hippo*`) und aus 2024 (`LAfricana`/`EMaximus`, `GGiraffa`/`GCamelopardalis`, `CSimum`, `HAmphibius`) | **MSFS 2020 und 2024**, jeweils mit eigenen Titeln — die 2020er Titel gibt es in 2024 nicht. Ersetzt `tier_afrika` (jetzt `aus`): Eine Sammelart lieferte in jedem Simulator immer nur den Elefanten (Nutzerwunsch 20.09.2026) |
-| `wal` | ✅ | 1 (`HumpbackWhale`) | MSFS 2020 + 2024; nur über See sinnvoll (nicht gemessen) |
+| ~~`wal`~~ | ❌ | 1 (`HumpbackWhale`) | **wieder abgeschaltet (20.09.2026):** setzbar, aber in keinem Simulator gezeichnet — s. „Setzbar heißt nicht sichtbar“ in `docs/architecture.md`. Ich hatte die Art am Morgen angelegt, ohne das dort Stehende zu lesen; der Nutzer hat es im Flug bestätigt (MSFS 2024). Urteil von Hand („unsichtbar“) für beide MSFS |
 | `bordtreppe` | ✅ | 3 MSFS + 4 X-Plane (`pax_stairs_1`, `_up1`, `_up2`, `Stair_Maint_1`) | **überall** |
 | `seilwinde` | ✅ | 3 (`TT:WINCH.*`) | MSFS 2020 + 2024 |
 | `flugplatzfahrzeug` | | +11 Nachrücker (Pushback, Catering, Gepäckschlepper, Treppen-Lader …) | |
@@ -49,6 +49,36 @@ Flusspferd unter und im Wasser (4); `L_VR_Controller`, `R_VR_Controller`, `VRLef
 `elephant`, `giraffe`, `worker`, `crew`, `passenger` — Treffer sind nur `Boats_Crew_*` (Schiffsteile), `Whaler_*` (Fangschiffe),
 `crew_car*` und `EDDM_Control_Tower_Workers.obj`. Die Arten tragen das in ihrer Bedeutung, damit im Admin niemand
 nach einem X-Plane-Titel sucht.
+
+**⚠ „steht“ ist nicht „gezeichnet“ — und das gilt für fast alles, was am 20.09.2026 dazukam.** Der Katalog und die neuen Läufe messen, dass
+der Simulator ein Objekt **anlegt**. Im Flug gesehen wurden bisher nur: die 2024er Tiere (Elefant, Giraffe, Nashorn, Nilpferd), Rauch und Seehund.
+**Nicht gesehen:** `marshaller`, `pilot`, `bodenpersonal`, `seilwinde`, `bordtreppe`, die 2020er Tiertitel und alle 1 428 neu aufgenommenen 2024er
+Titel. Der Wal (`HumpbackWhale`) hat gezeigt, was das heißen kann.
+
+**Der Simulator nennt seine Titel selbst — und was das NICHT abdeckt** (20.09.2026, `probe-msfs/titel_aufzaehlen.py`):
+`SimConnect_EnumerateSimObjectsAndLiveries` (nur MSFS 2024) kennt die Typen ALL, AIRCRAFT, HELICOPTER, BOAT, GROUND, HOT_AIR_BALLOON, ANIMAL und
+USER; **Typ 8 (`USER_AVATAR`) und alles ab 9 antwortet mit Ausnahme 45**. Es gibt keinen Typ für Misc, Landmarks, Humans oder Bauwerke.
+Die gestreamten Pakete (`StreamedPackages`, 1 161) zerfallen in drei Sorten: **521 lesbar** (`minimal.fsarchive`, Kopf `"scheme":"notEncrypted"`, die
+`sim.cfg` liegt dort im Klartext — 2 634 Titel, alle schon im Katalog), **715 mit verschlüsselten SimObject-Archiven** (Formatvariante 2.0.3,
+`SimObjects\<acht Buchstaben>.fsarchive`, 1 007 Stück) und **61 ohne Archiv**. Von den 715 deckt die Aufzählung 306 ab (Flugzeuge, Schiffe, Tiere,
+Fahrzeuge); **409 bleiben unlesbar** — Bushtrips, Discovery-Flüge (Berlin, Paris, London, Gizeh …), Landing Challenges, Activities, Trainings,
+Challenges, Red Bull, Spotlight-POIs, POI-Pakete. Dort könnten Bauwerke liegen; ob, weiß nur der Simulator (Objektbrowser im Scenery Editor des DevMode).
+Die Wahrzeichen selbst (Brandenburger Tor, Frauenkirche, Hohenzollernbrücke, Aachener Dom …) stehen im Deutschland-POI-Paket als **Szenerie**
+(`germany-pois/master.bgl`); als SimObject gibt es dort nur `GERM_POI_Allianz Arena`.
+
+**Aufgenommen und getestet (MSFS 2024, 20.09.2026):** Was die Aufzählung nannte, der Katalog nicht kannte und in keiner Community-`sim.cfg` steht,
+kam in den Katalog — **1 428 Titel: 775 Tiere, 102 Bodenfahrzeuge, 551 Flugzeuge/Hubschrauber**, `quelle='streamed'`, alle mit Bemerkung „aus
+SimConnect_EnumerateSimObjectsAndLiveries“. **Alle 1 428 melden „steht“** (nicht gezeichnet geprüft). Draußen blieben: 120 Boote (alle auch in
+Community-`sim.cfg`), 28 Hubschrauber und 57 Flugzeuge (ebenfalls in Community). Der Abgleich mit Community geht über die `sim.cfg`-Dateien auf der
+Platte — Community ist nie verschlüsselt (Nutzer), also ist ein aufgezählter Titel, der dort fehlt, keiner. Ein Loch bleibt: Marketplace-Käufe im
+`Official`-Ordner wären verschlüsselt und gingen als „nicht Community“ durch; auf dieser Platte liegen dort nur zwei Pakete
+(`asobo-aircraft-c172sp-classic` in 2020, `microsoft-aircraft-antonov2-temp` in 2024), beide von Asobo/Microsoft.
+
+**MSFS 2020 und X-Plane — was dort fehlt (gleiche Methode, 20.09.2026):** *MSFS 2020* hat kein Streaming (nur `Official\OneStore` und `Community`, keine
+verschlüsselten Dateien; alle 89 SimObject-`cfg` aus den `layout.json` liegen auf der Platte, alle 254 Official-Titel stehen im Katalog). Was fehlt,
+ist Inhalt, den Tobias nicht installiert hat. *X-Plane* hat kein Streaming, aber 5 076 von 7 995 Standardobjekten sind nicht im Katalog (das meiste
+bewusst: Autogen, Straßen, Gelände), dazu **16 „X-Plane Landmarks“-Pakete (~165 Objekte, u. a. `Brandenburg_Gate`, `TV_Tower`, `Commerzbank`)** und 6
+„X-Plane Airports“ (137 Objekte) aus `Custom Scenery` — davon nichts im Katalog. Einen Kölner Dom gibt es dort nicht.
 
 **Wo fehlt einer Art noch etwas? — der Filter „Lücke in“** (Nutzerfrage 20.09.2026, im Admin über der Tabelle
 „ARTEN“): Ohne Haken steht die ganze Liste da. Mit Haken bleiben die Arten mit Lücke — in **allen** angehakten
