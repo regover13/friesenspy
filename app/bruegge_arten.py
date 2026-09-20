@@ -576,8 +576,10 @@ _MARKEN_FARBEN = {
     "navy": "Navy", "hellblau": "Hellblau", "rot": "Rot", "orange": "Orange",
     "signalrot": "Signalrot", "signalorange": "Signalorange",
 }
-for _f, _titel in _MARKEN_FARBEN.items():
-    ARTEN[f"wuerfel_{_f}"] = (f"Ein Wuerfel, 3 m, in {_titel} (Friesenfarbe)", {
+# `weiss` ist "Scheinwerferweiss" (255, 240, 200), kein Reinweiss -- Wuerfel UND Saeule (Nutzer, 20.09.2026:
+# "mach das weiss nicht so total weiss -- scheinwerferlicht halt", und dazu ein Wuerfel in dieser Farbe).
+for _f, _titel in {**_MARKEN_FARBEN, "weiss": "Weiss"}.items():
+    ARTEN[f"wuerfel_{_f}"] = (f"Ein Wuerfel, 3 m, in {_titel}" + ("" if _f == "weiss" else " (Friesenfarbe)"), {
         "msfs2024": [f"FrsWuerfel_{_titel}"], "xplane12": [XP_EIGEN + f"wuerfel_{_f}.obj"]})
 for _f, _titel in {"weiss": "Weiss", **_MARKEN_FARBEN}.items():
     ARTEN[f"saeule_{_f}"] = (f"Eine schmale Lichtsaeule, 100 m hoch, in {_titel}"

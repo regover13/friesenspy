@@ -14,9 +14,10 @@ in BEIDEN MSFS-Fassungen aus derselben Quelle laufen — wie der Rauch und der S
 Was entsteht (alles unter `PackageSources/SimObjects/Misc/FrsMarke/`)
 =====================================================================
 
-    FrsWuerfel_<Farbe>   6 Stück   Würfel, 3 m Kante, in den Friesenfarben (`rauch_bauen.FARBEN`)
-    FrsSaeule_<Farbe>    7 Stück   schmale Lichtsäule, 100 m hoch, 0,8 m breit: die sechs
-                                   Friesenfarben und Weiß
+    FrsWuerfel_<Farbe>   7 Stück   Würfel, 3 m Kante: die sechs Friesenfarben (`rauch_bauen.FARBEN`)
+                                   und Scheinwerferweiß
+    FrsSaeule_<Farbe>    7 Stück   Lichtsäule wie ein Scheinwerferstrahl, 100 m hoch, unten 4 m,
+                                   oben 6 m breit, nach oben ausblendend: dieselben sieben Farben
     FrsLicht_Warm        1 Stück   Punktlicht, nachts warmweiß, wie die Lichter im Nachtbild
 
 KEINE TEXTUREN — und das ist Absicht
@@ -53,15 +54,34 @@ Wie ein solcher Knoten AUSSIEHT, steht in Asobos eigenen, kompilierten Modellen 
   ⚠ NICHT BELEGT: Ein Modell aus NUR einem Lichtknoten (ohne Mesh) ist bei Asobo nirgends
   gefunden worden — jedes Modell trägt auch Geometrie. Deshalb trägt `FrsLicht_Warm` ein
   winziges unsichtbares Trägermesh (`ASOBO_material_invisible`, wie der Rauch). Ebenso NICHT
-  belegt: welche `intensity` dem Nachtbild entspricht. Die 5,0 hier sind der häufigste Wert der
-  Scheinwerfer und eine ANNAHME; sie ist der Regler für den Flugtest.
+  belegt: welche `intensity` dem Nachtbild entspricht. Gestartet mit 5,0 (häufigster Wert der
+  Scheinwerfer bei Asobo, eine ANNAHME); nach dem 2020er Nachttest wollte der Nutzer es „etwas
+  heller, sagen wir 8.0" — der Wert steht seither auf 8,0 und bleibt der Regler für den Flugtest.
 
-DIE SÄULE
----------
-`alphaMode: BLEND`, `doubleSided`, kräftig emissiv. Ein Achteck ohne Deckel, weil ein Lichtstrahl
-keinen hat. Ob MSFS ein `BLEND`-Material mit `emissiveFactor` nachts leuchten lässt wie
-`Peace_Tower_Light`, ist UNGEMESSEN (s. Bericht am Ende von `paket_bauen.py`/Commit) — die
-Alternative wäre `ASOBO_material_day_night_switch`.
+DIE SÄULE — EIN SCHEINWERFERSTRAHL AUS 25 STAPELN (Flugtest MSFS 2020, 20.09.2026)
+-----------------------------------------------------------------------------------
+Die erste Fassung (0,8 m breit, überall gleich hell) lud und stand; der Nutzer wollte sie breiter und
+wie einen Scheinwerferstrahl: unten hell, nach oben stetig schwächer, oben praktisch ausgeblendet.
+
+⚠ **Der Verlauf steckt in den MATERIALIEN, nicht in Vertexfarben.** `COLOR_0` kommt in Asobos
+Modellen vor (z. B. `ASO_Aircraft_Caddy`), aber dass ein Vertex-Alpha in einem `BLEND`-Material
+zuverlässig wirkt, ist damit NICHT belegt — und ein Fehlschlag wäre still (die Säule stünde einfach
+überall gleich deckend da). Also: **25 Segmente zu je 4 m**, jedes eine eigene Primitive mit eigenem
+Material, dessen `baseColorFactor`-Alpha und `emissiveFactor` je Segment abgestuft sind. Ungemessen
+bleibt, wie sichtbar die 4-m-Stufen im Flug sind; der Regler dafür ist `SAEULE_SEGMENTE`.
+
+Der Verlauf, mit t = Höhe der Segmentmitte / 100 m:
+
+    Alpha     = ALPHA_UNTEN + (ALPHA_OBEN − ALPHA_UNTEN) · t        linear, 0,55 → 0,02
+    Emissive  = Farbe · (1 − t)^1,2                                 oben fast nichts mehr
+
+Die Breite wächst gleichmäßig von 4 m (unten) auf 6 m (oben), gemessen über die Ecken des
+Achtecks; jedes Segment ist ein Kegelstumpf, seine Normalen kippen entsprechend leicht.
+`alphaMode BLEND` und `doubleSided` bleiben.
+
+**SCHEINWERFERWEISS.** Das Weiß ist nicht reinweiß, sondern `WEISS` = sRGB (255, 240, 200): warmes,
+leicht gelbliches Weiß wie ein Scheinwerfer (Nutzer, 20.09.2026). EINE Konstante, benutzt von der
+weißen Säule und vom weißen Würfel; die X-Plane-Seite nimmt dieselbe Farbe.
 
 Eine unsichtbare Falle vom Rauch gilt auch hier: MSFS blendet ein Modell aus, dessen
 Bildschirmgröße unter `minSize` fällt — beim Rauch half `minSize="0"` NICHT, erst ein 90 m hoher
@@ -80,26 +100,37 @@ from rauch_bauen import FARBEN
 
 #: Kante des Würfels in Metern (Nutzer, 20.09.2026: „Würfel ca. 3 m").
 WUERFEL_KANTE = 3.0
-#: Höhe der Säule in Metern und Breite über die Ecken des Achtecks (Nutzer: „ca. 100 m hoch und
-#: schmal").
+#: Scheinwerferweiß: warmes, leicht gelbliches Weiß, sRGB (255, 240, 200) (Nutzer, 20.09.2026).
+#: EINE Konstante für die weiße Säule UND den weißen Würfel — und dieselbe Farbe wie in X-Plane.
+WEISS = (255, 240, 200)
+
+#: Höhe der Säule in Metern; Breite über die Ecken des Achtecks unten und oben (Nutzer, nach dem
+#: Flugtest: „unten 4 m, oben 6 m", leicht aufweitend wie ein Strahl).
 SAEULE_HOEHE = 100.0
-SAEULE_BREITE = 0.8
+SAEULE_BREITE_UNTEN = 4.0
+SAEULE_BREITE_OBEN = 6.0
 SAEULE_ECKEN = 8
+#: Stapel: 25 Segmente à 4 m, je eine Primitive mit eigenem Material (s. Kopfkommentar).
+SAEULE_SEGMENTE = 25
+#: Deckkraft unten und oben (linear dazwischen) und der Exponent des Eigenlichts.
+SAEULE_ALPHA_UNTEN = 0.55
+SAEULE_ALPHA_OBEN = 0.02
+SAEULE_EMISSIV_EXPONENT = 1.2
 #: Wie stark der Würfel von selbst leuchtet, damit er nachts nicht schwarz ist (Anteil der Farbe).
 WUERFEL_EIGENLICHT = 0.35
-#: Sichtbarkeit der Säule: Alpha der Grundfarbe.
-SAEULE_ALPHA = 0.55
 
 #: Das Punktlicht: warmweiß wie die Lichter im Nachtbild, Rundumstrahler, nur nachts.
 LICHT_FARBE = (1.0, 0.84, 0.6)
-LICHT_STAERKE = 5.0          # ANNAHME (häufigster Scheinwerferwert bei Asobo) — der Regler für den Flugtest
+LICHT_STAERKE = 8.0          # Nutzerwunsch nach dem 2020er Nachttest (vorher 5,0) — der Regler für den Flugtest
 LICHT_KEGEL = 360            # Rundumstrahler, wie `Point.NNN` bei Asobo
 LICHT_HOEHE = 0.3            # Meter über dem Boden
 
 HERSTELLER_ORDNER = "FrsMarke"
 
-#: Alle Säulenfarben: die Friesenfarben und Weiß.
-SAEULEN_FARBEN = {**FARBEN, "weiss": (0xFF, 0xFF, 0xFF)}
+#: Würfel- und Säulenfarben: die Friesenfarben und Scheinwerferweiß.
+MARKEN_FARBEN = {**FARBEN, "weiss": WEISS}
+WUERFEL_FARBEN = MARKEN_FARBEN
+SAEULEN_FARBEN = MARKEN_FARBEN
 
 
 def titel_wuerfel(name: str) -> str:
@@ -115,7 +146,7 @@ TITEL_LICHT = "FrsLicht_Warm"
 
 def alle_titel() -> list[str]:
     """Die Titel in der Reihenfolge der sim.cfg: erst Würfel, dann Säulen, dann das Licht."""
-    return ([titel_wuerfel(n) for n in FARBEN] + [titel_saeule(n) for n in SAEULEN_FARBEN]
+    return ([titel_wuerfel(n) for n in WUERFEL_FARBEN] + [titel_saeule(n) for n in SAEULEN_FARBEN]
             + [TITEL_LICHT])
 
 
@@ -150,33 +181,61 @@ def wuerfel_flaechen(kante: float) -> list:
     ]
 
 
-def prisma_flaechen(ecken: int, breite: float, hoehe: float) -> list:
-    """Ein regelmäßiges n-Eck als Mantel ohne Deckel, Ursprung Mitte der Unterseite.
+def saeule_radius(y: float) -> float:
+    """Umkreisradius der Säule in der Höhe `y` (linear von unten nach oben)."""
+    r0, r1 = SAEULE_BREITE_UNTEN / 2.0, SAEULE_BREITE_OBEN / 2.0
+    return r0 + (r1 - r0) * (y / SAEULE_HOEHE)
 
-    `breite` ist der Abstand zweier gegenüberliegender ECKEN (Umkreisdurchmesser). Jede Seite
-    hat ihre eigenen vier Ecken und ihre eigene Normale (flache Schattierung, wie beim Würfel).
-    Die Vierecke laufen gegen den Uhrzeigersinn von außen gesehen; die Säule ist ohnehin
-    `doubleSided`.
+
+def segment_flaechen(ecken: int, y0: float, y1: float) -> list:
+    """Ein Kegelstumpf-Mantel ohne Deckel von `y0` bis `y1`, Ursprung Mitte der Unterseite der SÄULE.
+
+    Jede Seite hat ihre eigenen vier Ecken und ihre eigene Normale (flache Schattierung, wie beim
+    Würfel). Weil die Säule oben breiter ist, kippt die Normale leicht nach unten. Die Vierecke laufen
+    gegen den Uhrzeigersinn von außen gesehen; die Säule ist ohnehin `doubleSided`.
     """
-    r = breite / 2.0
-    winkel = [2.0 * math.pi * k / ecken for k in range(ecken)]
-    punkte = [(r * math.cos(w), r * math.sin(w)) for w in winkel]
+    r0, r1 = saeule_radius(y0), saeule_radius(y1)
+    winkel = [2.0 * math.pi * k / ecken for k in range(ecken + 1)]
+    # Die Seitenfläche liegt im Abstand r·cos(π/n) von der Achse; ihre Steigung bestimmt die Kippung.
+    steigung = (r1 - r0) * math.cos(math.pi / ecken) / (y1 - y0)
+    laenge = math.sqrt(1.0 + steigung * steigung)
     raus = []
     for k in range(ecken):
-        (x0, z0), (x1, z1) = punkte[k], punkte[(k + 1) % ecken]
-        mitte = (winkel[k] + winkel[(k + 1) % ecken]) / 2.0
-        if (k + 1) % ecken == 0:            # letzte Seite: der Winkel läuft über 2π hinaus
-            mitte = (winkel[k] + 2.0 * math.pi) / 2.0
-        normale = (round(math.cos(mitte), 6), 0.0, round(math.sin(mitte), 6))
-        raus.append((normale, [(x0, 0.0, z0), (x0, hoehe, z0), (x1, hoehe, z1), (x1, 0.0, z1)]))
+        mitte = (winkel[k] + winkel[k + 1]) / 2.0
+        normale = (round(math.cos(mitte) / laenge, 6), round(-steigung / laenge, 6),
+                   round(math.sin(mitte) / laenge, 6))
+        a, b = winkel[k], winkel[k + 1]
+        raus.append((normale, [(r0 * math.cos(a), y0, r0 * math.sin(a)),
+                               (r1 * math.cos(a), y1, r1 * math.sin(a)),
+                               (r1 * math.cos(b), y1, r1 * math.sin(b)),
+                               (r0 * math.cos(b), y0, r0 * math.sin(b))]))
+    return raus
+
+
+def saeule_stufen() -> list[tuple[float, float, float, float]]:
+    """Die Stapel der Säule: `(y0, y1, alpha, eigenlicht)` je Segment, von unten nach oben.
+
+    `t` ist die Höhe der Segmentmitte im Verhältnis zur Säulenhöhe.
+    """
+    h = SAEULE_HOEHE / SAEULE_SEGMENTE
+    raus = []
+    for i in range(SAEULE_SEGMENTE):
+        t = (i + 0.5) / SAEULE_SEGMENTE
+        alpha = SAEULE_ALPHA_UNTEN + (SAEULE_ALPHA_OBEN - SAEULE_ALPHA_UNTEN) * t
+        raus.append((i * h, (i + 1) * h, round(alpha, 6), round((1.0 - t) ** SAEULE_EMISSIV_EXPONENT, 6)))
     return raus
 
 
 # --------------------------------------------------------------------------- glTF
 
-def _gltf(knoten: str, bin_datei: str, flaechen: list, material: dict, *,
+def _gltf(knoten: str, bin_datei: str, gruppen: list, *,
           licht: dict | None = None, lichtposition: tuple | None = None) -> tuple[str, bytes]:
     """Baut das glTF: ein Mesh-Knoten, optional dazu ein Lichtknoten. Gibt (JSON, Rohpuffer).
+
+    `gruppen` ist eine Liste `(flaechen, material)` — je Gruppe EINE Primitive mit eigenem Material
+    (so entsteht die abgestufte Säule; Würfel und Licht haben genau eine). Jede Primitive hat ihre
+    eigenen vier Accessoren (POSITION, NORMAL, TEXCOORD_0, Indizes) und BufferViews, in dieser
+    Reihenfolge: Primitive p liegt bei den Accessoren 4p … 4p+3.
 
     Die Zahlen liegen in einer ECHTEN `.bin` daneben, nicht als Base64 (der MSFS-Modellcompiler
     schreibt ein `data:`-URI still auf eine externe Datei um, ohne sie zu erzeugen —
@@ -186,31 +245,61 @@ def _gltf(knoten: str, bin_datei: str, flaechen: list, material: dict, *,
     Koordinaten, aber die Shader des Simulators lesen sie, und ein Mesh ohne sie ist der eine
     Unterschied zu Asobos Modellen, den wir uns sparen können. (Ungemessen, ob es nötig ist.)
     """
-    ecken_roh = b""
-    normal_roh = b""
-    uv_roh = b""
-    indizes: list[int] = []
-    unten = [1e9, 1e9, 1e9]
-    oben = [-1e9, -1e9, -1e9]
-    for i, (normale, ecken) in enumerate(flaechen):
-        for e in ecken:
-            ecken_roh += struct.pack("<fff", *(float(v) for v in e))
-            normal_roh += struct.pack("<fff", *(float(v) for v in normale))
-            uv_roh += struct.pack("<ff", 0.0, 0.0)
-            for a in range(3):
-                unten[a] = min(unten[a], float(e[a]))
-                oben[a] = max(oben[a], float(e[a]))
-        b = i * 4
-        indizes += [b, b + 1, b + 2, b, b + 2, b + 3]
+    puffer = b""
+    accessoren, sichten, primitiven, materialien = [], [], [], []
+    for pi, (flaechen, material) in enumerate(gruppen):
+        ecken_roh = b""
+        normal_roh = b""
+        uv_roh = b""
+        indizes: list[int] = []
+        unten = [1e9, 1e9, 1e9]
+        oben = [-1e9, -1e9, -1e9]
+        for i, (normale, ecken) in enumerate(flaechen):
+            for e in ecken:
+                ecken_roh += struct.pack("<fff", *(float(v) for v in e))
+                normal_roh += struct.pack("<fff", *(float(v) for v in normale))
+                uv_roh += struct.pack("<ff", 0.0, 0.0)
+                for a in range(3):
+                    unten[a] = min(unten[a], float(e[a]))
+                    oben[a] = max(oben[a], float(e[a]))
+            b = i * 4
+            indizes += [b, b + 1, b + 2, b, b + 2, b + 3]
 
-    anzahl = 4 * len(flaechen)
-    index_roh = b"".join(struct.pack("<H", i) for i in indizes)
-    fuell = (-(len(ecken_roh) + len(normal_roh) + len(uv_roh))) % 4
-    puffer = ecken_roh + normal_roh + uv_roh + b"\x00" * fuell + index_roh
+        anzahl = 4 * len(flaechen)
+        index_roh = b"".join(struct.pack("<H", i) for i in indizes)
+        fuell = (-(len(ecken_roh) + len(normal_roh) + len(uv_roh))) % 4
+        ende = (-(len(index_roh))) % 4
+        start = len(puffer)
+        o_norm = start + len(ecken_roh)
+        o_uv = o_norm + len(normal_roh)
+        o_idx = o_uv + len(uv_roh) + fuell
+        puffer += ecken_roh + normal_roh + uv_roh + b"\x00" * fuell + index_roh + b"\x00" * ende
+
+        sichten += [
+            {"buffer": 0, "byteOffset": start, "byteLength": len(ecken_roh), "target": 34962},
+            {"buffer": 0, "byteOffset": o_norm, "byteLength": len(normal_roh), "target": 34962},
+            {"buffer": 0, "byteOffset": o_uv, "byteLength": len(uv_roh), "target": 34962},
+            {"buffer": 0, "byteOffset": o_idx, "byteLength": len(index_roh), "target": 34963},
+        ]
+        v0 = 4 * pi
+        accessoren += [
+            # Die Bounding Box MUSS zur Geometrie passen — der Simulator liest sie für die
+            # Größenprüfung, nicht die Eckpunkte.
+            {"bufferView": v0, "componentType": 5126, "count": anzahl, "type": "VEC3",
+             "min": [round(v, 6) for v in unten], "max": [round(v, 6) for v in oben]},
+            {"bufferView": v0 + 1, "componentType": 5126, "count": anzahl, "type": "VEC3",
+             "min": [-1.0, -1.0, -1.0], "max": [1.0, 1.0, 1.0]},
+            {"bufferView": v0 + 2, "componentType": 5126, "count": anzahl, "type": "VEC2",
+             "min": [0.0, 0.0], "max": [0.0, 0.0]},
+            {"bufferView": v0 + 3, "componentType": 5123, "count": len(indizes), "type": "SCALAR"},
+        ]
+        primitiven.append({"attributes": {"POSITION": v0, "NORMAL": v0 + 1, "TEXCOORD_0": v0 + 2},
+                           "indices": v0 + 3, "material": pi, "mode": 4})
+        materialien.append(material)
 
     knoten_liste = [{"mesh": 0, "name": knoten}]
     verwendet = ["ASOBO_normal_map_convention"]
-    if "ASOBO_material_invisible" in material.get("extensions", {}):
+    if any("ASOBO_material_invisible" in m.get("extensions", {}) for m in materialien):
         verwendet.append("ASOBO_material_invisible")
     if licht is not None:
         # Wie bei Asobos Seilwinde: ein Knoten `Light` ohne Mesh, darunter das Licht als `Point`.
@@ -230,28 +319,10 @@ def _gltf(knoten: str, bin_datei: str, flaechen: list, material: dict, *,
         "scene": 0,
         "scenes": [{"nodes": wurzeln, "name": "Scene"}],
         "nodes": knoten_liste,
-        "meshes": [{"primitives": [{"attributes": {"POSITION": 0, "NORMAL": 1, "TEXCOORD_0": 2},
-                                    "indices": 3, "material": 0, "mode": 4}]}],
-        "materials": [material],
-        "accessors": [
-            # Die Bounding Box MUSS zur Geometrie passen — der Simulator liest sie für die
-            # Größenprüfung, nicht die Eckpunkte.
-            {"bufferView": 0, "componentType": 5126, "count": anzahl, "type": "VEC3",
-             "min": [round(v, 6) for v in unten], "max": [round(v, 6) for v in oben]},
-            {"bufferView": 1, "componentType": 5126, "count": anzahl, "type": "VEC3",
-             "min": [-1.0, -1.0, -1.0], "max": [1.0, 1.0, 1.0]},
-            {"bufferView": 2, "componentType": 5126, "count": anzahl, "type": "VEC2",
-             "min": [0.0, 0.0], "max": [0.0, 0.0]},
-            {"bufferView": 3, "componentType": 5123, "count": len(indizes), "type": "SCALAR"},
-        ],
-        "bufferViews": [
-            {"buffer": 0, "byteOffset": 0, "byteLength": len(ecken_roh), "target": 34962},
-            {"buffer": 0, "byteOffset": len(ecken_roh), "byteLength": len(normal_roh), "target": 34962},
-            {"buffer": 0, "byteOffset": len(ecken_roh) + len(normal_roh), "byteLength": len(uv_roh),
-             "target": 34962},
-            {"buffer": 0, "byteOffset": len(ecken_roh) + len(normal_roh) + len(uv_roh) + fuell,
-             "byteLength": len(index_roh), "target": 34963},
-        ],
+        "meshes": [{"primitives": primitiven}],
+        "materials": materialien,
+        "accessors": accessoren,
+        "bufferViews": sichten,
         "buffers": [{"byteLength": len(puffer), "uri": bin_datei}],
     }
     return json.dumps(gltf, indent=1), puffer
@@ -322,23 +393,25 @@ def marken_schreiben(wurzel: Path) -> int:
         teile.extend([f"[fltsim.{n}]", f"title={titel}", f"model={ordner}", "texture=", ""])
         n += 1
 
-    for name, rgb in FARBEN.items():
+    for name, rgb in WUERFEL_FARBEN.items():
         kennung, ordner = titel_wuerfel(name), f"wuerfel_{name}"
-        j, p = _gltf(f"frs_wuerfel_{name}", f"{kennung}.bin", wuerfel_flaechen(WUERFEL_KANTE),
-                     material_farbe(kennung, rgb, eigenlicht=WUERFEL_EIGENLICHT))
+        j, p = _gltf(f"frs_wuerfel_{name}", f"{kennung}.bin",
+                     [(wuerfel_flaechen(WUERFEL_KANTE),
+                       material_farbe(kennung, rgb, eigenlicht=WUERFEL_EIGENLICHT))])
         _modell_schreiben(wurzel, ordner, kennung, j, p)
         eintrag(kennung, ordner)
 
     for name, rgb in SAEULEN_FARBEN.items():
         kennung, ordner = titel_saeule(name), f"saeule_{name}"
-        j, p = _gltf(f"frs_saeule_{name}", f"{kennung}.bin",
-                     prisma_flaechen(SAEULE_ECKEN, SAEULE_BREITE, SAEULE_HOEHE),
-                     material_farbe(kennung, rgb, eigenlicht=1.0, alpha=SAEULE_ALPHA))
+        gruppen = [(segment_flaechen(SAEULE_ECKEN, y0, y1),
+                    material_farbe(f"{kennung}_{i:02d}", rgb, eigenlicht=licht_anteil, alpha=alpha))
+                   for i, (y0, y1, alpha, licht_anteil) in enumerate(saeule_stufen())]
+        j, p = _gltf(f"frs_saeule_{name}", f"{kennung}.bin", gruppen)
         _modell_schreiben(wurzel, ordner, kennung, j, p)
         eintrag(kennung, ordner)
 
     # Das Punktlicht: ein winziger unsichtbarer Träger (5 cm) und der Lichtknoten darüber.
-    j, p = _gltf("frs_licht_warm", f"{TITEL_LICHT}.bin", wuerfel_flaechen(0.05), MATERIAL_UNSICHTBAR,
+    j, p = _gltf("frs_licht_warm", f"{TITEL_LICHT}.bin", [(wuerfel_flaechen(0.05), MATERIAL_UNSICHTBAR)],
                  licht=licht_erweiterung(), lichtposition=(0.0, LICHT_HOEHE, 0.0))
     _modell_schreiben(wurzel, "licht_warm", TITEL_LICHT, j, p)
     eintrag(TITEL_LICHT, "licht_warm")

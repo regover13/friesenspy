@@ -9,5 +9,5 @@ TEXTURE
 POINT_COUNTS	0 0 0 0
 
 ATTR_LOD	0 10000
-LIGHT_PARAM	spot_params_bb_pm	0 0.5 0 1.0 0.84 0.6 500cd 0 0 0 1
-LIGHT_PARAM	spot_params_sp_pm	0 0.5 0 1.0 0.84 0.6 1 1000cd 0 -1 0 0.5
+LIGHT_PARAM	spot_params_bb_pm	0 0.5 0 1.0 0.84 0.6 800cd 0 0 0 1
+LIGHT_PARAM	spot_params_sp_pm	0 0.5 0 1.0 0.84 0.6 1 1600cd 0 -1 0 0.5

@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """Die MSFS-Marken der FriesenBrügge: Würfel, Lichtsäulen, Punktlicht (20.09.2026).
 
-`friesenbruegge/msfs-rauch/marken_bauen.py` schreibt die Quellen für 6 Würfel, 7 Säulen und 1 Licht
-(alles Titel `Frs…`, KEINE Texturen, in MSFS 2020 und 2024 dieselben Dateien). Der Simulator ist von
+`friesenbruegge/msfs-rauch/marken_bauen.py` schreibt die Quellen für 7 Würfel, 7 Säulen und 1 Licht
+(alles Titel `Frs…`, KEINE Texturen, in MSFS 2020 und 2024 dieselben Dateien). Die Säule ist seit dem
+Flugtest vom 20.09.2026 ein Scheinwerferstrahl aus 25 gestapelten Segmenten mit je eigenem Material. Der Simulator ist von
 Python aus nicht erreichbar; gebunden wird hier, was sich an den Dateien prüfen lässt und beim
 nächsten Umbau leise verschwinden könnte: der Titelsatz, die Dateiform, die Geometrie (Bounding
 Box, Zählungen, Umlaufsinn), die Farben und die Form des Lichtknotens.
@@ -75,20 +76,28 @@ def _gltf(ziel: Path, ordner: str, titel: str) -> dict:
 
 # ---- der Titelsatz ----------------------------------------------------------------------
 
-def test_es_sind_sechs_wuerfel_sieben_saeulen_und_ein_licht(mb, ausgabe):
+def test_es_sind_sieben_wuerfel_sieben_saeulen_und_ein_licht(mb, ausgabe):
     ziel, n = ausgabe
     titel = [b["title"] for b in _sim_cfg(ziel)]
-    assert n == len(titel) == 14
-    farben = list(mb.FARBEN)
+    assert n == len(titel) == 15
+    farben = list(mb.FARBEN) + ["weiss"]
     erwartet = ([f"FrsWuerfel_{f.capitalize()}" for f in farben]
-                + [f"FrsSaeule_{f.capitalize()}" for f in farben] + ["FrsSaeule_Weiss", "FrsLicht_Warm"])
+                + [f"FrsSaeule_{f.capitalize()}" for f in farben] + ["FrsLicht_Warm"])
     assert titel == erwartet
     assert len(set(titel)) == len(titel), "jeder Titel genau einmal"
 
 
-def test_die_farben_sind_die_friesenfarben_des_rauchs(mb):
+def test_die_farben_sind_die_friesenfarben_des_rauchs_und_scheinwerferweiss(mb):
     assert set(mb.FARBEN) == {"navy", "hellblau", "rot", "orange", "signalrot", "signalorange"}
-    assert mb.SAEULEN_FARBEN["weiss"] == (255, 255, 255) and set(mb.SAEULEN_FARBEN) == set(mb.FARBEN) | {"weiss"}
+    assert set(mb.WUERFEL_FARBEN) == set(mb.SAEULEN_FARBEN) == set(mb.FARBEN) | {"weiss"}
+    for name, rgb in mb.FARBEN.items():
+        assert mb.MARKEN_FARBEN[name] == rgb
+
+
+def test_scheinwerferweiss_ist_eine_konstante_fuer_saeule_und_wuerfel(mb):
+    """Nutzer, 20.09.2026: warmes, leicht gelbliches Weiß, sRGB (255, 240, 200) — kein Reinweiß."""
+    assert mb.WEISS == (255, 240, 200)
+    assert mb.WUERFEL_FARBEN["weiss"] == mb.SAEULEN_FARBEN["weiss"] == mb.WEISS
 
 
 def test_sim_cfg_hat_die_kategorie_und_jeder_titel_seinen_ordner(ausgabe):
@@ -129,16 +138,22 @@ def test_keine_textur_und_kein_base64_nirgends(ausgabe):
 
 # ---- die Geometrie -----------------------------------------------------------------------
 
-def _lies(ziel, b):
-    """(gltf, Ecken, Normalen, Indizes) aus glTF + .bin."""
+def _prims(ziel, b):
+    """(gltf, [(Ecken, Normalen, Indizes, Accessoren) je Primitive]) aus glTF + .bin."""
     g = _gltf(ziel, b["model"], b["title"])
     roh = (ziel / f"model.{b['model']}" / f"{b['title']}.bin").read_bytes()
     assert g["buffers"][0]["byteLength"] == len(roh), "die .bin ist so lang, wie das glTF sagt"
-    a = g["accessors"]
-    ecken = [struct.unpack_from("<fff", roh, g["bufferViews"][0]["byteOffset"] + 12 * i) for i in range(a[0]["count"])]
-    norm = [struct.unpack_from("<fff", roh, g["bufferViews"][1]["byteOffset"] + 12 * i) for i in range(a[1]["count"])]
-    idx = list(struct.unpack_from(f"<{a[3]['count']}H", roh, g["bufferViews"][3]["byteOffset"]))
-    return g, ecken, norm, idx
+    raus = []
+    for p in g["meshes"][0]["primitives"]:
+        av = g["accessors"][p["attributes"]["POSITION"]]
+        an = g["accessors"][p["attributes"]["NORMAL"]]
+        ai = g["accessors"][p["indices"]]
+        bv = g["bufferViews"]
+        ecken = [struct.unpack_from("<fff", roh, bv[av["bufferView"]]["byteOffset"] + 12 * i) for i in range(av["count"])]
+        norm = [struct.unpack_from("<fff", roh, bv[an["bufferView"]]["byteOffset"] + 12 * i) for i in range(an["count"])]
+        idx = list(struct.unpack_from(f"<{ai['count']}H", roh, bv[ai["bufferView"]]["byteOffset"]))
+        raus.append((ecken, norm, idx, (av, an, ai)))
+    return g, raus
 
 
 def _titel(ziel, praefix):
@@ -148,40 +163,65 @@ def _titel(ziel, praefix):
 def test_zaehlungen_bounding_box_und_puffergrenzen_stimmen(ausgabe):
     ziel, _ = ausgabe
     for b in _sim_cfg(ziel):
-        g, ecken, norm, idx = _lies(ziel, b)
-        a = g["accessors"]
-        assert a[0]["count"] == a[1]["count"] == a[2]["count"] == len(ecken) == len(norm)
-        assert len(ecken) % 4 == 0 and len(idx) == len(ecken) // 4 * 6
-        assert max(idx) == len(ecken) - 1 and min(idx) == 0
-        for a_ in range(3):
-            assert a[0]["min"][a_] == pytest.approx(min(e[a_] for e in ecken), abs=1e-5)
-            assert a[0]["max"][a_] == pytest.approx(max(e[a_] for e in ecken), abs=1e-5)
-        # jeder BufferView liegt innerhalb der .bin und ohne Überlappung mit dem nächsten
+        g, prims = _prims(ziel, b)
         ende = 0
         for bv in g["bufferViews"]:
-            assert bv["byteOffset"] >= ende
+            assert bv["byteOffset"] >= ende, "BufferViews überlappen nicht"
             ende = bv["byteOffset"] + bv["byteLength"]
         assert ende <= g["buffers"][0]["byteLength"]
+        for ecken, norm, idx, (av, an, ai) in prims:
+            assert av["count"] == an["count"] == len(ecken) == len(norm)
+            assert len(ecken) % 4 == 0 and len(idx) == len(ecken) // 4 * 6
+            assert max(idx) == len(ecken) - 1 and min(idx) == 0
+            for a_ in range(3):
+                assert av["min"][a_] == pytest.approx(min(e[a_] for e in ecken), abs=1e-5)
+                assert av["max"][a_] == pytest.approx(max(e[a_] for e in ecken), abs=1e-5)
 
 
 def test_der_wuerfel_misst_drei_meter_und_steht_mit_der_unterseite_im_ursprung(ausgabe):
     ziel, _ = ausgabe
-    for b in _titel(ziel, "FrsWuerfel_"):
-        g, ecken, *_ = _lies(ziel, b)
+    wuerfel = _titel(ziel, "FrsWuerfel_")
+    assert len(wuerfel) == 7
+    for b in wuerfel:
+        g, prims = _prims(ziel, b)
+        assert len(prims) == 1, "ein Würfel ist EINE Primitive"
+        ecken = prims[0][0]
         assert len(ecken) == 24, "vierundzwanzig Ecken: der Compiler rechnet keine Normalen selbst"
         assert min(e[1] for e in ecken) == 0.0 and max(e[1] for e in ecken) == pytest.approx(3.0)
         assert max(e[0] for e in ecken) == pytest.approx(1.5) and min(e[0] for e in ecken) == pytest.approx(-1.5)
         assert max(e[2] for e in ecken) == pytest.approx(1.5)
 
 
-def test_die_saeule_ist_hundert_meter_hoch_und_achtzig_zentimeter_breit(ausgabe):
+def test_die_saeule_ist_ein_stapel_aus_25_achteck_segmenten(mb, ausgabe):
+    ziel, _ = ausgabe
+    assert mb.SAEULE_SEGMENTE == 25
+    for b in _titel(ziel, "FrsSaeule_"):
+        g, prims = _prims(ziel, b)
+        assert len(prims) == 25 and len(g["materials"]) == 25, "je Segment eine Primitive UND ein Material"
+        assert [p["material"] for p in g["meshes"][0]["primitives"]] == list(range(25))
+        for i, (ecken, *_r) in enumerate(prims):
+            assert len(ecken) == 32, "ein Achteck ohne Deckel: acht Seiten zu vier Ecken"
+            ys = [e[1] for e in ecken]
+            # Die Segmente sind je 4 m hoch und stoßen lückenlos aneinander.
+            assert min(ys) == pytest.approx(4.0 * i) and max(ys) == pytest.approx(4.0 * (i + 1))
+
+
+def test_die_saeule_ist_unten_vier_und_oben_sechs_meter_breit_und_hundert_hoch(ausgabe):
     ziel, _ = ausgabe
     for b in _titel(ziel, "FrsSaeule_"):
-        g, ecken, *_ = _lies(ziel, b)
-        assert len(ecken) == 32, "ein Achteck ohne Deckel: acht Seiten zu vier Ecken"
-        assert min(e[1] for e in ecken) == 0.0 and max(e[1] for e in ecken) == pytest.approx(100.0)
-        assert max(e[0] for e in ecken) == pytest.approx(0.4, abs=1e-5)      # Umkreisradius 0,4 = 0,8 m breit
-        assert max(math.hypot(e[0], e[2]) for e in ecken) == pytest.approx(0.4, abs=1e-5)
+        g, prims = _prims(ziel, b)
+        alle = [e for ecken, *_r in prims for e in ecken]
+        assert min(e[1] for e in alle) == 0.0 and max(e[1] for e in alle) == pytest.approx(100.0)
+        unten = [e for e in prims[0][0] if e[1] == 0.0]
+        oben = [e for e in prims[-1][0] if e[1] == pytest.approx(100.0)]
+        assert max(math.hypot(e[0], e[2]) for e in unten) == pytest.approx(2.0, abs=1e-5)    # 4 m über die Ecken
+        assert max(math.hypot(e[0], e[2]) for e in oben) == pytest.approx(3.0, abs=1e-5)     # 6 m über die Ecken
+        # Die Bounding Box der letzten Primitive gehört zur neuen Breite (±3 m), nicht zu den alten 0,4 m.
+        av = prims[-1][3][0]
+        assert av["max"][0] == pytest.approx(3.0, abs=1e-5) and av["min"][0] == pytest.approx(-3.0, abs=1e-5)
+        # Der Radius wächst von Ring zu Ring.
+        radien = [max(math.hypot(e[0], e[2]) for e in ecken) for ecken, *_r in prims]
+        assert all(a < b_ for a, b_ in zip(radien, radien[1:]))
 
 
 def test_umlaufsinn_und_normalen_passen_zusammen(ausgabe):
@@ -193,15 +233,24 @@ def test_umlaufsinn_und_normalen_passen_zusammen(ausgabe):
     for b in _sim_cfg(ziel):
         if b["title"] == "FrsLicht_Warm":
             continue                                            # unsichtbarer Träger, Umlaufsinn egal
-        g, ecken, norm, idx = _lies(ziel, b)
-        for k in range(0, len(idx), 3):
-            p0, p1, p2 = (ecken[i] for i in idx[k:k + 3])
-            u, v = [p1[i] - p0[i] for i in range(3)], [p2[i] - p0[i] for i in range(3)]
-            n = (u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0])
-            gespeichert = norm[idx[k]]
-            assert sum(n[i] * gespeichert[i] for i in range(3)) > 0, (b["title"], k)
-        for nx, ny, nz in norm:
-            assert math.sqrt(nx * nx + ny * ny + nz * nz) == pytest.approx(1.0, abs=1e-4)
+        g, prims = _prims(ziel, b)
+        for ecken, norm, idx, _acc in prims:
+            for k in range(0, len(idx), 3):
+                p0, p1, p2 = (ecken[i] for i in idx[k:k + 3])
+                u, v = [p1[i] - p0[i] for i in range(3)], [p2[i] - p0[i] for i in range(3)]
+                n = (u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0])
+                gespeichert = norm[idx[k]]
+                assert sum(n[i] * gespeichert[i] for i in range(3)) > 0, (b["title"], k)
+            for nx, ny, nz in norm:
+                assert math.sqrt(nx * nx + ny * ny + nz * nz) == pytest.approx(1.0, abs=1e-4)
+
+
+def test_die_normalen_der_saeule_kippen_leicht_nach_unten(ausgabe):
+    """Die Säule wird nach oben breiter: Die Seitenflächen schauen minimal nach unten."""
+    ziel, _ = ausgabe
+    g, prims = _prims(ziel, _titel(ziel, "FrsSaeule_")[0])
+    for _e, norm, *_r in prims:
+        assert all(-0.05 < n[1] < 0.0 for n in norm), "leicht negativ, aber fast waagerecht"
 
 
 # ---- die Farben --------------------------------------------------------------------------
@@ -211,9 +260,10 @@ def _linear(k):
     return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
 
 
-def test_der_wuerfel_traegt_die_friesenfarbe_und_ein_wenig_eigenlicht(mb, ausgabe):
+def test_der_wuerfel_traegt_die_farbe_und_ein_wenig_eigenlicht(mb, ausgabe):
+    """Alle sieben: die sechs Friesenfarben und Scheinwerferweiß."""
     ziel, _ = ausgabe
-    for name, rgb in mb.FARBEN.items():
+    for name, rgb in mb.WUERFEL_FARBEN.items():
         g = _gltf(ziel, f"wuerfel_{name}", f"FrsWuerfel_{name.capitalize()}")
         m = g["materials"][0]
         lin = [_linear(k) for k in rgb]
@@ -223,18 +273,45 @@ def test_der_wuerfel_traegt_die_friesenfarbe_und_ein_wenig_eigenlicht(mb, ausgab
         assert m.get("alphaMode") in (None, "OPAQUE") and not m.get("doubleSided")
 
 
-def test_die_saeule_ist_halbtransparent_doppelseitig_und_stark_leuchtend(mb, ausgabe):
+def test_der_weisse_wuerfel_hat_dieselbe_machart_wie_die_anderen(ausgabe):
+    ziel, _ = ausgabe
+    weiss = _gltf(ziel, "wuerfel_weiss", "FrsWuerfel_Weiss")["materials"][0]
+    rot = _gltf(ziel, "wuerfel_rot", "FrsWuerfel_Rot")["materials"][0]
+    lin = [_linear(k) for k in (255, 240, 200)]
+    assert weiss["pbrMetallicRoughness"]["baseColorFactor"][:3] == pytest.approx(lin, abs=1e-5)
+    assert weiss["emissiveFactor"] == pytest.approx([0.35 * k for k in lin], abs=1e-5), "gleicher Emissive-Anteil"
+    assert weiss["pbrMetallicRoughness"]["baseColorFactor"][2] < 0.7, "warmes Weiß, kein Reinweiß"
+    assert set(weiss) == set(rot) and weiss["pbrMetallicRoughness"].keys() == rot["pbrMetallicRoughness"].keys()
+
+
+def test_die_saeule_ist_je_segment_abgestuft_halbtransparent_und_doppelseitig(mb, ausgabe):
+    """Alpha fällt linear von 0,55 auf 0,02, das Eigenlicht mit (1 − t)^1,2; t = Höhe der Segmentmitte / 100 m."""
     ziel, _ = ausgabe
     for name, rgb in mb.SAEULEN_FARBEN.items():
         g = _gltf(ziel, f"saeule_{name}", f"FrsSaeule_{name.capitalize()}")
-        m = g["materials"][0]
         lin = [_linear(k) for k in rgb]
-        assert m["alphaMode"] == "BLEND" and m["doubleSided"] is True
-        assert 0.2 <= m["pbrMetallicRoughness"]["baseColorFactor"][3] < 1.0
-        assert m["pbrMetallicRoughness"]["baseColorFactor"][:3] == pytest.approx(lin, abs=1e-5)
-        assert m["emissiveFactor"] == pytest.approx(lin, abs=1e-5), "die Säule leuchtet mit voller Farbe"
-    weiss = _gltf(ziel, "saeule_weiss", "FrsSaeule_Weiss")["materials"][0]
-    assert weiss["emissiveFactor"] == pytest.approx([1.0, 1.0, 1.0])
+        alphas, emis = [], []
+        for i, m in enumerate(g["materials"]):
+            t = (i + 0.5) / 25
+            assert m["alphaMode"] == "BLEND" and m["doubleSided"] is True
+            f = m["pbrMetallicRoughness"]["baseColorFactor"]
+            assert f[:3] == pytest.approx(lin, abs=1e-5), "die Grundfarbe bleibt in jedem Segment dieselbe"
+            assert f[3] == pytest.approx(0.55 + (0.02 - 0.55) * t, abs=1e-5)
+            assert m["emissiveFactor"] == pytest.approx([k * (1 - t) ** 1.2 for k in lin], abs=1e-5)
+            alphas.append(f[3])
+            emis.append(m["emissiveFactor"][0])
+        assert alphas == sorted(alphas, reverse=True) and len(set(alphas)) == 25, "Alpha fällt streng monoton"
+        assert emis == sorted(emis, reverse=True) and len(set(emis)) == 25, "Eigenlicht fällt streng monoton"
+        assert alphas[0] > 0.5 and alphas[-1] < 0.05, "unten deckend, oben praktisch ausgeblendet"
+        assert emis[-1] < 0.02 * max(lin), "oben leuchtet fast nichts mehr"
+
+
+def test_die_weisse_saeule_ist_scheinwerferweiss(ausgabe):
+    ziel, _ = ausgabe
+    g = _gltf(ziel, "saeule_weiss", "FrsSaeule_Weiss")
+    lin = [_linear(k) for k in (255, 240, 200)]
+    assert g["materials"][0]["pbrMetallicRoughness"]["baseColorFactor"][:3] == pytest.approx(lin, abs=1e-5)
+    assert lin[2] < lin[1] < lin[0] == pytest.approx(1.0), "gelblich: Blau am schwächsten"
 
 
 # ---- das Punktlicht ----------------------------------------------------------------------
@@ -256,7 +333,8 @@ def test_das_licht_hat_die_form_von_asobos_punktlichtern(ausgabe):
     assert set(licht) == LICHT_FELDER
     assert licht["cone_angle"] == 360, "Rundumstrahler"
     assert licht["day_night_cycle"] is True, "nur nachts"
-    assert licht["color"] == pytest.approx([1.0, 0.84, 0.6]) and licht["intensity"] > 0
+    assert licht["color"] == pytest.approx([1.0, 0.84, 0.6])
+    assert licht["intensity"] == 8.0, "Nutzerwunsch nach dem 2020er Nachttest: etwas heller (vorher 5,0)"
     assert licht["flash_frequency"] == 0 and licht["rotation_speed"] == 0 and licht["has_simmetry"] is False
     assert "ASOBO_macro_light" in g["extensionsUsed"]
     assert "extensionsRequired" not in g, "Asobo verlangt die Erweiterung nicht (dort steht nur MSFT_texture_dds)"
@@ -271,7 +349,7 @@ def test_das_licht_haengt_wie_bei_asobo_unter_einem_knoten_light_und_hat_einen_u
     traeger = [n for n in nodes if "mesh" in n]
     assert len(traeger) == 1
     assert "ASOBO_material_invisible" in g["materials"][0]["extensions"]
-    _, ecken, *_ = _lies(ziel, next(b for b in _sim_cfg(ziel) if b["title"] == "FrsLicht_Warm"))
+    ecken = _prims(ziel, next(b for b in _sim_cfg(ziel) if b["title"] == "FrsLicht_Warm"))[1][0][0]
     assert max(e[1] for e in ecken) <= 0.1, "winzig"
     # Beide Wurzelknoten stehen in der Szene, und `Point` liegt über dem Boden.
     assert set(g["scenes"][0]["nodes"]) == {0, 1}
