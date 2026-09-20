@@ -12,7 +12,7 @@ und werden vorher eigens besprochen — die Hauptnummer gehört an die sichtbare
 |---|---|---|
 | **Suchen** | Eventbeginn | Havarist an alle Brüggen (Art je Simulator) |
 | **Gefunden** | tiefer, langsamer Überflug im Fundradius | `gefunden_am`/`gefunden_von`; **`rauch_signalorange`** neben den Havaristen |
-| **Aufgenommen** | Haken *aus:* zweiter Überflug **nach** dem Fund · Haken *an:* Landung am Havaristen | `aufgenommen_am`/`aufgenommen_von`; Fackel wechselt auf **`rauch_hellblau`** |
+| **Aufgenommen** | im Umkreis des Havaristen, **nach** dem Fund: *an Land* eine Landung nach den Regeln des Projekts · *im Wasser* unter 30 kt | `aufgenommen_am`/`aufgenommen_von`; Fackel wechselt auf **`rauch_hellblau`** |
 | **Eingeliefert** | Landung des **Aufnehmenden** an irgendeinem registrierten Platz | `eingeliefert_am`/`_von`/`_icao`; gewertet ist die Zeit **vom Fund bis zu dieser Landung** |
 
 Der Aufnehmende muss nicht der Finder sein (#21). Der Überflug des Finders ist nicht gleichzeitig
@@ -72,7 +72,8 @@ niemand geht leer aus, der eine Fläche abgeflogen und nichts gefunden hat.
 | **Fundradius** | **1,71 km — gerechnet, nicht eingestellt** | Korridor + halbe Zelldiagonale |
 | Höhenschranke | **1.000 ft AGL über dem Havaristen**, einstellbar | s. unten — der Server kennt die Höhe des Havaristen |
 | Geschwindigkeit | 30–140 kt | unten, damit ein geparktes Flugzeug nicht seine Zelle abdeckt |
-| Aufnehmen mit Landung | ≤ 30 kt im Fundradius | Brügge meldet zusätzlich `am_boden` |
+| Aufnehmen an Land | `< 2 kt` und `< 300 ft` AGL | die Landeregeln des Projekts, s. unten |
+| Aufnehmen im Wasser | `< 30 kt` und `< 300 ft` AGL | Schwebeflug — verlangt einen Hubschrauber |
 
 ### Die Höhenschranke ist AGL über dem Havaristen
 
@@ -107,6 +108,34 @@ Frage „ist er tief über der Unglücksstelle hinweggeflogen?".
   Geländestufe: am Bodensee gemessen 2.106 ft statt 1.297 ft, bei 691 km Abstand. Brauchbar
   belegt sind Werte bis 200 km, dazwischen ist eine Lücke. Für einen Suchflug im Umkreis des
   Heimatplatzes ist das unkritisch, aber die Regel gehört in den Code, nicht in die Hoffnung.
+
+### Aufnehmen benutzt die Landeregeln des Projekts
+
+**Keine eigenen Schwellen.** Für das Aufnehmen an Land gilt, was im Projekt eine Landung ist:
+
+| Konstante in `app/gps_legs.py` | Wert | Bedeutung |
+|---|---|---|
+| `_GPS_BLOCK_GS_KT` | 2 kt | Vollstopp — der Touchdown-Kandidat |
+| `_GPS_GROUND_AGL_FT` | 300 ft | AGL-Obergrenze für „am Boden" |
+
+Beide werden **importiert, nicht abgeschrieben**: Ändert jemand später die Landeerkennung, zieht
+der Suchflug mit. Die AGL-Bezugsgröße ist die Grundhöhe des Havaristen (Abschnitt darüber).
+
+⚠ **`detect_gps_legs` selbst lässt sich nicht benutzen, und das ist kein Mangel.** Die Funktion
+verlangt für eine Landung einen **Platz im Umkreis** — im Code steht ausdrücklich „Kein Platz /
+AGL-Guard verletzt → bleibt AIRBORNE (Absturz/Hover nie als Landung)". Die Außenlandung am Wrack
+ist genau der Fall, den sie absichtlich nicht zählt, und diese Absicht ist richtig: sonst würde
+jeder Absturz als Landung gewertet. Deshalb dieselben **Regeln** statt derselben Funktion.
+
+**Im Wasser gilt `< 30 kt` statt `< 2 kt`** — ein Schwebeflug über der Unglücksstelle. Damit
+verlangt die Wasser-Rettung praktisch **einen Hubschrauber**: Ein Flächenflugzeug kommt nicht
+unter 30 kt, ohne zu landen. Ein Wasserflugzeug erfüllt die Bedingung ebenfalls, weil eine
+Wasserung unter 2 kt endet. **Das muss im Admin dabeistehen**, sonst legt jemand einen Suchflug
+über See an, den nur Hubschrauberpiloten abschließen können, ohne es zu wissen.
+
+⚠ **Bei 15 s Abtastung kann ein sehr kurzer Stopp durchfallen.** Eine Rettungslandung dauert
+länger als einen Messabstand, der Fall ist also theoretisch — festgehalten, weil er beim
+Sekundentakt der Brügge (spätere Ausbaustufe) von selbst verschwindet.
 
 **Als Nebenertrag fällt eine Prüfung ab:** Weicht die gemessene Höhe deutlich von der
 eingetragenen ab, ist die Stelle für diese Art untauglich (PROTOKOLL Abschnitt 4) — der Admin
@@ -196,8 +225,10 @@ Im Poller, im vorhandenen Takt (15 s) — ein Job `_check_suchflug`, nach dem Mu
 
 1. **Abdeckung** — `abdeckung(spuren, zellen_aus_box(...), fenster)`.
 2. **Fund** — dieselbe Funktion, ein Ziel mit dem gerechneten Fundradius, dasselbe Fenster.
-3. **Aufnehmen** — dasselbe Ziel, nur Spurenpunkte **nach** `gefunden_am`; bei
-   `im_wasser = 0` (also an Land) mit `Fenster(gs_max_kt=30)`.
+3. **Aufnehmen** — dasselbe Ziel, nur Spurenpunkte **nach** `gefunden_am`, mit
+   `Fenster(hoehe_max_ft=_GPS_GROUND_AGL_FT, gs_max_kt=2 bzw. 30, gs_min_kt=0)`. Die
+   Untergrenze muss dabei auf 0 — sonst schlösse das Suchfenster (30 kt) den Stillstand aus,
+   der hier gerade gefragt ist.
 4. **Einliefern** — Landung des Aufnehmenden aus `canonicalize_legs`, erster Zielpunkt nach
    `aufgenommen_am`.
 
@@ -214,6 +245,11 @@ Pfad kein guter Ort für neue Arbeit ist, solange er nicht verstanden ist.
 Ein Bereich wie bei Bummel und Kutter: Sektor durch zwei Ecken auf der Karte, Zellkante,
 Korridor, Höhen- und Geschwindigkeitsfenster, Art des Havaristen, Haken „Havarist liegt im
 Wasser", Kalendertermin, Push. Dazu:
+
+* **Neben dem Haken „im Wasser" steht, was er bedeutet:** *„Aufnehmen ohne Landung — unter
+  30 kt über der Unglücksstelle. Das verlangt einen Hubschrauber oder ein Wasserflugzeug."*
+  Und ohne Haken: *„Aufnehmen verlangt eine Landung an der Unglücksstelle (Vollstopp unter
+  300 ft AGL) — sieh nach, ob dort jemand landen kann."*
 
 * **Die Lage des Havaristen setzt der Admin von Hand** auf die Karte — das ist die Vorgabe. Sie
   ist dort auch sichtbar, denn wer das Event anlegt, weiß es ohnehin.
