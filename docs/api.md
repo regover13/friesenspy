@@ -2717,7 +2717,7 @@ Alle brauchen eine Admin-Sitzung.
 | `POST /api/admin/bruegge/soll` | Objekt anfordern: `art`, `lat`, `lon`, optional `id`, `cid`, `kurs`, **`kurs_zufall`**, `erwartete_hoehe_ft`, `gilt_bis`, `auf_boden`. Gleiche `id` überschreibt. Unbekannte oder **leere** `art` → `400` |
 | ⭐ `kurs_zufall` | **Würfelt die Richtung, und zwar im Server** (14.09.2026). Ohne ihn schickt der Server `kurs: null`, und beide Brügge-Fassungen machen daraus 0 — jedes Objekt zeigte exakt nach Norden. Bei einem einzelnen fällt das nicht auf, bei einer Robbenkolonie sofort. Gewürfelt wird hier und nicht im Browser, damit der künftige Kieker dieselbe Streuung bekommt, ohne durch die Admin-Oberfläche zu müssen. Jedes Hinstellen würfelt neu, auch beim Überschreiben derselben `id` |
 | `GET /api/admin/bruegge/arten` | Alle Arten mit Zahlen: Titel gesamt/aktiv, je Simulator, Beispiele, `anforderbar`, `addon`, dazu `zustand` je Simulator (`kann` / `ungeprueft` / `kann_nicht`), `ueberall` und `kann_in`. **Die einzige Quelle der Artenliste** — bis zum 14.09.2026 stand dieselbe Aufzählung viermal (zwei C++-Quelltexte, `main.py`, `admin.html`) |
-| `POST /api/admin/bruegge/arten` | Art anlegen oder ändern: `art`, `bedeutung`, `status`. `loeschen: true` nimmt sie weg und **gibt ihre Titel frei** — die Katalogzeilen bleiben, sie verlieren nur die Zuordnung |
+| `POST /api/admin/bruegge/arten` | Art anlegen oder ändern: `art`, `bedeutung`, `status`, **`boden_versatz_ft`** (Höhe des Bezugspunkts über dem Gelände, −50 bis 100 ft). `loeschen: true` nimmt sie weg und **gibt ihre Titel frei** — die Katalogzeilen bleiben, sie verlieren nur die Zuordnung |
 | ⚠ `loeschen: true` | **Verlangt das Passwort erneut** (`require_confirm` → `403 confirm_required`, seit 16.09.2026). Nur dieser Zweig: Anlegen, Umbenennen und `status: "aus"` bleiben frei. Grund ist die Unumkehrbarkeit — die Zuordnung Titel → Art steht nirgendwo sonst, bei `tier_gross` wären das über hundert Zeilen auf einen Klick. `status: "aus"` ist der Weg, der fast immer gemeint ist, und bleibt deshalb der bequemere |
 | `GET /api/admin/bruegge/titel` | Eine Seite des Katalogs (2953 Zeilen): `art`, `simulator`, `quelle`, `ergebnis` (+ `geprueft_in` für den Prüf-Simulator), `status`, `suche`, `ohne_art`, `mit_art`, `sortieren`, `absteigend`, `seite`, `je_seite`. **Gefiltert und sortiert wird hier, nicht im Browser** — sonst zählt die Seitenzahl Titel, die niemand sieht |
 | `POST /api/admin/bruegge/titel` | Titel zuordnen: `simulator`, `titel`, dazu `art`, `rang`, `status`. `art: null` nimmt die Zuordnung weg (Rang und Status gehen mit) |
@@ -2727,10 +2727,28 @@ Alle brauchen eine Admin-Sitzung.
 `cid: null` heißt „für alle" — damit lässt sich eine Station für ein Event setzen, ohne sie je
 Pilot zu vervielfachen.
 
-`auf_boden` ist die **Vorgabe** (seit 13.09.2026): `OnGround=1` lässt den Simulator selbst
-aufsetzen und trifft bis 10 km Entfernung. Ohne den Haken gilt `erwartete_hoehe_ft`, und ohne
-beides die Geländehöhe **unter dem Flugzeug** — die stimmt schon 100 m weiter nicht mehr
-(zwölf Objekte in einem 180-m-Raster: eines versunken, eines sauber, eines schwebend).
+**Boden oder Höhe — seit dem 20.09.2026 entscheidet der Server, wenn niemand etwas sagt.**
+`OnGround=1` (`auf_boden: true`) lässt den Simulator selbst aufsetzen und trifft bis 10 km Entfernung
+(13.09.2026 gemessen) — aber ein **Flugzeugmodell bleibt dabei frei beweglich und hüpft** (Hubschrauber,
+Pitts, C172; gemessen: der Schwerpunkt eines Hubschraubers wanderte um 225 Pixel, ein zweiter kippte auf den
+Kopf). Mit `auf_boden: false` **und** einer Höhe **friert** die Brügge das Objekt ein (`objekt_festhalten`:
+Höhe, Lage, Ort), und dann steht es. Die Regeln, in dieser Reihenfolge:
+
+1. `auf_boden: true` → Aufsetzen. Gewinnt immer.
+2. `erwartete_hoehe_ft` gegeben → genau diese Höhe, eingefroren (kein Aufschlag).
+3. Sonst automatisch: **Gelände am Piloten** (`alt_msl_ft − alt_agl_ft` seiner letzten Meldung, ein leicht
+   negativer Wert gilt als 0) **plus `boden_versatz_ft` der Art**, eingefroren — aber nur mit `cid`, nur wenn der
+   Pilot in **MSFS** fliegt und das Objekt **höchstens 3 km** von ihm entfernt steht. Antwort: `"boden":
+   "feste-hoehe-automatisch"`.
+4. Geht das nicht (kein Pilot, zu weit weg, X-Plane): **ohne Angabe** → Aufsetzen (`"boden": "aufsetzen"`); bei
+   **ausdrücklichem** `auf_boden: false` bleibt es `false` ohne Höhe (`"boden": "ohne-hoehe"`, wie vor dem
+   20.09.2026 — ein ausdrückliches `false` wird nie umgedeutet).
+
+⚠ **Die Grenze:** Das Gelände kennt der Server nur am Piloten (zwölf Objekte in einem 180-m-Raster standen
+mit gerechneter Höhe: eines versunken, eines sauber, eines schwebend), und die Zahl aus MSL−AGL kann um einige
+Fuß danebenliegen — am alten Testplatz meldeten Objekte 0,5 ft, das Flugzeug des Piloten ergab 3,8 ft. Der Versatz
+je Art ist die Stellschraube. Der Admin schickt `auf_boden` nur, wenn der Nutzer etwas entschieden hat (Haken oder
+Höhe); sonst fehlt das Feld.
 
 ### Der Objektkatalog
 

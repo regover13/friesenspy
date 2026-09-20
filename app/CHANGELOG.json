@@ -1,5 +1,16 @@
 [
   {
+    "version": "15.6.0",
+    "date": "2026-09-20",
+    "highlight": false,
+    "title": "Über 40 neue Objektarten, Hubschrauber und Flugzeuge stehen ruhig",
+    "items": [
+      "🌉 Die FriesenBrügge kennt jetzt über 40 neue Objektarten für Events: Pferd, Kuh, Hirsch, Elch, Wolf, Fuchs, Bär, Löwe, Tiger, Zebra, Kamel, Lama, Känguru und viele weitere Tiere, dazu Motorrad, Lastwagen und Segelflugzeug. Sie gibt es in MSFS 2024, das Segelflugzeug auch in X-Plane. Der jeweils erste Titel jeder Art wurde im Flug geprüft.",
+      "🌉 Hubschrauber und Flugzeuge sind beim Hinstellen gehüpft, einer sogar auf den Kopf gekippt. Sie stehen jetzt auf fester Höhe und werden eingefroren, das gilt als Vorgabe für alle Objekte in der Nähe des Piloten. Im Admin ist der Haken „auf den Boden setzen“ dafür standardmäßig aus, und die Höhe lässt sich je Art mit einem Versatz nachstellen.",
+      "🌉 Die Art „Pilot“ ist abgeschaltet: Die Figur steckt beim Hinstellen halb im Boden. Die rosa Guernsey- und Jersey-Kühe sind aus der Art „Kuh“ herausgenommen."
+    ]
+  },
+  {
     "version": "15.5.3",
     "date": "2026-09-20",
     "highlight": false,

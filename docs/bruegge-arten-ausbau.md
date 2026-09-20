@@ -80,6 +80,26 @@ ist Inhalt, den Tobias nicht installiert hat. *X-Plane* hat kein Streaming, aber
 bewusst: Autogen, Straßen, Gelände), dazu **16 „X-Plane Landmarks“-Pakete (~165 Objekte, u. a. `Brandenburg_Gate`, `TV_Tower`, `Commerzbank`)** und 6
 „X-Plane Airports“ (137 Objekte) aus `Custom Scenery` — davon nichts im Katalog. Einen Kölner Dom gibt es dort nicht.
 
+**Die große Zuordnung (20.09.2026): 49 Arten aus den 1 428 neuen 2024er Titeln.** Tiere nach den Kategorien, die der
+Simulator selbst in seinen Paketnamen benutzt (`fs24-microsoft-simobjects-animals-*`): `elch`, `gepard`, `schaf`,
+`panda`, `bison`, `bueffel`, `kamel`, `hyaene`, `ziege`, `wolf`, `gnu`, `zebra`, `gazelle`, `wasserschwein`, `baer`,
+`antilope`, `loewe`, `tiger`, `schneeleopard`, `affe`, `warzenschwein`, `rentier`, `strauss`, `lama`, `fuchs`,
+`kaenguru`, `ameisenbaer`, `erdferkel`, `krokodil`, dazu `pferd`, `kuh`, `hirsch` und die vier einzelnen Afrika-Arten
+`elefant`, `giraffe`, `nashorn`, `nilpferd`. Fahrzeuge in die vorhandenen Arten, neu `motorrad` und `lkw`; Flugzeuge nach
+Namen in `hubschrauber`, `ballon`, `segelflugzeug` (mit den 28 X-Plane-Segelflugzeugen, also auch dort setzbar),
+`flugzeug_airliner`, `_klassik`, `_ga` und `_echo`. **Draußen blieben:** Discus-2c (Premium-Paket eines
+Drittanbieters), Militärflugzeuge, Gayal/Yak/Banteng, und alles aus Community. `tier_gross` und `tier_vieh` sind
+aufgelöst (`aus`); die X-Plane-Hirsche `deer_buck`/`deer_doe`, vorher bei `tier_gross`, stehen bei `hirsch` — X-Plane hat
+sonst kein großes Tier, `tier_gross` geht dort deshalb nicht mehr.
+
+**Sichtprüfung im Flug (MSFS 2024) — automatisch und per Auge.** Je Art der **erste** Titel (die Brügge nimmt immer Rang 1)
+hinter dem Piloten, Bildschirmfoto, Differenz zum Leerbild unterhalb des Horizonts und Anteil Magenta (fehlende Textur:
+Schachbrett). **Kein einziger erster Titel war rosa**; gefunden wurde: die **Guernsey- und Jersey-Kuh** (6 Titel) ist rosa
+(fehlende Textur) — raus aus `kuh`, Urteil von Hand für die zwei gesehenen; der **Pilot** steckt halb im Boden — `pilot`
+abgeschaltet; der **Buckelwal** ist unsichtbar (stand seit dem 13.09. in `docs/architecture.md`) — `wal` abgeschaltet;
+der **Hubschrauber** `H125 Rescue` **hüpft** (Schwerpunkt 225 px, ein zweiter kippte auf den Kopf), s. „Boden oder Höhe" in
+`docs/api.md`. Gepard und Ziege fielen bei der Messung durch (klein), waren im Bild aber da.
+
 **Wo fehlt einer Art noch etwas? — der Filter „Lücke in“** (Nutzerfrage 20.09.2026, im Admin über der Tabelle
 „ARTEN“): Ohne Haken steht die ganze Liste da. Mit Haken bleiben die Arten mit Lücke — in **allen** angehakten
 Simulatoren (**UND**, die Vorgabe) oder in **mindestens einem** (**ODER**); die Auswahl steht neben den Haken
