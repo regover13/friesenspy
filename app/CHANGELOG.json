@@ -1,5 +1,16 @@
 [
   {
+    "version": "15.5.3",
+    "date": "2026-09-20",
+    "highlight": false,
+    "title": "Das Kniebrett meldet den Platzverkehr auch mit ausgeschalteter Verkehrs-Ebene",
+    "items": [
+      "🛩 Damit das Kniebrett ein Flugzeug aus dem Simulator einem Piloten zuordnen kann, braucht es die VATSIM-Positionen als Gegenstück. Die holte es bisher nur, solange auf der Karte der Haken „Verkehr“ gesetzt war — war er aus, blieb die Zuordnung leer, und auf der Website kam der Platzverkehr weiter im 15-Sekunden-Takt an. Aufgefallen ist es beim Flug am 20.09.: Ein Friese stand in Sichtweite auf demselben Platz und wurde nicht erkannt.",
+      "🔁 Jetzt entscheidet der Server: Verlangt er das Melden von Fremdverkehr, läuft der Abruf unabhängig vom Haken. Gezeichnet wird dadurch nichts — die Ebene bleibt aus, wenn du sie ausgeschaltet hast.",
+      "🩵 Und die Karten-Legende zeigt jetzt auch, wie fremder Verkehr aussieht, dessen Position aus einem Simulator kommt: dunkles Symbol mit türkisem Saum. Genannt war er dort schon, zu sehen war er nicht."
+    ]
+  },
+  {
     "version": "15.5.2",
     "date": "2026-09-20",
     "highlight": false,

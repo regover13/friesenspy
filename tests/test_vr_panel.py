@@ -2092,9 +2092,18 @@ def test_eigener_abruf_loest_keinen_neuen_abruf_aus():
 def test_verkehr_ruht_auf_verdeckter_karte():
     """updateMap und _naviTakt brechen auf einer verdeckten Karte ab -- der Abruf muss das
     auch, sonst laufen die Rohwerte weiter, waehrend der Takt die Marker nicht bewegt, und
-    beim Zurueckwechseln springen sie."""
+    beim Zurueckwechseln springen sie.
+
+    ⚠ Die Regel gilt fuer die ANZEIGE. Seit dem 20.09.2026 ruft dieselbe Funktion auch fuers
+    MELDEN ab (Zuordnung im Kniebrett, s. tests/test_sim_zuordnung_karte.py) -- dort hat der
+    Abruf eine Wirkung, auch wenn niemand hinsieht, und die Wache darf nicht greifen. Geprueft
+    wird deshalb, dass sie im Anzeige-Zweig steht, nicht mehr eine Zeichenzahl ab
+    Funktionsbeginn: Diese Fassung war an einem Kommentar zerbrochen.
+    """
     stelle = INDEX.index("function _verkehrAbrufen(")
-    assert "_istSichtbar(" in INDEX[stelle:stelle + 600]
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "_istSichtbar(" in rumpf
+    assert rumpf.index("_istSichtbar(") > rumpf.index("if (!fuersMelden) {")
 
 
 def test_nur_der_takt_bewegt_den_fremdverkehr():

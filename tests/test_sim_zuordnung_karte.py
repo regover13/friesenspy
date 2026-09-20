@@ -292,3 +292,49 @@ def test_das_kniebrett_hat_seine_eigene_legendenzeile():
     assert "karten-legende-sim" in INDEX
     assert "html.vr-panel .karten-legende > li.karten-legende-sim { display: flex; }" in INDEX
     assert "html.vr-panel .karten-legende-bruegge { display: none; }" in INDEX
+
+
+# ---------------------------------------------------------------------------------------
+#  Der Verkehrsabruf dient zwei Zwecken — und nur einer hängt an der Karte (20.09.2026)
+# ---------------------------------------------------------------------------------------
+#
+# Fürs MELDEN braucht das Kniebrett die VATSIM-Positionen als Gegenstück zur Zuordnung. Hing
+# der Abruf an der Anzeige, fiel das Melden still aus, sobald jemand die Ebene „Verkehr"
+# ausschaltete: `sim: 2` bei `vatsim: 0`, gemessen am 20.09.2026 mit einem Friesen in
+# Sichtweite auf demselben Platz.
+#
+# ⚠ Der erste Versuch hat nur Start und Stopp des Takts entkoppelt und war **wirkungslos** —
+# die Wache in `_verkehrAbrufen` brach weiter ab. Diese Tests binden deshalb an die Stelle,
+# an der es entschieden wird, nicht an den Takt.
+
+def _abruf_quelle() -> str:
+    start = INDEX.index("function _verkehrAbrufen(")
+    return INDEX[start:INDEX.index("\n}", start)]
+
+
+def test_die_anzeige_wachen_gelten_nur_wenn_nicht_gemeldet_wird():
+    """`hasLayer`, Sichtbarkeit und Mindest-Zoom sind Anzeige-Bedingungen. Stehen sie
+    außerhalb des `fuersMelden`-Zweigs, blockieren sie wieder das Melden."""
+    q = _abruf_quelle()
+    zweig = q.index("if (!fuersMelden) {")
+    for wache in ("hasLayer(_verkehrGruppe)", "_istSichtbar(", "_VERKEHR_MIN_ZOOM"):
+        assert q.index(wache) > zweig, (
+            f"{wache} steht vor `if (!fuersMelden)` und bricht damit auch das Melden ab")
+
+
+def test_beim_melden_zaehlt_die_eigene_lage_nicht_der_kartenausschnitt():
+    """Der Simulator kennt die Flugzeuge um den Piloten. Liegt der Kartenausschnitt
+    woanders, passt die Kandidatenliste nicht zu dem, was zugeordnet werden soll."""
+    q = _abruf_quelle()
+    assert "fuersMelden ? _simPos.lat" in q and "fuersMelden ? _simPos.lon" in q
+    assert "fuersMelden ? _VERKEHR_MELDE_KM" in q
+    assert "const _VERKEHR_MELDE_KM = 90;" in INDEX
+
+
+def test_der_melde_zweig_haengt_am_servermodus_und_an_einer_position():
+    """`fremd` allein genügt nicht — ohne eigene Position gibt es kein Gebiet, und ein
+    Abruf mit `undefined` wäre eine 422-Schleife im Sekundentakt."""
+    q = _abruf_quelle()
+    bedingung = q[q.index("const fuersMelden"):q.index("if (!fuersMelden)")]
+    assert "_kbModus === 'fremd'" in bedingung
+    assert "_simPos" in bedingung and "isFinite" in bedingung
