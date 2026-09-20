@@ -96,10 +96,11 @@ def test_anlegen_lesen_aendern_loeschen(db):
 def test_die_vorgaben_kommen_mit(db):
     _anlegen()
     ev = _liste()[0]
-    assert ev["kante_km"] == 1.0 and ev["korridor_km"] == 1.0
-    assert ev["hoehe_max_ft"] == 1000
+    assert ev["kante_km"] == 1.0 and ev["korridor_km"] == 1.0, "Suchen ist weit"
+    assert ev["hoehe_max_ft"] == 2000, "Suchen darf hoch sein"
+    assert ev["fund_radius_ft"] == 500 and ev["fund_hoehe_ft"] == 1000, "Finden ist eng und tief"
     assert ev["aufnehmen_noetig"] == 1 and ev["landung_noetig"] == 1
-    assert ev["stand"]["fundradius_km"] == pytest.approx(1.707, abs=0.001)
+    assert ev["stand"]["korridor_km"] == 1.0 and ev["stand"]["fund_radius_ft"] == 500
 
 
 def test_ein_verdrehter_sektor_wird_abgewiesen(db):
@@ -225,12 +226,27 @@ def test_neben_dem_landehaken_steht_was_er_bedeutet():
     assert "Vollstopp" in q
 
 
-def test_der_fundradius_wird_angezeigt_und_nicht_eingegeben():
-    """Er ist gerechnet. Ein Eingabefeld dafuer waere der Weg zum luegenden Balken."""
+def test_suchen_und_finden_sind_zwei_felder():
+    """⚠ Hier stand zuerst das Gegenteil: Der Fundradius sei gerechnet und duerfe kein
+    Eingabefeld haben. Aufgegeben am 20.09.2026 -- der Suchkorridor darf weit und hoch sein,
+    der Fund muss eng und tief sein, und beides gehoert getrennt einstellbar.
+    """
     q = ADMIN.read_text(encoding="utf-8")
-    assert 'id="rd-fundradius"' in q
-    assert 'id="rd-fundradius-input"' not in q
-    assert "Math.SQRT2" in q, "der Fundradius wird im Admin gerechnet, nicht getippt"
+    assert 'id="rd-korridor"' in q and 'id="rd-hoehe"' in q          # Suchen
+    assert 'id="rd-fund-radius"' in q and 'id="rd-fund-hoehe"' in q  # Finden
+    assert "Math.SQRT2" not in q, "der gerechnete Fundradius ist verworfen"
+
+
+def test_der_admin_sagt_was_der_balken_bedeutet():
+    """Ohne diesen Satz haelt ein Veranstalter '100 % abgesucht' fuer 'haetten wir ihn
+    gesehen' -- und das ist bei zwei Fenstern nicht mehr wahr."""
+    q = ADMIN.read_text(encoding="utf-8")
+    assert "heißt deshalb nicht" in q and "hätten wir ihn gesehen" in q
+
+
+def test_die_schonfrist_steht_im_text():
+    q = ADMIN.read_text(encoding="utf-8")
+    assert "zehn Minuten" in q and "Abmeldung" in q
 
 
 def test_die_herkunft_der_grundhoehe_steht_neben_der_zahl():
@@ -241,3 +257,74 @@ def test_die_hoehenschranke_ist_als_AGL_beschriftet():
     """MSL waere die falsche Auskunft -- gemessen wird ueber dem Havaristen."""
     q = ADMIN.read_text(encoding="utf-8")
     assert "ft AGL" in q and "über dem Havaristen" in q
+
+
+def test_die_artenliste_zeigt_nur_den_artnamen():
+    """⚠ `bedeutung` ist eine interne Katalognotiz, keine Beschriftung. Als Optionstext machte
+    sie jede Zeile bildschirmbreit und das Dropdown unbenutzbar (gemeldet am 20.09.2026 mit
+    Bildschirmfoto). Sie gehoert in den Tooltip."""
+    q = ADMIN.read_text(encoding="utf-8")
+    assert "o.textContent = a.art;" in q
+    assert "o.title = a.bedeutung" in q
+    assert "a.art + (a.bedeutung" not in q, "bedeutung darf nicht im Optionstext stehen"
+
+
+def test_die_artenliste_ist_gruppiert():
+    """95 Arten in einer flachen Liste sind keine Auswahl. Ein Wrack ist im Regelfall ein
+    Flugzeug -- also stehen die oben, ausgeschlossen wird nichts."""
+    q = ADMIN.read_text(encoding="utf-8")
+    assert "optgroup" in q and "_RD_GRUPPEN" in q
+    assert "Flugzeuge und Hubschrauber" in q
+
+
+def test_kein_hinweistext_steht_in_einer_gitterzelle():
+    """⚠ Der Layout-Fehler vom 20.09.2026, mit Bildschirmfoto gemeldet.
+
+    Ein langer `form-hint` INNERHALB einer `form-group` macht seine Gitterzelle hoch, das
+    Nachbarfeld bleibt oben -- und die Eingabefelder rutschen gegeneinander aus der Zeile
+    ("Breite" stand deutlich tiefer als "Länge"). Hinweise gehoeren als `grid-column:1/-1`
+    UNTER die Zeile, zu der sie sprechen.
+    """
+    q = ADMIN.read_text(encoding="utf-8")
+    start = q.index('<div id="rd-form"')
+    ende = q.index('<div id="rd-liste"')
+    formular = q[start:ende]
+    # Jede form-group im Formular einzeln ansehen: keine darf einen Hinweis enthalten.
+    stellen = []
+    for i, teil in enumerate(formular.split('<div class="form-group">')[1:]):
+        zelle = teil.split('</div>')[0]
+        if "form-hint" in zelle:
+            stellen.append(i + 1)
+    assert stellen == [], f"form-hint in Gitterzelle(n) {stellen} — Felder rutschen aus der Zeile"
+
+
+def test_jeder_hinweis_im_gitter_ist_volle_breite():
+    q = ADMIN.read_text(encoding="utf-8")
+    start = q.index('<div id="rd-form"')
+    ende = q.index('<div id="rd-liste"')
+    formular = q[start:ende]
+    for stueck in formular.split('class="form-hint"')[1:]:
+        kopf = stueck[:120]
+        if 'style="margin:2px 0' in kopf:
+            continue          # die Hinweise unter den Haken stehen ausserhalb jedes Gitters
+        assert "grid-column:1/-1" in kopf or 'style="margin:0 0 8px;"' in kopf, kopf
+
+
+def test_der_sektor_wird_auf_einer_karte_geklickt():
+    """Koordinaten eintippen ist keine Auswahl -- man sieht nicht, wo man landet."""
+    q = ADMIN.read_text(encoding="utf-8")
+    assert 'id="rd-karte"' in q and "_rdKarteAufbauen" in q
+    assert 'name="rd-ziel"' in q
+
+
+def test_der_klick_schaltet_von_selbst_weiter():
+    """Ecke 1 → Ecke 2 → Havarist, ohne dass man zwischendurch umschalten muss."""
+    q = ADMIN.read_text(encoding="utf-8")
+    assert "_rdZielSetzen(n === 1 ? '2' : 'h')" in q
+
+
+def test_die_ecken_werden_sortiert():
+    """Welche Ecke zuerst geklickt wurde, soll niemand bedenken muessen -- sonst legt ein
+    verdrehtes Rechteck ein leeres Raster an, und der Server weist es mit 400 ab."""
+    q = ADMIN.read_text(encoding="utf-8")
+    assert "_rdSektorAusEcken" in q and "Math.min(a.lat, b.lat)" in q

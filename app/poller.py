@@ -2727,9 +2727,10 @@ class VatsimPoller:
             from app.abdeckung import abdeckung
             from app.database import (
                 canonicalize_legs, clear_reddung_aufnahme, get_push_subscriptions_for_events,
-                get_reddung_event, list_reddung_events, reddung_grund_lernen,
-                reddung_objekte_abgleichen, reddung_spuren, set_reddung_aufgeloest,
-                set_reddung_aufgenommen, set_reddung_eingeliefert, set_reddung_gefunden,
+                get_reddung_event, list_reddung_events, reddung_fortschreiben,
+                reddung_grund_lernen, reddung_objekte_abgleichen, reddung_spuren,
+                set_reddung_aufgeloest, set_reddung_aufgenommen, set_reddung_eingeliefert,
+                set_reddung_gefunden,
             )
 
             now_dt = datetime.now(timezone.utc)
@@ -2747,16 +2748,16 @@ class VatsimPoller:
                     if ziel is None:
                         continue
                     bis = min(now, ev["dtend"])
+                    box = (ev["sued"], ev["west"], ev["nord"], ev["ost"])
 
                     if reddung_grund_lernen(conn, ev):
                         ev = get_reddung_event(conn, ev["id"])
 
-                    # 1 -- Fund
+                    # 1 -- Abdeckung UND Fund fortschreiben (ein Aufruf, nur neue Punkte)
+                    stand = reddung_fortschreiben(conn, ev, bis=bis)
                     if not ev.get("gefunden_am"):
-                        spuren = reddung_spuren(conn, ev["dtstart"], bis)
-                        erg = abdeckung(spuren, [ziel], rd.fenster_suchen(ev))
-                        t = erg.treffer.get(rd.HAVARIST)
-                        if t and set_reddung_gefunden(conn, ev["id"], t.ts, t.cid):
+                        t = stand.get("fund")
+                        if t and set_reddung_gefunden(conn, ev["id"], t["ts"], t["cid"]):
                             ev = get_reddung_event(conn, ev["id"])
                             if push_on:
                                 pushes.append({"title": name,
@@ -2766,7 +2767,8 @@ class VatsimPoller:
                     # 2 -- Aufnehmen, nur mit Punkten NACH dem Fund
                     if ev.get("gefunden_am") and ev.get("aufnehmen_noetig") \
                             and not ev.get("aufgenommen_am"):
-                        spuren = reddung_spuren(conn, ev["dtstart"], bis, ab=ev["gefunden_am"])
+                        spuren = reddung_spuren(conn, ev["dtstart"], bis, ab=ev["gefunden_am"],
+                                                box=box)
                         erg = abdeckung(spuren, [ziel], rd.fenster_aufnehmen(ev))
                         t = erg.treffer.get(rd.HAVARIST)
                         if t and set_reddung_aufgenommen(conn, ev["id"], t.ts, t.cid):

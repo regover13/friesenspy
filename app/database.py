@@ -310,11 +310,21 @@ CREATE TABLE IF NOT EXISTS reddung_events (
     west            REAL NOT NULL,
     nord            REAL NOT NULL,
     ost             REAL NOT NULL,
-    kante_km        REAL DEFAULT 1.0,       -- Zellkante; gleich dem Korridor = lueckenloses Raster
-    korridor_km     REAL DEFAULT 1.0,
-    hoehe_max_ft    REAL DEFAULT 1000,      -- ⚠ AGL UEBER DEM HAVARISTEN, nicht MSL
+    -- ZWEI FENSTER, und das ist der Kern: Suchen ist weit und darf hoch sein, Finden ist eng
+    -- und muss tief sein. "Abgesucht" heisst damit ausdruecklich NICHT "haetten wir ihn
+    -- gesehen" -- die Flaeche ist abgeflogen, gesehen haette man eine Cessna erst aus 150 m.
+    -- Das traegt, weil zu jedem Event eine Geschichte gehoert, die das Gebiet eingrenzt.
+    --
+    -- ⚠ Die Produktionstabelle traegt bei kante_km/korridor_km noch DEFAULT 1.0 -- sie entstand
+    -- mit 15.11.0. Harmlos: Das Admin-Formular schickt immer einen Wert, und fehlt er, greift
+    -- die Vorgabe in `app/reddung.py`.
+    kante_km        REAL DEFAULT 1.0,       -- Zellkante; hoechstens so gross wie der Korridor
+    korridor_km     REAL DEFAULT 1.0,       -- SUCHEN, seitlich
+    hoehe_max_ft    REAL DEFAULT 2000,      -- SUCHEN, Hoehe (AGL ueber dem Havaristen)
     gs_max_kt       REAL DEFAULT 140,
     gs_min_kt       REAL DEFAULT 30,        -- sonst deckt ein geparktes Flugzeug seine Zelle ab
+    fund_radius_ft  REAL DEFAULT 500,       -- FINDEN, seitlich
+    fund_hoehe_ft   REAL DEFAULT 1000,      -- FINDEN, Hoehe (AGL ueber dem Havaristen)
     havarist_lat    REAL,
     havarist_lon    REAL,
     havarist_art    TEXT,                   -- Art aus bruegge_art; NULL = 'flugzeug_echo'
@@ -1016,6 +1026,10 @@ _AIP_CHARTS_MIGRATIONS = [
 _BRUEGGE_SOLL_MIGRATIONS = [
     "ALTER TABLE bruegge_soll ADD COLUMN simulator TEXT",
     "ALTER TABLE bruegge_steht ADD COLUMN hoehe_gemessen INTEGER",
+    # `reddung_events` stand mit 15.11.0 schon in der Produktion, als Suchen und Finden
+    # getrennte Fenster bekamen.
+    "ALTER TABLE reddung_events ADD COLUMN fund_radius_ft REAL DEFAULT 500",
+    "ALTER TABLE reddung_events ADD COLUMN fund_hoehe_ft REAL DEFAULT 1000",
 ]
 
 _PANEL_DIAG_MIGRATIONS = [
@@ -9487,7 +9501,8 @@ def aggregate_kutter_kpis(progresses: list[dict]) -> dict:
 #: im Admin einen Fehler auslöst statt still ins Leere zu schreiben.
 _REDDUNG_FELDER = {
     "name", "dtstart", "dtend", "sued", "west", "nord", "ost", "kante_km", "korridor_km",
-    "hoehe_max_ft", "gs_max_kt", "gs_min_kt", "havarist_lat", "havarist_lon", "havarist_art",
+    "hoehe_max_ft", "gs_max_kt", "gs_min_kt", "fund_radius_ft", "fund_hoehe_ft",
+    "havarist_lat", "havarist_lon", "havarist_art",
     "havarist_grund_ft", "havarist_grund_quelle", "aufnehmen_noetig", "landung_noetig",
     "aufnahme_verfaellt", "source", "calendar_uid", "push_enabled", "badge_name",
     "manual_fields",
@@ -9615,18 +9630,50 @@ def reddung_grund_merken(conn: sqlite3.Connection, event_id: int, hoehe_ft: floa
     return True
 
 
+#: Rand um den Sektor, innerhalb dessen Positionen noch geladen werden.
+#:
+#: Gebraucht, weil ein Segment aus ZWEI Punkten besteht: Ein Stück, das den Sektor durchquert,
+#: kann beide Endpunkte außerhalb haben. Ein Segment ist höchstens ``sprung_max_km`` (6 km)
+#: lang, also liegt bei einem sektornahen Segment mindestens ein Endpunkt innerhalb von
+#: Korridor + 6 km -- und der andere dann innerhalb von Korridor + 12 km. 15 km deckt das mit
+#: Reserve ab und schließt trotzdem jeden aus, der nicht in der Gegend fliegt.
+_REDDUNG_RAND_KM = 15.0
+
+
+def _km_je_grad_lon(lat: float) -> float:
+    from app.abdeckung import _km_je_grad_lon as _f
+    return _f(lat)
+
+
 def reddung_spuren(conn: sqlite3.Connection, start: str, end: str, *,
-                   ab: str | None = None) -> list[tuple[int, list]]:
+                   ab: str | None = None,
+                   box: tuple[float, float, float, float] | None = None) -> list[tuple[int, list]]:
     """Spuren für eine FriesenReddung, in der Form, die ``app/abdeckung.py`` erwartet.
 
     ``ab`` schneidet vorn ab -- fürs Aufnehmen zählen nur Punkte NACH dem Fund. Das wird hier
     und nicht beim Aufrufer gefiltert, damit niemand versehentlich den Überflug des Finders
     selbst als Aufnahme wertet.
+
+    ``box`` ist der Sektor als ``(sued, west, nord, ost)``. Er wird um ``_REDDUNG_RAND_KM``
+    erweitert und in die Abfrage gegeben: **Wer nicht in der Gegend fliegt, wird nicht
+    geladen.** Ohne das holt jeder Poller-Takt die Spuren aller Piloten weltweit, um sie
+    danach wegzuwerfen.
     """
     von = max(start, ab) if ab else start
-    rows = conn.execute(
-        "SELECT cid, latitude, longitude, altitude, groundspeed, ts FROM position_history "
-        "WHERE ts >= ? AND ts <= ? ORDER BY cid, ts", (von, end)).fetchall()
+    if box:
+        sued, west, nord, ost = box
+        d_lat = _REDDUNG_RAND_KM / 111.32
+        d_lon = _REDDUNG_RAND_KM / max(_km_je_grad_lon((sued + nord) / 2.0), 1.0)
+        rows = conn.execute(
+            "SELECT cid, latitude, longitude, altitude, groundspeed, ts FROM position_history "
+            "WHERE ts >= ? AND ts <= ? "
+            "  AND latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ? "
+            "ORDER BY cid, ts",
+            (von, end, sued - d_lat, nord + d_lat, west - d_lon, ost + d_lon)).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT cid, latitude, longitude, altitude, groundspeed, ts FROM position_history "
+            "WHERE ts >= ? AND ts <= ? ORDER BY cid, ts", (von, end)).fetchall()
     je_cid: dict[int, list] = {}
     for cid, lat, lon, alt, gs, ts in rows:
         je_cid.setdefault(int(cid), []).append(
@@ -9634,6 +9681,116 @@ def reddung_spuren(conn: sqlite3.Connection, start: str, end: str, *,
              float(alt) if alt is not None else None,
              float(gs) if gs is not None else None, ts))
     return [(cid, punkte) for cid, punkte in je_cid.items()]
+
+
+#: Fassung des fortgeschriebenen Zustands. Ändert sich die Rechnung, muss die Zahl steigen --
+#: dann werfen alle Aufrufe den alten Stand weg und rechnen einmal neu. Eigene Zahl IM Payload
+#: und nicht ``_PROGRESS_SNAPSHOT_VERSION``: Die ist global und würde Bummel und Kutter mit
+#: entwerten.
+_REDDUNG_STAND_FASSUNG = 1
+
+
+def _reddung_punkte_neu(conn: sqlite3.Connection, ev: dict, von: str, bis: str,
+                        box: tuple) -> list[tuple[int, list]]:
+    """Die Punkte seit ``von`` -- plus je Pilot den LETZTEN Punkt davor.
+
+    ⚠ Der Punkt davor ist der ganze Trick. Ein Segment besteht aus zwei Punkten; ohne den
+    letzten Punkt des vorigen Takts fehlt genau das Stück, das über die Schnittkante läuft --
+    und es entstünde alle 60 Sekunden ein blinder Fleck, in dem ein Überflug verschwindet.
+    """
+    sued, west, nord, ost = box
+    d_lat = _REDDUNG_RAND_KM / 111.32
+    d_lon = _REDDUNG_RAND_KM / max(_km_je_grad_lon((sued + nord) / 2.0), 1.0)
+    grenzen = (sued - d_lat, nord + d_lat, west - d_lon, ost + d_lon)
+    neu = conn.execute(
+        "SELECT cid, latitude, longitude, altitude, groundspeed, ts FROM position_history "
+        "WHERE ts > ? AND ts <= ? AND latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ? "
+        "ORDER BY cid, ts", (von, bis, *grenzen)).fetchall()
+    if not neu:
+        return []
+    cids = sorted({int(r[0]) for r in neu})
+    # Die Brücke: höchstens zwei Minuten zurück -- ein Segment darf ohnehin nur 60 s lang sein
+    # (``Fenster.luecke_max_s``), alles Ältere bildet kein Segment mehr.
+    frueher = _shift_iso(von, hours=-1.0 / 30.0)
+    marke = {}
+    for r in conn.execute(
+            f"SELECT cid, latitude, longitude, altitude, groundspeed, ts FROM position_history "
+            f"WHERE ts > ? AND ts <= ? AND cid IN ({','.join('?' * len(cids))}) "
+            f"  AND latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ? "
+            f"ORDER BY cid, ts", (frueher, von, *cids, *grenzen)).fetchall():
+        marke[int(r[0])] = r          # die letzte Zeile je cid gewinnt
+    je_cid: dict[int, list] = {}
+    for r in list(marke.values()) + list(neu):
+        cid, lat, lon, alt, gs, ts = r
+        je_cid.setdefault(int(cid), []).append(
+            (lat, lon, float(alt) if alt is not None else None,
+             float(gs) if gs is not None else None, ts))
+    for punkte in je_cid.values():
+        punkte.sort(key=lambda x: x[4])
+    return list(je_cid.items())
+
+
+def reddung_fortschreiben(conn: sqlite3.Connection, ev: dict, *, bis: str) -> dict:
+    """Abdeckung und Fund fortschreiben -- nur neue Punkte, nur noch offene Ziele.
+
+    Statt in jedem Aufruf den ganzen Abend neu zu rechnen (gemessen 324 ms bei sechs Piloten
+    über zwei Stunden, und wachsend), wird der Zustand in ``progress_snapshot`` gehalten und
+    je Aufruf um die neuen Punkte ergänzt. Das ist erlaubt, weil ``abdeckung()`` die Segmente
+    nach ihrem ENDE sortiert verarbeitet: Ein Treffer von vorhin kann durch einen späteren
+    Punkt nie mehr umgeworfen werden.
+
+    **Suchen und Finden sind zwei Läufe**, weil sie zwei Fenster haben — der Suchkorridor ist
+    weit und darf hoch sein, der Fund ist eng und muss tief sein. Der Fundlauf kostet fast
+    nichts: ein einziges Ziel.
+
+    Rückgabe: ``{"zellen", "abgedeckt", "anteil", "je_pilot", "fund", "bis"}``.
+    ``fund`` ist ``None`` oder ``{"cid", "ts"}`` — **niemals eine Koordinate.**
+    """
+    from app import reddung as rd
+    from app.abdeckung import abdeckung
+
+    zellen = rd.zellen_fuer(ev)
+    alt = get_progress_snapshot(conn, "reddung", ev["id"]) or {}
+    if alt.get("v") != _REDDUNG_STAND_FASSUNG:
+        alt = {}
+    treffer: dict = dict(alt.get("treffer") or {})
+    je_pilot: dict[int, int] = {int(k): int(v) for k, v in (alt.get("je_pilot") or {}).items()}
+    fund = alt.get("fund")
+    von = alt.get("bis") or ev["dtstart"]
+
+    if bis > von:
+        box = (ev["sued"], ev["west"], ev["nord"], ev["ost"])
+        spuren = _reddung_punkte_neu(conn, ev, von, bis, box)
+        if spuren:
+            offen = [z for z in zellen if z[0] not in treffer]
+            if offen:
+                erg = abdeckung(spuren, offen, rd.fenster_suchen(ev))
+                for schluessel, t in erg.treffer.items():
+                    treffer[schluessel] = [t.cid, t.ts]
+                    je_pilot[t.cid] = je_pilot.get(t.cid, 0) + 1
+            for cid, _punkte in spuren:
+                je_pilot.setdefault(cid, 0)
+            if fund is None:
+                ziel = rd.havarist_ziel(ev)
+                if ziel is not None:
+                    erg_f = abdeckung(spuren, [ziel], rd.fenster_finden(ev))
+                    t = erg_f.treffer.get(rd.HAVARIST)
+                    if t:
+                        fund = {"cid": t.cid, "ts": t.ts}
+        write_progress_snapshot(conn, "reddung", ev["id"], {
+            "v": _REDDUNG_STAND_FASSUNG, "bis": bis, "treffer": treffer,
+            "je_pilot": {str(k): v for k, v in je_pilot.items()}, "fund": fund,
+        }, _now_utc())
+        von = bis
+
+    return {
+        "zellen": len(zellen),
+        "abgedeckt": len(treffer),
+        "anteil": (len(treffer) / len(zellen)) if zellen else 0.0,
+        "je_pilot": je_pilot,
+        "fund": fund,
+        "bis": von,
+    }
 
 
 def compute_reddung_stand(conn: sqlite3.Connection, ev: dict) -> dict:
@@ -9648,16 +9805,13 @@ def compute_reddung_stand(conn: sqlite3.Connection, ev: dict) -> dict:
     des Aufbaus statt eine Frage der Sorgfalt.
     """
     from app import reddung as rd
-    from app.abdeckung import abdeckung
 
-    zellen = rd.zellen_fuer(ev)
-    spuren = reddung_spuren(conn, ev["dtstart"], ev["dtend"])
-    erg = abdeckung(spuren, zellen, rd.fenster_suchen(ev))
+    stand = reddung_fortschreiben(conn, ev, bis=min(_now_utc(), ev["dtend"]))
 
     namen = {int(r[0]): r[1] for r in conn.execute("SELECT cid, name FROM pilots").fetchall()}
     je_pilot = sorted(
         ({"cid": cid, "name": namen.get(cid) or str(cid), "zellen": n}
-         for cid, n in erg.je_pilot.items()),
+         for cid, n in stand["je_pilot"].items()),
         key=lambda p: (-p["zellen"], p["cid"]))
 
     def wer(spalte: str) -> dict | None:
@@ -9677,17 +9831,17 @@ def compute_reddung_stand(conn: sqlite3.Connection, ev: dict) -> dict:
     return {
         "id": ev["id"],
         "name": ev.get("name") or "FriesenReddung",
-        "anteil": erg.anteil,
-        "zellen": len(zellen),
-        "abgedeckt": len(erg.treffer),
-        "offen": len(erg.offen),
+        "anteil": stand["anteil"],
+        "zellen": stand["zellen"],
+        "abgedeckt": stand["abgedeckt"],
+        "offen": stand["zellen"] - stand["abgedeckt"],
         "je_pilot": je_pilot,
         "gefunden": wer("gefunden"),
         "aufgenommen": wer("aufgenommen"),
         "eingeliefert": wer("eingeliefert"),
         "aufgeloest": bool(ev.get("aufgeloest_am")),
-        "fundradius_km": round(rd.fundradius_km(
-            float(ev.get("korridor_km") or 1.0), float(ev.get("kante_km") or 1.0)), 3),
+        "korridor_km": rd.korridor_km(ev),
+        "fund_radius_ft": rd.fund_radius_ft(ev),
         "sektor": {k: ev[k] for k in ("sued", "west", "nord", "ost")},
         "dauer_min": dauer,
     }
@@ -9767,32 +9921,43 @@ def _reddung_soll_setzen(conn: sqlite3.Connection, basis_id: str, art: str,
     return ids
 
 
-def reddung_objekte_abgleichen(conn: sqlite3.Connection, ev: dict) -> list[str]:
+def reddung_objekte_abgleichen(conn: sqlite3.Connection, ev: dict,
+                               weg: bool = False) -> list[str]:
     """Havarist und Fackel in ``bruegge_soll`` auf den Stand des Events bringen.
 
     Vollständiger Abgleich, kein Strom von Befehlen (PROTOKOLL.md, Abschnitt 2): Die Funktion
     darf in jedem Poller-Takt laufen und schreibt denselben Zustand.
 
-    Die Fackel folgt den Latches -- orange nach dem Fund, hellblau nach der Aufnahme, und
-    gleich hellblau, wenn der Abend mit dem Fund endet. Orange heißt „gefunden, noch nicht
-    gerettet"; stünde es noch da, wenn nichts mehr zu tun ist, wäre das eine falsche Auskunft
-    an alle, die noch in der Luft sind.
+    Die Fackel folgt den Latches: **orange** nach dem Fund („gefunden, noch nicht gerettet"),
+    **hellblau** nach der Aufnahme („unterwegs zum Platz"), **rot** beim Abschluss. Die rote
+    steht bis ``dtend`` und markiert die Stelle — auch an einem Abend, an dem niemand fand.
 
-    ``gilt_bis`` ist das Eventende -- damit räumt sich der Havarist von selbst weg, auch wenn
-    niemand mehr hinsieht.
+    ⚠ **Eine aufgelöste Reddung räumt NICHTS weg** -- Wrack und Fackel stehen bis zum
+    Eventende, und ``gilt_bis`` (= ``dtend``) lässt sie dort von selbst ablaufen. Hier stand
+    zuerst das Gegenteil, und das war ein Fehler: Bei ``aufnehmen_noetig = 0`` löst der Fund die
+    Lage im SELBEN Poller-Takt auf -- die hellblaue Fackel wäre erschienen und verschwunden,
+    ohne dass sie jemand gesehen hätte. Und im Normalfall hätte sich nach der Einlieferung alles
+    schlagartig aufgelöst, mitten vor den Augen derer, die noch hinfliegen.
+
+    ``weg=True`` nimmt alles zurück. Das ist der Weg beim **Löschen** eines Events -- dort ist
+    es nötig, weil sonst ein Wrack bis zu seinem ``gilt_bis`` zu einem Event stünde, das es
+    nicht mehr gibt.
     """
     basis = f"reddung-{ev['id']}"
     hav_id, fackel_id = f"{basis}-havarist", f"{basis}-fackel"
 
-    def weg(basis_id: str) -> None:
+    # ⚠ NICHT `weg` nennen -- so hiess diese Hilfsfunktion zuerst, und sie hat den Parameter
+    # `weg` ueberschattet. `if weg or ...` pruefte dann ein Funktionsobjekt, das immer wahr
+    # ist: Der Abgleich brach JEDES MAL sofort ab und raeumte alles weg. Python sagt dazu
+    # nichts, und es sah aus wie ein Fehler im Katalog.
+    def raeumen(basis_id: str) -> None:
         bruegge_soll_loeschen(conn, basis_id)
         for sim in _REDDUNG_SIMULATOREN:
             bruegge_soll_loeschen(conn, f"{basis_id}-{sim}")
 
-    if ev.get("aufgeloest_am") or ev.get("havarist_lat") is None \
-            or ev.get("havarist_lon") is None:
-        weg(hav_id)
-        weg(fackel_id)
+    if weg or ev.get("havarist_lat") is None or ev.get("havarist_lon") is None:
+        raeumen(hav_id)
+        raeumen(fackel_id)
         return []
 
     lat, lon = float(ev["havarist_lat"]), float(ev["havarist_lon"])
@@ -9801,8 +9966,15 @@ def reddung_objekte_abgleichen(conn: sqlite3.Connection, ev: dict) -> list[str]:
                                ev.get("havarist_art") or _HAVARIST_VORGABE_ART,
                                lat, lon, gilt_bis)
 
+    # Die Fackel als Zustandsanzeige, von hinten nach vorn gelesen:
+    #   rot      -- der Fall ist abgeschlossen (oder das Event vorbei). Steht bis `dtend` und
+    #               markiert damit die Stelle, auch fuer einen Abend, an dem niemand fand.
+    #   hellblau -- aufgenommen, unterwegs zum Platz.
+    #   orange   -- gefunden, noch nicht gerettet.
     fackel = None
-    if ev.get("aufgenommen_am") or (ev.get("gefunden_am") and not ev.get("aufnehmen_noetig")):
+    if ev.get("aufgeloest_am"):
+        fackel = "rauch_signalrot"
+    elif ev.get("aufgenommen_am"):
         fackel = "rauch_hellblau"
     elif ev.get("gefunden_am"):
         fackel = "rauch_signalorange"
@@ -9810,7 +9982,7 @@ def reddung_objekte_abgleichen(conn: sqlite3.Connection, ev: dict) -> list[str]:
         ids += _reddung_soll_setzen(conn, fackel_id, fackel,
                                     lat + _FACKEL_VERSATZ_GRAD, lon, gilt_bis)
     else:
-        weg(fackel_id)
+        raeumen(fackel_id)
     return ids
 
 

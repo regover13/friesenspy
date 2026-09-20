@@ -99,10 +99,10 @@ def test_der_ueberflug_latcht_den_fund(db):
     _lauf(db)
     ev = _ev(db, eid)
     assert ev["gefunden_von"] == 111
-    # Gestempelt wird das Ende des ERSTEN Segments, das den Ueberflug beweist -- und das ist
-    # hier schon das Stueck von 2 km auf 1 km Abstand, denn 1 km liegt im Fundradius von
-    # 1,71 km. Nicht der Punkt genau ueber dem Wrack.
-    assert ev["gefunden_am"] == _quer(60)[1][2]
+    # Gestempelt wird das Ende des ERSTEN Segments, das den Ueberflug beweist. Mit einem
+    # Fundradius von 500 ft (152 m) ist das das Stueck, das ueber das Wrack fuehrt -- nicht
+    # mehr das Stueck davor: 1 km Abstand liegt jetzt weit ausserhalb.
+    assert ev["gefunden_am"] == _quer(60)[2][2]
 
 
 def test_ein_zu_hoher_ueberflug_findet_nicht(db):

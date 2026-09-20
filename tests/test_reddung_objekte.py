@@ -186,25 +186,54 @@ def test_nach_der_aufnahme_wechselt_die_fackel_auf_hellblau(conn):
     assert arten == ["rauch_hellblau"], "orange darf nicht daneben stehenbleiben"
 
 
-def test_endet_der_abend_mit_dem_fund_wird_die_fackel_gleich_hellblau(conn):
-    """Orange heisst 'gefunden, noch nicht gerettet'. Ist nichts mehr zu tun, waere das
-    eine falsche Auskunft an alle, die noch in der Luft sind."""
+def test_die_fackel_folgt_den_drei_stufen(conn):
+    """orange = gefunden, hellblau = aufgenommen, rot = abgeschlossen. Die rote bleibt bis
+    zum Eventende stehen und markiert die Stelle."""
+    for art in ("flugzeug_echo", "rauch_signalorange", "rauch_hellblau", "rauch_signalrot"):
+        _art(conn, art, ("msfs2024",))
+    ev = _ev(conn)
+
+    def fackel():
+        reddung_objekte_abgleichen(conn, get_reddung_event(conn, ev["id"]))
+        r = conn.execute("SELECT art FROM bruegge_soll WHERE art LIKE 'rauch%'").fetchall()
+        return [x[0] for x in r]
+
+    assert fackel() == []
+    set_reddung_gefunden(conn, ev["id"], "2026-09-25T17:30:00Z", 111)
+    assert fackel() == ["rauch_signalorange"]
+    set_reddung_aufgenommen(conn, ev["id"], "2026-09-25T17:50:00Z", 222)
+    assert fackel() == ["rauch_hellblau"], "orange darf nicht daneben stehenbleiben"
+    set_reddung_aufgeloest(conn, ev["id"], "2026-09-25T18:20:00Z")
+    assert fackel() == ["rauch_signalrot"]
+
+
+def test_nach_der_aufloesung_bleibt_alles_stehen(conn):
+    """⚠ Hier stand zuerst das Gegenteil, und das war ein Fehler.
+
+    Bei `aufnehmen_noetig = 0` loest der Fund die Lage im SELBEN Poller-Takt auf -- die
+    hellblaue Fackel waere erschienen und verschwunden, ohne dass sie jemand gesehen haette.
+    Wrack und Fackel stehen deshalb bis zum Eventende; `gilt_bis` laesst sie von selbst
+    ablaufen.
+    """
     _art(conn, "flugzeug_echo", ("msfs2024",))
-    _art(conn, "rauch_hellblau", ("msfs2024",))
+    _art(conn, "rauch_signalrot", ("msfs2024",))
     ev = _ev(conn, aufnehmen_noetig=0)
     set_reddung_gefunden(conn, ev["id"], "2026-09-25T17:30:00Z", 111)
+    set_reddung_aufgeloest(conn, ev["id"], "2026-09-25T17:30:00Z")
     reddung_objekte_abgleichen(conn, get_reddung_event(conn, ev["id"]))
-    arten = [r[0] for r in conn.execute(
-        "SELECT art FROM bruegge_soll WHERE art LIKE 'rauch%'").fetchall()]
-    assert arten == ["rauch_hellblau"]
+    zeilen = conn.execute("SELECT art, gilt_bis FROM bruegge_soll ORDER BY art").fetchall()
+    assert [r[0] for r in zeilen] == ["flugzeug_echo", "rauch_signalrot"]
+    assert all(r[1] == "2026-09-25T22:00:00Z" for r in zeilen), "laufen mit dtend ab"
 
 
-def test_nach_der_aufloesung_ist_alles_weg(conn):
+def test_nur_weg_raeumt_wirklich_auf(conn):
+    """Der Weg beim Loeschen eines Events -- sonst stuende ein Wrack zu einem Event, das es
+    nicht mehr gibt."""
     _art(conn, "flugzeug_echo", ("msfs2024",))
     ev = _ev(conn)
     reddung_objekte_abgleichen(conn, ev)
-    set_reddung_aufgeloest(conn, ev["id"], "2026-09-25T22:00:00Z")
-    reddung_objekte_abgleichen(conn, get_reddung_event(conn, ev["id"]))
+    assert conn.execute("SELECT count(*) FROM bruegge_soll").fetchone()[0] > 0
+    reddung_objekte_abgleichen(conn, ev, weg=True)
     assert conn.execute("SELECT count(*) FROM bruegge_soll").fetchone()[0] == 0
 
 

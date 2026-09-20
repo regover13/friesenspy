@@ -1,10 +1,17 @@
 # -*- coding: utf-8 -*-
 """Die Parameter einer FriesenReddung -- reine Rechnung, keine Datenbank (20.09.2026).
 
-Der wichtigste Test hier ist der erste: Der Fundradius wird GERECHNET. Wird er einstellbar,
-luegt der Fortschrittsbalken -- eine abgedeckte Zelle heisst nur, dass ein Track im Korridor an
-ihrem MITTELPUNKT vorbeilief, und ein Havarist in der Zellecke ist die halbe Zelldiagonale
-weiter weg. Siehe Spec, Abschnitt 4.
+**Suchen und Finden sind ZWEI Fenster.** Der Suchkorridor ist weit (1 km) und darf hoch
+geflogen werden (2.000 ft) -- er sagt, welche Flaeche abgeflogen ist. Der Fund ist eng (500 ft)
+und muss tief sein (1.000 ft) -- er setzt die Rauchfackel. "Abgesucht" heisst damit
+ausdruecklich NICHT "haetten wir ihn gesehen"; das traegt, weil zu jedem Event eine Geschichte
+gehoert, die das Gebiet eingrenzt.
+
+⚠ Drei Fassungen sind verworfen, und diese Tests halten fest, dass keine wiederkommt: ein
+GERECHNETER Fundradius (`korridor + kante/sqrt(2)`, 1,71 km -- eine Cessna 172 sieht niemand aus
+1,7 km), der Schrägabstand (bestraft Hoehe, obwohl man von oben weiter sieht) und der Versuch,
+beides mit EINER Zahl zu erledigen (dann ist entweder das Absuchen 26 Flugstunden oder der Fund
+eine Farce).
 """
 from __future__ import annotations
 
@@ -19,40 +26,49 @@ from app.gps_legs import _GPS_BLOCK_GS_KT, _GPS_GROUND_AGL_FT
 EV = {
     "sued": 53.54, "west": 6.95, "nord": 53.90, "ost": 7.55,
     "kante_km": 1.0, "korridor_km": 1.0,
-    "hoehe_max_ft": 1000, "gs_max_kt": 140, "gs_min_kt": 30,
+    "hoehe_max_ft": 2000, "gs_max_kt": 140, "gs_min_kt": 30,
+    "fund_radius_ft": 500, "fund_hoehe_ft": 1000,
     "havarist_lat": 53.72, "havarist_lon": 7.25,
     "havarist_grund_ft": 20.0,
     "aufnehmen_noetig": 1, "landung_noetig": 1,
 }
 
 
-def test_der_fundradius_ist_korridor_plus_halbe_zelldiagonale():
-    assert reddung.fundradius_km(1.0, 1.0) == pytest.approx(1.0 + math.sqrt(2) / 2, abs=1e-9)
-    assert reddung.fundradius_km(1.0, 1.0) == pytest.approx(1.7071, abs=1e-4)
+def test_suchen_ist_weit_und_finden_ist_eng():
+    """Der Kern der Aufteilung -- zwei Fenster, nicht eins."""
+    assert reddung.korridor_km(EV) == 1.0                      # Suchen, seitlich
+    assert reddung.fund_radius_ft(EV) == 500                    # Finden, seitlich
+    assert reddung.fund_radius_km(EV) == pytest.approx(0.1524, abs=1e-6)
+    assert reddung.fund_radius_km(EV) < reddung.korridor_km(EV)
 
 
-def test_volle_abdeckung_garantiert_den_fund():
-    """Der Sinn der Rechnung: Jeder Punkt einer abgedeckten Zelle liegt im Fundradius.
-
-    Schlimmster Fall ist die Ecke zwischen vier Zellen -- kante/sqrt(2) vom Mittelpunkt. Wer
-    dort liegt und dessen Zelle abgedeckt ist, muss gefunden worden sein.
-    """
-    for kante in (0.5, 1.0, 2.0, 3.0):
-        for korridor in (0.5, 1.0, 2.0):
-            ecke = kante / math.sqrt(2)
-            assert reddung.fundradius_km(korridor, kante) >= korridor + ecke - 1e-9
+def test_beide_reichweiten_sind_einstellbar():
+    assert reddung.korridor_km({**EV, "korridor_km": 2.5}) == 2.5
+    assert reddung.fund_radius_ft({**EV, "fund_radius_ft": 800}) == 800
+    assert reddung.korridor_km({**EV, "korridor_km": None}) == 1.0
+    assert reddung.fund_radius_ft({**EV, "fund_radius_ft": None}) == 500
 
 
-def test_strengere_werte_ziehen_den_fundradius_mit():
-    """Wer strenger will, verkleinert BEIDE Werte -- das Verhaeltnis bleibt erhalten."""
-    assert reddung.fundradius_km(0.6, 0.6) == pytest.approx(1.0243, abs=1e-4)
+def test_der_fund_ist_auch_in_der_hoehe_enger():
+    """Der Suchkorridor darf hoch geflogen werden, der Fund nicht -- 20 ft Gelaende plus
+    2.000 ft Suche gegen 20 ft plus 1.000 ft Fund."""
+    assert reddung.hoehe_schranke_msl(EV) == pytest.approx(2020.0)
+    assert reddung.fund_hoehe_schranke_msl(EV) == pytest.approx(1020.0)
+    assert reddung.fenster_finden(EV).hoehe_max_ft < reddung.fenster_suchen(EV).hoehe_max_ft
 
 
-def test_havarist_ist_ein_gewoehnliches_ziel_mit_dem_schluessel_havarist():
-    ziel = reddung.havarist_ziel(EV)
-    assert ziel[0] == "havarist"
-    assert ziel[1] == 53.72 and ziel[2] == 7.25
-    assert ziel[3] == pytest.approx(1.7071, abs=1e-4)
+def test_das_fundfenster_erbt_das_geschwindigkeitsfenster():
+    """Wer parkt, findet nicht; wer rast, sieht nichts -- dieselbe Regel wie beim Suchen."""
+    f = reddung.fenster_finden(EV)
+    assert f.gs_max_kt == 140 and f.gs_min_kt == 30
+
+
+def test_die_alten_fassungen_sind_weg():
+    """⚠ Drei verworfene Fassungen, verankert am Modul: der GERECHNETE Fundradius
+    (korridor + kante/sqrt(2)), der Schrägabstand und der Versuch, Suchen und Finden mit
+    EINER Zahl zu erledigen."""
+    assert not hasattr(reddung, "fundradius_km"), "der gerechnete Radius ist weg"
+    assert not hasattr(reddung, "seitlicher_spielraum_ft"), "der Schrägabstand ist weg"
 
 
 def test_ohne_gesetzten_ort_gibt_es_kein_ziel():
@@ -69,13 +85,13 @@ def test_die_zellen_kommen_aus_dem_sektor_und_tragen_den_korridor():
 def test_die_hoehenschranke_ist_agl_ueber_dem_havaristen():
     """1000 ft AGL bei 20 ft Gelaende heisst 1020 ft MSL -- gemessen wird gegen die
     MSL-Hoehe aus position_history."""
-    assert reddung.hoehe_schranke_msl(EV) == pytest.approx(1020.0)
-    assert reddung.fenster_suchen(EV).hoehe_max_ft == pytest.approx(1020.0)
+    assert reddung.hoehe_schranke_msl(EV) == pytest.approx(2020.0)
+    assert reddung.fenster_suchen(EV).hoehe_max_ft == pytest.approx(2020.0)
 
 
 def test_ohne_gemessene_grundhoehe_gilt_null():
     assert reddung.grund_ft({**EV, "havarist_grund_ft": None}) == 0.0
-    assert reddung.hoehe_schranke_msl({**EV, "havarist_grund_ft": None}) == pytest.approx(1000.0)
+    assert reddung.hoehe_schranke_msl({**EV, "havarist_grund_ft": None}) == pytest.approx(2000.0)
 
 
 def test_das_suchfenster_hat_eine_untergrenze():

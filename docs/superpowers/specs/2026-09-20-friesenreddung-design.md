@@ -69,8 +69,20 @@ zurück auf **orange**, und ein Push sagt, dass die Rettung wieder offen ist.
 es in beiden Fällen geben — sonst hängt ein Abend an einer Automatik, die im Einzelfall falsch
 liegt.
 
-**Findet niemand:** Bei `dtend` wird die Lage aufgelöst und veröffentlicht, die Fackeln werden
-zurückgenommen, die Bilanz sagt „nicht gefunden" und nennt die erreichte Abdeckung.
+**Die Fackel hat drei Stufen, und sie bleibt stehen:** 🟠 orange nach dem Fund („gefunden, noch
+nicht gerettet"), 🔵 hellblau nach der Aufnahme („unterwegs zum Platz"), 🔴 **rot beim Abschluss**
+— und die rote steht bis `dtend`.
+
+⚠ **Eine aufgelöste Reddung räumt nichts weg.** Hier stand zuerst das Gegenteil, und das war ein
+Fehler: Bei `aufnehmen_noetig = 0` löst der Fund die Lage im **selben** Poller-Takt auf — die
+Fackel wäre erschienen und verschwunden, ohne dass sie jemand gesehen hätte. Und im Normalfall
+hätte sich nach der Einlieferung alles schlagartig aufgelöst, vor den Augen derer, die noch
+hinfliegen. Wrack und Fackel laufen jetzt über `gilt_bis` (= `dtend`) von selbst ab; gezielt
+weggenommen wird nur beim **Löschen** des Events.
+
+**Findet niemand:** Bei `dtend` wird die Lage aufgelöst und veröffentlicht — die rote Fackel
+markiert dann die Stelle, und die Bilanz sagt „nicht gefunden" und nennt die erreichte
+Abdeckung.
 
 ## 2. Gesucht wird meist ein Flugzeug
 
@@ -125,16 +137,41 @@ aber niemand geht leer aus, der eine Fläche abgeflogen und nichts gefunden hat.
 
 ## 4. Die Zahlen — und warum sie aneinander hängen
 
-| Größe | Vorgabe | Herkunft |
-|---|---|---|
-| Sektor | 40 × 40 km, Rechteck | simuliert: 4–6 Piloten suchen ihn in ~30 Min ab, 20 × 20 km wäre nach 10 Min vorbei |
-| Zellkante | 1,0 km | gleich dem Korridor ⇒ lückenloses Raster |
-| Korridor | 1,0 km | Abdeckungsbreite je Seite |
-| **Fundradius** | **1,71 km — gerechnet, nicht eingestellt** | Korridor + halbe Zelldiagonale |
-| Höhenschranke | **1.000 ft AGL über dem Havaristen**, einstellbar | s. unten — der Server kennt die Höhe des Havaristen |
-| Geschwindigkeit | 30–140 kt | unten, damit ein geparktes Flugzeug nicht seine Zelle abdeckt |
-| Aufnehmen mit Landung | `< 2 kt` und `< 300 ft` AGL | die Landeregeln des Projekts, s. unten |
-| Aufnehmen ohne Landung | `< 30 kt` und `< 300 ft` AGL | Schwebeflug — verlangt einen Hubschrauber |
+**Suchen und Finden sind zwei Fenster.** Das ist die wichtigste Zahl-Entscheidung des Entwurfs
+und hat drei Fassungen gebraucht (s. unten).
+
+| | seitlich | Höhe (AGL über dem Havaristen) | bedeutet |
+|---|---|---|---|
+| **Suchen** | `korridor_km` **1,0 km** | `hoehe_max_ft` **2.000 ft** | „Fläche abgeflogen" — was der Balken zählt |
+| **Finden** | `fund_radius_ft` **500 ft** | `fund_hoehe_ft` **1.000 ft** | die Rauchfackel — der echte Fund |
+
+Dazu, für beide gleich: **30–140 kt** (die Untergrenze, damit ein geparktes Flugzeug nicht seine
+Zelle abdeckt), `kante_km` **1,0 km** (Feinheit der Buchhaltung, nie größer als der Korridor),
+und fürs Aufnehmen die Landeregeln des Projekts (`< 2 kt` mit Landung, `< 30 kt` im Schwebeflug,
+je unter `< 300 ft` AGL).
+
+**Die Sektorgröße ist KEINE Vorgabe** — sie ergibt sich aus den zwei geklickten Ecken. 40 × 40 km
+ist eine *Empfehlung* (simuliert: 4–6 Piloten suchen das bei 1-km-Korridor in rund einer halben
+Stunde ab); der Admin sieht die gerechnete Größe und Suchdauer, während er zieht.
+
+### „Abgesucht" heißt nicht „hätten wir ihn gesehen" — und das ist Absicht
+
+Bei zwei Fenstern kann ein Sektor vollständig abgeflogen sein, ohne dass jemand den Havaristen
+gesehen hat. **Das ist kein Mangel, sondern die Folge davon, dass zu jedem Event eine Geschichte
+gehört** („über der Sandbank bei Spiekeroog weggeblieben"). Die Geschichte grenzt das Gebiet ein;
+niemand sucht blind 1.600 km² ab. Genau deshalb muss der Admin die Lage kennen — **er erfindet
+sie.** (Und genau deshalb war das Würfeln nicht nur unnötig, sondern hätte geschadet.)
+
+**Drei verworfene Fassungen, damit keine wiederkommt:**
+
+1. **Fundradius gerechnet** aus `korridor + kante/√2` (bei 1/1 km: 1,71 km), damit volle
+   Abdeckung den Fund garantiert. Die Garantie war schön und die Zahl falsch: **Eine Cessna 172
+   sieht niemand aus 1,7 km.**
+2. **Schrägabstand** — Höhe und Seitenabstand in einem, also eine Kugel. Verworfen, weil er Höhe
+   bestraft, obwohl man von oben weiter sieht: Bei 1.000 ft Radius und 1.000 ft Flughöhe bliebe
+   null Spielraum zur Seite.
+3. **Eine Zahl für beides** (Korridor = Fundradius, 300 m). Konsistent, aber dann ist ein
+   40-km-Sektor 26 Flugstunden — oder der Fund eine Farce.
 
 ### Die Höhenschranke ist AGL über dem Havaristen
 
@@ -203,11 +240,20 @@ Sekundentakt der Brügge (spätere Ausbaustufe) von selbst verschwindet.
 eingetragenen ab, ist die Stelle für diese Art untauglich (PROTOKOLL Abschnitt 4) — der Admin
 bekommt dann einen Hinweis, bevor Piloten ausschwärmen.
 
-**Der Fundradius wird gerechnet.** Sonst lügt der Fortschrittsbalken: Eine abgedeckte Zelle heißt
-„ein Track lief im Korridor an ihrem **Mittelpunkt** vorbei", ein Havarist in der Zellecke ist
-noch die halbe Zelldiagonale weiter weg. Mit `Korridor + Kante/√2` gilt dagegen: jede abgedeckte
-Zelle bedeutet „hier hätten wir ihn gesehen", und **volle Abdeckung garantiert den Fund**. Der
-Admin stellt Korridor und Kante ein und kann den Widerspruch nicht mehr erzeugen.
+**Die Zellkante gehört nie über den Korridor.** Eine abgedeckte Zelle heißt „ein Track lief im
+Korridor an ihrem **Mittelpunkt** vorbei"; in der Zellecke sind es bis zu 0,71 · Kante mehr. Bei
+Kante gleich Korridor ist das ein Drittel Spielraum, bei gröberer Kante wird der Balken
+großzügig. Löcher entstehen dabei **nicht** — das stand hier zuerst falsch; jeder Mittelpunkt ist
+überfliegbar.
+
+**Und die Kante gehört nie über den Korridor.** Hier stand zuerst, eine zu große Kante lasse
+„Löcher zwischen den Zellen, die niemand füllen kann" — das ist **falsch** (berichtigt am
+20.09.2026, beim Erklären der beiden Werte aufgefallen). Löcher gibt es nicht: Jeder
+Zellmittelpunkt ist überfliegbar, 100 % sind immer erreichbar. Was wirklich passiert, ist eine
+grobe Buchhaltung — eine 6-km-Zelle gilt als komplett abgesucht, obwohl nur ein Streifen von
+2 · Korridor durch ihre Mitte führte, und der gerechnete Fundradius wächst mit (bei 6 km Kante
+auf 5,2 km). Das Versprechen bleibt eingehalten, aber der Abend wird beliebig leicht.
+Umgekehrt ist feiner immer erlaubt und nur eine Frage der Rechenzeit.
 
 1,71 km Sichtweite aus 1.000 ft ist dabei keine Nachgiebigkeit, sondern die Bedingung dafür, dass
 Balken und Fund dasselbe versprechen. Auf ein Wrack im Gelände ist sie allerdings **optimistischer
@@ -273,13 +319,32 @@ CREATE TABLE IF NOT EXISTS reddung_events (
 );
 ```
 
-**Keine Zellentabelle.** Das Raster entsteht bei jeder Rechnung aus `zellen_aus_box()`; die
-Abdeckung kommt aus `position_history` und wird in `progress_snapshot` mit `kind='reddung'`
-zwischengespeichert — dasselbe Muster wie Bummel und Kutter. Gemessen: 39 ms für 1.640 Zellen
-gegen sechs Zweistundenspuren, also unkritisch auch ohne Snapshot.
+**Keine Zellentabelle.** Das Raster entsteht bei jeder Rechnung aus `zellen_aus_box()`.
 
-⚠ **`code_version` erhöhen, wenn sich die Rechnung ändert** — sonst bleibt ein eingefrorener
-Snapshot stehen (`app/database.py`, `_build_race_view`-Kommentar).
+**Die Abdeckung wird FORTGESCHRIEBEN, nicht neu gerechnet.** Der Zustand — welche Zelle gehört
+wem, bis wann gerechnet, ist der Havarist gefunden — liegt in `progress_snapshot` mit
+`kind='reddung'`; jeder Aufruf ergänzt nur die neuen Punkte gegen die noch offenen Ziele. Das ist
+erlaubt, weil `abdeckung()` die Segmente nach ihrem **Ende** sortiert verarbeitet: Ein Treffer von
+vorhin kann durch einen späteren Punkt nie umgeworfen werden. Gemessen:
+
+| | von vorn | fortgeschrieben |
+|---|---|---|
+| `compute_reddung_stand` | 129 ms **je Aufruf**, wachsend | 129 ms einmal, danach **4 ms** |
+| `_check_reddung` je Takt | 139 ms, wachsend | **30 ms**, gleichbleibend |
+
+⚠ **Zwei Fallstricke, beide mit eigenem Test und je einer roten Gegenprobe:**
+
+* **Der letzte Punkt vor dem Schnitt gehört dazu.** Ein Segment besteht aus zwei Punkten; ohne
+  den letzten Punkt des vorigen Takts fehlt genau das Stück über die Schnittkante, und es
+  entstünde alle 60 Sekunden ein blinder Fleck, in dem ein Überflug verschwindet.
+* **`_REDDUNG_STAND_FASSUNG` erhöhen, wenn sich die Rechnung ändert** — sonst bleibt ein Ergebnis
+  stehen, das mit der neuen Rechnung nie entstanden wäre. Die Zahl steht **im Payload** und nicht
+  in `_PROGRESS_SNAPSHOT_VERSION`: Die ist global und würde Bummel und Kutter mit entwerten.
+
+**Und geladen wird nur die Gegend.** Die Abfragen filtern auf den Sektor plus 15 km Rand — wer
+nicht dort fliegt, wird nicht geladen. Der Rand ist gerechnet, nicht geraten: Ein Segment ist
+höchstens 6 km lang, also liegt bei einem sektornahen Segment ein Endpunkt innerhalb von
+Korridor + 6 km und der andere innerhalb von Korridor + 12 km.
 
 ## 7. Wo die Prüfung läuft
 
@@ -341,6 +406,15 @@ Wasser", Kalendertermin, Push. Dazu:
 
 * **Die erwartete Suchdauer** als Hinweis neben der Sektorgröße, aus Kantenlänge, Korridor und
   angenommenen 110 kt — sonst setzt niemand einen Sektor, der zur Abendlänge passt.
+* **Sektor und Havarist werden auf einer Karte geklickt**, nicht getippt — Luftbild, weil man
+  sehen muss, was an der Stelle liegt. Ein Klick setzt das gewählte Ziel und schaltet dann von
+  selbst weiter: **Ecke 1 → Ecke 2 → Havarist**. Vorbild ist das Einfassen der Flugplatzkarten
+  (`_dfsKarteAufbauen` in `admin.html`). Welche Ecke zuerst kam, sortiert die Oberfläche selbst
+  in Süd/Nord/West/Ost — sonst legte ein verdrehtes Rechteck ein leeres Raster an.
+* ⚠ **Hinweistexte stehen nie in einer Gitterzelle neben einem Feld.** Ein langer Text macht
+  seine Zelle hoch, das Nachbarfeld bleibt oben, und die Eingabefelder rutschen gegeneinander
+  aus der Zeile. Sie gehören über die volle Breite unter die Zeile, zu der sie sprechen — zwei
+  Tests im Projekt halten das fest.
 
 ## 9. Abhängigkeiten
 

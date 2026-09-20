@@ -347,15 +347,18 @@ untereinander auf und sucht ihn ab.
    Fortschritt gehört der **Gruppe**: Wer eine Fläche abfliegt und nichts findet, hat den
    Sektor für alle verkleinert — das zählt genauso wie der Fund selbst. Daneben steht, wer
    welche Fläche als Erster abgesucht hat.
-2. **Gefunden.** Wer den Havaristen in engem Umkreis und niedriger Höhe passiert, hat ihn für
-   **alle** gefunden. Von da an steht eine **orange Rauchfackel** daneben — weithin sichtbar,
-   damit die anderen ihn anfliegen können.
+2. **Gefunden.** Wer den Havaristen **dicht und tief** passiert, hat ihn für **alle** gefunden.
+   Das ist ein deutlich engeres Fenster als das Absuchen: Eine Cessna sieht man erst aus
+   knapp 150 Metern, und man muss tief darüber sein. **„Abgesucht" heißt deshalb nicht
+   „hätten wir ihn gesehen"** — dafür gehört zu jedem Event eine Geschichte, die das Gebiet
+   eingrenzt. Ab dem Fund steht eine **orange Rauchfackel** daneben, weithin sichtbar.
 3. **Aufnehmen.** Jetzt muss jemand hin und den Piloten aufnehmen — **nicht zwingend der
    Finder**: Der sitzt vielleicht im falschen Flugzeug oder hat nicht mehr genug Sprit. Liegt
    das Wrack an Land, verlangt das eine **Landung an der Unglücksstelle**; über Wasser oder an
    einer Stelle, an der niemand aufsetzen kann, genügt ein **Schwebeflug** darüber — dafür
    braucht es dann einen Hubschrauber. Sobald aufgenommen ist, wechselt die Fackel auf
-   **hellblau**.
+   **hellblau**, und am Ende auf **rot** — die rote bleibt bis zum Eventende stehen und
+   markiert die Stelle.
 4. **Einliefern.** Wer aufgenommen hat, bringt den Piloten zu **irgendeinem** Platz. Gewertet
    wird die Zeit vom Fund bis zu dieser Landung.
 
@@ -363,7 +366,8 @@ Ein Abend kann auch mit dem Fund enden — das entscheidet der Veranstalter beim
 er festlegt, ob zum Aufnehmen gelandet werden muss.
 
 **Findet niemand, endet der Abend ehrlich:** Zum Eventende wird die Lage des Havaristen
-veröffentlicht, und die Bilanz nennt, wie viel vom Sektor abgesucht war.
+veröffentlicht — die rote Fackel markiert die Stelle —, und die Bilanz nennt, wie viel vom
+Sektor abgeflogen war.
 
 **Was du dafür brauchst:** die **FriesenBrügge** (siehe *Sim-Brügge* weiter unten). Sie stellt
 Wrack und Fackeln in deinen Simulator — ohne sie siehst du nichts davon, auch wenn dein Überflug gewertet wird.
@@ -418,21 +422,22 @@ Ist der **Board-Login** aktiv (Admin → „Betrieb“ → „Board-Login“, St
 - **Event anlegen** — Name, Zeitfenster und der **Suchsektor** als Rechteck (vier Koordinaten).
   Daneben stehen **Zellkante** und **Korridor**: Die Zellkante bestimmt, wie fein der Sektor in
   Felder zerlegt wird, der Korridor, wie weit seitlich ein Überflug noch zählt. Gleiche Werte
-  ergeben ein lückenloses Raster; eine Kante über dem doppelten Korridor lässt Löcher
-  *zwischen* den Feldern, die niemand füllen kann.
-- **Der Fundradius wird angezeigt, nicht eingegeben.** Er ergibt sich aus Korridor und
-  Zellkante. Das ist Absicht: Sonst könnte „100 % abgesucht" neben „nicht gefunden" stehen —
-  ein abgesuchtes Feld heißt nur, dass jemand an seiner *Mitte* vorbeigeflogen ist, und ein
-  Havarist in der Feldecke ist weiter weg. So wie es ist, gilt: Sektor vollständig abgesucht
-  heißt gefunden.
+  ergeben ein lückenloses Raster. **Die Kante sollte nie größer sein als der Korridor:** Sonst
+  gilt ein großes Feld als komplett abgeflogen, obwohl nur ein schmaler Streifen durch seine
+  Mitte führte.
+- **Suchen und Finden sind zwei getrennte Fenster**, und das ist der Kern: Das **Suchen** darf
+  weit und hoch sein (Vorgabe 1 km seitlich, 2.000 ft), das **Finden** ist eng und tief (500 ft
+  seitlich, 1.000 ft). Der Balken zeigt deshalb, welche *Fläche abgeflogen* ist — nicht, dass
+  man den Havaristen gesehen hätte. Beides steht als Zahl im Formular, und darunter rechnet der
+  Admin mit: Suchstreifen je Bahn und Fundabstand in Metern.
 - **Die erwartete Suchdauer** steht daneben — aus Sektorgröße und Korridor, gerechnet für fünf
   Piloten bei 110 kt. Ein 40-×-40-km-Sektor ist damit rund eine halbe Stunde Arbeit; 20 × 20 km
   wären nach zehn Minuten vorbei.
-- **Höhenschranke in Fuß AGL über dem Havaristen** (Vorgabe 1.000), dazu ein
-  Geschwindigkeitsfenster (30–140 kt). Die Untergrenze verhindert, dass ein geparktes Flugzeug
-  sein Feld den ganzen Abend abdeckt. Die Geländehöhe an der Unglücksstelle lernt FriesenSpy
-  aus der Rückmeldung der FriesenBrügge, die das Wrack hinstellt; neben der Zahl steht, ob sie
-  gemessen oder geschätzt ist.
+- **Alle Höhen sind Fuß AGL über dem Havaristen**, nicht MSL. Die Geländehöhe an der
+  Unglücksstelle lernt FriesenSpy aus der Rückmeldung der FriesenBrügge, die das Wrack
+  hinstellt; neben der Zahl steht, ob sie gemessen oder geschätzt ist. Dazu ein
+  Geschwindigkeitsfenster (30–140 kt) — die Untergrenze verhindert, dass ein geparktes Flugzeug
+  sein Feld den ganzen Abend abdeckt.
 - **Lage und Art des Havaristen** — die Stelle wird **von Hand** gesetzt: Ob dort Wasser liegt
   und ob jemand landen kann, sieht nur ein Mensch. Als Art kommen alle Objektarten der
   FriesenBrügge in Frage; die Vorgabe ist ein kleines Flugzeug, `wilga` ist die Vereinsmaschine
@@ -441,8 +446,9 @@ Ist der **Board-Login** aktiv (Admin → „Betrieb“ → „Board-Login“, St
   Fund) und „Landung zur Rettung nötig" (aus: ein Schwebeflug genügt, verlangt dann aber einen
   Hubschrauber). Was der Haken bedeutet, steht im Admin direkt daneben.
 - **Aufnahme freigeben** — wer aufgenommen hat und dann ohne Landung verschwindet, blockiert
-  sonst den ganzen Abend. Das erledigt FriesenSpy nach zehn Minuten Funkstille von selbst
-  (abschaltbar), und der Knopf daneben tut es sofort.
+  sonst den ganzen Abend. Das erledigt FriesenSpy von selbst, sobald er sich **abgemeldet** hat
+  und zehn Minuten nichts mehr meldet (abschaltbar); der Knopf daneben tut es sofort. Die zehn
+  Minuten sind die Schonfrist für einen Absturz zum Desktop mit Wiederanmeldung.
 - **Push je Event** und **Löschen** — Löschen nimmt Wrack und Fackeln aus allen Simulatoren mit.
 
 ### Flugbetrieb und Daten

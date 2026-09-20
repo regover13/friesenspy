@@ -284,10 +284,16 @@ def zellen_aus_box(sued: float, west: float, nord: float, ost: float,
                    kante_km: float, korridor_km: float, praefix: str = "z") -> list[Ziel]:
     """Ein Rechteck in ein Zellraster schneiden — der Suchsektor.
 
-    **Die Kopplung, die man leicht übersieht:** Eine Zellkante von mehr als dem doppelten
-    Korridor lässt Löcher ZWISCHEN den Kreisen, die kein Pilot füllen kann — der Sektor wäre
-    dann nie vollständig abzusuchen. ``kante_km == korridor_km`` deckt lückenlos ab
-    (schlimmster Fall: die Ecke zwischen vier Zellen, 0,71 · Kante vom nächsten Mittelpunkt).
+    **Die Kopplung, die man leicht übersieht — und die hier zuerst falsch beschrieben war:**
+    Eine große Zellkante gegen einen kleinen Korridor erzeugt **keine Löcher** (so stand es
+    hier bis zum 20.09.2026). Jeder Mittelpunkt ist überfliegbar, 100 % sind immer erreichbar.
+    Was wirklich passiert, ist eine **grobe Buchhaltung**: Eine 6-km-Zelle gilt als vollständig
+    abgesucht, obwohl ein Track nur einen Streifen von 2 · Korridor durch ihre Mitte gelegt hat.
+
+    Der Aufrufer muss deshalb ``kante_km <= korridor_km`` halten. Feiner ist immer erlaubt und
+    nur eine Frage der Rechenzeit; grober übertreibt den Fortschritt — und zieht über
+    ``fundradius_km`` (s. ``app/reddung.py``) einen großzügigen Fundradius nach sich, weil das
+    Versprechen „voll abgesucht = gefunden" sonst nicht mehr gälte.
 
     Die Zellenzahl wird aufgerundet, damit der Rand der Box mitkommt statt abgeschnitten zu
     werden; der letzte Mittelpunkt darf dafür ein Stück außerhalb liegen.

@@ -369,8 +369,10 @@ Aufrufer holt die Spuren, das Modul rechnet.
   Sekundentakt (~1 µs). ⚠ `bezug_lat=bezugsbreite(ziele)` mitgeben, sonst urteilt sie anders
   als der Lauf (0,25 % Maßstabsunterschied über einen 40-km-Sektor reichen dafür).
 - `zellen_aus_box(...)` / `abschnitte_aus_linie(...)` — Sektor bzw. Linie in gewöhnliche
-  Kreisziele schneiden. Zellkante über dem doppelten Korridor lässt Löcher **zwischen** den
-  Zellen, die niemand füllen kann.
+  Kreisziele schneiden. ⚠ Zellkante höchstens so groß wie der Korridor — gröber erzeugt
+  **keine Löcher** (das stand hier zuerst falsch), sondern eine grobe Buchhaltung: Eine große
+  Zelle gilt als komplett abgesucht, obwohl nur ein Streifen von 2 · Korridor durch ihre Mitte
+  führte.
 
 **Ein Ziel ist immer ein Kreis** (Punkt + Radius). Der Havarist des Suchflugs ist darin nichts
 Besonderes, nur ein engerer Radius in derselben Liste — und das Ergebnis nennt Schlüssel,
@@ -397,15 +399,20 @@ niemandem auffällt.
 Die Parameter einer **FriesenReddung** (#21) — reine Rechnung, keine Datenbank. Die Abdeckung
 selbst rechnet `app/abdeckung.py`; dieses Modul entscheidet nur, mit welchen Werten.
 
-- `fundradius_km(korridor, kante)` — **`korridor + kante/√2`**, bei 1,0/1,0 km also 1,71 km.
-  ⚠ **Nie einstellbar machen.** Eine abgedeckte Zelle heißt „ein Track lief im Korridor an ihrem
-  MITTELPUNKT vorbei"; ein Havarist in der Zellecke ist die halbe Zelldiagonale weiter weg. Mit
-  dieser Formel garantiert volle Abdeckung den Fund — mit einem freien Wert kann der Admin einen
-  Fortschrittsbalken erzeugen, der lügt.
-- `hoehe_schranke_msl(ev)` — die Höhenschranke ist **AGL über dem Havaristen**, nicht MSL:
-  `havarist_grund_ft + hoehe_max_ft`. Das ist die richtige Bezugsgröße für „ist er tief über der
+**Zwei Fenster, und das ist der Kern:** `korridor_km` (1 km) + `hoehe_max_ft` (2.000 ft) fürs
+**Suchen** — was der Balken zählt; `fund_radius_ft` (500 ft) + `fund_hoehe_ft` (1.000 ft) fürs
+**Finden** — was die Rauchfackel setzt. „Abgesucht" heißt deshalb **nicht** „hätten wir ihn
+gesehen"; das trägt, weil zu jedem Event eine Geschichte gehört, die das Gebiet eingrenzt.
+
+⚠ Drei verworfene Fassungen stehen im Modulkopf, damit keine wiederkommt: ein gerechneter
+Fundradius (`korridor + kante/√2` = 1,71 km — eine Cessna 172 sieht niemand aus 1,7 km), der
+Schrägabstand (bestraft Höhe, obwohl man von oben weiter sieht) und eine Zahl für beides (dann
+ist entweder das Absuchen 26 Flugstunden oder der Fund eine Farce).
+
+- `hoehe_schranke_msl` / `fund_hoehe_schranke_msl` — alle Höhen sind **AGL über dem Havaristen**,
+  nicht MSL: `havarist_grund_ft + …`. Das ist die richtige Bezugsgröße für „ist er tief über der
   Unglücksstelle hinweggeflogen?".
-- `fenster_suchen` / `fenster_aufnehmen` / `zellen_fuer` / `havarist_ziel`.
+- `fenster_suchen` / `fenster_finden` / `fenster_aufnehmen` / `zellen_fuer` / `havarist_ziel`.
 
 ⚠ **`fenster_aufnehmen` MUSS `gs_min_kt = 0` setzen** — die Suchuntergrenze von 30 kt (gegen
 geparkte Flugzeuge) würde sonst genau den Stillstand ausschließen, der beim Aufnehmen gefragt
@@ -420,9 +427,12 @@ Vier Stufen, alle als Latch: **gefunden → aufgenommen → eingeliefert**, dazu
 Poller-Job `_check_reddung` (`app/poller.py`, 60-s-Takt) rechnet sie in einer Reihenfolge, die
 keine Geschmacksfrage ist:
 
-1. **Grundhöhe lernen** (`reddung_grund_lernen`) — sie verschiebt die Höhenschranke aller
+1. **Grundhöhe lernen** (`reddung_grund_lernen`) — sie verschiebt alle Höhenschranken der
    folgenden Prüfungen. Wer sie danach lernt, wertet einen ganzen Takt mit der falschen.
-2. **Fund** — `abdeckung()` gegen `havarist_ziel(ev)` mit dem Suchfenster.
+2. **Abdeckung und Fund fortschreiben** (`reddung_fortschreiben`) — ein Aufruf, nur die neuen
+   Punkte, Zustand in `progress_snapshot` (`kind='reddung'`). 30 ms je Takt statt 139 ms und
+   wachsend. ⚠ Der letzte Punkt vor dem Schnitt gehört dazu, sonst entsteht alle 60 s ein
+   blinder Fleck; und `_REDDUNG_STAND_FASSUNG` muss steigen, wenn sich die Rechnung ändert.
 3. **Einliefern** — ⚠ **VOR dem Verfall.** Hat der Poller einmal stillgestanden und rechnet nach,
    ist der Pilot längst gelandet *und* abgemeldet; prüft der Verfall zuerst, löscht er die
    Aufnahme, bevor die Landung gesehen wird, und die Rettung ist verloren, obwohl sie
@@ -434,8 +444,18 @@ keine Geschmacksfrage ist:
 
 `reddung_objekte_abgleichen` setzt Havarist und Fackel in `bruegge_soll` — **vollständiger
 Abgleich, kein Strom von Befehlen** (PROTOKOLL Abschnitt 2), darf also in jedem Takt laufen.
-Fackel orange nach dem Fund, hellblau nach der Aufnahme, und gleich hellblau, wenn der Abend mit
-dem Fund endet. `gilt_bis` ist das Eventende, damit das Wrack sich von selbst wegräumt.
+Fackel **orange** nach dem Fund, **hellblau** nach der Aufnahme, **rot** beim Abschluss; die rote
+steht bis `dtend` und markiert die Stelle, auch an einem Abend, an dem niemand fand.
+
+⚠ **Eine aufgelöste Reddung räumt nichts weg** — das stand zuerst umgekehrt und war ein Fehler:
+Bei `aufnehmen_noetig = 0` löst der Fund die Lage im selben Takt auf, die Fackel wäre erschienen
+und verschwunden. `gilt_bis` (= `dtend`) lässt die Objekte von selbst ablaufen; gezielt
+weggenommen wird nur beim Löschen (`weg=True`).
+
+⚠ **Der Parameter heißt `weg`, die innere Hilfsfunktion `raeumen`** — sie hieß zuerst ebenfalls
+`weg` und hat den Parameter überschattet. `if weg or …` prüfte dann ein Funktionsobjekt, das
+immer wahr ist: Der Abgleich brach *jedes Mal* sofort ab und räumte alles weg. Python sagt dazu
+nichts, und es sah aus wie ein Fehler im Objektkatalog.
 
 **Neu und für andere Eventtypen nutzbar: `bruegge_soll.simulator`** (NULL = für alle). Eine Art
 ohne aktiven Titel in einem Simulator erscheint dort sonst stumm nicht. ⚠ Der Schnitt liegt

@@ -6252,10 +6252,15 @@ async def admin_update_transport_event(request: Request, event_id: int):
         conn.close()
 
 
-#: Groesster erlaubter Sektor je Kante. 40 x 40 km ist die Vorgabe; 200 km sind bei 1-km-Raster
-#: 40.000 Zellen und damit noch rechenbar. Ohne Grenze legt ein Verrutschen auf der Karte ein
-#: Raster mit Millionen Zellen an, und der Poller-Takt bleibt stehen.
+#: Groesster erlaubter Sektor je Kante. Die Groesse selbst ist KEINE Einstellung -- sie ergibt
+#: sich aus den zwei geklickten Ecken; das hier ist nur der Deckel gegen ein Verrutschen.
 _REDDUNG_SEKTOR_MAX_KM = 200.0
+
+#: ...und der eigentliche Deckel: die Zahl der Zellen. Die haengt am Korridor, nicht an der
+#: Kantenlaenge -- bei 300-m-Zellen sind 40 x 40 km schon 17.956 Zellen (gemessen 184 ms je
+#: Poller-Takt). 40.000 Zellen liegen bei rund einer halben Sekunde; darueber bleibt der Takt
+#: stehen, und zwar fuer alle Events gleichzeitig.
+_REDDUNG_ZELLEN_MAX = 40_000
 
 
 def _validate_reddung_sektor(body: dict) -> str | None:
@@ -6273,6 +6278,12 @@ def _validate_reddung_sektor(body: dict) -> str | None:
     if max(hoch, breit) > _REDDUNG_SEKTOR_MAX_KM:
         return (f"Sektor zu groß ({hoch:.0f} x {breit:.0f} km) — höchstens "
                 f"{_REDDUNG_SEKTOR_MAX_KM:.0f} km je Kante")
+    kante = float(body.get("kante_km") or 0.3)
+    zellen = (hoch / max(kante, 0.05)) * (breit / max(kante, 0.05))
+    if zellen > _REDDUNG_ZELLEN_MAX:
+        return (f"Sektor und Zellkante ergeben {zellen:,.0f} Zellen — höchstens "
+                f"{_REDDUNG_ZELLEN_MAX:,.0f}. Kleineren Sektor ziehen oder die Zellkante "
+                f"vergrößern.").replace(",", ".")
     return None
 
 
@@ -6372,7 +6383,7 @@ async def admin_delete_reddung_event(request: Request, event_id: int):
         ev = get_reddung_event(conn, event_id)
         if ev is None:
             raise HTTPException(status_code=404, detail="unbekannt")
-        reddung_objekte_abgleichen(conn, {**ev, "aufgeloest_am": "geloescht"})
+        reddung_objekte_abgleichen(conn, ev, weg=True)
         delete_reddung_event(conn, event_id)
         conn.commit()
         return {"status": "ok"}

@@ -1,5 +1,16 @@
 [
   {
+    "version": "15.12.0",
+    "date": "2026-09-20",
+    "highlight": false,
+    "title": "FriesenReddung: Suchen und Finden sind zwei verschiedene Dinge",
+    "items": [
+      "🚨 Bei der **FriesenReddung** zählt jetzt getrennt, was **abgeflogen** und was **gefunden** ist. Das Absuchen darf weit und hoch sein — ein Kilometer zur Seite, bis 2.000 Fuß über der Unglücksstelle. Der Fund verlangt dagegen, dass du **dicht und tief** darüber bist: 500 Fuß zur Seite, höchstens 1.000 Fuß hoch. Eine Cessna sieht man nicht aus anderthalb Kilometern, und der Fortschrittsbalken soll nicht das Gegenteil behaupten. Alle vier Werte stellt der Veranstalter je Event ein.",
+      "🔴 **Die Rauchfackel hat drei Stufen und bleibt stehen:** orange, sobald er gefunden ist, hellblau, sobald ihn jemand aufgenommen hat, und rot, wenn der Fall abgeschlossen ist. Die rote steht bis zum Ende des Events und markiert die Stelle — auch an einem Abend, an dem ihn niemand gefunden hat.",
+      "🗺 Sektor und Havarist werden im Admin **auf einer Karte geklickt** statt eingetippt: ein Klick setzt die erste Ecke, dann schaltet die Auswahl von selbst auf die zweite und danach auf den Havaristen. Daneben rechnet die Seite mit, wie breit der Suchstreifen je Bahn ist, ab welchem Abstand der Fund gilt und wie lange fünf Piloten für diesen Sektor brauchen."
+    ]
+  },
+  {
     "version": "15.11.0",
     "date": "2026-09-20",
     "highlight": false,

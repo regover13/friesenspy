@@ -5,11 +5,38 @@ Reine Rechnung, keine Datenbank -- alles hier nimmt ein Event-Dict und gibt Zahl
 zurück. Die Abdeckung selbst rechnet ``app/abdeckung.py``; dieses Modul entscheidet nur, MIT
 WELCHEN Werten sie gerechnet wird.
 
-**Der Fundradius wird gerechnet, nicht eingestellt.** Eine abgedeckte Zelle heißt „ein Track
-lief im Korridor an ihrem MITTELPUNKT vorbei"; ein Havarist in der Zellecke ist noch die halbe
-Zelldiagonale weiter weg. Mit ``korridor + kante/√2`` gilt dagegen: jede abgedeckte Zelle
-bedeutet „hier hätten wir ihn gesehen", und volle Abdeckung garantiert den Fund. Wäre der
-Radius einstellbar, könnte der Admin einen Fortschrittsbalken erzeugen, der lügt.
+**Suchen und Finden sind zwei Fenster, und das ist der Kern:**
+
+======  ====================  ==================  ==========================================
+         seitlich              Höhe (AGL)          Bedeutung
+======  ====================  ==================  ==========================================
+Suchen  ``korridor_km`` 1 km  ``hoehe_max_ft``    „Fläche abgeflogen" — was der Balken zählt
+                              2.000 ft
+Finden  ``fund_radius_ft``    ``fund_hoehe_ft``   die Rauchfackel — dicht und tief drüber
+        500 ft                1.000 ft
+======  ====================  ==================  ==========================================
+
+**„Abgesucht" heißt damit ausdrücklich NICHT „hätten wir ihn gesehen".** Die Fläche ist
+abgeflogen; gesehen hätte man eine Cessna 172 erst aus 150 m. Das trägt, weil zu jedem Event
+eine **Geschichte** gehört, die das Gebiet eingrenzt („über der Sandbank weggeblieben") — und
+weil ein Suchkorridor von 150 m einen 40-km-Sektor auf 26 Flugstunden brächte.
+
+⚠ **Drei verworfene Fassungen, damit keine davon wiederkommt** (alle am 20.09.2026):
+
+1. **Fundradius GERECHNET** aus ``korridor + kante/√2`` (bei 1/1 km 1,71 km), damit volle
+   Abdeckung den Fund garantiert. Die Garantie war schön und die Zahl falsch: **Eine Cessna 172
+   sieht niemand aus 1,7 km.**
+2. **Schrägabstand** -- Höhe und Seitenabstand in einem, also eine Kugel. Verworfen, weil er
+   Höhe bestraft, obwohl man von oben weiter sieht: Bei 1.000 ft Radius und 1.000 ft Flughöhe
+   bliebe null Spielraum zur Seite.
+3. **Eigene Zahl ``fund_radius_ft``** (500 ft) neben dem Korridor. Verworfen, weil das dieselbe
+   physikalische Größe zweimal einstellbar macht -- „der Suchsektor bestimmt doch die seitliche
+   Reichweite schon" (Nutzer). Zwei Regler für eine Sache laufen später auseinander.
+
+Bleibt eine Ungenauigkeit, die man kennen soll: Eine abgedeckte Zelle heißt „ein Track lief im
+Korridor an ihrem MITTELPUNKT vorbei". In der Zellecke sind es bis zu 0,71 · Zellkante mehr.
+Bei Kante gleich Korridor ist das ein Drittel Spielraum -- wer es genauer will, macht die Kante
+kleiner als den Korridor.
 
 **Die Höhenschranke ist AGL über dem Havaristen.** ``position_history.altitude`` ist MSL, also
 wird die Grundhöhe der Unglücksstelle addiert -- das ist AGL über dem Wrack, nicht AGL unter
@@ -25,8 +52,6 @@ und die Außenlandung am Wrack ist genau der Fall, den sie absichtlich nicht zä
 """
 from __future__ import annotations
 
-import math
-
 from app.abdeckung import Fenster, Ziel, zellen_aus_box
 from app.gps_legs import _GPS_BLOCK_GS_KT, _GPS_GROUND_AGL_FT
 
@@ -41,7 +66,7 @@ SCHWEBE_GS_KT = 30.0
 
 _VORGABE_KANTE_KM = 1.0
 _VORGABE_KORRIDOR_KM = 1.0
-_VORGABE_HOEHE_FT = 1000.0
+_VORGABE_HOEHE_FT = 2000.0
 _VORGABE_GS_MAX_KT = 140.0
 _VORGABE_GS_MIN_KT = 30.0
 
@@ -51,9 +76,40 @@ def _zahl(ev: dict, feld: str, vorgabe: float) -> float:
     return float(wert) if wert is not None else float(vorgabe)
 
 
-def fundradius_km(korridor_km: float, kante_km: float) -> float:
-    """Korridor plus halbe Zelldiagonale -- s. Modulkopf. Bei 1,0/1,0 km sind das 1,71 km."""
-    return float(korridor_km) + float(kante_km) / math.sqrt(2.0)
+#: Ein Fuß in Kilometern.
+_KM_JE_FT = 0.0003048
+
+_VORGABE_FUND_RADIUS_FT = 500.0
+_VORGABE_FUND_HOEHE_FT = 1000.0
+
+
+def korridor_km(ev: dict) -> float:
+    """Die seitliche Reichweite fürs SUCHEN — was der Fortschrittsbalken zählt."""
+    return _zahl(ev, "korridor_km", _VORGABE_KORRIDOR_KM)
+
+
+def fund_radius_ft(ev: dict) -> float:
+    """Die seitliche Reichweite fürs FINDEN — deutlich enger als der Suchkorridor."""
+    return _zahl(ev, "fund_radius_ft", _VORGABE_FUND_RADIUS_FT)
+
+
+def fund_radius_km(ev: dict) -> float:
+    return fund_radius_ft(ev) * _KM_JE_FT
+
+
+def fund_hoehe_schranke_msl(ev: dict) -> float:
+    """Die Höhenschranke fürs FINDEN, auf MSL umgerechnet."""
+    return grund_ft(ev) + _zahl(ev, "fund_hoehe_ft", _VORGABE_FUND_HOEHE_FT)
+
+
+def fenster_finden(ev: dict) -> Fenster:
+    """Eng und tief. Das Geschwindigkeitsfenster ist dasselbe wie beim Suchen -- wer parkt,
+    findet nicht, und wer rast, sieht nichts."""
+    return Fenster(
+        hoehe_max_ft=fund_hoehe_schranke_msl(ev),
+        gs_max_kt=_zahl(ev, "gs_max_kt", _VORGABE_GS_MAX_KT),
+        gs_min_kt=_zahl(ev, "gs_min_kt", _VORGABE_GS_MIN_KT),
+    )
 
 
 def grund_ft(ev: dict) -> float:
@@ -76,13 +132,14 @@ def zellen_fuer(ev: dict) -> list[Ziel]:
 
 
 def havarist_ziel(ev: dict) -> Ziel | None:
-    """Der Havarist als gewöhnliches Kreisziel. ``None``, solange kein Ort gesetzt ist."""
+    """Der Havarist als Kreisziel — mit dem engen FUNDRADIUS, nicht mit dem Suchkorridor.
+
+    ``None``, solange kein Ort gesetzt ist.
+    """
     lat, lon = ev.get("havarist_lat"), ev.get("havarist_lon")
     if lat is None or lon is None:
         return None
-    radius = fundradius_km(_zahl(ev, "korridor_km", _VORGABE_KORRIDOR_KM),
-                           _zahl(ev, "kante_km", _VORGABE_KANTE_KM))
-    return (HAVARIST, float(lat), float(lon), radius)
+    return (HAVARIST, float(lat), float(lon), fund_radius_km(ev))
 
 
 def fenster_suchen(ev: dict) -> Fenster:

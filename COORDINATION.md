@@ -6,6 +6,46 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-20 (nachts, zweite Runde) — FriesenReddung nachgeschliffen
+
+**Angefasst:** `app/reddung.py`, `app/database.py`, `app/poller.py`, `app/main.py`,
+`app/static/admin.html`, `README.md`, `docs/architecture.md`, die Spec, fünf Testdateien.
+
+**Fünf Entscheidungen des Nutzers, die den Entwurf gedreht haben** — wer hier weiterbaut, sollte
+sie kennen, sonst baut er eine der verworfenen Fassungen zurück:
+
+1. ⚠ **Suchen und Finden sind ZWEI Fenster.** Suchen weit und hoch (1 km / 2.000 ft), Finden eng
+   und tief (500 ft / 1.000 ft). „Abgesucht" heißt deshalb **nicht** „hätten wir ihn gesehen" —
+   das trägt, weil zu jedem Event eine **Geschichte** gehört, die das Gebiet eingrenzt. Deshalb
+   muss der Admin die Lage kennen: Er erfindet sie.
+2. **Verworfen, mit Begründung im Modulkopf:** der gerechnete Fundradius (`korridor + kante/√2`
+   = 1,71 km — „eine Cessna 172 sieht niemand aus 1,7 km"), der Schrägabstand (bestraft Höhe,
+   obwohl man von oben weiter sieht) und eine Zahl für beides.
+3. **Die Fackel bleibt stehen**, in drei Stufen: orange → hellblau → **rot bis `dtend`**. Eine
+   aufgelöste Reddung räumt **nichts** weg; das stand zuerst umgekehrt, und bei
+   `aufnehmen_noetig = 0` wäre die Fackel im selben Takt erschienen und verschwunden.
+4. **Die Abdeckung wird fortgeschrieben** (`reddung_fortschreiben`, `progress_snapshot`
+   `kind='reddung'`): 4 ms statt 129 ms je Aufruf, 30 ms statt 139 ms je Poller-Takt. ⚠ Der
+   letzte Punkt vor dem Schnitt gehört dazu, sonst blinder Fleck alle 60 s; und
+   `_REDDUNG_STAND_FASSUNG` muss steigen, wenn sich die Rechnung ändert.
+5. **Sektor und Havarist werden auf einer Karte geklickt**, mit Weiterschalten Ecke 1 → Ecke 2 →
+   Havarist (Muster: `_dfsKarteAufbauen`).
+
+**Zwei Fehler, die ich selbst gebaut habe, und beide sind lehrreich:**
+
+* ⚠ **Ein Parameter `weg` und eine innere Hilfsfunktion `weg()` im selben Gültigkeitsbereich.**
+  Die Funktion überschattet den Parameter, `if weg or …` prüft ein Funktionsobjekt — immer wahr.
+  Der Objektabgleich brach *jedes Mal* sofort ab und räumte alles weg. Python sagt dazu nichts,
+  und es sah aus wie ein Fehler im Objektkatalog. Die Hilfsfunktion heißt jetzt `raeumen`.
+* **Hinweistexte in Gitterzellen** machen ihre Zelle hoch, das Nachbarfeld bleibt oben, und die
+  Eingabefelder rutschen aus der Zeile. Sie gehören als `grid-column:1/-1` unter die Zeile; zwei
+  Tests bewachen es.
+
+**Und eine falsche Behauptung von mir, dreimal wiederholt und jetzt überall berichtigt:** Eine
+Zellkante über dem doppelten Korridor lässt **keine Löcher** „zwischen den Zellen". Jeder
+Mittelpunkt ist überfliegbar, 100 % sind immer erreichbar — was passiert, ist eine grobe
+Buchhaltung.
+
 ## 2026-09-20 (nachts) — FriesenReddung: Server und Admin, 15.11.0
 
 **Angefasst:** `app/reddung.py` (neu), `app/database.py` (Tabelle `reddung_events`, Spalten
