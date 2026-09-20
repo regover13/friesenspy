@@ -25,6 +25,23 @@ danach gelandet oder geschwebt werden muss. Ein Flächenflugzeug findet den Hava
 dann, wenn nur ein Hubschrauber ihn aufnehmen kann. Suchen ist Gruppenarbeit, Bergen
 Spezialarbeit; der Haken „Landung zur Rettung nötig" wirkt ausschließlich auf Stufe 3.
 
+### Ein Abend kann mit dem Fund enden
+
+**Haken „Aufnehmen nötig", Vorgabe an.** Ist er aus, ist der Fund der Schluss: keine Aufnahme,
+keine Einlieferung. Gewertet sind dann die Abdeckung, der Finder und die Zeit. Das ist der
+kurze Abend — eine Stunde suchen, jemand findet, fertig.
+
+Die beiden Haken verschachteln sich:
+
+| `aufnehmen_noetig` | `landung_noetig` | Der Abend |
+|---|---|---|
+| **aus** | (im Admin gesperrt) | endet mit dem Fund |
+| an | an | Landung am Wrack, dann einliefern |
+| an | aus | Schwebeflug, dann einliefern |
+
+**Die Fackel wird dann gleich hellblau.** Orange heißt „gefunden, noch nicht gerettet" — wenn
+nichts mehr zu tun ist, wäre das eine falsche Auskunft an alle, die noch in der Luft sind.
+
 ### Wenn der Aufnehmende abbricht
 
 Wer aufgenommen hat und dann ohne Landung verschwindet, blockierte sonst die Einlieferung für
@@ -44,23 +61,6 @@ zurück auf **orange**, und ein Push sagt, dass die Rettung wieder offen ist.
 **Ohne den Haken bleibt die Aufnahme stehen, bis der Admin sie freigibt.** Der Knopf dafür muss
 es in beiden Fällen geben — sonst hängt ein Abend an einer Automatik, die im Einzelfall falsch
 liegt.
-
-### Ein Abend kann mit dem Fund enden
-
-**Haken „Aufnehmen nötig", Vorgabe an.** Ist er aus, ist der Fund der Schluss: keine Aufnahme,
-keine Einlieferung. Gewertet sind dann die Abdeckung, der Finder und die Zeit. Das ist der
-kurze Abend — eine Stunde suchen, jemand findet, fertig.
-
-Die beiden Haken verschachteln sich:
-
-| `aufnehmen_noetig` | `landung_noetig` | Der Abend |
-|---|---|---|
-| **aus** | (im Admin gesperrt) | endet mit dem Fund |
-| an | an | Landung am Wrack, dann einliefern |
-| an | aus | Schwebeflug, dann einliefern |
-
-**Die Fackel wird dann gleich hellblau.** Orange heißt „gefunden, noch nicht gerettet" — wenn
-nichts mehr zu tun ist, wäre das eine falsche Auskunft an alle, die noch in der Luft sind.
 
 **Findet niemand:** Bei `dtend` wird die Lage aufgelöst und veröffentlicht, die Fackeln werden
 zurückgenommen, die Bilanz sagt „nicht gefunden" und nennt die erreichte Abdeckung.
@@ -112,8 +112,9 @@ Zwei Zahlen nebeneinander, wie beim FriesenKutter:
 * **Beitrag je Pilot** — die Zellen, die er als **erster** abgesucht hat. Doppelarbeit bringt
   niemandem etwas, die Aufteilung entsteht dadurch von selbst.
 
-Dazu die drei Namen und Zeiten der Latches. Ein Wettlauf um den Fund bleibt daneben möglich, aber
-niemand geht leer aus, der eine Fläche abgeflogen und nichts gefunden hat.
+Dazu die Namen und Zeiten der Latches — **einer bis drei, je nach Zuschnitt des Abends**
+(endet er mit dem Fund, gibt es nur den einen). Ein Wettlauf um den Fund bleibt daneben möglich,
+aber niemand geht leer aus, der eine Fläche abgeflogen und nichts gefunden hat.
 
 ## 4. Die Zahlen — und warum sie aneinander hängen
 
@@ -201,7 +202,7 @@ noch die halbe Zelldiagonale weiter weg. Mit `Korridor + Kante/√2` gilt dagege
 Zelle bedeutet „hier hätten wir ihn gesehen", und **volle Abdeckung garantiert den Fund**. Der
 Admin stellt Korridor und Kante ein und kann den Widerspruch nicht mehr erzeugen.
 
-1,71 km Sichtweite aus 1.500 ft ist dabei keine Nachgiebigkeit, sondern die Bedingung dafür, dass
+1,71 km Sichtweite aus 1.000 ft ist dabei keine Nachgiebigkeit, sondern die Bedingung dafür, dass
 Balken und Fund dasselbe versprechen. Auf ein Wrack im Gelände ist sie allerdings **optimistischer
 als auf ein Boot auf offener See** — wer es strenger will, verkleinert Korridor und Zellkante
 gemeinsam (0,6 km/0,6 km ergibt 1,02 km Fundradius) und nimmt die längere Suchzeit in Kauf. Das
