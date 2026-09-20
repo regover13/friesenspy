@@ -9565,6 +9565,84 @@ def reddung_grund_merken(conn: sqlite3.Connection, event_id: int, hoehe_ft: floa
     return True
 
 
+def reddung_spuren(conn: sqlite3.Connection, start: str, end: str, *,
+                   ab: str | None = None) -> list[tuple[int, list]]:
+    """Spuren für eine FriesenReddung, in der Form, die ``app/abdeckung.py`` erwartet.
+
+    ``ab`` schneidet vorn ab -- fürs Aufnehmen zählen nur Punkte NACH dem Fund. Das wird hier
+    und nicht beim Aufrufer gefiltert, damit niemand versehentlich den Überflug des Finders
+    selbst als Aufnahme wertet.
+    """
+    von = max(start, ab) if ab else start
+    rows = conn.execute(
+        "SELECT cid, latitude, longitude, altitude, groundspeed, ts FROM position_history "
+        "WHERE ts >= ? AND ts <= ? ORDER BY cid, ts", (von, end)).fetchall()
+    je_cid: dict[int, list] = {}
+    for cid, lat, lon, alt, gs, ts in rows:
+        je_cid.setdefault(int(cid), []).append(
+            (lat, lon,
+             float(alt) if alt is not None else None,
+             float(gs) if gs is not None else None, ts))
+    return [(cid, punkte) for cid, punkte in je_cid.items()]
+
+
+def compute_reddung_stand(conn: sqlite3.Connection, ev: dict) -> dict:
+    """Der Stand einer FriesenReddung: Abdeckung, Beiträge je Pilot, Latches.
+
+    ⚠ **Gibt NIE die Koordinate des Havaristen heraus** (#21). Der Rückgabewert geht in
+    API-Antworten; ``tests/test_reddung_db.py`` hält es fest.
+
+    ⚠ **Der Fund wird hier NICHT gerechnet, nur gelesen.** Er entsteht im Poller aus einem
+    eigenen Aufruf gegen ``reddung.havarist_ziel(ev)``. Der Grund ist nicht Bequemlichkeit: So
+    fasst diese Funktion die Koordinate nie an, und die Zusicherung oben ist eine Eigenschaft
+    des Aufbaus statt eine Frage der Sorgfalt.
+    """
+    from app import reddung as rd
+    from app.abdeckung import abdeckung
+
+    zellen = rd.zellen_fuer(ev)
+    spuren = reddung_spuren(conn, ev["dtstart"], ev["dtend"])
+    erg = abdeckung(spuren, zellen, rd.fenster_suchen(ev))
+
+    namen = {int(r[0]): r[1] for r in conn.execute("SELECT cid, name FROM pilots").fetchall()}
+    je_pilot = sorted(
+        ({"cid": cid, "name": namen.get(cid) or str(cid), "zellen": n}
+         for cid, n in erg.je_pilot.items()),
+        key=lambda p: (-p["zellen"], p["cid"]))
+
+    def wer(spalte: str) -> dict | None:
+        ts, cid = ev.get(f"{spalte}_am"), ev.get(f"{spalte}_von")
+        if not ts:
+            return None
+        eintrag = {"cid": cid, "name": namen.get(cid) or str(cid), "ts": ts}
+        if spalte == "eingeliefert":
+            eintrag["icao"] = ev.get("eingeliefert_icao")
+        return eintrag
+
+    dauer = None
+    if ev.get("gefunden_am") and ev.get("eingeliefert_am"):
+        dauer = int(round((_parse_iso(ev["eingeliefert_am"])
+                           - _parse_iso(ev["gefunden_am"])).total_seconds() / 60))
+
+    return {
+        "id": ev["id"],
+        "name": ev.get("name") or "FriesenReddung",
+        "anteil": erg.anteil,
+        "zellen": len(zellen),
+        "abgedeckt": len(erg.treffer),
+        "offen": len(erg.offen),
+        "je_pilot": je_pilot,
+        "gefunden": wer("gefunden"),
+        "aufgenommen": wer("aufgenommen"),
+        "eingeliefert": wer("eingeliefert"),
+        "aufgeloest": bool(ev.get("aufgeloest_am")),
+        "fundradius_km": round(rd.fundradius_km(
+            float(ev.get("korridor_km") or 1.0), float(ev.get("kante_km") or 1.0)), 3),
+        "sektor": {k: ev[k] for k in ("sued", "west", "nord", "ost")},
+        "dauer_min": dauer,
+    }
+
+
 def aggregate_bummel_kpis(views: list[dict]) -> dict:
     """Aggregiert fertige _bummel_view-/Snapshot-Dicts abgeschlossener (enthüllter) Rennen zu
     KPI-Summen. Rein (keine DB). Nur Rennen mit participant_count>0 zählen. „Flüge" = gewertete
