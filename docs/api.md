@@ -1095,6 +1095,49 @@ Sichtbarkeit setzen („Wer darf über mich benachrichtigt werden?"). Nur eingel
 
 ---
 
+## GET /api/me/reddung
+
+Läuft gerade eine FriesenReddung — und fehlt **diesem** Piloten die FriesenBrügge dafür? Speist den Hinweis unten links in der Live-Ansicht. Nur eingeloggt (sonst `401`).
+
+**Response** `{"laeuft": false}` oder `{"laeuft": true, "name": string, "bruegge": bool}`
+
+⚠ **Keine Lage, nichts über den Havaristen.** Der Endpunkt ist für jeden angemeldeten Piloten offen; die Koordinate ist das eine, was dieser Eventtyp verbirgt. Wer ihn erweitert, prüft das zuerst.
+
+`bruegge` ist `true`, wenn die letzte Meldung in `bruegge_positions` jünger als `_BRUEGGE_FRISCH_S` (90 s) ist. Ein aufgelöstes Event zählt nicht mehr mit — der Fall ist abgeschlossen, ein Hinweis wäre dann nur noch ein Vorwurf.
+
+---
+
+## GET /api/reddung/events
+
+Alle FriesenReddungen mit ihrem Stand — für die Eventliste, später die Karte. Öffentlich (hinter dem Login-Gate wie die übrige Seite).
+
+**Response** `[{ "id": int, "name": string, "dtstart": string, "dtend": string, "source": string, "aufnehmen_noetig": 0|1, "landung_noetig": 0|1, "stand": {…} }]`
+
+`stand` kommt aus `compute_reddung_stand`: `zellen`, `abgedeckt`, `anteil`, `je_pilot`, dazu `gefunden`/`aufgenommen`/`eingeliefert` als `{cid, name, ts}` (bei der Einlieferung zusätzlich `icao`) und `dauer_min`.
+
+⚠ **Ohne die Lage des Havaristen** — die Kernanforderung des Eventtyps. Der Ort geht an die FriesenBrügge, die das Wrack hinstellt, und in den Admin; an keinen Endpunkt, den der Browser eines Piloten erreicht. Zwei Tests halten das fest.
+
+---
+
+## Admin: FriesenReddung
+
+Alle sechs verlangen Admin-Cookie **und** Bestätigungs-Cookie (sonst `401`).
+
+| Methode | Pfad | Zweck |
+|---|---|---|
+| `GET` | `/api/admin/reddung/events` | Liste **mit** `havarist_lat/lon` und allen Latches |
+| `POST` | `/api/admin/reddung/events` | Anlegen → `{"id": int}` |
+| `POST` | `/api/admin/reddung/events/{id}` | Ändern (nur genannte Felder) |
+| `DELETE` | `/api/admin/reddung/events/{id}` | Löschen — nimmt Wrack und Fackeln aus allen Simulatoren mit |
+| `POST` | `/api/admin/reddung/events/{id}/push` | `{"enabled": bool}` |
+| `POST` | `/api/admin/reddung/events/{id}/aufnahme-freigeben` | Aufnahme zurücknehmen |
+
+**Anlegen** verlangt `name`, `dtstart` und den Sektor (`sued`, `west`, `nord`, `ost`). Abgewiesen mit `400`: ein verdrehter Sektor (Süd über Nord), ein verdrehtes Zeitfenster, ein Sektor, dessen Raster Millionen Zellen ergäbe, und ein unbekanntes Feld.
+
+⚠ **`aufnahme-freigeben` weist ab** (`400`), wenn bereits eingeliefert oder aufgelöst wurde. Ohne diese Sperre hinterließ ein Klick nach Abschluss eine **Einlieferung ohne Aufnahme** — real passiert am 20.09.2026, behoben in 15.14.0.
+
+---
+
 ## GET /api/prefs · PUT /api/prefs
 
 Karten-Merker des eingeloggten Nutzers (Basiskarte, Ebenen-Haken, Track-up, Moving Map, zuletzt betrachteter Ausschnitt, aktiver Tab, Vollbild). Seit v13.6.3.

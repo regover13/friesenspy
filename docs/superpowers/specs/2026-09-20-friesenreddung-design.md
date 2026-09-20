@@ -89,9 +89,12 @@ Abdeckung.
 **Der Havarist ist im Regelfall eine abgestürzte oder notgelandete Maschine**, nicht ein Boot —
 ein Fliegerverein sucht Flieger. Daraus folgen drei Vorgaben, die nicht kosmetisch sind:
 
-* **Vorgabe-Art ist `flugzeug_echo`** (kleines Flugzeug am Boden). `wilga` ist die
+* **Vorgabe-Art ist `flugzeug_echo`** (kleines Flugzeug am Boden). ~~`wilga` ist die
   dramatischere Wahl: das ist die Vereinsmaschine **D-EFRS**, und sie zu suchen erklärt sich
-  ohne ein Wort. Ebenso möglich: `flugzeug_ga`, `hubschrauber`, `segelflugzeug`.
+  ohne ein Wort.~~ Ebenso möglich: `flugzeug_ga`, `hubschrauber`, `segelflugzeug`.
+
+  ⚠ **Die `wilga`-Empfehlung war falsch und ist am 20.09.2026 zurückgenommen worden** — die
+  Art ist abgeschaltet, siehe Nachtrag am Ende.
 * **Der Haken heißt „Landung zur Rettung nötig" und ist standardmäßig AN.** Eine abgestürzte
   Maschine liegt meist an Land, und dann muss zum Aufnehmen jemand **dort** landen — nicht auf
   dem nächsten Platz, sondern an der Unglücksstelle. Ist er aus, genügt ein Schwebeflug.
@@ -119,7 +122,11 @@ ein Fliegerverein sucht Flieger. Daraus folgen drei Vorgaben, die nicht kosmetis
 
 **Die Simulatorlücke, die bei Booten ein Problem war, gibt es bei Flugzeugen nicht:**
 `flugzeug_echo` (5/185/2 aktive Titel), `flugzeug_ga` (1/70/3), `hubschrauber` (1/41/4) und
-`wilga` (1/1/1) sind in MSFS 2020, MSFS 2024 **und** X-Plane 12 aktiv. Die Auflösung der Art je
+~~`wilga` (1/1/1)~~ sind in MSFS 2020, MSFS 2024 **und** X-Plane 12 aktiv.
+
+⚠ **Diese Notation trägt weniger, als sie zu tragen scheint: `1/1/1` heißt „je ein Titel",
+nicht „dieselbe Maschine".** Bei `wilga` standen dahinter drei verschiedene Flugzeuge — siehe
+Nachtrag. Die Auflösung der Art je
 Simulator bleibt trotzdem im Entwurf — sie kostet fast nichts und trägt die Sonderfälle
 (`segelflugzeug` fehlt in MSFS 2020, `flugzeug_klassik` in X-Plane, alle Bootsarten irgendwo).
 
@@ -511,3 +518,59 @@ geheime Lage an einen Aufrufer, der seine Entfernung nicht kennt.
    Minuten ist geschätzt, nicht belegt — sie lässt sich nach dem ersten Abend gegen
    `position_history` prüfen (wie lange sind Aussetzer der eigenen Piloten wirklich?) und dann
    begründet setzen.
+
+---
+
+## Nachtrag, 20.09.2026 abends — drei Korrekturen aus dem Betrieb
+
+Der Entwurf oben bleibt als Zeitdokument stehen. Was sich am ersten echten Abend und danach
+als falsch erwiesen hat, steht hier.
+
+### 1. Die FriesenBrügge ist Voraussetzung, nicht die genauere Quelle
+
+Der Entwurf behandelt die Brügge als Verbesserung der Messung. Das war zu schwach gedacht:
+**Wrack und Rauchsäulen kommen über sie in den Simulator.** Wer ohne fliegt, sieht einen leeren
+Sektor — er *kann* nichts finden. Seine VATSIM-Spur als abgesuchte Fläche zu zählen nähme den
+anderen Fläche weg, die nie jemand angesehen hat.
+
+`_reddung_punkte_mischen` nimmt VATSIM deshalb nur noch für Piloten an, deren Brügge an diesem
+Abend gemeldet hat (`gemeldet_seit`, Bezug ist der **Eventstart**, nicht der laufende Takt).
+Die Trennlinie gilt allgemein und steht als stehende Regel in `CLAUDE.md`: **Stellt ein
+Eventtyp etwas in den Simulator, ist die Brügge Pflicht.** FriesenBummel und FriesenKutter
+werten Flugbewegungen aus und bleiben unberührt.
+
+Dazu der Hinweis in der Live-Ansicht (`GET /api/me/reddung`) — er muss vor dem Flug kommen,
+nicht hinterher in der Bilanz.
+
+### 2. `wilga` war keine Wilga
+
+Die Art bündelte drei verschiedene Flugzeuge, eines je Simulator:
+
+| Simulator | was wirklich gesetzt wurde | Quelle |
+|---|---|---|
+| MSFS 2024 | Wilga 80X D-EFRS | **Fremdpaket** (Payware), ohne Rückfalltitel |
+| MSFS 2020 | Cessna 152 | Bordmaterial |
+| X-Plane 12 | PA-28 | Bordmaterial |
+
+`ueberall` war trotzdem `True` — jeder Simulator kann eben *etwas* setzen. Bei einem
+generischen „kleines Flugzeug" ist das gleichgültig; bei einer benannten Maschine trägt es die
+Geschichte des Events. Und weil für MSFS 2024 nur der Payware-Titel existiert, hätte dort jeder
+ohne das Paket **gar nichts** gesehen — seit Korrektur 1 gewertet, aber ohne jede Chance.
+
+Die Art ist abgeschaltet. Die Havarist-Auswahl im Admin filtert jetzt auf `anforderbar &&
+ueberall && !addon`; von 102 bleiben 31.
+
+⚠ Der Katalogbefund dahinter ist **nicht** behoben (bewusst zurückgestellt): `quelle='community'`
+markiert auch unsere eigenen `Frs*`-Objekte, die mit dem Brügge-Paket kommen — 38 von 45. `addon`
+kann deshalb nicht erkennen, dass eine Art in *einem* Simulator Payware braucht.
+
+### 3. `_REDDUNG_STAND_FASSUNG` erhöht man nicht blind
+
+Der Entwurf verlangt das Erhöhen bei jeder Rechnungsänderung. Bei Korrektur 1 wäre genau das
+ein Fehler gewesen: `bruegge_spur` wird nach zwölf Stunden aufgeräumt, ein abgeschlossenes Event
+hat keine Brügge-Punkte mehr. Die Neuberechnung hätte nur VATSIM vorgefunden, es mangels
+Meldung verworfen — und die abgesuchte Fläche eines verkündeten Abends auf null gesetzt.
+Nachgemessen: `reddung_spuren` liefert für Event 2 heute eine leere Liste, der Snapshot trägt
+die 22 Zellen unverändert weiter.
+
+**Vor jedem Erhöhen prüfen, ob die Quellen der betroffenen Events noch da sind.**

@@ -432,7 +432,16 @@ keine Geschmacksfrage ist:
 2. **Abdeckung und Fund fortschreiben** (`reddung_fortschreiben`) — ein Aufruf, nur die neuen
    Punkte, Zustand in `progress_snapshot` (`kind='reddung'`). 30 ms je Takt statt 139 ms und
    wachsend. ⚠ Der letzte Punkt vor dem Schnitt gehört dazu, sonst entsteht alle 60 s ein
-   blinder Fleck; und `_REDDUNG_STAND_FASSUNG` muss steigen, wenn sich die Rechnung ändert.
+   blinder Fleck.
+
+   ⚠ **`_REDDUNG_STAND_FASSUNG` muss steigen, wenn sich die Rechnung ändert — aber erst nach
+   einem Blick auf die Daten.** Am 20.09.2026 wäre das Erhöhen ein Fehler gewesen:
+   `bruegge_spur` wird nach zwölf Stunden aufgeräumt, ein abgeschlossenes Event hat also keine
+   Brügge-Punkte mehr. Die Neuberechnung hätte nur VATSIM-Spuren vorgefunden, sie mangels
+   Brügge-Meldung verworfen — und die abgesuchte Fläche eines längst verkündeten Abends auf
+   null gesetzt. Nachgemessen: für Event 2 liefert `reddung_spuren` heute eine leere Liste,
+   der Snapshot trägt die 22 Zellen unverändert weiter. **Vor jedem Erhöhen prüfen, ob die
+   Quellen der betroffenen Events überhaupt noch da sind.**
 3. **Einliefern** — ⚠ **VOR dem Verfall.** Hat der Poller einmal stillgestanden und rechnet nach,
    ist der Pilot längst gelandet *und* abgemeldet; prüft der Verfall zuerst, löscht er die
    Aufnahme, bevor die Landung gesehen wird, und die Rettung ist verloren, obwohl sie
@@ -468,6 +477,34 @@ X-Plane-Brügge sendet es, und der Server hat es bis dahin weggeworfen. `0` hei�
 oder alte Meldung" und gilt als Messung. Dazu die zweite Schranke aus dem Protokoll: Eine
 Höhenmeldung zählt nur von einem Piloten näher als 200 km (am Bodensee gemessen 2.106 ft statt
 1.297 ft bei 691 km).
+
+**Ohne FriesenBrügge keine Teilnahme** (Nutzerentscheidung 20.09.2026). Wrack und Rauchsäulen
+kommen über `bruegge_soll` in den Simulator — wer ohne fliegt, sieht einen leeren Sektor und
+*kann* nichts finden. `_reddung_punkte_mischen` nimmt seine VATSIM-Punkte deshalb nicht mehr an
+(Parameter `gemeldet_seit`); sonst nähme er den anderen Fläche weg, die nie jemand angesehen
+hat. **Die Trennlinie gilt allgemein: Stellt ein Eventtyp etwas in den Simulator, ist die
+Brügge Voraussetzung.** FriesenBummel und FriesenKutter werten Flugbewegungen aus und bleiben
+bei VATSIM; `gemeldet_seit` ist optional und wird nur von `reddung_spuren` gesetzt.
+
+⚠ **Der Bezug ist der EVENTSTART, nicht der laufende Takt.** Die Brügge schweigt bei jedem
+Verbindungsabriss und in jeder Sim-Pause; wer sie hat, soll deswegen kein Loch in seiner Fläche
+bekommen. Für ihn füllt VATSIM weiter — aber nur für ihn. Am Takt gemessen verlöre er die
+Lückenfüllung, sobald die Brügge einmal dreißig Sekunden still ist.
+
+**Als Havarist stehen nur Arten zur Wahl, die jeder Pilot sieht** — `anforderbar && ueberall
+&& !addon`, geprüft in `_rdArtenLaden`. Vorher filterte die Liste allein auf „vom Nutzer
+angeschaltet". Seit die Brügge die Wertung trägt, wiegt das schwer: Eine Art, die nur ein
+Simulator setzen kann, lässt einen Piloten mit Brügge über einen leeren Sektor fliegen —
+gewertet, aber ohne jede Chance. Aufgefallen an `wilga`: in MSFS 2024 ein Payware-Modell ohne
+Rückfalltitel, in MSFS 2020 eine Cessna 152, in X-Plane eine PA-28. Die Art ist abgeschaltet.
+⚠ Weil die Liste gefiltert ist, ergänzt `rdEdit` eine gespeicherte Art, die nicht darin steht,
+als markierte Option — sonst fiele `select.value` still auf leer und das nächste Speichern
+schriebe die Vorgabe zurück.
+
+⚠ **`quelle='community'` heißt nicht „Fremdpaket".** 38 der 45 aktiven `community`-Titel sind
+unsere eigenen `Frs*`-Objekte, die mit dem FriesenBrügge-Paket kommen. `addon`
+(„braucht JEDER aktive Titel ein Fremdpaket") ist dadurch blind für den Fall, der zählt: eine
+Art, die in *einem* Simulator nur über Payware geht. Wer hier rechnet, prüft je Simulator.
 
 ⚠ **`reddung_events.havarist_lat/lon` gehen an die FriesenBrügge und in den Admin — an keinen
 Endpunkt, den ein Browser eines Piloten erreicht.** `compute_reddung_stand` gibt sie nie heraus;

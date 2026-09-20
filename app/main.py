@@ -2873,12 +2873,14 @@ _BRUEGGE_FRISCH_S = 90
 async def meine_reddung(request: Request):
     """Läuft gerade eine FriesenReddung — und fehlt DIESEM Piloten die FriesenBrügge dafür?
 
-    ⭐ **Der Hinweis muss VOR dem Flug kommen, nicht hinterher in der Bilanz.** Bei einer
-    Reddung wertet der Server die Brügge aus, wo sie da ist: Sie meldet jede Sekunde und mit
-    der echten Höhe, VATSIM nur alle 15 Sekunden — dazwischen liegt bei Reisegeschwindigkeit
-    fast ein Kilometer. Für einen Fund, der 150 Meter verlangt, ist das der Unterschied
-    zwischen gemessen und geschätzt. Wer ohne Brügge fliegt, wird weiter gewertet, aber
-    gröber — und das soll er wissen, solange er noch etwas ändern kann.
+    ⭐ **Die FriesenBrügge ist hier Voraussetzung, nicht Empfehlung.** Wrack und Rauchsäulen
+    kommen über sie in den Simulator (``bruegge_soll``); ohne sie sieht der Pilot einen leeren
+    Sektor und kann gar nichts finden. Seit dem 20.09.2026 zählt der Server seine Spur deshalb
+    auch nicht mehr mit (``_reddung_punkte_mischen``, ``gemeldet_seit``) — sonst nähme er den
+    anderen Fläche weg, die nie jemand angesehen hat.
+
+    Deshalb muss der Hinweis VOR dem Flug kommen und nicht hinterher in der Bilanz: Er ist die
+    einzige Stelle, an der es dem Piloten auffällt, solange er noch etwas ändern kann.
 
     Gibt ``{"laeuft": false}``, wenn gerade keine läuft. Sonst Name des Events und ob die
     eigene Brügge meldet. **Keine Lage, nichts über den Havaristen.**
