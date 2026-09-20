@@ -228,7 +228,6 @@ CREATE TABLE IF NOT EXISTS suchflug_events (
     havarist_lat    REAL,
     havarist_lon    REAL,
     havarist_art    TEXT,                   -- Art aus bruegge_art; NULL = 'flugzeug_echo'
-    havarist_verdeckt INTEGER DEFAULT 0,    -- 1 = gewürfelt, auch im Admin verborgen
     havarist_grund_ft REAL,                 -- Geländehöhe MSL an der Unglücksstelle
     havarist_grund_quelle TEXT,             -- 'gemessen' | 'admin' | 'platz'
     landung_noetig  INTEGER DEFAULT 1,      -- 0 = Schwebeflug genügt (Winde, Wasserung)
@@ -247,23 +246,6 @@ CREATE TABLE IF NOT EXISTS suchflug_events (
     created_at      TEXT
 );
 ```
-
-Dazu die Kandidaten für den Würfel — leer, wenn von Hand gesetzt wird:
-
-```sql
-CREATE TABLE IF NOT EXISTS suchflug_kandidaten (
-    event_id  INTEGER NOT NULL,          -- REFERENCES suchflug_events(id)
-    position  INTEGER NOT NULL,          -- Reihenfolge im Admin
-    lat       REAL NOT NULL,
-    lon       REAL NOT NULL,
-    name      TEXT,                      -- „Wiese bei Dornum" — für die Abendbilanz
-    PRIMARY KEY (event_id, position)
-);
-```
-
-Gewürfelt wird daraus **beim Eventstart**, nicht beim Anlegen: Sonst stünde die Lage vom Anlegen
-bis zum Start in der Datenbank, und der Veranstalter könnte sie versehentlich sehen. Nach dem
-Würfeln bleiben die Kandidaten stehen — die Bilanz nennt sonst nicht, wo er lag.
 
 **Keine Zellentabelle.** Das Raster entsteht bei jeder Rechnung aus `zellen_aus_box()`; die
 Abdeckung kommt aus `position_history` und wird in `progress_snapshot` mit `kind='suchflug'`
@@ -310,46 +292,23 @@ Wasser", Kalendertermin, Push. Dazu:
   ist dort auch sichtbar, denn wer das Event anlegt, weiß es ohnehin.
 
   Ein Land-Wasser-Modell haben wir nicht: Ob dort Wasser liegt, entscheidet das Auge des
-  Veranstalters — deshalb der Haken daneben. Von Hand gesetzt ist außerdem die bessere
-  Geschichte (das Wrack am Waldrand statt einer Zufallskoordinate) und steuert über die
-  Entfernung zum Platz die Länge des Abends.
+  Veranstalters — deshalb der Haken daneben. Und über die Entfernung zum Platz bestimmt er
+  gleich mit, wie lang der Abend wird.
 
   ⚠ **Ein Wrack an Land verlangt eine Außenlandung, und die ist nicht überall möglich.** Eine
   Zusatzregel („der nächste Platz zählt auch") ist ausdrücklich **nicht** vorgesehen — das wäre
   keine Rettung mehr. Wo gelandet werden kann, beurteilt der Admin beim Setzen des Punktes; ein
   Wrack mitten im Wald macht den Abend unlösbar, und das sieht er dort.
 
-* **„Würfeln und verbergen" ist ein Knopf daneben** — für den einen Fall, in dem ein Zufallspunkt
-  etwas kann, was die Hand nicht kann: **wenn der Veranstalter selbst mitsuchen will.** Dann
-  würfelt der Server, und die Lage bleibt **auch im Admin verdeckt**, bis sie aufgelöst ist
-  (Fund oder `dtend`). Ein Würfel, dessen Ergebnis der Admin nachsehen kann, wäre wertlos —
-  deshalb gehören beide Teile zusammen und sind ein Knopf, nicht zwei Felder.
+* **Ein Zufallspunkt ist ausdrücklich NICHT vorgesehen.** Die Idee stand im Entwurf und ist
+  verworfen: Sie hatte genau einen Zweck — dass der Veranstalter selbst mitsuchen kann, ohne die
+  Lage zu kennen — und kostete dafür eine Tabelle mit geprüften Kandidatenstellen, ein
+  Verdeckungsfeld und drei Sonderregeln. **Der Admin setzt den Ort und kennt ihn dann eben.**
 
-### Gewürfelt wird aus einer geprüften Liste, nicht aus dem ganzen Sektor
-
-**Das ist der Weg, der Zufall und „Landung nötig" zusammenbringt.** Der Admin klickt
-**mehrere Stellen**, die er kennt — drei, fünf, zehn Wiesen —, und der Würfel zieht eine davon.
-Er weiß nicht, welche es geworden ist, kann also mitsuchen; und jede mögliche Stelle ist
-landbar, weil er sie selbst ausgesucht hat. Die Stellen dürfen benannt werden („Wiese bei
-Dornum"), dann hat auch die Abendbilanz einen Ortsnamen statt einer Koordinate.
-
-Damit gibt es zwei Würfelarten, und nur eine ist eingeschränkt:
-
-| | erlaubt bei „Landung nötig" | wozu |
-|---|---|---|
-| **aus der Kandidatenliste** | **ja** | der Normalfall, sobald der Veranstalter mitfliegen will |
-| **frei aus dem Sektor** | nein | nur wenn ein Schwebeflug genügt — dann ist jede Stelle brauchbar |
-
-⚠ **Eine Wasser-Erkennung wäre hier die falsche Lösung, auch wenn sie naheliegt.** Sie ist
-technisch in Reichweite: Die X-Plane-Brügge füllt bei ihrer Geländeprobe eine Struktur, in der
-neben der Höhe ein `is_wet` steht, und liest nur die Höhe heraus
-(`friesenbruegge/xplane/bruegge.cpp`, `XPLMProbeInfo_t`); für MSFS gäbe es keine Abfrage an
-einem beliebigen Punkt, wohl aber eine Landmaske als GeoJSON.
-
-**Nur beantwortet sie die falsche Frage.** Gefragt ist nicht „ist dort Wasser?", sondern „kann
-dort jemand landen?" — und ein Zufallspunkt im Binnenland trifft Wald, Dorf, Hang, Baggersee
-oder Autobahn. Eine perfekte Wasser-Erkennung machte den freien Würfel also nicht sicher; die
-geprüfte Liste macht ihn überflüssig.
+  Den freien Würfel über den Sektor gibt es auch deshalb nicht, weil er die falsche Frage
+  beantwortet hätte: Gefragt ist nicht „ist dort Wasser?", sondern „kann dort jemand landen?" —
+  und ein Zufallspunkt trifft Wald, Dorf, Hang, Baggersee oder Autobahn. Das beurteilt ein
+  Mensch beim Klick auf die Karte in einer Sekunde, und keine Landmaske kann es ihm abnehmen.
 
 * **Die erwartete Suchdauer** als Hinweis neben der Sektorgröße, aus Kantenlänge, Korridor und
   angenommenen 110 kt — sonst setzt niemand einen Sektor, der zur Abendlänge passt.
