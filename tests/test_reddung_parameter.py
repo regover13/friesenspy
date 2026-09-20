@@ -27,7 +27,7 @@ EV = {
     "sued": 53.54, "west": 6.95, "nord": 53.90, "ost": 7.55,
     "kante_km": 1.0, "korridor_km": 1.0,
     "hoehe_max_ft": 2000, "gs_max_kt": 140, "gs_min_kt": 30,
-    "fund_radius_ft": 500, "fund_hoehe_ft": 1000,
+    "fund_radius_m": 150, "fund_hoehe_ft": 1000,
     "havarist_lat": 53.72, "havarist_lon": 7.25,
     "havarist_grund_ft": 20.0,
     "aufnehmen_noetig": 1, "landung_noetig": 1,
@@ -37,16 +37,16 @@ EV = {
 def test_suchen_ist_weit_und_finden_ist_eng():
     """Der Kern der Aufteilung -- zwei Fenster, nicht eins."""
     assert reddung.korridor_km(EV) == 1.0                      # Suchen, seitlich
-    assert reddung.fund_radius_ft(EV) == 500                    # Finden, seitlich
-    assert reddung.fund_radius_km(EV) == pytest.approx(0.1524, abs=1e-6)
+    assert reddung.fund_radius_m(EV) == 150                     # Finden, seitlich, in METERN
+    assert reddung.fund_radius_km(EV) == pytest.approx(0.15, abs=1e-9)
     assert reddung.fund_radius_km(EV) < reddung.korridor_km(EV)
 
 
 def test_beide_reichweiten_sind_einstellbar():
     assert reddung.korridor_km({**EV, "korridor_km": 2.5}) == 2.5
-    assert reddung.fund_radius_ft({**EV, "fund_radius_ft": 800}) == 800
+    assert reddung.fund_radius_m({**EV, "fund_radius_m": 250}) == 250
     assert reddung.korridor_km({**EV, "korridor_km": None}) == 1.0
-    assert reddung.fund_radius_ft({**EV, "fund_radius_ft": None}) == 500
+    assert reddung.fund_radius_m({**EV, "fund_radius_m": None}) == 150
 
 
 def test_der_fund_ist_auch_in_der_hoehe_enger():

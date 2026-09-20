@@ -12,8 +12,8 @@ WELCHEN Werten sie gerechnet wird.
 ======  ====================  ==================  ==========================================
 Suchen  ``korridor_km`` 1 km  ``hoehe_max_ft``    „Fläche abgeflogen" — was der Balken zählt
                               2.000 ft
-Finden  ``fund_radius_ft``    ``fund_hoehe_ft``   die Rauchfackel — dicht und tief drüber
-        500 ft                1.000 ft
+Finden  ``fund_radius_m``     ``fund_hoehe_ft``   die Rauchfackel — dicht und tief drüber
+        150 m                 1.000 ft
 ======  ====================  ==================  ==========================================
 
 **„Abgesucht" heißt damit ausdrücklich NICHT „hätten wir ihn gesehen".** Die Fläche ist
@@ -76,10 +76,12 @@ def _zahl(ev: dict, feld: str, vorgabe: float) -> float:
     return float(wert) if wert is not None else float(vorgabe)
 
 
-#: Ein Fuß in Kilometern.
-_KM_JE_FT = 0.0003048
-
-_VORGABE_FUND_RADIUS_FT = 500.0
+#: Seitliche Abstände stehen in METERN, Höhen in Fuß.
+#:
+#: Das ist keine Inkonsequenz, sondern die Sprache der Sache: In der Luft rechnet man Höhen in
+#: Fuß, am Boden Entfernungen in Metern. Der Fundradius stand eine Stunde lang in Fuß
+#: (500 ft) -- Nutzerentscheidung vom 20.09.2026, er steht jetzt in Metern.
+_VORGABE_FUND_RADIUS_M = 150.0
 _VORGABE_FUND_HOEHE_FT = 1000.0
 
 
@@ -88,13 +90,13 @@ def korridor_km(ev: dict) -> float:
     return _zahl(ev, "korridor_km", _VORGABE_KORRIDOR_KM)
 
 
-def fund_radius_ft(ev: dict) -> float:
-    """Die seitliche Reichweite fürs FINDEN — deutlich enger als der Suchkorridor."""
-    return _zahl(ev, "fund_radius_ft", _VORGABE_FUND_RADIUS_FT)
+def fund_radius_m(ev: dict) -> float:
+    """Die seitliche Reichweite fürs FINDEN in METERN — deutlich enger als der Suchkorridor."""
+    return _zahl(ev, "fund_radius_m", _VORGABE_FUND_RADIUS_M)
 
 
 def fund_radius_km(ev: dict) -> float:
-    return fund_radius_ft(ev) * _KM_JE_FT
+    return fund_radius_m(ev) / 1000.0
 
 
 def fund_hoehe_schranke_msl(ev: dict) -> float:

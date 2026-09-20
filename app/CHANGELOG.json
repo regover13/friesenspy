@@ -1,5 +1,17 @@
 [
   {
+    "version": "15.13.0",
+    "date": "2026-09-20",
+    "highlight": false,
+    "title": "Nach der ersten FriesenReddung: fünf Nachbesserungen",
+    "items": [
+      "🚨 **Der Havarist stand auf der Kniebrett-Karte** — als Verkehrspunkt, und damit die Lage, die der ganze Eventtyp verbirgt. Er ist im Simulator ein echtes Flugzeug, und die Karte zeichnete alles, was der Simulator kennt. Ab jetzt gilt: Ein stehendes Objekt ohne VATSIM-Gegenstück ist kein Verkehr — das blendet nebenbei auch die vielen geparkten KI-Flugzeuge aus. **In LittleNavMap und ähnlichen Werkzeugen bleibt er sichtbar**; die lesen den Simulator direkt, daran lässt sich von hier nichts ändern.",
+      "🚨 Eine FriesenReddung **steht jetzt in der Eventliste**, mit dem Abdeckungsstand beziehungsweise dem Namen dessen, der sie gefunden hat. Die Lage des Havaristen ist darin nicht enthalten.",
+      "🚨 **Die Einlieferung wird sekundengenau erkannt**, wenn der Aufnehmende mit der FriesenBrügge fliegt: Sie meldet, dass die Räder am Boden stehen. Vorher hing das an den VATSIM-Positionen und dauerte Minuten.",
+      "🔧 Im Admin gibt es für eine Reddung jetzt **Bearbeiten** und einen **Link-Knopf** fürs Forum, und der Fundradius steht in **Metern** statt in Fuß — Höhen bleiben in Fuß, seitliche Abstände sind Meter."
+    ]
+  },
+  {
     "version": "15.12.0",
     "date": "2026-09-20",
     "highlight": false,

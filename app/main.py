@@ -5956,6 +5956,36 @@ def transport_events():
         conn.close()
 
 
+@app.get("/api/reddung/events")
+def reddung_events():
+    """Alle FriesenReddungen mit ihrem Stand — für die Eventliste und später die Karte.
+
+    ⚠ **Ohne die Lage des Havaristen.** Das ist die Kernanforderung des Eventtyps (#21): Der
+    Ort geht an die FriesenBrügge, die das Wrack hinstellt, und in den Admin — an keinen
+    Endpunkt, den ein Browser eines Piloten erreicht. Geliefert wird deshalb nur, was
+    ``compute_reddung_stand`` herausgibt (Schlüssel, Zahlen, Namen), plus Name und Zeitfenster.
+    Ein Test hält es fest.
+    """
+    now = _now_iso()
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        raus = []
+        for ev in list_reddung_events(conn, since=_retention_since(now)):
+            stand = compute_reddung_stand(conn, ev)
+            raus.append({
+                "id": ev["id"], "name": ev.get("name"),
+                "dtstart": ev.get("dtstart"), "dtend": ev.get("dtend"),
+                "source": ev.get("source"),
+                "aufnehmen_noetig": ev.get("aufnehmen_noetig"),
+                "landung_noetig": ev.get("landung_noetig"),
+                "stand": stand,
+            })
+        conn.commit()          # das Fortschreiben hat den Snapshot ergaenzt
+        return raus
+    finally:
+        conn.close()
+
+
 @app.get("/api/transport/event/{event_id}")
 def transport_event_detail(event_id: int):
     """Voller Zustand eines Events: Zielbalken (cargo) + chronologischer Flug-Feed — abgeschlossen
@@ -6291,6 +6321,7 @@ def _validate_reddung_sektor(body: dict) -> str | None:
 #: ``update_reddung_event`` ist die zweite Schranke; diese hier hält den Anlegen-Pfad schlank.
 _REDDUNG_KOERPER = (
     "kante_km", "korridor_km", "hoehe_max_ft", "gs_max_kt", "gs_min_kt",
+    "fund_radius_m", "fund_hoehe_ft",
     "havarist_lat", "havarist_lon", "havarist_art", "havarist_grund_ft",
     "havarist_grund_quelle", "aufnehmen_noetig", "landung_noetig", "aufnahme_verfaellt",
     "badge_name",

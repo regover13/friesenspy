@@ -6412,6 +6412,11 @@ function _simVerkehrFrisch() {
 // gemessen statt vierzehn von fuenfzehn Sekunden geschaetzt) und die IDENTITAET von VATSIM
 // (Rufzeichen, Muster, Flugplan). Was nur eine der beiden Quellen kennt, wird trotzdem
 // gezeichnet -- lieber ein Flugzeug ohne Rufzeichen als ein fehlendes.
+//: Unter dieser Fahrt gilt ein Sim-Objekt ohne VATSIM-Partner als stehend und wird nicht
+//: gezeichnet (s. unten). 5 kt statt 0, weil ein hingestelltes Objekt im Simulator leicht
+//: zittert und ein rollendes Flugzeug erst darüber anfängt, Verkehr zu sein.
+const _SIM_STEHT_KT = 5;
+
 function _verkehrZusammenfuehren() {
   const sim = (_simVerkehrFrisch() && _simVerkehr) ? _simVerkehr.liste : [];
   const vat = _vatsimVerkehr ? _vatsimVerkehr.liste : [];
@@ -6599,6 +6604,17 @@ function _verkehrZusammenfuehren() {
       // (die Fortrechnung haengt an dieser Zahl). Genau das war der eigentliche Fehler, s.
       // _verkehrZeichnen.
     } else {
+      // ⚠ EIN STEHENDES SIM-OBJEKT OHNE VATSIM-PARTNER IST KEIN VERKEHR.
+      //
+      // Am 20.09.2026 stand der Havarist einer FriesenReddung als Punkt auf dem Kniebrett --
+      // und damit die Lage, die der ganze Eventtyp verbirgt. Der Weg dorthin war unschuldig:
+      // Die Brügge stellt ein Flugzeug-SimObject hin, `GET_AIR_TRAFFIC` liefert es wie jedes
+      // andere, und hier wurde alles gezeichnet, was der Simulator kennt.
+      //
+      // Der Filter braucht die geheime Lage NICHT -- er entscheidet an den Rohwerten: kein
+      // Rufzeichen, kein VATSIM-Partner, und es bewegt sich nicht. Das trifft geparkte KI
+      // genauso, und das ist richtig: Auf einer Verkehrskarte gehört, was fliegt.
+      if ((Number(s.gs) || 0) < _SIM_STEHT_KT) continue;
       e._key = 'sim:' + s.id;
     }
     e._ts = _simVerkehr.ts;
@@ -9861,6 +9877,24 @@ async function fetchFriesenEvents() {
           _manual: k.source === 'manual',
         })));
     } catch (_) { /* ignorieren */ }
+    // FriesenReddung ergänzen (toleriert Fehler). ⚠ `/api/reddung/events` liefert KEINE
+    // Koordinate -- die Lage des Havaristen ist das, was der Eventtyp verbirgt.
+    try {
+      const rdRes = await fetch('/api/reddung/events');
+      const reddungen = await rdRes.json();
+      objectEvents = objectEvents.concat((reddungen || [])
+        .map(r => ({
+          summary: r.name,
+          dtstart: r.dtstart,
+          dtend: r.dtend,
+          route: '',
+          location: '',
+          is_reddung: 1,
+          _reddungId: r.id,
+          _reddungStand: r.stand || {},
+          _manual: r.source === 'manual',
+        })));
+    } catch (_) { /* ignorieren */ }
     const combined = [...calEvents, ...objectEvents]
       .sort((a, b) => (b.dtstart || '').localeCompare(a.dtstart || ''));
     renderFriesenEvents(combined);
@@ -9903,7 +9937,8 @@ function renderFriesenEvents(data) {
   let html = '<div class="live-table-wrap" style="max-height:200px;overflow-y:auto;"><table><thead><tr><th>Event</th><th>Beginn (UTC)</th><th>ICAO</th></tr></thead><tbody>';
   data.forEach((ev, i) => {
     const badge = ev.is_bummel ? '<span class="bummel-badge">' + emoji('checkered-flag') + ' BUMMEL</span>'
-      : ev.is_transport ? '<span class="bummel-badge">' + emoji('shrimp') + ' KUTTER</span>' : '';
+      : ev.is_transport ? '<span class="bummel-badge">' + emoji('shrimp') + ' KUTTER</span>'
+      : ev.is_reddung ? '<span class="bummel-badge">🚨 REDDUNG</span>' : '';
     const manuelHint = ev._manual ? ' <span class="text-label" style="font-size:0.8em;">(manuell)</span>' : '';
     // Kutter: kein Routen-Kettentext (irreführend, s. #12) — nur das Ziel, wohin die Fracht soll.
     // Fallback (Kalender-Events ohne destination): letzter ICAO der Route = Default-Ziel.
@@ -9913,6 +9948,13 @@ function renderFriesenEvents(data) {
         || (ev.route ? ev.route.split(',').map(s => s.trim()).filter(Boolean).pop() : '')
         || '';
       icaoCell = dest ? 'Ziel: ' + dest : '—';
+    } else if (ev.is_reddung) {
+      // Statt eines Platzes das, was den Abend ausmacht -- und nichts, was den Ort verrät.
+      const st = ev._reddungStand || {};
+      const anteil = Math.round((st.anteil || 0) * 100);
+      icaoCell = st.gefunden
+        ? 'gefunden von ' + (st.gefunden.name || '?')
+        : anteil + ' % abgesucht';
     } else if (ev.is_bummel && ev.route) {
       icaoCell = ev.route.replace(/,/g, ' - ');
     } else {

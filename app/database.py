@@ -323,7 +323,7 @@ CREATE TABLE IF NOT EXISTS reddung_events (
     hoehe_max_ft    REAL DEFAULT 2000,      -- SUCHEN, Hoehe (AGL ueber dem Havaristen)
     gs_max_kt       REAL DEFAULT 140,
     gs_min_kt       REAL DEFAULT 30,        -- sonst deckt ein geparktes Flugzeug seine Zelle ab
-    fund_radius_ft  REAL DEFAULT 500,       -- FINDEN, seitlich
+    fund_radius_m   REAL DEFAULT 150,       -- FINDEN, seitlich (METER -- s. reddung.py)
     fund_hoehe_ft   REAL DEFAULT 1000,      -- FINDEN, Hoehe (AGL ueber dem Havaristen)
     havarist_lat    REAL,
     havarist_lon    REAL,
@@ -1028,8 +1028,11 @@ _BRUEGGE_SOLL_MIGRATIONS = [
     "ALTER TABLE bruegge_steht ADD COLUMN hoehe_gemessen INTEGER",
     # `reddung_events` stand mit 15.11.0 schon in der Produktion, als Suchen und Finden
     # getrennte Fenster bekamen.
-    "ALTER TABLE reddung_events ADD COLUMN fund_radius_ft REAL DEFAULT 500",
     "ALTER TABLE reddung_events ADD COLUMN fund_hoehe_ft REAL DEFAULT 1000",
+    # Seitliche Abstaende in METERN (Nutzer, 20.09.2026): Fuss sind in der Luft richtig, am
+    # Boden nicht. Die Spalte `fund_radius_ft` gab es eine Stunde lang -- sie faellt weg.
+    "ALTER TABLE reddung_events ADD COLUMN fund_radius_m REAL DEFAULT 150",
+    "ALTER TABLE reddung_events DROP COLUMN fund_radius_ft",
 ]
 
 _PANEL_DIAG_MIGRATIONS = [
@@ -9501,7 +9504,7 @@ def aggregate_kutter_kpis(progresses: list[dict]) -> dict:
 #: im Admin einen Fehler auslöst statt still ins Leere zu schreiben.
 _REDDUNG_FELDER = {
     "name", "dtstart", "dtend", "sued", "west", "nord", "ost", "kante_km", "korridor_km",
-    "hoehe_max_ft", "gs_max_kt", "gs_min_kt", "fund_radius_ft", "fund_hoehe_ft",
+    "hoehe_max_ft", "gs_max_kt", "gs_min_kt", "fund_radius_m", "fund_hoehe_ft",
     "havarist_lat", "havarist_lon", "havarist_art",
     "havarist_grund_ft", "havarist_grund_quelle", "aufnehmen_noetig", "landung_noetig",
     "aufnahme_verfaellt", "source", "calendar_uid", "push_enabled", "badge_name",
@@ -9689,6 +9692,15 @@ def reddung_spuren(conn: sqlite3.Connection, start: str, end: str, *,
 #: entwerten.
 _REDDUNG_STAND_FASSUNG = 1
 
+#: Bis hierher gilt ein Flugzeug als stehend (Einlieferung über die Brügge). Etwas großzügiger
+#: als der Vollstopp der Landeerkennung (2 kt): Wer mit Schrittgeschwindigkeit zum Abstellplatz
+#: rollt, ist angekommen -- der Havarist ist übergeben, sobald die Räder stehen.
+_REDDUNG_STEHT_KT = 5.0
+
+#: So nah muss ein registrierter Platz sein, damit eine Landung als Einlieferung zählt. Ohne
+#: diese Bedingung wäre jede Außenlandung eine Einlieferung.
+_REDDUNG_PLATZ_KM = 4.0
+
 
 def _reddung_punkte_neu(conn: sqlite3.Connection, ev: dict, von: str, bis: str,
                         box: tuple) -> list[tuple[int, list]]:
@@ -9728,6 +9740,41 @@ def _reddung_punkte_neu(conn: sqlite3.Connection, ev: dict, von: str, bis: str,
     for punkte in je_cid.values():
         punkte.sort(key=lambda x: x[4])
     return list(je_cid.items())
+
+
+def reddung_landung_aus_bruegge(conn: sqlite3.Connection, cid: int,
+                                nach: str) -> tuple[str, str] | None:
+    """Ist dieser Pilot laut FriesenBrügge gelandet? Gibt ``(icao, zeitpunkt)`` zurück.
+
+    **Warum nicht ``canonicalize_legs``:** Das ist der richtige Weg für die Flugwertung, aber
+    der langsame für eine Einlieferung. Es arbeitet auf ``position_history`` (VATSIM, alle
+    15 s, mit Verzögerung) und verlangt einen Vollstopp in Platznähe; zusammen mit dem
+    Poller-Takt summiert sich das auf Minuten. Die Brügge meldet dagegen **im Sekundentakt**,
+    und sie meldet ``am_boden`` -- der Simulator weiß es sofort und genau.
+
+    Zwei Bedingungen, beide nötig: am Boden **und** ein registrierter Platz im Umkreis. Ohne
+    die zweite zählte jede Außenlandung als Einlieferung.
+
+    ``None``, wenn der Pilot keine Brügge hat, nicht am Boden ist, kein Platz in der Nähe ist
+    oder die Meldung älter ist als ``nach`` -- dann bleibt der Weg über ``canonicalize_legs``.
+    """
+    from app.geo import nearest_airport_icao_fast
+    row = conn.execute(
+        "SELECT lat, lon, gs_kt, am_boden, gemeldet_am FROM bruegge_positions WHERE cid = ?",
+        (int(cid),)).fetchone()
+    if row is None:
+        return None
+    lat, lon, gs, am_boden, gemeldet = row
+    if not am_boden or lat is None or lon is None:
+        return None
+    if (gs or 0) > _REDDUNG_STEHT_KT:
+        return None
+    if not gemeldet or gemeldet < nach:
+        return None
+    icao = nearest_airport_icao_fast(float(lat), float(lon), _REDDUNG_PLATZ_KM)
+    if not icao:
+        return None
+    return (icao.upper(), gemeldet)
 
 
 def reddung_fortschreiben(conn: sqlite3.Connection, ev: dict, *, bis: str) -> dict:
@@ -9841,7 +9888,7 @@ def compute_reddung_stand(conn: sqlite3.Connection, ev: dict) -> dict:
         "eingeliefert": wer("eingeliefert"),
         "aufgeloest": bool(ev.get("aufgeloest_am")),
         "korridor_km": rd.korridor_km(ev),
-        "fund_radius_ft": rd.fund_radius_ft(ev),
+        "fund_radius_m": rd.fund_radius_m(ev),
         "sektor": {k: ev[k] for k in ("sued", "west", "nord", "ost")},
         "dauer_min": dauer,
     }

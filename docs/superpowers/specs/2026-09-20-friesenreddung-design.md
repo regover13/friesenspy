@@ -143,7 +143,10 @@ und hat drei Fassungen gebraucht (s. unten).
 | | seitlich | Höhe (AGL über dem Havaristen) | bedeutet |
 |---|---|---|---|
 | **Suchen** | `korridor_km` **1,0 km** | `hoehe_max_ft` **2.000 ft** | „Fläche abgeflogen" — was der Balken zählt |
-| **Finden** | `fund_radius_ft` **500 ft** | `fund_hoehe_ft` **1.000 ft** | die Rauchfackel — der echte Fund |
+| **Finden** | `fund_radius_m` **150 m** | `fund_hoehe_ft` **1.000 ft** | die Rauchfackel — der echte Fund |
+
+**Seitliche Abstände stehen in Metern, Höhen in Fuß** — die Sprache der Sache: In der Luft
+rechnet man Höhen in Fuß, am Boden Entfernungen in Metern.
 
 Dazu, für beide gleich: **30–140 kt** (die Untergrenze, damit ein geparktes Flugzeug nicht seine
 Zelle abdeckt), `kante_km` **1,0 km** (Feinheit der Buchhaltung, nie größer als der Korridor),
@@ -428,7 +431,29 @@ Wasser", Kalendertermin, Push. Dazu:
   `schiff_segel`/`schnellboot` in MSFS 2020), `segelflugzeug` fehlt in MSFS 2020,
   `flugzeug_klassik` in X-Plane.
 
-## 10. Offene Punkte
+## 10. Was der erste Abend gezeigt hat (20.09.2026)
+
+Die erste Reddung lief noch am selben Abend. Fünf Funde, alle behoben:
+
+1. ⚠ **Der Havarist stand als Verkehrspunkt auf dem Kniebrett** — und damit die Lage, die der
+   ganze Eventtyp verbirgt. Die Brügge stellt ein Flugzeug-SimObject hin, `GET_AIR_TRAFFIC`
+   liefert es wie jeden anderen Verkehr, und das Kniebrett zeichnete alles. Der Filter braucht
+   die geheime Lage nicht: **Ein stehendes Sim-Objekt ohne VATSIM-Partner ist kein Verkehr.**
+   Das trifft geparkte KI genauso, und das ist richtig.
+2. ⚠ **In LittleNavMap ist er weiterhin zu sehen, und daran lässt sich nichts ändern.** LNM
+   liest SimConnect direkt; wer ein AI-Objekt in den Simulator stellt, stellt es für jedes
+   Werkzeug dorthin. Wer das ausschließen will, darf kein Objekt setzen — dann sieht aber auch
+   niemand etwas aus dem Fenster.
+3. **Das Event tauchte in keiner Liste auf.** Es gibt jetzt `/api/reddung/events` (ohne
+   Koordinate), und die Eventliste mischt es ein — mit dem Abdeckungsstand statt eines Platzes.
+4. **Kein Bearbeiten und kein Link-Knopf** im Admin. Beides nachgezogen, nach dem Muster des
+   Kutters.
+5. **Die Einlieferung wurde erst nach Minuten bemerkt.** Sie hing an `canonicalize_legs`
+   (VATSIM alle 15 s, Vollstopp in Platznähe) und am 60-s-Takt. Jetzt fragt der Poller
+   **zuerst die Brügge** (`am_boden`, Sekundentakt) und fällt nur zurück, wenn der Pilot keine
+   hat; der Takt steht auf 30 s.
+
+## 11. Offene Punkte
 
 1. **Mehrere Havaristen je Event** — nicht in dieser Runde (#21, Frage 4). Das Datenmodell
    verträgt es später als eigene Tabelle; die Latches wandern dann dorthin.

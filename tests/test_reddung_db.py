@@ -40,7 +40,7 @@ def test_die_vorgaben_stehen_in_der_tabelle(conn):
     ev = get_reddung_event(conn, _ev(conn))
     assert ev["kante_km"] == 1.0 and ev["korridor_km"] == 1.0, "SUCHEN ist weit"
     assert ev["hoehe_max_ft"] == 2000, "SUCHEN darf hoch sein"
-    assert ev["fund_radius_ft"] == 500 and ev["fund_hoehe_ft"] == 1000, "FINDEN eng und tief"
+    assert ev["fund_radius_m"] == 150 and ev["fund_hoehe_ft"] == 1000, "FINDEN eng und tief"
     assert ev["gs_max_kt"] == 140 and ev["gs_min_kt"] == 30
 
     assert ev["aufnehmen_noetig"] == 1 and ev["landung_noetig"] == 1
@@ -262,7 +262,7 @@ def test_der_korridor_steht_im_stand(conn):
     ist die seitliche Reichweite fuer Abdeckung UND Fund."""
     ev = get_reddung_event(conn, _kleiner_sektor(conn))
     stand = compute_reddung_stand(conn, ev)
-    assert stand["korridor_km"] == 1.0 and stand["fund_radius_ft"] == 500.0
+    assert stand["korridor_km"] == 1.0 and stand["fund_radius_m"] == 150.0
 
 
 def test_die_dauer_zaehlt_vom_fund_bis_zur_einlieferung(conn):

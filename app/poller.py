@@ -607,11 +607,13 @@ class VatsimPoller:
             seconds=60,
             id="transport_event_check",
         )
-        # FriesenReddung: Fund, Aufnahme, Einlieferung latchen und die Fackel tauschen
+        # FriesenReddung: Fund, Aufnahme, Einlieferung latchen und die Fackel tauschen.
+        # 30 s statt 60: Seit die Rechnung fortgeschrieben wird, kostet ein Takt rund 30 ms --
+        # und die halbe Wartezeit ist beim Fund und bei der Einlieferung direkt zu merken.
         self._scheduler.add_job(
             self._check_reddung,
             "interval",
-            seconds=60,
+            seconds=30,
             id="reddung_check",
         )
         # EIN Job fuer beide Kartentypen -- die Automatik ist zurueckgebaut (31.08.2026),
@@ -2728,7 +2730,8 @@ class VatsimPoller:
             from app.database import (
                 canonicalize_legs, clear_reddung_aufnahme, get_push_subscriptions_for_events,
                 get_reddung_event, list_reddung_events, reddung_fortschreiben,
-                reddung_grund_lernen, reddung_objekte_abgleichen, reddung_spuren,
+                reddung_grund_lernen, reddung_landung_aus_bruegge,
+                reddung_objekte_abgleichen, reddung_spuren,
                 set_reddung_aufgeloest, set_reddung_aufgenommen, set_reddung_eingeliefert,
                 set_reddung_gefunden,
             )
@@ -2778,7 +2781,25 @@ class VatsimPoller:
                                                "body": "Aufgenommen -- jetzt einliefern!",
                                                "url": "/"})
 
-                    # 3 -- Einliefern: erste Landung des Aufnehmenden nach der Aufnahme
+                    # 3 -- Einliefern: erste Landung des Aufnehmenden nach der Aufnahme.
+                    #
+                    # ZUERST die Bruegge: Sie meldet im Sekundentakt und kennt `am_boden`, der
+                    # Simulator weiss es also sofort. canonicalize_legs ist der richtige Weg
+                    # fuer die Flugwertung, aber der langsame hier -- VATSIM alle 15 s, dazu
+                    # der Vollstopp und der Poller-Takt, zusammen Minuten. Gemeldet am
+                    # 20.09.2026: "warum dauert es dann so lange, bis eine Landung bemerkt
+                    # wird?"
+                    if ev.get("aufgenommen_am") and not ev.get("eingeliefert_am"):
+                        schnell = reddung_landung_aus_bruegge(
+                            conn, ev["aufgenommen_von"], ev["aufgenommen_am"])
+                        if schnell and set_reddung_eingeliefert(
+                                conn, ev["id"], schnell[1], ev["aufgenommen_von"], schnell[0]):
+                            ev = get_reddung_event(conn, ev["id"])
+                            if push_on:
+                                pushes.append({
+                                    "title": name,
+                                    "body": f"Eingeliefert in {schnell[0]} \u2705",
+                                    "url": "/"})
                     if ev.get("aufgenommen_am") and not ev.get("eingeliefert_am"):
                         legs = canonicalize_legs(conn, start=ev["aufgenommen_am"],
                                                  end=ev["dtend"], cids=[ev["aufgenommen_von"]])

@@ -98,9 +98,9 @@ def test_die_vorgaben_kommen_mit(db):
     ev = _liste()[0]
     assert ev["kante_km"] == 1.0 and ev["korridor_km"] == 1.0, "Suchen ist weit"
     assert ev["hoehe_max_ft"] == 2000, "Suchen darf hoch sein"
-    assert ev["fund_radius_ft"] == 500 and ev["fund_hoehe_ft"] == 1000, "Finden ist eng und tief"
+    assert ev["fund_radius_m"] == 150 and ev["fund_hoehe_ft"] == 1000, "Finden ist eng und tief"
     assert ev["aufnehmen_noetig"] == 1 and ev["landung_noetig"] == 1
-    assert ev["stand"]["korridor_km"] == 1.0 and ev["stand"]["fund_radius_ft"] == 500
+    assert ev["stand"]["korridor_km"] == 1.0 and ev["stand"]["fund_radius_m"] == 150
 
 
 def test_ein_verdrehter_sektor_wird_abgewiesen(db):
@@ -328,3 +328,59 @@ def test_die_ecken_werden_sortiert():
     verdrehtes Rechteck ein leeres Raster an, und der Server weist es mit 400 ab."""
     q = ADMIN.read_text(encoding="utf-8")
     assert "_rdSektorAusEcken" in q and "Math.min(a.lat, b.lat)" in q
+
+
+# --- Oeffentliche Eventliste und das sichtbare Objekt ---------------------
+
+def test_der_oeffentliche_endpunkt_traegt_keine_koordinate(db):
+    """⚠ Der Riegel fuer die Liste, die jeder Pilot sieht. Was hier durchkommt, steht in
+    jedem Browser."""
+    eid = _anlegen()
+    asyncio.run(main.admin_update_reddung_event(
+        FakeReq(body={"havarist_lat": 53.72, "havarist_lon": 7.25}), eid))
+    daten = main.reddung_events()
+    assert len(daten) == 1 and daten[0]["name"] == "Reddung Probe"
+    text = json.dumps(daten)
+    for zahl in ("53.72", "7.25", "havarist_lat", "havarist_lon"):
+        assert zahl not in text, f"{zahl} steht in der oeffentlichen Liste"
+    assert "stand" in daten[0] and "anteil" in daten[0]["stand"]
+
+
+def test_die_eventliste_holt_die_reddungen():
+    """Ohne diese Zeile taucht ein Event nirgends auf -- gemeldet am 20.09.2026:
+    'ich finde das event nicht in der Event ansicht??'"""
+    q = pathlib.Path("app/static/index.html").read_text(encoding="utf-8")
+    assert "/api/reddung/events" in q
+    assert "is_reddung" in q and "REDDUNG</span>" in q
+
+
+def test_ein_stehendes_simobjekt_ohne_partner_wird_nicht_gezeichnet():
+    """⚠ Der Havarist stand am 20.09.2026 als Verkehrspunkt auf dem Kniebrett -- und damit die
+    Lage, die der ganze Eventtyp verbirgt. Die Bruegge stellt ein Flugzeug-SimObject hin,
+    `GET_AIR_TRAFFIC` liefert es wie jedes andere.
+
+    Verankert am Code, nicht an einem Kommentar: Der Filter muss im Zweig fuer Sim-Objekte
+    OHNE VATSIM-Partner stehen -- also zwischen `} else {` und `e._key = 'sim:'`.
+    """
+    q = pathlib.Path("app/static/index.html").read_text(encoding="utf-8")
+    assert "_SIM_STEHT_KT" in q
+    i = q.index("e._key = 'sim:' + s.id;")
+    davor = q[q.rindex("} else {", 0, i):i]
+    assert "_SIM_STEHT_KT" in davor and "continue" in davor, \
+        "der Filter steht nicht im Zweig fuer ungepaarte Sim-Objekte"
+
+
+def test_die_reddung_hat_bearbeiten_und_link():
+    """Gemeldet am 20.09.2026: 'kein bearbeiten Button?' und 'der button Link fehlt auch'."""
+    q = ADMIN.read_text(encoding="utf-8")
+    assert "rdEdit(" in q and "rdCopyLink(" in q
+    assert "_rdEditingId" in q, "ohne Merker legt Speichern ein neues Event an statt zu aendern"
+    assert "'/api/admin/reddung/events/' + _rdEditingId" in q
+
+
+def test_der_fundradius_steht_in_metern():
+    """Nutzer, 20.09.2026: 'mach seitliche Abstaende in metern, nicht in fuss'."""
+    q = ADMIN.read_text(encoding="utf-8")
+    assert "Fundradius (m, seitlich)" in q
+    assert "fund_radius_m:" in q
+    assert "fund_radius_ft" not in q

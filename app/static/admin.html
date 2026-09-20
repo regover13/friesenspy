@@ -1364,8 +1364,8 @@
               <div class="form-section-title">Finden — was die Rauchfackel setzt</div>
               <div class="form-grid" style="margin-bottom:14px;">
                 <div class="form-group">
-                  <label for="rd-fund-radius">Fundradius (ft, seitlich)</label>
-                  <input type="number" step="50" id="rd-fund-radius" value="500" />
+                  <label for="rd-fund-radius">Fundradius (m, seitlich)</label>
+                  <input type="number" step="10" id="rd-fund-radius" value="150" />
                 </div>
                 <div class="form-group">
                   <label for="rd-fund-hoehe">Fundhöhe (ft AGL über dem Havaristen)</label>
@@ -1374,7 +1374,8 @@
                 <p class="form-hint" style="grid-column:1/-1;margin:0;">
                   <b>Ein eigenes, viel engeres Fenster</b> — mit Absicht nicht dasselbe wie der
                   Suchkorridor: Suchen darf weit und hoch sein, aber eine Cessna sieht man erst,
-                  wenn man dicht und tief darüber ist.
+                  wenn man dicht und tief darüber ist. Seitlich in <b>Metern</b>, die Höhe in
+                  Fuß — so, wie man beides im Flug denkt.
                   <b>„Abgesucht" heißt deshalb nicht „hätten wir ihn gesehen".</b> Das trägt,
                   weil zu jedem Event eine Geschichte gehört, die das Gebiet eingrenzt — der
                   Balken zeigt, welche Fläche abgeflogen ist, die Fackel den echten Fund.
@@ -6564,6 +6565,7 @@
     // Geschichte gehoert, die das Gebiet eingrenzt.
 
     let _rdEvents = [];
+    let _rdEditingId = null;
 
     const _RD_HINT_LANDUNG = 'Aufnehmen verlangt eine Landung an der Unglücksstelle '
       + '(Vollstopp unter 300 ft AGL) — sieh nach, ob dort jemand landen kann.';
@@ -6581,7 +6583,7 @@
       const el = document.getElementById('rd-rechnung');
       if (!el) return;
       const korridor = _rdZahl('rd-korridor', 1);
-      const fundR = _rdZahl('rd-fund-radius', 500);
+      const fundR = _rdZahl('rd-fund-radius', 150);
       const sued = _rdZahl('rd-sued', NaN), nord = _rdZahl('rd-nord', NaN);
       const west = _rdZahl('rd-west', NaN), ost = _rdZahl('rd-ost', NaN);
       let dauer = '';
@@ -6596,7 +6598,7 @@
       }
       el.innerHTML = 'Suchstreifen <strong>' + (korridor * 2).toFixed(1)
         + ' km</strong> je Bahn · Fund ab <strong id="rd-fundradius">'
-        + Math.round(fundR * 0.3048) + ' m</strong> seitlich' + dauer;
+        + Math.round(fundR) + ' m</strong> seitlich' + dauer;
     }
 
     /** Der aeussere Haken sperrt den inneren, und der Hinweis wechselt mit ihm. */
@@ -6780,7 +6782,7 @@
           + '<div class="hint" style="margin:4px 0;">' + anteil + ' % abgesucht ('
           + (st.abgedeckt || 0) + ' von ' + (st.zellen || 0) + ' Zellen bei '
           + (st.korridor_km || '?') + ' km Korridor) · Fund ab '
-          + Math.round((st.fund_radius_ft || 500) * 0.3048) + ' m</div>'
+          + Math.round(st.fund_radius_m || 150) + ' m</div>'
           + '<table style="font-size:0.8rem;"><tbody>'
           + '<tr><td style="padding-right:10px;">Beiträge</td><td>' + beitraege + '</td></tr>'
           + '<tr><td>Gefunden</td><td>' + _rdWer(st.gefunden) + '</td></tr>'
@@ -6792,6 +6794,8 @@
           + ' · Gelände ' + grund + '</td></tr>'
           + '</tbody></table>'
           + '<div style="margin-top:6px;">'
+          + '<button class="btn btn-sm" onclick="rdEdit(' + ev.id + ')">Bearbeiten</button> '
+          + '<button class="btn btn-sm" onclick="rdCopyLink(' + ev.id + ')" title="Direktlink zur Reddung (fürs Forum/Discord) kopieren">🔗 Link</button> '
           + '<button class="btn btn-sm" onclick="rdFreigeben(' + ev.id + ')">Aufnahme freigeben</button> '
           + '<button class="btn btn-sm" onclick="rdPush(' + ev.id + ','
           + (ev.push_enabled ? 'false' : 'true') + ')">Push '
@@ -6834,7 +6838,7 @@
         kante_km: _rdZahl('rd-kante', 1), korridor_km: _rdZahl('rd-korridor', 1),
         hoehe_max_ft: _rdZahl('rd-hoehe', 2000),
         gs_max_kt: _rdZahl('rd-gsmax', 140), gs_min_kt: _rdZahl('rd-gsmin', 30),
-        fund_radius_ft: _rdZahl('rd-fund-radius', 500),
+        fund_radius_m: _rdZahl('rd-fund-radius', 150),
         fund_hoehe_ft: _rdZahl('rd-fund-hoehe', 1000),
         aufnehmen_noetig: document.getElementById('rd-aufnehmen-noetig').checked ? 1 : 0,
         landung_noetig: document.getElementById('rd-landung-noetig').checked ? 1 : 0,
@@ -6847,12 +6851,68 @@
         koerper.havarist_lat = lat;
         koerper.havarist_lon = lon;
       }
-      const res = await api('POST', '/api/admin/reddung/events', koerper);
+      const pfad = _rdEditingId
+        ? '/api/admin/reddung/events/' + _rdEditingId
+        : '/api/admin/reddung/events';
+      const res = await api('POST', pfad, koerper);
       if (res && res.ok) {
-        toast('Event angelegt');
-        document.getElementById('rd-form').classList.add('hidden');
+        toast(_rdEditingId ? 'Event gespeichert' : 'Event angelegt');
+        _rdFormSchliessen();
         loadReddung();
       }
+    }
+
+    /** Formular zu und Bearbeitungsstand zuruecksetzen -- sonst legt der naechste Klick auf
+     *  "+ Neues Event" ein UPDATE auf das zuletzt bearbeitete Event ab. */
+    function _rdFormSchliessen() {
+      document.getElementById('rd-form').classList.add('hidden');
+      _rdEditingId = null;
+      _rdEcken = [null, null];
+      const t = document.getElementById('rd-form-title');
+      if (t) t.textContent = 'Neues Event anlegen';
+    }
+
+    function rdEdit(id) {
+      const ev = _rdEvents.find(function (x) { return x.id === id; });
+      if (!ev) return;
+      _rdEditingId = id;
+      const setz = function (feld, wert) {
+        const el = document.getElementById(feld);
+        if (el) el.value = (wert === null || wert === undefined) ? '' : wert;
+      };
+      setz('rd-name', ev.name);
+      setz('rd-dtstart', isoToLocal(ev.dtstart));
+      setz('rd-dtend', isoToLocal(ev.dtend));
+      setz('rd-sued', ev.sued); setz('rd-nord', ev.nord);
+      setz('rd-west', ev.west); setz('rd-ost', ev.ost);
+      setz('rd-korridor', ev.korridor_km); setz('rd-kante', ev.kante_km);
+      setz('rd-hoehe', ev.hoehe_max_ft);
+      setz('rd-gsmax', ev.gs_max_kt); setz('rd-gsmin', ev.gs_min_kt);
+      setz('rd-fund-radius', ev.fund_radius_m); setz('rd-fund-hoehe', ev.fund_hoehe_ft);
+      setz('rd-hav-lat', ev.havarist_lat); setz('rd-hav-lon', ev.havarist_lon);
+      const art = document.getElementById('rd-art');
+      if (art) art.value = ev.havarist_art || '';
+      document.getElementById('rd-aufnehmen-noetig').checked = !!ev.aufnehmen_noetig;
+      document.getElementById('rd-landung-noetig').checked = !!ev.landung_noetig;
+      document.getElementById('rd-aufnahme-verfaellt').checked = !!ev.aufnahme_verfaellt;
+      const t = document.getElementById('rd-form-title');
+      if (t) t.textContent = 'Event bearbeiten: ' + (ev.name || '');
+      document.getElementById('rd-form').classList.remove('hidden');
+      _rdArtenLaden();
+      _rdKarteAufbauen();
+      _rdKarteNachziehen();
+      _rdHinweise();
+      document.getElementById('rd-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    async function rdCopyLink(id) {
+      // Direktlink fuers Forum/Discord -- dieselbe Luecke wie beim Kutter ("woher die
+      // Event-Nummer?").
+      const url = location.origin + '/#tab=events&reddung=' + id;
+      try {
+        await navigator.clipboard.writeText(url);
+        toast('Reddung-Link kopiert: ' + url);
+      } catch { toast('Kopieren fehlgeschlagen — Link: ' + url, true); }
     }
 
     function _typLader(typ) {
@@ -6950,16 +7010,18 @@
     (function () {
       const t = document.getElementById('rd-toggle-form-btn');
       if (t) t.addEventListener('click', function () {
-        const offen = !document.getElementById('rd-form').classList.toggle('hidden');
+        const f = document.getElementById('rd-form');
+        if (!f.classList.contains('hidden')) { _rdFormSchliessen(); return; }
+        _rdFormSchliessen();                 // Bearbeitungsstand loeschen, DANN oeffnen
+        f.classList.remove('hidden');
         _rdArtenLaden();
-        if (offen) { _rdKarteAufbauen(); _rdKarteNachziehen(); }
+        _rdKarteAufbauen();
+        _rdKarteNachziehen();
       });
       const sp = document.getElementById('rd-save-btn');
       if (sp) sp.addEventListener('click', rdSpeichern);
       const ab = document.getElementById('rd-cancel-btn');
-      if (ab) ab.addEventListener('click', function () {
-        document.getElementById('rd-form').classList.add('hidden');
-      });
+      if (ab) ab.addEventListener('click', _rdFormSchliessen);
     })();
 
     document.querySelectorAll('.typ-btn').forEach(function (b) {

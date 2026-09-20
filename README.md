@@ -360,7 +360,9 @@ untereinander auf und sucht ihn ab.
    **hellblau**, und am Ende auf **rot** — die rote bleibt bis zum Eventende stehen und
    markiert die Stelle.
 4. **Einliefern.** Wer aufgenommen hat, bringt den Piloten zu **irgendeinem** Platz. Gewertet
-   wird die Zeit vom Fund bis zu dieser Landung.
+   wird die Zeit vom Fund bis zu dieser Landung. Wer mit der FriesenBrügge fliegt, wird dabei
+   sekundengenau erkannt — ohne sie dauert es ein paar Minuten, weil dann nur die
+   VATSIM-Positionen bleiben.
 
 Ein Abend kann auch mit dem Fund enden — das entscheidet der Veranstalter beim Anlegen, so wie
 er festlegt, ob zum Aufnehmen gelandet werden muss.
@@ -426,8 +428,8 @@ Ist der **Board-Login** aktiv (Admin → „Betrieb“ → „Board-Login“, St
   gilt ein großes Feld als komplett abgeflogen, obwohl nur ein schmaler Streifen durch seine
   Mitte führte.
 - **Suchen und Finden sind zwei getrennte Fenster**, und das ist der Kern: Das **Suchen** darf
-  weit und hoch sein (Vorgabe 1 km seitlich, 2.000 ft), das **Finden** ist eng und tief (500 ft
-  seitlich, 1.000 ft). Der Balken zeigt deshalb, welche *Fläche abgeflogen* ist — nicht, dass
+  weit und hoch sein (Vorgabe 1 km seitlich, 2.000 ft), das **Finden** ist eng und tief (150 m
+  seitlich, 1.000 ft). Seitliche Abstände stehen in Metern, Höhen in Fuß. Der Balken zeigt deshalb, welche *Fläche abgeflogen* ist — nicht, dass
   man den Havaristen gesehen hätte. Beides steht als Zahl im Formular, und darunter rechnet der
   Admin mit: Suchstreifen je Bahn und Fundabstand in Metern.
 - **Die erwartete Suchdauer** steht daneben — aus Sektorgröße und Korridor, gerechnet für fünf
@@ -449,7 +451,13 @@ Ist der **Board-Login** aktiv (Admin → „Betrieb“ → „Board-Login“, St
   sonst den ganzen Abend. Das erledigt FriesenSpy von selbst, sobald er sich **abgemeldet** hat
   und zehn Minuten nichts mehr meldet (abschaltbar); der Knopf daneben tut es sofort. Die zehn
   Minuten sind die Schonfrist für einen Absturz zum Desktop mit Wiederanmeldung.
-- **Push je Event** und **Löschen** — Löschen nimmt Wrack und Fackeln aus allen Simulatoren mit.
+- **Bearbeiten, 🔗 Link, Push je Event** und **Löschen** — der Link ist der Direktlink fürs
+  Forum, Löschen nimmt Wrack und Fackeln aus allen Simulatoren mit.
+
+⚠ **Der Havarist ist im Simulator ein echtes Objekt** — auf der Karte im Kniebrett wird er
+ausgeblendet (ein stehendes Objekt ohne VATSIM-Partner ist kein Verkehr), **in LittleNavMap und
+ähnlichen Werkzeugen ist er aber zu sehen.** Die lesen den Simulator direkt; daran lässt sich
+von hier aus nichts ändern.
 
 ### Flugbetrieb und Daten
 

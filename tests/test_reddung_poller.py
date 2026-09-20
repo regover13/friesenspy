@@ -312,3 +312,75 @@ def test_die_grundhoehe_wird_vor_den_pruefungen_gelernt(db):
     assert ev["havarist_grund_ft"] == 1000.0
     assert ev["havarist_grund_quelle"] == "gemessen"
     assert ev["gefunden_von"] == 111, "1.800 ft MSL sind 800 ft ueber dem Wrack"
+
+
+def test_die_landung_kommt_aus_der_bruegge_und_nicht_aus_vatsim(db):
+    """⚠ Der Grund fuer die Aenderung, gemeldet am 20.09.2026: 'warum dauert es dann so lange,
+    bis eine Landung bemerkt wird?'
+
+    canonicalize_legs arbeitet auf VATSIM (alle 15 s, mit Verzoegerung) und verlangt einen
+    Vollstopp in Platznaehe. Die Bruegge meldet im Sekundentakt und kennt `am_boden` -- hier
+    steht KEINE einzige position_history-Zeile fuer den Aufnehmenden, und die Einlieferung
+    wird trotzdem erkannt.
+    """
+    from app.geo import icao_to_coords
+    eid = _event(db, landung_noetig=0)
+    _punkte(db, 111, _quer(120))
+    _lauf(db)
+    _punkte(db, 222, _stand(db, 2, gs=10), alt=200, gs=10)
+    _lauf(db)
+    assert _ev(db, eid)["aufgenommen_von"] == 222
+
+    lat, lon = icao_to_coords("EDWF")
+    c = get_connection(db)
+    try:
+        c.execute("INSERT OR REPLACE INTO bruegge_positions (cid, lat, lon, gs_kt, am_boden, "
+                  "gemeldet_am, simulator) VALUES (222, ?, ?, 0, 1, ?, 'msfs2024')",
+                  (lat, lon, _iso(JETZT)))
+        c.commit()
+    finally:
+        c.close()
+    _lauf(db)
+    ev = _ev(db, eid)
+    assert ev["eingeliefert_von"] == 222
+    assert ev["eingeliefert_icao"] == "EDWF"
+
+
+def test_eine_aussenlandung_ist_keine_einlieferung(db):
+    """Zweite Bedingung: am Boden UND ein registrierter Platz im Umkreis."""
+    eid = _event(db, landung_noetig=0)
+    _punkte(db, 111, _quer(120))
+    _lauf(db)
+    _punkte(db, 222, _stand(db, 2, gs=10), alt=200, gs=10)
+    _lauf(db)
+    c = get_connection(db)
+    try:
+        # Mitten in der Nordsee, weit weg von jedem Platz
+        c.execute("INSERT OR REPLACE INTO bruegge_positions (cid, lat, lon, gs_kt, am_boden, "
+                  "gemeldet_am, simulator) VALUES (222, 55.5, 4.0, 0, 1, ?, 'msfs2024')",
+                  (_iso(JETZT),))
+        c.commit()
+    finally:
+        c.close()
+    _lauf(db)
+    assert _ev(db, eid)["eingeliefert_am"] is None
+
+
+def test_wer_noch_rollt_ist_noch_nicht_eingeliefert(db):
+    eid = _event(db, landung_noetig=0)
+    _punkte(db, 111, _quer(120))
+    _lauf(db)
+    _punkte(db, 222, _stand(db, 2, gs=10), alt=200, gs=10)
+    _lauf(db)
+    from app.geo import icao_to_coords
+    lat, lon = icao_to_coords("EDWF")
+    c = get_connection(db)
+    try:
+        c.execute("INSERT OR REPLACE INTO bruegge_positions (cid, lat, lon, gs_kt, am_boden, "
+                  "gemeldet_am, simulator) VALUES (222, ?, ?, 25, 1, ?, 'msfs2024')",
+                  (lat, lon, _iso(JETZT)))
+        c.commit()
+    finally:
+        c.close()
+    _lauf(db)
+    assert _ev(db, eid)["eingeliefert_am"] is None

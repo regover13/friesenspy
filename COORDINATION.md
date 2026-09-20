@@ -6,6 +6,28 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-20 (spaet) — Nach der ersten echten Reddung: fuenf Nachbesserungen
+
+**Angefasst:** `app/static/index.html` (Verkehrsfilter, Eventliste), `app/database.py`
+(`fund_radius_m`, `reddung_landung_aus_bruegge`), `app/poller.py`, `app/main.py`
+(`/api/reddung/events`), `app/static/admin.html`, README, Spec.
+
+⚠ **DER WICHTIGSTE FUND, und er betrifft nicht nur die Reddung:** Das Kniebrett zeichnete
+JEDES Sim-Objekt, das `GET_AIR_TRAFFIC` liefert -- auch eines ohne VATSIM-Partner, das steht.
+Der Havarist einer Reddung ist genau das, und damit stand die verborgene Lage als Punkt auf der
+Karte. Neue Regel in `_verkehrZusammenfuehren`: **Ein stehendes Sim-Objekt ohne VATSIM-Partner
+ist kein Verkehr** (`_SIM_STEHT_KT`). Wer dort etwas aendert, prueft das mit -- der Filter
+braucht die geheime Lage nicht, er entscheidet an den Rohwerten.
+
+⚠ **Und eine Grenze, die bleibt:** In LittleNavMap ist der Havarist weiterhin zu sehen. LNM
+liest SimConnect direkt; wer ein AI-Objekt in den Simulator stellt, stellt es fuer jedes
+Werkzeug dorthin. Nicht loesbar, nur zu wissen.
+
+**Weiter:** `/api/reddung/events` (oeffentlich, OHNE Koordinate) und die Eventliste;
+Bearbeiten und Link-Knopf im Admin; `fund_radius_ft` -> `fund_radius_m` (seitliche Abstaende in
+Metern, Hoehen in Fuss); und die Einlieferung fragt jetzt ZUERST die Bruegge (`am_boden`,
+Sekundentakt) statt `canonicalize_legs` -- der Poller-Takt steht auf 30 s.
+
 ## 2026-09-20 (nachts, zweite Runde) — FriesenReddung nachgeschliffen
 
 **Angefasst:** `app/reddung.py`, `app/database.py`, `app/poller.py`, `app/main.py`,
