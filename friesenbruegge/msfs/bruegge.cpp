@@ -105,7 +105,7 @@ static void log_zeile(const char* format, ...) {
 // Feste Größen
 // ---------------------------------------------------------------------------------------
 
-#define BRUEGGE_VERSION   "1.15.0"
+#define BRUEGGE_VERSION   "1.16.0"
 #define BRUEGGE_URL       "https://friesenspy.devprops.de/api/bruegge/melden"
 // ⭐ WELCHER SIMULATOR -- ZUR LAUFZEIT, NICHT BEIM UEBERSETZEN (16.09.2026).
 //
@@ -247,6 +247,7 @@ struct SollObjekt {
     DWORD  letzte_meldung_s;  // Sekunde der letzten Lagemeldung
     DWORD  seit_s;            // seit wann im aktuellen Zustand
     char   fehler[32];        // gesetzt, wenn das Erzeugen abgelehnt wurde
+
 };
 
 static SollObjekt g_soll[SOLL_MAX];
@@ -729,12 +730,20 @@ static void objekt_erzeugen(int i) {
     }
 }
 
-// Ein Objekt in der Luft festhalten -- s. EV_FREEZE_ALT fuer die Messung dahinter.
+// Ein Objekt festhalten, SOFORT wenn es seine ID bekommt -- s. EV_FREEZE_ALT fuer die Messung
+// dahinter.
 //
-// ⚠ NUR wenn es auch in der Luft steht (`!auf_boden` UND eine Hoehe dabei). Am Boden ist
-// nichts festzuhalten, und ein Freeze dort wuerde nur verdecken, dass `OnGround` seine
-// Arbeit tut. Die Regel stammt vom Nutzer (16.09.2026): *"einfrieren immer, wenn ein Objekt
-// mit auf_boden=false und einer Hoehe gesetzt wird"*.
+// ⭐ FUER ALLE OBJEKTE, IN DER LUFT UND AM BODEN (1.16.0, 20.09.2026). Bis 1.15.0 nur mit
+// `!auf_boden` und einer Hoehe. Aber ein Flugzeugmodell oder Bodenfahrzeug, das mit
+// `OnGround=1` aufgesetzt wird, huepft und rollt VON DER ERSTEN SEKUNDE AN (Hubschrauber,
+// Pitts, C172; einer kippte auf den Kopf). Einfrieren soll genau das verhindern -- also
+// gleich, nicht erst wenn es "steht": Eine Bedingung "erst einfrieren, wenn es ruhig ist"
+// kaeme bei einem Objekt, das nie zur Ruhe kommt, nie zum Zug oder fror mitten im Sprung ein
+// (Nutzer, 20.09.2026). Die Hoehe kommt dabei weiter vom Simulator (`OnGround=1`), nicht vom
+// Piloten und nicht aus einer Rechnung.
+//
+// Fuer Tiere, Bauwerke und Boote ist es harmlos: Sie haben keine Physik, es gibt nichts
+// festzuhalten. Die Bruegge kennt keine Kategorien und braucht keine.
 //
 // ⚠ ALLE DREI, nicht nur die Hoehe. Ohne ATTITUDE kippt das Objekt, ohne
 // LATITUDE_LONGITUDE treibt es im Wind ab -- beides sieht beim Hinsehen aus wie ein
@@ -747,7 +756,7 @@ static void objekt_erzeugen(int i) {
 // `.obj` und bleibt von allein haengen).
 static void objekt_festhalten(int i) {
     SollObjekt& o = g_soll[i];
-    if (o.auf_boden || !o.hat_hoehe || o.objekt_id == 0) return;
+    if (o.objekt_id == 0) return;
     static const DWORD ereignisse[] = { EV_FREEZE_ALT, EV_FREEZE_LAGE, EV_FREEZE_ORT };
     for (DWORD ev : ereignisse) {
         // `1` heisst einfrieren. Die `_SET`-Fassungen nehmen den Zustand als Wert -- die

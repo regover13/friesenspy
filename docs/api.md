@@ -2734,11 +2734,14 @@ Nutzerentscheidung gestrichen (*„Streiche den Sondenumweg! Dass du nicht stän
 Pilotenhöhe (MSL − AGL) als Ersatz — am 20.09.2026 kurz in Betrieb, Fassung 15.6.0 — lag um Fuß daneben und ist wieder
 heraus (*„Es geht jedenfalls nicht, dass du meine Höhe nutzt!!"*).
 
-⚠ **Offen: Flugzeugmodelle und Bodenfahrzeuge bewegen sich** (20.09.2026 gemessen: der Schwerpunkt eines
+⭐ **Flugzeugmodelle und Bodenfahrzeuge bewegen sich mit `OnGround=1` allein** (20.09.2026 gemessen: der Schwerpunkt eines
 Hubschraubers wanderte um 225 Pixel, ein zweiter kippte auf den Kopf; Pitts und C172 hüpfen, Bodenfahrzeuge rollen weg).
-`OnGround=1` allein hält sie nicht. Festhalten kann die Brügge (`objekt_festhalten`: Höhe, Lage, Ort einfrieren), tut es
-aber bisher nur mit `auf_boden: false` **und** einer Höhe. Die Lösung ist eine Änderung an der Brügge — erst
-aufsetzen lassen, dann einfrieren —, nicht am Server, und sie ist noch ungemessen.
+**Seit Brügge 1.16.0 friert die Brügge JEDES Objekt sofort ein, wenn es seine ID bekommt** (`objekt_festhalten`: Höhe,
+Lage, Ort) — für `auf_boden` und feste Höhe gleichermaßen, ohne Kategorien und ohne Server-Feld. Die Höhe kommt
+weiter vom Simulator. Eine erste Fassung wartete, bis das Objekt „steht" (am Boden, kein Tempo, Höhe gleich): verworfen,
+weil ein hüpfendes Objekt nie zur Ruhe kommt und im Sprung eingefroren würde (*„Sie in der Luft einzufrieren oder gar
+nicht einzufrieren ist keine Lösung!!"*). Im Flug geprüft in MSFS 2020 (Wangerooge: 10 Objekte, 20 s, Höhenschwankung
+0,0) und MSFS 2024 (13 Objekte, Schwankung 0,0, Sichtprüfung durch den Nutzer: „stehen perfekt").
 
 ### Der Objektkatalog
 

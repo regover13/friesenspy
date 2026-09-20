@@ -1,13 +1,23 @@
 [
   {
+    "version": "15.9.0",
+    "date": "2026-09-20",
+    "highlight": false,
+    "title": "Flugzeuge und Fahrzeuge stehen still, echte Airliner in MSFS 2020",
+    "items": [
+      "🌉 Neue FriesenBrügge 1.16.0: Objekte werden ab dem Anlegen festgehalten. Hubschrauber, Flugzeuge und Bodenfahrzeuge hüpfen nicht mehr und rollen nicht mehr weg. In MSFS 2020 und 2024 im Flug geprüft. Das Paket steht auf der Download-Seite.",
+      "🛩 In MSFS 2020 steht als Verkehrsflieger jetzt ein echter Airliner (Generic Airliner, A320-Klasse) statt der King Air. Die King Air ist zu den Geschäftsreiseflugzeugen gewandert, dazu kamen die Generic-Modelle Private Jet und Turboprop sowie einmotorige und zweimotorige Kolbenflugzeuge."
+    ]
+  },
+  {
     "version": "15.8.0",
     "date": "2026-09-20",
     "highlight": false,
     "title": "Die Admin-Seite ist in sechs Bereiche geteilt",
     "items": [
-      "\ud83d\uddc2 Die Verwaltung war ein einziger langer Scroll. Oben steht jetzt eine Leiste mit sechs Bereichen \u2014 Events, Stammdaten, Karten, Mitteilungen, Br\u00fcgge und Betrieb. Im Bereich Events liegt darunter eine zweite Reihe mit einem Knopf je Event-Typ, derzeit Bummel und Kutter; jeder weitere Typ bekommt dort seinen eigenen.",
+      "\ud83d\uddc2 Die Verwaltung war ein einziger langer Scroll. Oben steht jetzt eine Leiste mit sechs Bereichen \u2014 Events, Stammdaten, Karten, Mitteilungen, FriesenBr\u00fcgge und Betrieb. Im Bereich Events liegt darunter eine zweite Reihe mit einem Knopf je Event-Typ, derzeit Bummel und Kutter; jeder weitere Typ bekommt dort seinen eigenen.",
       "\ud83d\udd17 Der ge\u00f6ffnete Bereich steht in der Adresszeile. Ein Neuladen bringt dich wieder dorthin, wo du warst, und du kannst dir eine Stelle als Link ablegen.",
-      "\u26a1 Jeder Bereich holt seine Daten erst beim ersten \u00d6ffnen \u2014 das Anmelden geht sp\u00fcrbar schneller. Br\u00fcgge und Kniebrett frischten sich bisher im Zehn-Sekunden-Takt auf, sobald die Seite offen war, auch w\u00e4hrend noch niemand angemeldet war; sie tun es jetzt nur noch, solange sie zu sehen sind."
+      "\u26a1 Jeder Bereich holt seine Daten erst beim ersten \u00d6ffnen \u2014 das Anmelden geht sp\u00fcrbar schneller. FriesenBr\u00fcgge und Kniebrett frischten sich bisher im Zehn-Sekunden-Takt auf, sobald die Seite offen war, auch w\u00e4hrend noch niemand angemeldet war; sie tun es jetzt nur noch, solange sie zu sehen sind."
     ]
   },
   {

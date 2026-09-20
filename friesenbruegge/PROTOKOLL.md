@@ -3,7 +3,13 @@
 **Der Vertrag zwischen dem FriesenSpy-Server und einer Brügge im Simulator.**
 Verbindlich für alle Umsetzungen — MSFS 2020, MSFS 2024, X-Plane 12.
 
-> Stand 20.09.2026 · Protokollfassung **2** · ✅ **im Flug abgenommen** — Server, MSFS **1.15.0** und X-Plane **1.3.1**
+> Stand 20.09.2026 · Protokollfassung **2** · ✅ **im Flug abgenommen** — Server, MSFS **1.16.0** und X-Plane **1.3.1**
+>
+> ⭐ **1.16.0 (20.09.2026): Jedes Objekt wird sofort eingefroren, wenn es seine ID bekommt** — nicht mehr nur mit
+> `auf_boden=false` und Höhe. Grund: Flugzeugmodelle und Bodenfahrzeuge hüpfen und rollen mit `OnGround=1` von der
+> ersten Sekunde an. Die Höhe kommt weiter vom Simulator, es wird nichts gerechnet und nichts vom Piloten genommen.
+> Keine Protokolländerung. Eine Fassung, die erst einfrieren wollte, wenn das Objekt „steht", ist verworfen (ein
+> hüpfendes Objekt kommt nie zur Ruhe). In MSFS 2020 und 2024 im Flug geprüft.
 >
 > ⭐ **1.15.0 (20.09.2026): Rauch und Seehunde laufen jetzt auch in MSFS 2020.** Das Modul ist unverändert;
 > das Paket wird mit dem 2020er SDK gebaut (Details in `msfs-rauch/LIESMICH.md`). Der Server trennt seither

@@ -47,16 +47,24 @@ def test_angemeldet_wird_einmal_je_verbindung(cpp):
     assert "MapClientEventToSimEvent" not in cpp[beginn:ende]
 
 
-def test_festgehalten_wird_nur_in_der_luft(cpp):
-    """Die Nutzerregel vom 16.09.2026: `auf_boden=false` UND eine Höhe.
+def test_festgehalten_wird_jedes_objekt_sofort(cpp):
+    """Seit 1.16.0 (20.09.2026): JEDES Objekt, sobald es seine ID hat — nicht nur eines in der Luft.
 
-    Am Boden ist nichts festzuhalten — ein Freeze dort würde nur verdecken, ob `OnGround`
-    seine Arbeit tut.
+    Die Regel vom 16.09. („`auf_boden=false` UND eine Höhe") ließ ein mit `OnGround=1` aufgesetztes
+    Flugzeugmodell oder Bodenfahrzeug frei: Es hüpft und rollt von der ersten Sekunde an. Nutzer:
+    *„Sie in der Luft einzufrieren oder gar nicht einzufrieren ist keine Lösung!!"* — und ein
+    Einfrieren erst „wenn es steht" kommt bei einem hüpfenden Objekt nie zum Zug. Ohne Bedingung
+    an `auf_boden`/`hat_hoehe`; nur die ID muss da sein (an Objekt 0 träfe es den Piloten).
     """
     beginn = cpp.index("static void objekt_festhalten")
     ende = cpp.index("static void objekt_entfernen")
     rumpf = cpp[beginn:ende]
-    assert "if (o.auf_boden || !o.hat_hoehe || o.objekt_id == 0) return;" in rumpf
+    kopf, _, innen = rumpf.partition("{")
+    assert "if (o.objekt_id == 0) return;" in innen
+    assert "auf_boden" not in innen, "am Boden wird genauso festgehalten"
+    assert "hat_hoehe" not in innen
+    assert "ruhig" not in innen.lower() and "stand_hoehe" not in innen, \
+        "kein Warten auf Stillstand: ein hüpfendes Objekt kommt nie zur Ruhe"
 
 
 def test_es_wird_nach_der_objekt_id_festgehalten(cpp):

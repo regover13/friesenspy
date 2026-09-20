@@ -6,6 +6,20 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-20 (abends) — Brügge 1.16.0, 2020er Airliner, Sonde bleibt gestrichen, 15.9.0
+
+**Angefasst:** `friesenbruegge/msfs/bruegge.cpp` (`objekt_festhalten` friert jetzt jedes Objekt beim Anlegen ein, 1.16.0),
+`docs/api.md` (Abschnitt „Boden oder Höhe"), `friesenbruegge/PROTOKOLL.md`, `app/CHANGELOG.json`. Server: 2020er Titel zugeordnet
+(Generic Airliner Twin → `flugzeug_airliner`, King Air → `flugzeug_ga`, Generic Private Jet/Turbo/TBM AirTraffic → `flugzeug_ga`,
+Generic Piston → `flugzeug_echo`), Sicherung `/opt/friesenspy/data/zuordnung_2020_backup.json`.
+
+⚠ **Die Höhe eines Objekts kommt weder vom Piloten noch aus einer Sonde** — nur `OnGround=1` (Sondenumweg am 12.09. vom Nutzer
+gestrichen, am 20.09. von mir kurz und fälschlich wieder eingebaut; 15.6.1 hat es zurückgenommen). Eine Fassung von 1.16.0, die
+erst einfrieren wollte, wenn das Objekt „steht", ist verworfen. ⚠ **`friesenbruegge/katalog.json` (rund 69 000 Zeilen Änderung)
+liegt uncommittet bei jemand anderem** — ich habe sie nicht angefasst.
+
+---
+
 ## 2026-09-20 (nachmittags) — Admin-Seite in Bereiche geteilt, 15.8.0
 
 **Angefasst:** `app/static/admin.html`, `README.md`, `tests/test_admin_tabs.py` (neu, 14 Tests),
