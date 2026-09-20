@@ -558,6 +558,34 @@ ARTEN: dict[str, tuple[str, dict[str, list]]] = {
         "msfs2024": ["FrsRauch_Navy"], "xplane12": [XP_EIGEN + "rauch_navy.obj"]}),
 }
 
+# --- Marken: Wuerfel, Saeulen, Licht -- alles eigene Fertigung, in allen drei Simulatoren -------
+#
+# "ich brauche auch immer Vergleichbares in den anderen beiden Sims" (Nutzer, 20.09.2026).
+# Anlass: In MSFS 2024 liegen `Peace_Tower_Light` (eine sehr helle weisse Saeule) und
+# `wENLK_lightdummy` (kleine rote Wuerfel) auf der Platte -- in MSFS 2020 gibt es nichts
+# Vergleichbares (EXCEPTION_22, aus Szenerie-Paketen), und X-Plane hat nur Uplights, keine
+# Wuerfel. Also eigene Objekte, die ueberall gleich aussehen:
+#
+#   * `wuerfel_<farbe>`   3 m, massiv, in einer der sechs Friesenfarben  -- gut bei Tag
+#   * `saeule_<farbe>`    100 m hoch, schmal, leuchtend; dazu `saeule_weiss`
+#   * `licht`             ein warmes Punktlicht, wie die zwei Lichtpunkte auf der Wiese
+#
+# ⚠ Die Farbe traegt Bedeutung, deshalb je Farbe eine Art und kein Wuerfeln -- wie beim Rauch.
+# ⚠ Artnamen hoechstens 23 Zeichen (`char art[24]` in beiden Bruegge).
+_MARKEN_FARBEN = {
+    "navy": "Navy", "hellblau": "Hellblau", "rot": "Rot", "orange": "Orange",
+    "signalrot": "Signalrot", "signalorange": "Signalorange",
+}
+for _f, _titel in _MARKEN_FARBEN.items():
+    ARTEN[f"wuerfel_{_f}"] = (f"Ein Wuerfel, 3 m, in {_titel} (Friesenfarbe)", {
+        "msfs2024": [f"FrsWuerfel_{_titel}"], "xplane12": [XP_EIGEN + f"wuerfel_{_f}.obj"]})
+for _f, _titel in {"weiss": "Weiss", **_MARKEN_FARBEN}.items():
+    ARTEN[f"saeule_{_f}"] = (f"Eine schmale Lichtsaeule, 100 m hoch, in {_titel}"
+                             + ("" if _f == "weiss" else " (Friesenfarbe)"), {
+        "msfs2024": [f"FrsSaeule_{_titel}"], "xplane12": [XP_EIGEN + f"saeule_{_f}.obj"]})
+ARTEN["licht"] = ("Ein einfaches warmes Punktlicht, leuchtet nachts", {
+    "msfs2024": ["FrsLicht_Warm"], "xplane12": [XP_EIGEN + "licht_warm.obj"]})
+
 
 def erstbefuellung() -> list[dict]:
     """Die Zuordnung flach, in der Form, die ``bruegge_katalog`` braucht.

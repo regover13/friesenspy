@@ -1,0 +1,174 @@
+{
+ "asset": {
+  "version": "2.0",
+  "generator": "FriesenBruegge marken_bauen",
+  "copyright": "devprops",
+  "extensions": {
+   "ASOBO_normal_map_convention": {
+    "tangent_space_convention": "DirectX"
+   }
+  }
+ },
+ "extensionsUsed": [
+  "ASOBO_normal_map_convention",
+  "ASOBO_material_invisible",
+  "ASOBO_macro_light"
+ ],
+ "scene": 0,
+ "scenes": [
+  {
+   "nodes": [
+    0,
+    1
+   ],
+   "name": "Scene"
+  }
+ ],
+ "nodes": [
+  {
+   "mesh": 0,
+   "name": "frs_licht_warm"
+  },
+  {
+   "name": "Light",
+   "children": [
+    2
+   ]
+  },
+  {
+   "name": "Point",
+   "translation": [
+    0.0,
+    0.3,
+    0.0
+   ],
+   "extensions": {
+    "ASOBO_macro_light": {
+     "color": [
+      1.0,
+      0.84,
+      0.6
+     ],
+     "intensity": 5.0,
+     "cone_angle": 360,
+     "has_simmetry": false,
+     "flash_frequency": 0.0,
+     "flash_duration": 0.0,
+     "flash_phase": 0.0,
+     "rotation_speed": 0.0,
+     "day_night_cycle": true
+    }
+   }
+  }
+ ],
+ "meshes": [
+  {
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TEXCOORD_0": 2
+     },
+     "indices": 3,
+     "material": 0,
+     "mode": 4
+    }
+   ]
+  }
+ ],
+ "materials": [
+  {
+   "name": "Invisible",
+   "extensions": {
+    "ASOBO_material_invisible": {}
+   }
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 24,
+   "type": "VEC3",
+   "min": [
+    -0.025,
+    0.0,
+    -0.025
+   ],
+   "max": [
+    0.025,
+    0.05,
+    0.025
+   ]
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 24,
+   "type": "VEC3",
+   "min": [
+    -1.0,
+    -1.0,
+    -1.0
+   ],
+   "max": [
+    1.0,
+    1.0,
+    1.0
+   ]
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 24,
+   "type": "VEC2",
+   "min": [
+    0.0,
+    0.0
+   ],
+   "max": [
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5123,
+   "count": 36,
+   "type": "SCALAR"
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteOffset": 0,
+   "byteLength": 288,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 288,
+   "byteLength": 288,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 576,
+   "byteLength": 192,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 768,
+   "byteLength": 72,
+   "target": 34963
+  }
+ ],
+ "buffers": [
+  {
+   "byteLength": 840,
+   "uri": "FrsLicht_Warm.bin"
+  }
+ ]
+}

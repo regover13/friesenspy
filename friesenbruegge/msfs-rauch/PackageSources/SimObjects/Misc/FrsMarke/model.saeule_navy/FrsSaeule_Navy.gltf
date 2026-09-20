@@ -1,0 +1,154 @@
+{
+ "asset": {
+  "version": "2.0",
+  "generator": "FriesenBruegge marken_bauen",
+  "copyright": "devprops",
+  "extensions": {
+   "ASOBO_normal_map_convention": {
+    "tangent_space_convention": "DirectX"
+   }
+  }
+ },
+ "extensionsUsed": [
+  "ASOBO_normal_map_convention"
+ ],
+ "scene": 0,
+ "scenes": [
+  {
+   "nodes": [
+    0
+   ],
+   "name": "Scene"
+  }
+ ],
+ "nodes": [
+  {
+   "mesh": 0,
+   "name": "frs_saeule_navy"
+  }
+ ],
+ "meshes": [
+  {
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TEXCOORD_0": 2
+     },
+     "indices": 3,
+     "material": 0,
+     "mode": 4
+    }
+   ]
+  }
+ ],
+ "materials": [
+  {
+   "name": "FrsSaeule_Navy",
+   "pbrMetallicRoughness": {
+    "baseColorFactor": [
+     0.009721,
+     0.012286,
+     0.0865,
+     0.55
+    ],
+    "metallicFactor": 0.0,
+    "roughnessFactor": 0.85
+   },
+   "emissiveFactor": [
+    0.009721,
+    0.012286,
+    0.0865
+   ],
+   "doubleSided": true,
+   "alphaMode": "BLEND"
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 32,
+   "type": "VEC3",
+   "min": [
+    -0.4,
+    0.0,
+    -0.4
+   ],
+   "max": [
+    0.4,
+    100.0,
+    0.4
+   ]
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 32,
+   "type": "VEC3",
+   "min": [
+    -1.0,
+    -1.0,
+    -1.0
+   ],
+   "max": [
+    1.0,
+    1.0,
+    1.0
+   ]
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 32,
+   "type": "VEC2",
+   "min": [
+    0.0,
+    0.0
+   ],
+   "max": [
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5123,
+   "count": 48,
+   "type": "SCALAR"
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteOffset": 0,
+   "byteLength": 384,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 384,
+   "byteLength": 384,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 768,
+   "byteLength": 256,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 1024,
+   "byteLength": 96,
+   "target": 34963
+  }
+ ],
+ "buffers": [
+  {
+   "byteLength": 1120,
+   "uri": "FrsSaeule_Navy.bin"
+  }
+ ]
+}

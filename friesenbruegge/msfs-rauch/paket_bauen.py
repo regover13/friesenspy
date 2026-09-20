@@ -8,6 +8,8 @@ braucht, damit `AICreateSimulatedObject` einen Titel wie `FrsRauch_Signalrot` an
       MaterialLibs/friesenrauch-mat/            Textur + Material
       SimObjects/Misc/FrsRauch/                 sim.cfg + ein Trägermodell je Farbe
       SimObjects/Misc/FrsSeehund/               der Seehund, drei Größen (14.09.2026)
+      SimObjects/Misc/FrsMarke/                 Würfel, Lichtsäulen, Punktlicht (20.09.2026,
+                                                `marken_bauen.py`)
     PackageDefinitions/                         drei Pakete
     FriesenRauch.xml                            das Projekt für fspackagetool
 
@@ -81,6 +83,8 @@ TEXTUR = HIER / "rauch_msfs.png"
 KANTE = 512
 
 from rauch_bauen import FARBEN, NAMENSRAUM, guid  # noqa: E402  (nach den Pfaden)
+from marken_bauen import HERSTELLER_ORDNER as MARKEN_ORDNER  # noqa: E402
+from marken_bauen import marken_schreiben  # noqa: E402
 
 HERSTELLER = "devprops"
 
@@ -521,7 +525,12 @@ def definitionen_schreiben() -> None:
           # deshalb in einen eigenen Schritt.
           gruppe("SeehundObjects", "SimObject",
                  "PackageSourcesSeehund\\SimObjects\\Misc\\FrsSeehund\\",
-                 "SimObjects\\Misc\\FrsSeehund\\"))
+                 "SimObjects\\Misc\\FrsSeehund\\") +
+          # Die Marken (Würfel, Lichtsäulen, Punktlicht) liegen im SELBEN Teilpaket, in einer
+          # dritten Gruppe — aus demselben Grund wie der Seehund: ein Paket, nicht vier.
+          gruppe("MarkenObjects", "SimObject",
+                 f"PackageSources\\SimObjects\\Misc\\{MARKEN_ORDNER}\\",
+                 f"SimObjects\\Misc\\{MARKEN_ORDNER}\\"))
 
     (HIER / "FriesenRauch.xml").write_text(
         '<?xml version="1.0" encoding="utf-8"?>\n'
@@ -563,6 +572,8 @@ def main() -> None:
     material_schreiben()
     simobjects_schreiben()
     seehund_schreiben()
+    n = marken_schreiben(QUELLEN / "SimObjects" / "Misc" / MARKEN_ORDNER)
+    print(f"  {n} Marken (Würfel, Säulen, Licht) nach SimObjects/Misc/{MARKEN_ORDNER}")
     definitionen_schreiben()
     print("\nJetzt bauen:")
     print(r"  .\bauen.ps1")

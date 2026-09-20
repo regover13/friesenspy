@@ -28,5 +28,13 @@
 			<AssetDir>PackageSourcesSeehund\SimObjects\Misc\FrsSeehund\</AssetDir>
 			<OutputDir>SimObjects\Misc\FrsSeehund\</OutputDir>
 		</AssetGroup>
+		<AssetGroup Name="MarkenObjects">
+			<Type Version="1">SimObject</Type>
+			<Flags>
+				<FSXCompatibility>false</FSXCompatibility>
+			</Flags>
+			<AssetDir>PackageSources\SimObjects\Misc\FrsMarke\</AssetDir>
+			<OutputDir>SimObjects\Misc\FrsMarke\</OutputDir>
+		</AssetGroup>
 	</AssetGroups>
 </AssetPackage>

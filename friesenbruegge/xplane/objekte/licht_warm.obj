@@ -1,0 +1,13 @@
+I
+800
+OBJ
+# Die FriesenBruegge -- einfaches Licht, warmweiss. Kein Modell, nur zwei Lichtzeilen.
+# spot_params_bb_pm = Glueh-Punkt (Billboard), spot_params_sp_pm = Lichtfleck; beide aus
+# Resources/bitmaps/world/lites/lights.txt (LIGHT_PARAM_DEF), Zeilenform wie in Laminars Objekten.
+
+TEXTURE	
+POINT_COUNTS	0 0 0 0
+
+ATTR_LOD	0 10000
+LIGHT_PARAM	spot_params_bb_pm	0 0.5 0 1.0 0.84 0.6 500cd 0 0 0 1
+LIGHT_PARAM	spot_params_sp_pm	0 0.5 0 1.0 0.84 0.6 1 1000cd 0 -1 0 0.5
