@@ -21,7 +21,27 @@ das Aufnehmen: Dafür zählt nur ein Überflug **nach** `gefunden_am`.
 **Findet niemand:** Bei `dtend` wird die Lage aufgelöst und veröffentlicht, die Fackeln werden
 zurückgenommen, die Bilanz sagt „nicht gefunden" und nennt die erreichte Abdeckung.
 
-## 2. Die Wertung gehört der Gruppe
+## 2. Gesucht wird meist ein Flugzeug
+
+**Der Havarist ist im Regelfall eine abgestürzte oder notgelandete Maschine**, nicht ein Boot —
+ein Fliegerverein sucht Flieger. Daraus folgen drei Vorgaben, die nicht kosmetisch sind:
+
+* **Vorgabe-Art ist `flugzeug_echo`** (kleines Flugzeug am Boden). `wilga` ist die
+  dramatischere Wahl: das ist die Vereinsmaschine **D-EFRS**, und sie zu suchen erklärt sich
+  ohne ein Wort. Ebenso möglich: `flugzeug_ga`, `hubschrauber`, `segelflugzeug`.
+* **`landung_noetig` ist standardmäßig AN.** Eine abgestürzte Maschine liegt meist an Land, und
+  dann muss zum Aufnehmen jemand dort landen. Auf Watt oder Wasser nimmt der Admin den Haken
+  heraus, dann genügt ein zweiter tiefer, langsamer Überflug.
+* **Das Objekt steht auf dem Boden** (OnGround, wie seit 15.6.1 bei den Booten), mit dem
+  `boden_versatz_ft` seiner Art — bei `flugzeug_echo` 3,9 ft.
+
+**Die Simulatorlücke, die bei Booten ein Problem war, gibt es bei Flugzeugen nicht:**
+`flugzeug_echo` (5/185/2 aktive Titel), `flugzeug_ga` (1/70/3), `hubschrauber` (1/41/4) und
+`wilga` (1/1/1) sind in MSFS 2020, MSFS 2024 **und** X-Plane 12 aktiv. Die Auflösung der Art je
+Simulator bleibt trotzdem im Entwurf — sie kostet fast nichts und trägt die Sonderfälle
+(`segelflugzeug` fehlt in MSFS 2020, `flugzeug_klassik` in X-Plane, alle Bootsarten irgendwo).
+
+## 3. Die Wertung gehört der Gruppe
 
 Zwei Zahlen nebeneinander, wie beim FriesenKutter:
 
@@ -32,7 +52,7 @@ Zwei Zahlen nebeneinander, wie beim FriesenKutter:
 Dazu die drei Namen und Zeiten der Latches. Ein Wettlauf um den Fund bleibt daneben möglich, aber
 niemand geht leer aus, der eine Fläche abgeflogen und nichts gefunden hat.
 
-## 3. Die Zahlen — und warum sie aneinander hängen
+## 4. Die Zahlen — und warum sie aneinander hängen
 
 | Größe | Vorgabe | Herkunft |
 |---|---|---|
@@ -50,10 +70,13 @@ noch die halbe Zelldiagonale weiter weg. Mit `Korridor + Kante/√2` gilt dagege
 Zelle bedeutet „hier hätten wir ihn gesehen", und **volle Abdeckung garantiert den Fund**. Der
 Admin stellt Korridor und Kante ein und kann den Widerspruch nicht mehr erzeugen.
 
-1,71 km Sichtweite auf ein Boot aus 1.500 ft sind dabei realistisch — die Zahl ist keine
-Nachgiebigkeit, sondern die Bedingung dafür, dass Balken und Fund dasselbe versprechen.
+1,71 km Sichtweite aus 1.500 ft ist dabei keine Nachgiebigkeit, sondern die Bedingung dafür, dass
+Balken und Fund dasselbe versprechen. Auf ein Wrack im Gelände ist sie allerdings **optimistischer
+als auf ein Boot auf offener See** — wer es strenger will, verkleinert Korridor und Zellkante
+gemeinsam (0,6 km/0,6 km ergibt 1,02 km Fundradius) und nimmt die längere Suchzeit in Kauf. Das
+Verhältnis bleibt dabei erhalten, weil der Fundradius gerechnet wird.
 
-## 4. Verdeckung: wohin die Koordinate geht und wohin nicht
+## 5. Verdeckung: wohin die Koordinate geht und wohin nicht
 
 **An die FriesenBrügge: ja, ab Eventbeginn, ohne Abstandsprüfung.** Sie muss das Objekt
 hinstellen. Ein Riegel „erst ab 15 km" war erwogen und **verworfen**: Der einzige Angriff wäre,
@@ -67,7 +90,7 @@ sondern eine Zusicherung des Datenmodells: `app/abdeckung.py` gibt nie eine Koor
 Dass abgesuchte Zellen verraten, wo er **nicht** ist, ist kein Leck, sondern die Spielmechanik
 aus #21: Wer eine Fläche absucht und nichts findet, verkleinert den Sektor für alle.
 
-## 5. Datenmodell
+## 6. Datenmodell
 
 Eine neue Tabelle, nach dem Muster von `bummel_races` und `transport_events`:
 
@@ -90,9 +113,9 @@ CREATE TABLE IF NOT EXISTS suchflug_events (
     -- Der Havarist. ⚠ Diese zwei Spalten verlassen den Server nur in Richtung FriesenBrügge.
     havarist_lat    REAL,
     havarist_lon    REAL,
-    havarist_art    TEXT,                   -- Art aus bruegge_art; NULL = Bootsart je Simulator
+    havarist_art    TEXT,                   -- Art aus bruegge_art; NULL = 'flugzeug_echo'
     havarist_verdeckt INTEGER DEFAULT 0,    -- 1 = gewürfelt, auch im Admin verborgen
-    landung_noetig  INTEGER DEFAULT 0,      -- 1 = an Land, Aufnehmen verlangt eine Landung
+    landung_noetig  INTEGER DEFAULT 1,      -- 1 = an Land, Aufnehmen verlangt eine Landung
     -- Latches
     gefunden_am     TEXT,  gefunden_von     INTEGER,
     aufgenommen_am  TEXT,  aufgenommen_von  INTEGER,
@@ -116,7 +139,7 @@ gegen sechs Zweistundenspuren, also unkritisch auch ohne Snapshot.
 ⚠ **`code_version` erhöhen, wenn sich die Rechnung ändert** — sonst bleibt ein eingefrorener
 Snapshot stehen (`app/database.py`, `_build_race_view`-Kommentar).
 
-## 6. Wo die Prüfung läuft
+## 7. Wo die Prüfung läuft
 
 Im Poller, im vorhandenen Takt (15 s) — ein Job `_check_suchflug`, nach dem Muster von
 `_check_bummel_reveals`. Er rechnet je laufendem Suchflug:
@@ -136,7 +159,7 @@ AGL) und `abstand_zu_strecke_km` kostet eine Mikrosekunde — aber `bruegge_posi
 letzte Zeile je Pilot, und Issue #42 (438 × HTTP 500 auf `/api/bruegge/melden`) sagt, dass dieser
 Pfad kein guter Ort für neue Arbeit ist, solange er nicht verstanden ist.
 
-## 7. Was der Admin bedient
+## 8. Was der Admin bedient
 
 Ein Bereich wie bei Bummel und Kutter: Sektor durch zwei Ecken auf der Karte, Zellkante,
 Korridor, Höhen- und Geschwindigkeitsfenster, Art des Havaristen, Haken „Landung zur Rettung
@@ -162,23 +185,31 @@ nötig", Kalendertermin, Push. Dazu:
 * **Die erwartete Suchdauer** als Hinweis neben der Sektorgröße, aus Kantenlänge, Korridor und
   angenommenen 110 kt — sonst setzt niemand einen Sektor, der zur Abendlänge passt.
 
-## 8. Abhängigkeiten
+## 9. Abhängigkeiten
 
 * **Die Fackeln sind für MSFS 2020 nicht im Katalog.** `FrsRauch_Signalorange` und
   `FrsRauch_Hellblau` sind eigene Objekte der Brügge und stehen als aktiv für `msfs2024` und
   `xplane12`; für `msfs2020` fehlt die Zeile. Ein Paket bedient beide MSFS — es fehlt der
   Prüflauf, das ist **Issue #43**. Ohne ihn sieht ein MSFS-2020-Pilot keine Fackel.
-* **Keine Bootsart ist in allen drei Simulatoren aktiv.** `boot_klein`/`boot_gross` nur
-  `msfs2020`+`xplane12`, `schiff_segel`/`schnellboot` nur `msfs2024`+`xplane12`. Die Art wird
-  deshalb **beim Ausliefern je Simulator** aufgelöst; der Server weiß beim Melden, wer fragt.
+* **Für den Normalfall keine Abhängigkeit:** Die vier Flugzeugarten sind in allen drei
+  Simulatoren aktiv (s. Abschnitt 2). Nur die Sonderfälle brauchen die Auflösung je Simulator —
+  **keine Bootsart** ist überall aktiv (`boot_klein`/`boot_gross` fehlen in MSFS 2024,
+  `schiff_segel`/`schnellboot` in MSFS 2020), `segelflugzeug` fehlt in MSFS 2020,
+  `flugzeug_klassik` in X-Plane.
 
-## 9. Offene Punkte
+## 10. Offene Punkte
 
 1. **Mehrere Havaristen je Event** — nicht in dieser Runde (#21, Frage 4). Das Datenmodell
    verträgt es später als eigene Tabelle; die Latches wandern dann dorthin.
 2. **Gewertet wird vom Fund bis zur Landung.** #21 sagt „von der Meldung bis zur Landung", und
    das Aufnehmen liegt jetzt dazwischen. Die Zeit des Aufnehmens wird mitgeschrieben, damit sich
    die Wertung später ohne Datenverlust anders schneiden lässt.
-3. **Abbruch eines Aufnehmenden.** Wer aufgenommen hat und dann ohne Landung abmeldet, blockiert
+3. **Die Höhenschranke ist MSL, nicht AGL.** `position_history` führt `altitude` als MSL; über
+   dem Wattenmeer und der ostfriesischen Küste ist die Geländehöhe 0–10 m, dort stimmt die
+   Gleichsetzung. Für einen Suchflug über höherem Gelände stimmt sie nicht — dann wäre eine
+   Geländehöhe je Event nötig (der Admin trägt sie ein, oder `airport_elevation_ft` des nächsten
+   Platzes liefert sie). Nicht in dieser Runde, aber der Grund gehört festgehalten, bevor
+   jemand einen Suchflug über dem Harz anlegt.
+4. **Abbruch eines Aufnehmenden.** Wer aufgenommen hat und dann ohne Landung abmeldet, blockiert
    die Einlieferung. Vorschlag: `aufgenommen_*` verfällt, wenn der Pilot länger als 20 Minuten
    nicht mehr meldet, und die Fackel geht zurück auf orange.
