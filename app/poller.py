@@ -409,6 +409,15 @@ def _vrp_faellig(stand: str) -> bool:
     return (datetime.now(timezone.utc) - gesetzt).days >= VRP_MAX_ALTER_TAGE
 
 
+#: Schonfrist, bis die Aufnahme eines verschwundenen Piloten verfaellt. Der AUSLOESER ist die
+#: Abmeldung (er steht nicht mehr in `position_history`), nicht eine Zeitschwelle -- aber eine
+#: Schonfrist braucht es trotzdem: Ein Absturz zum Desktop mit Wiederanmeldung ist im Simulator
+#: Alltag, und ohne sie reichte ein zweiminuetiger Aussetzer die Rettung an jemand anderen
+#: weiter. ⚠ Die Zahl ist GESCHAETZT, nicht gemessen; nach dem ersten Abend gegen
+#: `position_history` pruefen (Spec, offener Punkt 4).
+_REDDUNG_SCHONFRIST_MIN = 10
+
+
 class VatsimPoller:
     def __init__(
         self,
@@ -597,6 +606,13 @@ class VatsimPoller:
             "interval",
             seconds=60,
             id="transport_event_check",
+        )
+        # FriesenReddung: Fund, Aufnahme, Einlieferung latchen und die Fackel tauschen
+        self._scheduler.add_job(
+            self._check_reddung,
+            "interval",
+            seconds=60,
+            id="reddung_check",
         )
         # EIN Job fuer beide Kartentypen -- die Automatik ist zurueckgebaut (31.08.2026),
         # der Job vergleicht nur noch Hashes und meldet Aenderungen. Zwei Jobs, die dieselbe
@@ -2685,6 +2701,150 @@ class VatsimPoller:
                     logger.exception("Muster-Info %s: Kandidat übersprungen", code)
         except Exception:
             logger.exception("Error in _resolve_due_aircraft_types")
+
+    async def _check_reddung(self) -> None:
+        """Periodisch: FriesenReddung latchen -- Fund, Aufnahme, Einlieferung, Aufloesung.
+
+        Die Stufen sind Latches (:func:`_set_reddung_latch`): Jede wird hoechstens einmal
+        gesetzt, und die Bedingung ``IS NULL`` im UPDATE macht das auch bei zwei gleichzeitigen
+        Takten sicher.
+
+        ⚠ **Die Reihenfolge ist keine Geschmacksfrage.**
+
+        * Die Grundhoehe kommt ZUERST -- sie verschiebt die Hoehenschranke aller folgenden
+          Pruefungen. Wer sie danach lernt, wertet einen Takt mit der falschen.
+        * Der Fund muss vor der Aufnahme gelatcht sein, weil fuers Aufnehmen nur Spurenpunkte
+          NACH ``gefunden_am`` zaehlen -- sonst waere der Ueberflug des Finders gleichzeitig
+          die Rettung.
+        * Das Einliefern kommt VOR dem Verfall der Aufnahme -- sonst verliert ein Pilot, der
+          aufgenommen und gelandet ist, seine Rettung, wenn der Poller nachrechnet.
+        * Der Objektabgleich laeuft ZULETZT, damit die Fackel den Stand nach allen Latches
+          zeigt.
+        """
+        try:
+            from datetime import datetime, timedelta, timezone
+            from app import reddung as rd
+            from app.abdeckung import abdeckung
+            from app.database import (
+                canonicalize_legs, clear_reddung_aufnahme, get_push_subscriptions_for_events,
+                get_reddung_event, list_reddung_events, reddung_grund_lernen,
+                reddung_objekte_abgleichen, reddung_spuren, set_reddung_aufgeloest,
+                set_reddung_aufgenommen, set_reddung_eingeliefert, set_reddung_gefunden,
+            )
+
+            now_dt = datetime.now(timezone.utc)
+            now = now_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+            conn = get_connection(self.db_path)
+            pushes: list[dict] = []
+            subscriptions: list = []
+            try:
+                for ev in list_reddung_events(conn):
+                    if now < (ev.get("dtstart") or "") or ev.get("aufgeloest_am"):
+                        continue
+                    name = ev.get("name") or "FriesenReddung"
+                    push_on = bool(ev.get("push_enabled"))
+                    ziel = rd.havarist_ziel(ev)
+                    if ziel is None:
+                        continue
+                    bis = min(now, ev["dtend"])
+
+                    if reddung_grund_lernen(conn, ev):
+                        ev = get_reddung_event(conn, ev["id"])
+
+                    # 1 -- Fund
+                    if not ev.get("gefunden_am"):
+                        spuren = reddung_spuren(conn, ev["dtstart"], bis)
+                        erg = abdeckung(spuren, [ziel], rd.fenster_suchen(ev))
+                        t = erg.treffer.get(rd.HAVARIST)
+                        if t and set_reddung_gefunden(conn, ev["id"], t.ts, t.cid):
+                            ev = get_reddung_event(conn, ev["id"])
+                            if push_on:
+                                pushes.append({"title": name,
+                                               "body": "Der Havarist ist gefunden! \U0001f6a8",
+                                               "url": "/"})
+
+                    # 2 -- Aufnehmen, nur mit Punkten NACH dem Fund
+                    if ev.get("gefunden_am") and ev.get("aufnehmen_noetig") \
+                            and not ev.get("aufgenommen_am"):
+                        spuren = reddung_spuren(conn, ev["dtstart"], bis, ab=ev["gefunden_am"])
+                        erg = abdeckung(spuren, [ziel], rd.fenster_aufnehmen(ev))
+                        t = erg.treffer.get(rd.HAVARIST)
+                        if t and set_reddung_aufgenommen(conn, ev["id"], t.ts, t.cid):
+                            ev = get_reddung_event(conn, ev["id"])
+                            if push_on:
+                                pushes.append({"title": name,
+                                               "body": "Aufgenommen -- jetzt einliefern!",
+                                               "url": "/"})
+
+                    # 3 -- Einliefern: erste Landung des Aufnehmenden nach der Aufnahme
+                    if ev.get("aufgenommen_am") and not ev.get("eingeliefert_am"):
+                        legs = canonicalize_legs(conn, start=ev["aufgenommen_am"],
+                                                 end=ev["dtend"], cids=[ev["aufgenommen_von"]])
+                        gelandet = [l for l in legs if (l.get("arrival") or "").strip()]
+                        if gelandet:
+                            leg = gelandet[0]
+                            if set_reddung_eingeliefert(
+                                    conn, ev["id"], leg.get("logoff_time") or now,
+                                    ev["aufgenommen_von"], (leg.get("arrival") or "").upper()):
+                                ev = get_reddung_event(conn, ev["id"])
+                                if push_on:
+                                    pushes.append({
+                                        "title": name,
+                                        "body": f"Eingeliefert in {leg.get('arrival')} \u2705",
+                                        "url": "/"})
+
+                    # 4 -- Aufnahme verfallen lassen, wenn der Aufnehmende weg ist.
+                    #
+                    # ⚠ NACH dem Einliefern, nicht davor. Hat der Poller einmal
+                    # stillgestanden und rechnet nach, kann ein Pilot aufgenommen UND
+                    # gelandet sein -- prueft der Verfall zuerst, loescht er die Aufnahme,
+                    # bevor die Landung gesehen wird, und die Rettung ist verloren, obwohl
+                    # sie stattgefunden hat. Die Bedingung `not eingeliefert_am` allein
+                    # genuegt dafuer nicht: Sie waere im selben Takt noch nicht gesetzt.
+                    if ev.get("aufgenommen_am") and not ev.get("eingeliefert_am") \
+                            and ev.get("aufnahme_verfaellt"):
+                        letzte = conn.execute(
+                            "SELECT max(ts) FROM position_history WHERE cid = ?",
+                            (ev["aufgenommen_von"],)).fetchone()[0]
+                        grenze = (now_dt - timedelta(minutes=_REDDUNG_SCHONFRIST_MIN)) \
+                            .strftime("%Y-%m-%dT%H:%M:%SZ")
+                        if not letzte or letzte < grenze:
+                            clear_reddung_aufnahme(conn, ev["id"])
+                            ev = get_reddung_event(conn, ev["id"])
+                            if push_on:
+                                pushes.append({"title": name,
+                                               "body": "Die Rettung ist wieder offen.",
+                                               "url": "/"})
+
+                    # 5 -- Aufloesen: Ziel erreicht oder Zeit vorbei
+                    fertig = bool(ev.get("eingeliefert_am")) or (
+                        bool(ev.get("gefunden_am")) and not ev.get("aufnehmen_noetig"))
+                    if fertig or now >= (ev.get("dtend") or ""):
+                        if set_reddung_aufgeloest(conn, ev["id"], now):
+                            ev = get_reddung_event(conn, ev["id"])
+                            if push_on and not fertig:
+                                pushes.append({
+                                    "title": name,
+                                    "body": "Vorbei -- der Havarist blieb unentdeckt.",
+                                    "url": "/"})
+
+                    # 6 -- Objekte ZULETZT
+                    reddung_objekte_abgleichen(conn, ev)
+                if pushes:
+                    subscriptions = get_push_subscriptions_for_events(conn)
+                conn.commit()
+            finally:
+                conn.close()
+            for payload in pushes:
+                self.broadcast_notify("events", None, payload)
+            if pushes and subscriptions and self.vapid_private_key:
+                for payload in pushes:
+                    asyncio.create_task(send_web_push(
+                        self.vapid_private_key, self.vapid_contact_email, self.db_path,
+                        subscriptions, payload, label="Reddung",
+                    ))
+        except Exception:
+            logger.exception("Error in _check_reddung")
 
     async def _check_event_reminders(self) -> None:
         """Periodisch (~5 min): FriesenEvents, Bummel-Rennen und Kutter-Events, die in ~1 h
