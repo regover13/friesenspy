@@ -42,6 +42,42 @@ Admin-Authentifizierung per signiertem httponly-Cookie.
 - **`POST /api/admin/login`** setzt das Cookie (httponly, SameSite=Strict); **`POST /api/admin/logout`** löscht es; **`GET /api/admin/me`** gibt `{"admin": true}` zurück wenn die Session gültig ist.
 - Die Admin-Seite selbst (`/admin` → `app/static/admin.html`) ist eine eigenständige Vanilla-JS-Seite; sie nutzt denselben Login-Flow und kommuniziert ausschließlich über die `/api/admin/*`-Endpoints.
 
+#### Aufbau der Admin-Seite (seit 15.8.0)
+
+Die Seite trägt eine Leiste mit sechs Bereichen (`.tab-btn[data-tab]` → `.tab-panel#tab-…`) und
+im Bereich *Events* eine zweite Leiste je Event-Typ (`.typ-btn[data-typ]` → `.typ-panel#typ-…`).
+Klassen und Maße sind aus `index.html` übernommen; der offene Bereich steht im Hash
+(`#tab=events&typ=kutter`) und wird per `history.replaceState` nachgeführt.
+
+**Einen Event-Typ ergänzen** heißt: einen `.typ-btn` und ein `.typ-panel` anlegen und den Typ in
+`_typLader` eintragen. Geplant sind Kieker (#20), Suchflug (#21), Deichkontrolle (#22) und
+Baake (#24). Ein Chip ohne Inhalt dahinter gehört nicht in die Leiste.
+
+**Geladen wird erst beim ersten Öffnen** (`_tabLader` / `_typLader`, Merkliste `_geladen`).
+`showAdmin()` lädt bewusst nichts mehr; einzige Ausnahme ist `_pollStatsimBackfillStatus()`,
+weil ein im Hintergrund laufender Backfill sich zeigen soll, ohne dass jemand erst den richtigen
+Bereich sucht. Erkennungslücken laden weiterhin nur auf Klick — der Check rechnet den gesamten
+Flugbestand durch.
+
+**Die beiden Taktgeber hängen am Bereich**, nicht am Seitenaufruf: `bgStart`/`bgStop` (Brügge)
+und `kbStart`/`kbStop` (Kniebrett) starten beim Öffnen und halten beim Verlassen an. Vorher
+liefen beide ab Seitenaufruf im 10-Sekunden-Takt — zwölf Anfragen je Minute, auch während die
+Anmeldemaske offen stand.
+
+Zwei Fallen, beide im Quelltext vermerkt:
+
+- ⚠ **Der Tab-Block steht bewusst ganz unten im `<script>`.** Er liest `_bgKarte` und
+  `_dfsKarte`; ein `let` ist vor seiner Zeile nicht lesbar. Weiter oben eingesetzt legt er beim
+  ersten Tab-Wechsel die Seite lahm. `node --check` findet das nicht — es ist ein TDZ-Fehler zur
+  Laufzeit, und geprüft wird er nur, indem man das Skript wirklich ausführt.
+- ⚠ **Leaflet misst 0 Pixel, solange sein Kasten `display:none` ist.** `tabOeffnen` ruft deshalb
+  beim Wechsel `invalidateSize()` für die Karten des geöffneten Bereichs. Wer einen dritten
+  Kartenbereich ergänzt, trägt ihn dort ein, sonst bleibt die Karte grau.
+
+Geprüft wird der Aufbau in `tests/test_admin_tabs.py` — die Verschachtelung mit einem Parser,
+nicht mit Textsuche. Dass README und Leiste zusammenpassen, bewacht `tests/test_readme_aktuell.py`
+(`TestAdminAufbau`).
+
 ### `app/forum_sso.py` (Board-Login, optional)
 
 Token-Primitiven für den optionalen Login über das phpBB-Forum (`board.friesenflieger.de`). Zwei HMAC-signierte Token im Format `base64url(payload).hmac_sha256_hex`, strikt getrennt über ein `typ`-Feld:

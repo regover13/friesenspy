@@ -19,7 +19,11 @@ import pathlib
 import pytest
 
 from tests.readme_wachen import (
+    bereiche_der_adminseite,
     ebenen_im_frontend,
+    eventtypen_der_adminseite,
+    fehlende_admin_bereiche,
+    fehlende_admin_eventtypen,
     fehlende_ebenen,
     fehlende_einstellungen,
     tabs_im_frontend,
@@ -43,6 +47,11 @@ def index_html() -> str:
 @pytest.fixture(scope="module")
 def config_py() -> str:
     return (ROOT / "app" / "config.py").read_text(encoding="utf-8")
+
+
+@pytest.fixture(scope="module")
+def admin_html() -> str:
+    return (ROOT / "app" / "static" / "admin.html").read_text(encoding="utf-8")
 
 
 # --------------------------------------------------------------------------- Ebenen
@@ -77,3 +86,31 @@ class TestTabZahl:
     def test_die_wache_schlaegt_an_wenn_ein_tab_dazukommt(self, readme, index_html):
         fuenf = index_html + '\n<button data-tab="wetter">Wetter</button>\n'
         assert zahlwort_der_tab_ueberschrift(readme) != len(tabs_im_frontend(fuenf))
+
+
+# ------------------------------------------------------------------- Admin-Bereiche
+class TestAdminAufbau:
+    """Die Admin-Seite wächst: Vier weitere Event-Typen sind geplant (Kieker, Suchflug,
+    Deichkontrolle, Baake). Jeder bringt einen Knopf mit — und jeder ist eine Gelegenheit,
+    das Handbuch stehenzulassen. Genau das fängt diese Wache."""
+
+    def test_jeder_bereich_steht_in_der_readme(self, readme, admin_html):
+        assert fehlende_admin_bereiche(readme, admin_html) == []
+
+    def test_die_wache_schlaegt_an_wenn_ein_bereich_dazukommt(self, readme, admin_html):
+        mehr = admin_html + '\n<button class="tab-btn" data-tab="wetter">Wetter</button>\n'
+        assert "Wetter" in fehlende_admin_bereiche(readme, mehr)
+
+    def test_findet_die_bereiche_ueberhaupt(self, admin_html):
+        bereiche = bereiche_der_adminseite(admin_html)
+        assert len(bereiche) == 6 and "Brügge" in bereiche
+
+    def test_jeder_eventtyp_steht_in_der_readme(self, readme, admin_html):
+        assert fehlende_admin_eventtypen(readme, admin_html) == []
+
+    def test_die_wache_schlaegt_an_wenn_ein_eventtyp_dazukommt(self, readme, admin_html):
+        mehr = admin_html + '\n<button class="typ-btn" data-typ="kieker">🔭 Kieker</button>\n'
+        assert "Kieker" in fehlende_admin_eventtypen(readme, mehr)
+
+    def test_findet_die_eventtypen_ueberhaupt(self, admin_html):
+        assert eventtypen_der_adminseite(admin_html) == ["Bummel", "Kutter"]
