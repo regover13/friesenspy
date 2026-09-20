@@ -109,6 +109,14 @@ from app.database import (
     bruegge_version_merken,
     bruegge_fassungen_fuer,
     bruegge_soll_fuer,
+    clear_reddung_aufnahme,
+    compute_reddung_stand,
+    create_reddung_event,
+    delete_reddung_event,
+    get_reddung_event,
+    list_reddung_events,
+    reddung_objekte_abgleichen,
+    update_reddung_event,
     bruegge_soll_setzen,
     bruegge_arten_anforderbar,
     bruegge_arten_uebersicht,
@@ -6238,6 +6246,170 @@ async def admin_update_transport_event(request: Request, event_id: int):
         # Deshalb hier zusätzlich auftauen (Fund 20.07.2026, #238).
         delete_progress_snapshot(conn, "kutter", event_id)
         clear_transport_summarized(conn, event_id)
+        conn.commit()
+        return {"status": "ok"}
+    finally:
+        conn.close()
+
+
+#: Groesster erlaubter Sektor je Kante. 40 x 40 km ist die Vorgabe; 200 km sind bei 1-km-Raster
+#: 40.000 Zellen und damit noch rechenbar. Ohne Grenze legt ein Verrutschen auf der Karte ein
+#: Raster mit Millionen Zellen an, und der Poller-Takt bleibt stehen.
+_REDDUNG_SEKTOR_MAX_KM = 200.0
+
+
+def _validate_reddung_sektor(body: dict) -> str | None:
+    """Rechteck pruefen: richtig herum, vollstaendig, nicht groesser als der Deckel."""
+    from app.geo import haversine
+    try:
+        sued, west = float(body["sued"]), float(body["west"])
+        nord, ost = float(body["nord"]), float(body["ost"])
+    except (KeyError, TypeError, ValueError):
+        return "Sektor unvollständig (sued/west/nord/ost)"
+    if nord <= sued or ost <= west:
+        return "Sektor verdreht: nord muss über sued und ost über west liegen"
+    hoch = haversine(sued, west, nord, west)
+    breit = haversine(sued, west, sued, ost)
+    if max(hoch, breit) > _REDDUNG_SEKTOR_MAX_KM:
+        return (f"Sektor zu groß ({hoch:.0f} x {breit:.0f} km) — höchstens "
+                f"{_REDDUNG_SEKTOR_MAX_KM:.0f} km je Kante")
+    return None
+
+
+#: Felder, die Anlegen und Ändern aus dem Körper übernehmen. Die Positivliste in
+#: ``update_reddung_event`` ist die zweite Schranke; diese hier hält den Anlegen-Pfad schlank.
+_REDDUNG_KOERPER = (
+    "kante_km", "korridor_km", "hoehe_max_ft", "gs_max_kt", "gs_min_kt",
+    "havarist_lat", "havarist_lon", "havarist_art", "havarist_grund_ft",
+    "havarist_grund_quelle", "aufnehmen_noetig", "landung_noetig", "aufnahme_verfaellt",
+    "badge_name",
+)
+
+
+@app.get("/api/admin/reddung/events")
+async def admin_reddung_events(request: Request):
+    """Alle FriesenReddungen mit ihrem Stand.
+
+    Die Koordinate des Havaristen steht im Event selbst -- hier sitzt, wer das Event macht --,
+    aber NICHT im ``stand``. Der ist die Vorlage für die späteren Pilotenansichten (#21).
+    """
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        return {"events": [{**ev, "stand": compute_reddung_stand(conn, ev)}
+                           for ev in list_reddung_events(conn)]}
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/reddung/events")
+async def admin_create_reddung_event(request: Request):
+    """Eine FriesenReddung anlegen. Sektor als Rechteck, Havarist optional (von Hand gesetzt)."""
+    require_admin(request)
+    body = await request.json()
+    if not body.get("dtstart"):
+        raise HTTPException(status_code=400, detail="dtstart erforderlich")
+    terr = _validate_event_times(body.get("dtstart"), body.get("dtend"))
+    if terr:
+        raise HTTPException(status_code=400, detail=terr)
+    serr = _validate_reddung_sektor(body)
+    if serr:
+        raise HTTPException(status_code=400, detail=serr)
+    felder = {k: body[k] for k in _REDDUNG_KOERPER if k in body}
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        eid = create_reddung_event(
+            conn, name=body.get("name") or "FriesenReddung", dtstart=body["dtstart"],
+            dtend=body.get("dtend") or None,
+            sued=body["sued"], west=body["west"], nord=body["nord"], ost=body["ost"],
+            source="manual", **felder)
+        conn.commit()
+        return {"status": "ok", "id": eid}
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/reddung/events/{event_id}")
+async def admin_update_reddung_event(request: Request, event_id: int):
+    """Ändern. Ein unbekanntes Feld ergibt 400, nicht 500 -- die Positivliste in
+    ``update_reddung_event`` wirft ``ValueError``, und ein Tippfehler im Admin ist ein
+    Bedienfehler, kein Serverfehler."""
+    require_admin(request)
+    body = await request.json()
+    if {"sued", "west", "nord", "ost"} <= set(body):
+        serr = _validate_reddung_sektor(body)
+        if serr:
+            raise HTTPException(status_code=400, detail=serr)
+    if body.get("dtstart") or body.get("dtend"):
+        terr = _validate_event_times(body.get("dtstart"), body.get("dtend"))
+        if terr:
+            raise HTTPException(status_code=400, detail=terr)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        if get_reddung_event(conn, event_id) is None:
+            raise HTTPException(status_code=404, detail="unbekannt")
+        try:
+            update_reddung_event(conn, event_id, **body)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        reddung_objekte_abgleichen(conn, get_reddung_event(conn, event_id))
+        conn.commit()
+        return {"status": "ok"}
+    finally:
+        conn.close()
+
+
+@app.delete("/api/admin/reddung/events/{event_id}")
+async def admin_delete_reddung_event(request: Request, event_id: int):
+    """Löscht das Event UND nimmt seine Objekte aus ``bruegge_soll``.
+
+    Ohne das stünde das Wrack bis zu seinem ``gilt_bis`` weiter im Simulator -- zu einem
+    Event, das es nicht mehr gibt, und ohne jede Stelle, an der es noch abgeräumt würde.
+    """
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        ev = get_reddung_event(conn, event_id)
+        if ev is None:
+            raise HTTPException(status_code=404, detail="unbekannt")
+        reddung_objekte_abgleichen(conn, {**ev, "aufgeloest_am": "geloescht"})
+        delete_reddung_event(conn, event_id)
+        conn.commit()
+        return {"status": "ok"}
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/reddung/events/{event_id}/push")
+async def admin_reddung_push(request: Request, event_id: int):
+    require_admin(request)
+    body = await request.json()
+    an = bool(body.get("enabled"))
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        if get_reddung_event(conn, event_id) is None:
+            raise HTTPException(status_code=404, detail="unbekannt")
+        update_reddung_event(conn, event_id, push_enabled=1 if an else 0)
+        conn.commit()
+        return {"status": "ok", "push_enabled": an}
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/reddung/events/{event_id}/aufnahme-freigeben")
+async def admin_reddung_aufnahme_freigeben(request: Request, event_id: int):
+    """Die Aufnahme von Hand freigeben.
+
+    Den Knopf braucht es unabhängig von der Automatik (``aufnahme_verfaellt``): Die liegt im
+    Einzelfall falsch, und dann hängt ein ganzer Abend an ihr.
+    """
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        if get_reddung_event(conn, event_id) is None:
+            raise HTTPException(status_code=404, detail="unbekannt")
+        clear_reddung_aufnahme(conn, event_id)
+        reddung_objekte_abgleichen(conn, get_reddung_event(conn, event_id))
         conn.commit()
         return {"status": "ok"}
     finally:
