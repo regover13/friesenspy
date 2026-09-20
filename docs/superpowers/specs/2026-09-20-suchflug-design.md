@@ -60,9 +60,46 @@ niemand geht leer aus, der eine Fläche abgeflogen und nichts gefunden hat.
 | Zellkante | 1,0 km | gleich dem Korridor ⇒ lückenloses Raster |
 | Korridor | 1,0 km | Abdeckungsbreite je Seite |
 | **Fundradius** | **1,71 km — gerechnet, nicht eingestellt** | Korridor + halbe Zelldiagonale |
-| Höhenschranke | 1.500 ft | über dem Wattenmeer ist die Geländehöhe ~0, MSL ≈ AGL |
+| Höhenschranke | **1.000 ft AGL über dem Havaristen**, einstellbar | s. unten — der Server kennt die Höhe des Havaristen |
 | Geschwindigkeit | 30–140 kt | unten, damit ein geparktes Flugzeug nicht seine Zelle abdeckt |
 | Aufnehmen mit Landung | ≤ 30 kt im Fundradius | Brügge meldet zusätzlich `am_boden` |
+
+### Die Höhenschranke ist AGL über dem Havaristen
+
+**Nicht MSL.** Ein erster Entwurf nahm `position_history.altitude` (MSL) und rechtfertigte das
+mit „über dem Wattenmeer ist die Geländehöhe ~0". Das trägt nicht, sobald ein Wrack an Land
+liegt — und es ist auch unnötig, **denn der Server kennt die Höhe des Havaristen.**
+
+Die FriesenBrügge meldet für jedes gesetzte Objekt zurück, auf welcher Höhe es tatsächlich
+gelandet ist (`bruegge_steht.hoehe_ft`, PROTOKOLL Abschnitt 1). In der Produktion stehen drei
+Objekte bei Wangerooge mit 8,8 ft (MSFS 2020) und 7,9 ft (MSFS 2024) — eine echte Messung des
+Geländes an genau dieser Koordinate, aus zwei Simulatoren mit einem Fuß Unterschied.
+
+Gewertet wird deshalb `Höhe des Piloten (MSL) − Grundhöhe des Havaristen`. Das ist **AGL über
+dem Wrack**, nicht AGL unter dem Flugzeug — und genau das ist die richtige Bezugsgröße für die
+Frage „ist er tief über der Unglücksstelle hinweggeflogen?".
+
+`havarist_grund_ft` wird in dieser Reihenfolge belegt:
+
+1. **Gemessen** — die erste brauchbare Rückmeldung einer Brügge (`zustand = "steht"`).
+2. **Vom Admin eingetragen** — er setzt den Punkt ja von Hand und sieht die Karte.
+3. **Höhe des nächsten Platzes** (`geo.airport_elevation_ft`), sonst 0.
+
+⚠ **Zwei Vorbehalte aus dem Protokoll, beide sind Fallstricke und keine Randfälle:**
+
+* **`hoehe_gemessen: false`** — die X-Plane-Brügge probt das Gelände selbst
+  (`XPLMProbeTerrainXYZ`), und nur geladenes Gelände antwortet. Steht das Ziel außerhalb,
+  bekommt das Objekt Meereshöhe, und die Meldung sieht **genau aus wie ein Wattobjekt auf
+  0,0 ft**. Solche Meldungen dürfen `havarist_grund_ft` nicht setzen. Die MSFS-Brügge sendet
+  das Feld nicht — dort gibt es den Fall nicht.
+* **Nur aus der Nähe.** Aus großer Entfernung antwortet der Simulator aus einer groben
+  Geländestufe: am Bodensee gemessen 2.106 ft statt 1.297 ft, bei 691 km Abstand. Brauchbar
+  belegt sind Werte bis 200 km, dazwischen ist eine Lücke. Für einen Suchflug im Umkreis des
+  Heimatplatzes ist das unkritisch, aber die Regel gehört in den Code, nicht in die Hoffnung.
+
+**Als Nebenertrag fällt eine Prüfung ab:** Weicht die gemessene Höhe deutlich von der
+eingetragenen ab, ist die Stelle für diese Art untauglich (PROTOKOLL Abschnitt 4) — der Admin
+bekommt dann einen Hinweis, bevor Piloten ausschwärmen.
 
 **Der Fundradius wird gerechnet.** Sonst lügt der Fortschrittsbalken: Eine abgedeckte Zelle heißt
 „ein Track lief im Korridor an ihrem **Mittelpunkt** vorbei", ein Havarist in der Zellecke ist
@@ -107,7 +144,7 @@ CREATE TABLE IF NOT EXISTS suchflug_events (
     ost             REAL NOT NULL,
     kante_km        REAL DEFAULT 1.0,
     korridor_km     REAL DEFAULT 1.0,
-    hoehe_max_ft    REAL DEFAULT 1500,
+    hoehe_max_ft    REAL DEFAULT 1000,      -- AGL UEBER DEM HAVARISTEN, nicht MSL
     gs_max_kt       REAL DEFAULT 140,
     gs_min_kt       REAL DEFAULT 30,
     -- Der Havarist. ⚠ Diese zwei Spalten verlassen den Server nur in Richtung FriesenBrügge.
@@ -115,6 +152,8 @@ CREATE TABLE IF NOT EXISTS suchflug_events (
     havarist_lon    REAL,
     havarist_art    TEXT,                   -- Art aus bruegge_art; NULL = 'flugzeug_echo'
     havarist_verdeckt INTEGER DEFAULT 0,    -- 1 = gewürfelt, auch im Admin verborgen
+    havarist_grund_ft REAL,                 -- Geländehöhe MSL an der Unglücksstelle
+    havarist_grund_quelle TEXT,             -- 'gemessen' | 'admin' | 'platz'
     landung_noetig  INTEGER DEFAULT 1,      -- 1 = an Land, Aufnehmen verlangt eine Landung
     -- Latches
     gefunden_am     TEXT,  gefunden_von     INTEGER,
@@ -204,12 +243,12 @@ nötig", Kalendertermin, Push. Dazu:
 2. **Gewertet wird vom Fund bis zur Landung.** #21 sagt „von der Meldung bis zur Landung", und
    das Aufnehmen liegt jetzt dazwischen. Die Zeit des Aufnehmens wird mitgeschrieben, damit sich
    die Wertung später ohne Datenverlust anders schneiden lässt.
-3. **Die Höhenschranke ist MSL, nicht AGL.** `position_history` führt `altitude` als MSL; über
-   dem Wattenmeer und der ostfriesischen Küste ist die Geländehöhe 0–10 m, dort stimmt die
-   Gleichsetzung. Für einen Suchflug über höherem Gelände stimmt sie nicht — dann wäre eine
-   Geländehöhe je Event nötig (der Admin trägt sie ein, oder `airport_elevation_ft` des nächsten
-   Platzes liefert sie). Nicht in dieser Runde, aber der Grund gehört festgehalten, bevor
-   jemand einen Suchflug über dem Harz anlegt.
+3. **Woher die Grundhöhe kommt, wenn niemand sie meldet.** Die Messung setzt voraus, dass
+   mindestens eine Brügge das Objekt gesetzt und zurückgemeldet hat. Fliegt an einem Abend
+   niemand mit Brügge, bleibt der Admin-Wert oder die Platzhöhe — beides brauchbar in Ostfriesland
+   (0–10 m), beides grob über höherem Gelände. Der Rechenweg bleibt dabei richtig; nur die
+   Bezugszahl ist dann geschätzt, und das gehört im Admin sichtbar zu sein
+   (`havarist_grund_quelle`).
 4. **Abbruch eines Aufnehmenden.** Wer aufgenommen hat und dann ohne Landung abmeldet, blockiert
    die Einlieferung. Vorschlag: `aufgenommen_*` verfällt, wenn der Pilot länger als 20 Minuten
    nicht mehr meldet, und die Fackel geht zurück auf orange.
