@@ -3108,12 +3108,32 @@ def bruegge_position_loeschen(conn: sqlite3.Connection, cid: int) -> None:
     conn.execute("DELETE FROM bruegge_positions WHERE cid = ?", (int(cid),))
 
 
-def bruegge_aufraeumen(conn: sqlite3.Connection, stunden: int = 24) -> int:
+#: Wie lange eine Zuordnung stehen bleibt. **400 Tage, nicht mehr 24 Stunden** -- die
+#: Aenderung ist eine Nutzerentscheidung vom 20.09.2026, und der alte Wert loeste ein Problem,
+#: das es nicht mehr gibt: Damals zog die Bruegge bei JEDEM Sim-Start eine neue Kennung (die
+#: Datei-API des WASM-Moduls hielt nicht), die Tabelle wuchs also je Sitzung. Seit 14.53.0
+#: bekommt sie ihre Kennung vom Server und wird wiedererkannt, und `bruegge_zuordnung_setzen`
+#: raeumt aeltere Zeilen derselben CID im selben Simulator ohnehin selbst weg. Damit ist die
+#: Tabelle von Natur aus klein: eine Zeile je Pilot je Simulator, bei 58 aktiven Piloten also
+#: rund 170.
+#:
+#: Was die 24 Stunden dagegen kosteten, war die einzige Auskunft darueber, WER die Bruegge
+#: hat und mit welcher Fassung -- nach einem Tag war sie weg. Genau die braucht der
+#: Fassungshinweis (s. `bruegge_fassungen_fuer`).
+BRUEGGE_ZUORDNUNG_HALTEN_STUNDEN = 400 * 24
+
+
+def bruegge_aufraeumen(conn: sqlite3.Connection,
+                       stunden: int = BRUEGGE_ZUORDNUNG_HALTEN_STUNDEN) -> int:
     """Zuordnungen wegraeumen, die lange nicht mehr gesehen wurden (kein commit).
 
-    Faengt den Fall ab, den die Regel in ``bruegge_zuordnung_setzen`` nicht abdeckt: Wer die
-    Bruegge deinstalliert oder monatelang nicht fliegt, hinterlaesst sonst eine Zeile, die nie
-    wieder angefasst wird.
+    Faengt nur noch den Fall ab, dass jemand die Bruegge deinstalliert oder ueber ein Jahr
+    nicht fliegt. Fuer alles andere ist die Zeile die Auskunft, nicht der Muell.
+
+    ⚠ **Eine alte Zeile darf nichts behaupten** -- und tut es nicht: Die Melderliste im Admin
+    traegt `frisch`/`alter_s` ("vor 21 h"), und die Sperre "wer meldet gerade"
+    (``bruegge_belegte_cids``) arbeitet mit ihrer eigenen Frist von Sekunden, nicht mit dem
+    Vorhandensein der Zeile. Wer das aendert, prueft beide Stellen.
 
     Die Bruegge-POSITION bleibt dabei stehen -- sie ist ohnehin an die CID gebunden und wird
     von der naechsten Meldung ueberschrieben; sie zu loeschen wuerde nur eine Karte leeren,

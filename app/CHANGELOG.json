@@ -7,7 +7,8 @@
     "items": [
       "🛩 Damit das Kniebrett ein Flugzeug aus dem Simulator einem Piloten zuordnen kann, braucht es die VATSIM-Positionen als Gegenstück. Die holte es bisher nur, solange auf der Karte der Haken „Verkehr“ gesetzt war — war er aus, blieb die Zuordnung leer, und auf der Website kam der Platzverkehr weiter im 15-Sekunden-Takt an. Aufgefallen ist es beim Flug am 20.09.: Ein Friese stand in Sichtweite auf demselben Platz und wurde nicht erkannt.",
       "🔁 Jetzt entscheidet der Server: Verlangt er das Melden von Fremdverkehr, läuft der Abruf unabhängig vom Haken. Gezeichnet wird dadurch nichts — die Ebene bleibt aus, wenn du sie ausgeschaltet hast.",
-      "🩵 Und die Karten-Legende zeigt jetzt auch, wie fremder Verkehr aussieht, dessen Position aus einem Simulator kommt: dunkles Symbol mit türkisem Saum. Genannt war er dort schon, zu sehen war er nicht."
+      "🩵 Und die Karten-Legende zeigt jetzt auch, wie fremder Verkehr aussieht, dessen Position aus einem Simulator kommt: dunkles Symbol mit türkisem Saum. Genannt war er dort schon, zu sehen war er nicht.",
+      "🗂 Im Admin bleiben die FriesenBrügge-Zuordnungen jetzt 400 Tage stehen statt 24 Stunden. Damit ist ablesbar, wer die FriesenBrügge überhaupt nutzt und mit welcher Fassung — vorher war diese Auskunft nach einem Tag weg. Die Liste ist dafür höhenbegrenzt und scrollbar; alte Zeilen stehen blass da und sagen, wie alt sie sind."
     ]
   },
   {

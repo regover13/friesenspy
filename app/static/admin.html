@@ -515,7 +515,10 @@
        Hinweis merkt niemand, dass mehr Inhalt da ist (v8.6.5-Folgefund). Immer sichtbare,
        zum Theme passende Scrollbar statt der versteckten Overlay-Variante. */
     .table-wrap { scrollbar-width: thin; scrollbar-color: var(--green-dim) var(--bg-panel-2); }
-    .table-wrap::-webkit-scrollbar { height: 10px; }
+    /* BEIDE Richtungen: `height` gilt der waagerechten Leiste, `width` der senkrechten.
+       Ohne `width` bleibt eine vertikal scrollende Box unter Chrome/Edge ohne sichtbare
+       Leiste -- dieselbe Falle wie in v8.6.5, nur um 90 Grad gedreht. */
+    .table-wrap::-webkit-scrollbar { height: 10px; width: 10px; }
     .table-wrap::-webkit-scrollbar-track { background: var(--bg-panel-2); }
     .table-wrap::-webkit-scrollbar-thumb { background: var(--green-dim); border-radius: 5px; }
     .table-wrap::-webkit-scrollbar-thumb:hover { background: var(--green); }
@@ -1589,11 +1592,18 @@
             </div>
           </div>
 
-          <div class="table-wrap" style="margin-bottom:14px;">
+          <!-- In `.scroll-list`, seit die Zuordnungen 400 Tage statt 24 Stunden gehalten
+               werden (s. BRUEGGE_ZUORDNUNG_HALTEN_STUNDEN): Statt drei Zeilen steht hier
+               jetzt eine je Pilot UND Simulator. `.scroll-list .table-wrap` bekommt die
+               Hoehenbegrenzung dabei selbst -- ohne sie sitzt die waagerechte Leiste an
+               ihrem eigenen unteren Rand, weit unterhalb des sichtbaren Fensters (v8.6.6). -->
+          <div class="scroll-list" style="margin-bottom:14px;">
+          <div class="table-wrap">
             <table>
               <thead><tr><th>Pilot</th><th>Simulator</th><th>Fassung</th><th>Position</th><th>zuletzt</th></tr></thead>
               <tbody id="bg-melder"><tr><td colspan="5" class="empty-hint">Lädt …</td></tr></tbody>
             </table>
+          </div>
           </div>
 
           <div style="border-top:1px solid #22303f;padding-top:12px;">

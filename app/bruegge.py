@@ -57,10 +57,10 @@ SPRUNG_M = 500
 # Rückfall auf VATSIM selbst entscheiden muss — gebunden in tests/test_bruegge_karte.py).
 # Wer türkis auf der Karte sieht, sieht damit genau die Piloten, deren CID hier belegt ist.
 #
-# ⚠ NICHT die 24 Stunden aus `bruegge_aufraeumen` nehmen. Die sind Müllabfuhr für Zeilen,
-# die niemand mehr anfasst — als Belegtmarke wären sie eine Selbstaussperrung: In MSFS zieht
-# die Brügge nach jedem Simulator-Start eine neue Kennung, der Pilot stünde also bis zum
-# nächsten Tag als „von jemand anderem gemeldet" in seiner eigenen Liste.
+# ⚠ NICHT die Haltedauer aus `bruegge_aufraeumen` nehmen (seit 20.09.2026 400 Tage, vorher
+# 24 Stunden). Die ist Müllabfuhr für Zeilen, die niemand mehr anfasst — als Belegtmarke wäre
+# sie eine Selbstaussperrung: Der Pilot stünde über ein Jahr lang als „von jemand anderem
+# gemeldet" in seiner eigenen Liste. Hier zählen Sekunden, dort Tage.
 MELDUNG_FRIST_S = 10.0
 
 ERDRADIUS_M = 6371000.0
