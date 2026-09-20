@@ -277,6 +277,66 @@ CREATE TABLE IF NOT EXISTS transport_cargo_losses (
     PRIMARY KEY(event_id, cid, logon_time)
 );
 
+-- Eventtyp FriesenReddung (#21): Ein Havarist liegt irgendwo im Sektor, die Gruppe sucht ihn.
+-- "Reddung" ist Platt fuer Rettung. Gewertet wird die abgesuchte Flaeche der GRUPPE, nicht nur
+-- der Fund -- wer eine Flaeche abfliegt und nichts findet, hat den Sektor fuer alle verkleinert.
+--
+-- ⚠ `havarist_lat`/`havarist_lon` gehen an die FriesenBruegge (sie muss das Objekt hinstellen)
+-- und in den Admin -- aber an KEINEN Endpunkt, den ein Browser eines Piloten erreicht. Wer eine
+-- Wertungsfunktion schreibt, gibt sie nicht heraus; `compute_reddung_stand` tut es nicht, und
+-- tests/test_reddung_db.py haelt das fest.
+--
+-- Zwei verschachtelte Haken steuern den Zuschnitt des Abends:
+--   aufnehmen_noetig = 0                      -> der Fund ist der Schluss
+--   aufnehmen_noetig = 1, landung_noetig = 1  -> Landung an der Unglueckstelle, dann einliefern
+--   aufnehmen_noetig = 1, landung_noetig = 0  -> Schwebeflug (Hubschrauber), dann einliefern
+--
+-- `landung_noetig` ist dabei die REGEL, nicht das Gelaende. Ein Wrack am Waldrand liegt an Land
+-- und ist trotzdem nicht landbar -- dort ist die Rettung per Winde ueber dem Schwebeflug genau
+-- richtig. Und umgekehrt: ein Wrack im Wasser MIT verlangter Landung ist ein
+-- Wasserflugzeug-Abend. Aus der `havarist_art` wird die Regel NICHT abgeleitet.
+--
+-- Das Zellraster hat bewusst keine Tabelle: Es entsteht bei jeder Rechnung aus
+-- `zellen_aus_box` (app/abdeckung.py), gemessen 39 ms fuer 1.640 Zellen gegen sechs
+-- Zweistundenspuren.
+CREATE TABLE IF NOT EXISTS reddung_events (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT NOT NULL,
+    dtstart         TEXT NOT NULL,
+    dtend           TEXT NOT NULL,          -- effektiv (Mitternacht-Default bereits angewandt)
+    -- Der Suchsektor als Rechteck. 40 x 40 km ist die Vorgabe: simuliert suchen ihn vier bis
+    -- sechs Piloten in rund einer halben Stunde ab, 20 x 20 km waere nach zehn Minuten vorbei.
+    sued            REAL NOT NULL,
+    west            REAL NOT NULL,
+    nord            REAL NOT NULL,
+    ost             REAL NOT NULL,
+    kante_km        REAL DEFAULT 1.0,       -- Zellkante; gleich dem Korridor = lueckenloses Raster
+    korridor_km     REAL DEFAULT 1.0,
+    hoehe_max_ft    REAL DEFAULT 1000,      -- ⚠ AGL UEBER DEM HAVARISTEN, nicht MSL
+    gs_max_kt       REAL DEFAULT 140,
+    gs_min_kt       REAL DEFAULT 30,        -- sonst deckt ein geparktes Flugzeug seine Zelle ab
+    havarist_lat    REAL,
+    havarist_lon    REAL,
+    havarist_art    TEXT,                   -- Art aus bruegge_art; NULL = 'flugzeug_echo'
+    -- Gelaendehoehe (MSL) an der Unglueckstelle -- die Bezugsgroesse der Hoehenschranke. Der
+    -- Server lernt sie aus `bruegge_steht.hoehe_ft`; `quelle` haelt fest, wie gut der Wert ist.
+    havarist_grund_ft REAL,
+    havarist_grund_quelle TEXT,             -- 'gemessen' | 'admin' | 'platz'
+    aufnehmen_noetig INTEGER DEFAULT 1,     -- 0 = der Abend endet mit dem Fund
+    landung_noetig  INTEGER DEFAULT 1,      -- 0 = Schwebeflug genuegt (Winde, Wasserung)
+    aufnahme_verfaellt INTEGER DEFAULT 1,   -- 1 = verfaellt, wenn der Aufnehmende abmeldet
+    gefunden_am     TEXT,  gefunden_von     INTEGER,
+    aufgenommen_am  TEXT,  aufgenommen_von  INTEGER,
+    eingeliefert_am TEXT,  eingeliefert_von INTEGER,  eingeliefert_icao TEXT,
+    aufgeloest_am   TEXT,                   -- Lage veroeffentlicht (Fund oder dtend)
+    source          TEXT,                   -- 'calendar' | 'manual'
+    calendar_uid    TEXT UNIQUE,
+    push_enabled    INTEGER DEFAULT 1,
+    badge_name      TEXT,
+    manual_fields   TEXT,
+    created_at      TEXT
+);
+
 CREATE TABLE IF NOT EXISTS aircraft_payloads (
     type_code   TEXT PRIMARY KEY,        -- normalisiert (Uppercase, vor "/" gekürzt), z. B. "C172"
     mtow_kg     REAL,                    -- editierbar, aus Claude vorbefüllt
@@ -9367,6 +9427,142 @@ def aggregate_kutter_kpis(progresses: list[dict]) -> dict:
         "sunk_kg": round(sunk_kg, 1), "sunk_count": sunk_count,
         "stolen_kg": round(stolen_kg, 1), "stolen_count": stolen_count,
     }
+
+
+# ---------------------------------------------------------------------------
+# FriesenReddung (#21)
+# ---------------------------------------------------------------------------
+
+#: Felder, die ``update_reddung_event`` schreiben darf. Eine Positivliste, damit ein Tippfehler
+#: im Admin einen Fehler auslöst statt still ins Leere zu schreiben.
+_REDDUNG_FELDER = {
+    "name", "dtstart", "dtend", "sued", "west", "nord", "ost", "kante_km", "korridor_km",
+    "hoehe_max_ft", "gs_max_kt", "gs_min_kt", "havarist_lat", "havarist_lon", "havarist_art",
+    "havarist_grund_ft", "havarist_grund_quelle", "aufnehmen_noetig", "landung_noetig",
+    "aufnahme_verfaellt", "source", "calendar_uid", "push_enabled", "badge_name",
+    "manual_fields",
+}
+
+#: Rangfolge der Quellen für ``havarist_grund_ft`` — eine Messung schlägt jede Schätzung.
+_GRUND_RANG = {"platz": 1, "admin": 2, "gemessen": 3}
+
+
+def create_reddung_event(conn: sqlite3.Connection, *, name: str, dtstart: str,
+                         sued: float, west: float, nord: float, ost: float,
+                         dtend: str | None = None, **felder) -> int:
+    """Eine FriesenReddung anlegen. ``dtend`` leer = Mitternacht des Folgetags (wie beim Bummel)."""
+    unbekannt = set(felder) - _REDDUNG_FELDER
+    if unbekannt:
+        raise ValueError(f"unbekannte Felder: {sorted(unbekannt)}")
+    spalten = ["name", "dtstart", "dtend", "sued", "west", "nord", "ost", "created_at"]
+    werte: list = [name, dtstart, _effective_dtend(dtstart, dtend),
+                   float(sued), float(west), float(nord), float(ost), _now_utc()]
+    for k, v in felder.items():
+        spalten.append(k)
+        werte.append(v)
+    cur = conn.execute(
+        f"INSERT INTO reddung_events ({', '.join(spalten)}) "
+        f"VALUES ({', '.join('?' * len(spalten))})", werte)
+    return int(cur.lastrowid)
+
+
+def get_reddung_event(conn: sqlite3.Connection, event_id: int) -> dict | None:
+    row = conn.execute("SELECT * FROM reddung_events WHERE id = ?", (int(event_id),)).fetchone()
+    return _row_to_dict(row) if row else None
+
+
+def list_reddung_events(conn: sqlite3.Connection, *, since: str | None = None) -> list[dict]:
+    if since:
+        rows = conn.execute(
+            "SELECT * FROM reddung_events WHERE dtend >= ? ORDER BY dtstart DESC",
+            (since,)).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM reddung_events ORDER BY dtstart DESC").fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+def update_reddung_event(conn: sqlite3.Connection, event_id: int, **felder) -> None:
+    unbekannt = set(felder) - _REDDUNG_FELDER
+    if unbekannt:
+        raise ValueError(f"unbekannte Felder: {sorted(unbekannt)}")
+    if not felder:
+        return
+    satz = ", ".join(f"{k} = ?" for k in felder)
+    conn.execute(f"UPDATE reddung_events SET {satz} WHERE id = ?",
+                 [*felder.values(), int(event_id)])
+
+
+def delete_reddung_event(conn: sqlite3.Connection, event_id: int) -> None:
+    conn.execute("DELETE FROM reddung_events WHERE id = ?", (int(event_id),))
+
+
+def _set_reddung_latch(conn: sqlite3.Connection, event_id: int, spalte: str, ts: str,
+                       cid: int | None = None, icao: str | None = None) -> bool:
+    """Latch setzen, nur wenn noch NULL. True, wenn in diesem Aufruf neu gesetzt.
+
+    Muster wie :func:`_set_transport_latch`: Die Bedingung ``IS NULL`` im UPDATE macht das
+    Setzen atomar -- zwei Poller-Takte gleichzeitig können nicht beide gewinnen.
+    """
+    spalten, werte = [f"{spalte}_am = ?"], [ts]
+    if cid is not None:
+        spalten.append(f"{spalte}_von = ?")
+        werte.append(int(cid))
+    if icao is not None:
+        spalten.append(f"{spalte}_icao = ?")
+        werte.append(icao)
+    cur = conn.execute(
+        f"UPDATE reddung_events SET {', '.join(spalten)} "
+        f"WHERE id = ? AND {spalte}_am IS NULL", [*werte, int(event_id)])
+    return (cur.rowcount or 0) > 0
+
+
+def set_reddung_gefunden(conn: sqlite3.Connection, event_id: int, ts: str, cid: int) -> bool:
+    return _set_reddung_latch(conn, event_id, "gefunden", ts, cid)
+
+
+def set_reddung_aufgenommen(conn: sqlite3.Connection, event_id: int, ts: str, cid: int) -> bool:
+    return _set_reddung_latch(conn, event_id, "aufgenommen", ts, cid)
+
+
+def set_reddung_eingeliefert(conn: sqlite3.Connection, event_id: int, ts: str, cid: int,
+                             icao: str) -> bool:
+    return _set_reddung_latch(conn, event_id, "eingeliefert", ts, cid, icao)
+
+
+def set_reddung_aufgeloest(conn: sqlite3.Connection, event_id: int, ts: str) -> bool:
+    cur = conn.execute("UPDATE reddung_events SET aufgeloest_am = ? "
+                       "WHERE id = ? AND aufgeloest_am IS NULL", (ts, int(event_id)))
+    return (cur.rowcount or 0) > 0
+
+
+def clear_reddung_aufnahme(conn: sqlite3.Connection, event_id: int) -> None:
+    """Die Aufnahme freigeben -- der Aufnehmende hat abgebrochen oder der Admin greift ein.
+
+    Kein Latch-Gegenstück, sondern ein Rücksetzen: Danach kann ein anderer übernehmen, und die
+    Fackel geht beim nächsten Objektabgleich zurück auf orange.
+    """
+    conn.execute("UPDATE reddung_events SET aufgenommen_am = NULL, aufgenommen_von = NULL "
+                 "WHERE id = ?", (int(event_id),))
+
+
+def reddung_grund_merken(conn: sqlite3.Connection, event_id: int, hoehe_ft: float,
+                         quelle: str) -> bool:
+    """Grundhöhe eintragen, wenn die Quelle mindestens so gut ist wie die vorhandene.
+
+    ⚠ Eine Messung der Brügge darf nicht später von einer geschätzten Platzhöhe verdrängt
+    werden -- sonst kippt die Höhenschranke mitten im Abend, und niemand versteht, warum ein
+    Überflug plötzlich nicht mehr zählt.
+    """
+    ev = get_reddung_event(conn, event_id)
+    if ev is None:
+        return False
+    alt = _GRUND_RANG.get(ev.get("havarist_grund_quelle") or "", 0)
+    neu = _GRUND_RANG.get(quelle, 0)
+    if ev.get("havarist_grund_ft") is not None and neu < alt:
+        return False
+    conn.execute("UPDATE reddung_events SET havarist_grund_ft = ?, havarist_grund_quelle = ? "
+                 "WHERE id = ?", (float(hoehe_ft), quelle, int(event_id)))
+    return True
 
 
 def aggregate_bummel_kpis(views: list[dict]) -> dict:
