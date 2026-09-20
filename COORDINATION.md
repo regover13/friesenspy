@@ -6,6 +6,27 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-20 (nachts) — Marken (Wuerfel, Saeulen, Licht) in allen drei Simulatoren, 15.16.0
+
+**Angefasst:** `app/bruegge_arten.py` (15 neue Arten `wuerfel_<farbe>` x7, `saeule_<farbe>` x7, `licht`),
+`friesenbruegge/msfs-rauch/` (`marken_bauen.py`, `bauen_marken.ps1`, eigenes Teilpaket `devprops-friesenmarken`),
+`friesenbruegge/msfs/paket.ps1` (jetzt vier Teile), `friesenbruegge/xplane/` (`marken_bauen.py`, 15 `.obj` + LIT-Texturen),
+`tests/test_msfs_marken_paket.py`, `tests/test_xplane_marken.py`. Server-DB: 15 Arten samt Katalogzeilen fuer beide
+Baender, Handurteile `steht` (`quelle='hand'`) fuer alle drei Simulatoren.
+
+⚠ **Die Marken werden mit dem 2024er SDK gebaut, Rauch und Seehund mit dem 2020er.** Der 2020er Compiler entfernt
+`ASOBO_material_emissive` still aus dem fertigen Material (Nacht-Multiplikator wirkt dann nirgends); die 2024er Toolchain
+dagegen macht aus Rauch/Seehund etwas, das in MSFS 2020 nicht laeuft. Ein 2024-kompiliertes, textur- und behaviorfreies
+Modell laedt in MSFS 2020 (im Flug geprueft). ⚠ **`bauen_marken.ps1` zeigt nur den Xbox-Startbildschirm, den das Skript
+schliesst.** ⚠ **Arten erst VOR dem Flug anlegen** (die Bruegge holt die Titel einer neuen Art erst beim naechsten Abgleich,
+sonst `ART_UNBEKANNT`), und Handurteile setzen, damit Piloten ohne das Paket die Arten nicht fuer alle stilllegen.
+
+Helligkeit: MSFS 2024 rendert eigenleuchtende Flaechen nachts ca. 5- bis 10-mal dunkler als 2020 -- Nacht-Multiplikator
+80 (Luminanz Wuerfel 142, Saeule 168 gegen Runway-Feuer 144). X-Plane: keine `GLOBAL_luminance` (Lstd, 125), sonst
+ueberbelichtet und flutet die Umgebung. Messwerte im Kopfkommentar der Generatoren.
+
+---
+
 ## 2026-09-20 (spaet) — Ohne FriesenBruegge keine FriesenReddung (15.15.0)
 
 **Angefasst:** `app/database.py` (`_reddung_punkte_mischen`), `app/main.py` (neu

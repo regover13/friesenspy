@@ -439,4 +439,9 @@ def test_die_dateien_im_repo_sind_die_des_generators(marken, tmp_path, monkeypat
     erzeugt = {p.name for p in tmp_path.iterdir()}
     assert len(erzeugt) == 15 + 16, "15 Objekte + 16 Texturen, ohne Testobjekte"
     for name in erzeugt:
-        assert (tmp_path / name).read_bytes() == (OBJEKTE / name).read_bytes(), name
+        # Zeilenenden ignorieren: Ein Windows-Checkout (core.autocrlf) macht aus den `.obj` CRLF, X-Plane liest beide.
+        # PNG bleibt bytegenau.
+        erwartet, im_repo = (tmp_path / name).read_bytes(), (OBJEKTE / name).read_bytes()
+        if name.endswith(".obj"):
+            erwartet, im_repo = erwartet.replace(b"\r\n", b"\n"), im_repo.replace(b"\r\n", b"\n")
+        assert erwartet == im_repo, name

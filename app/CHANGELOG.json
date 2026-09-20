@@ -1,5 +1,14 @@
 [
   {
+    "version": "15.16.0",
+    "date": "2026-09-20",
+    "highlight": false,
+    "title": "Würfel, Lichtsäulen und ein Licht für die FriesenBrügge",
+    "items": [
+      "🌉 Die FriesenBrügge kennt jetzt Markierungen für Tag und Nacht, in MSFS 2020, MSFS 2024 und X-Plane gleich: Würfel (3 m) in den sechs Friesenfarben und in Scheinwerferweiß, Lichtsäulen (100 m hoch, unten kräftig, nach oben ausblendend) in denselben Farben und ein einfaches warmes Licht. Zum Beispiel für eine unbeleuchtete Piste. Dafür braucht es die neue FriesenBrügge 1.17.0 von der Download-Seite; die Objekte sind so hell wie die Runway-Feuer."
+    ]
+  },
+  {
     "version": "15.15.0",
     "date": "2026-09-20",
     "highlight": false,

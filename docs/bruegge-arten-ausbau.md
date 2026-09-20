@@ -218,6 +218,50 @@ Frachter ohne eigene Art.
 
 ---
 
+## Marken: Würfel, Lichtsäulen, Licht (20.09.2026)
+
+Anlass (Nutzer): eine Art „Licht“, um Dinge nachts auszuleuchten — zum Beispiel eine unbeleuchtete Runway —, zum temporären
+Aufstellen, und *„ich brauche auch immer Vergleichbares in den anderen beiden Sims“*. Auf der Platte war das nirgends
+vergleichbar: MSFS 2024 hat `Peace_Tower_Light` (helle weiße Säule) und `wENLK_lightdummy` (rote Würfel), MSFS 2020 hat
+offiziell nichts (Windsock, Windmill, Flaggen, Rauch), X-Plane nur Uplights, keine Würfel. Also eigene Objekte, **15 Arten**:
+
+| Art | Was | Maße |
+|---|---|---|
+| `wuerfel_<farbe>` (7) | massiver Würfel in Navy, Hellblau, Rot, Orange, Signalrot, Signalorange und Scheinwerferweiß | 3 m |
+| `saeule_<farbe>` (7) | schmale Lichtsäule, unten kräftig, nach oben ausblendend, dieselben Farben | 100 m hoch, unten 4 m, oben 6 m breit |
+| `licht` (1) | einfaches warmes Punktlicht mit Leuchtkern | Kern 0,2 m |
+
+Farben tragen Bedeutung, deshalb je Farbe eine Art (kein Würfeln, wie beim Rauch). **Scheinwerferweiß = RGB (255, 240, 200)**,
+kein Reinweiß. Artnamen höchstens 23 Zeichen.
+
+**Wie gebaut.** MSFS: eigene SimObjects ohne Textur in `msfs-rauch/PackageSources/SimObjects/Misc/FrsMarke/`
+(`marken_bauen.py`), Titel `FrsWuerfel_*`, `FrsSaeule_*`, `FrsLicht_Warm`; Säule als 100 gestapelte Achteck-Segmente à 1 m
+(Alpha 0,85 → 0,02, Eigenlicht (1−t)^1,2); Licht = `ASOBO_macro_light` (Stärke 1600, nur nachts) an einem sichtbaren Kern mit
+Nacht-Multiplikator 400. X-Plane: `.obj` in `xplane/objekte/` (`marken_bauen.py`), Leuchten über LIT-Texturen.
+
+⚠ **Zwei SDKs.** Die Marken tragen `ASOBO_material_emissive` (Nacht-Multiplikator), und der **2020er Compiler entfernt diese
+Erweiterung still**. Deshalb bilden sie ein eigenes Teilpaket `devprops-friesenmarken` (`FriesenMarken.xml`,
+`bauen_marken.ps1`, **2024er SDK**); Rauch und Seehund bleiben beim 2020er SDK. Ein 2024-kompiliertes, textur- und
+behaviorfreies Modell **lädt in MSFS 2020** (im Flug geprüft). `paket.ps1` führt jetzt vier Teile.
+
+**Helligkeit — gemessen, nicht geraten.** Maßstab: die Runway-Feuer des Nutzers (Luminanz ~144–153, RGB ~(217,148,24)).
+MSFS 2024 rendert eigenleuchtende Flächen nachts 5- bis 10-mal dunkler als 2020. Nacht-Multiplikator (MSFS 2024, Signalorange):
+
+| Multiplikator | 20 | 40 | 80 | 160 |
+|---|---|---|---|---|
+| Würfel | 85 | 112 | **142** | 173 |
+| Säule | 111 | 138 | **168** | 195 |
+
+Gewählt **80**. Rot, Signalrot und Navy bleiben in der Luminanz niedriger, weil ihre Farbkanäle schon bei 255 stehen. Licht:
+Stärke 1600 (Luminanz 176; bei 400 nur 97). X-Plane: **keine** `GLOBAL_luminance` (Lstd: Luminanz 125, echte Friesenfarbe,
+Aufhellung der Umgebung 49); ab 2500 Nits überbelichtet es, bei 40000 flutet der Bloom die Gegend (Aufhellung 220). Licht 4500 cd
+(Laminars Randfeuer). In MSFS 2020 wirkt der 2024-Multiplikator nicht, die Objekte sind dort trotzdem hell; das Licht ist dort
+kräftiger (großer Lichtfleck), vom Nutzer so akzeptiert.
+
+⚠ **Vor dem ersten Einsatz an alle:** Arten **vor** dem Flug anlegen (die Brücke holt die Titel einer neuen Art erst beim
+nächsten Abgleich, sonst `ART_UNBEKANNT`), und Handurteile `steht` setzen (`quelle='hand'`). Ein Pilot ohne das Paket meldet
+`KEIN_TITEL_GING`, und die Automatik legte die Art sonst für alle still.
+
 ## Was noch offen ist
 
 ### ⚠ Die Rückmeldung fließt nicht in den Katalog zurück
