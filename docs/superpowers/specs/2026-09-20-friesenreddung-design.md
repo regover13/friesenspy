@@ -1,7 +1,14 @@
-# Eventtyp „Suchflug" — Entwurf (20.09.2026)
+# Eventtyp 🚨 „FriesenReddung" — Entwurf (20.09.2026)
 
-Gewinner der Forumsumfrage (Thema 1838, bis 21.09.2026). Grundlage: Issue #21. Der gemeinsame
-Rechenkern `app/abdeckung.py` steht seit 15.7.0 und wird hier benutzt, nicht neu geschnitten.
+Gewinner der Forumsumfrage (Thema 1838, bis 21.09.2026). Grundlage: Issue #21, dort noch unter
+dem Arbeitstitel „Suchflug". Der gemeinsame Rechenkern `app/abdeckung.py` steht seit 15.7.0 und
+wird hier benutzt, nicht neu geschnitten.
+
+**Der Name:** „Reddung" ist Platt für Rettung (von „redden" = retten). Er reiht sich neben
+🏁 FriesenBummel, 🦐 FriesenKutter, 🔭 FriesenKieker, 🚩 FriesenBaake und 🌊 Deichkontrolle.
+**Beim ersten Nennen in Nutzertexten in Klammern erklären** — „FriesenReddung (Reddung ist Platt
+für Rettung)" —, wie es die FriesenBrügge vormacht. Und wie dort: **niemals nur „Reddung",
+immer der volle Name.**
 
 **Diese Runde ist Server und Admin.** Karte, Kniebrett, Badge und Forumsbeitrag kommen danach
 und werden vorher eigens besprochen — die Hauptnummer gehört an die sichtbare Änderung.
@@ -160,7 +167,7 @@ Frage „ist er tief über der Unglücksstelle hinweggeflogen?".
   das Feld nicht — dort gibt es den Fall nicht.
 * **Nur aus der Nähe.** Aus großer Entfernung antwortet der Simulator aus einer groben
   Geländestufe: am Bodensee gemessen 2.106 ft statt 1.297 ft, bei 691 km Abstand. Brauchbar
-  belegt sind Werte bis 200 km, dazwischen ist eine Lücke. Für einen Suchflug im Umkreis des
+  belegt sind Werte bis 200 km, dazwischen ist eine Lücke. Für eine Reddung im Umkreis des
   Heimatplatzes ist das unkritisch, aber die Regel gehört in den Code, nicht in die Hoffnung.
 
 ### Aufnehmen benutzt die Landeregeln des Projekts
@@ -174,7 +181,7 @@ Projekt eine Landung ist:
 | `_GPS_GROUND_AGL_FT` | 300 ft | AGL-Obergrenze für „am Boden" |
 
 Beide werden **importiert, nicht abgeschrieben**: Ändert jemand später die Landeerkennung, zieht
-der Suchflug mit. Die AGL-Bezugsgröße ist die Grundhöhe des Havaristen (Abschnitt darüber).
+die Reddung mit. Die AGL-Bezugsgröße ist die Grundhöhe des Havaristen (Abschnitt darüber).
 
 ⚠ **`detect_gps_legs` selbst lässt sich nicht benutzen, und das ist kein Mangel.** Die Funktion
 verlangt für eine Landung einen **Platz im Umkreis** — im Code steht ausdrücklich „Kein Platz /
@@ -227,7 +234,7 @@ aus #21: Wer eine Fläche absucht und nichts findet, verkleinert den Sektor für
 Eine neue Tabelle, nach dem Muster von `bummel_races` und `transport_events`:
 
 ```sql
-CREATE TABLE IF NOT EXISTS suchflug_events (
+CREATE TABLE IF NOT EXISTS reddung_events (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     name            TEXT NOT NULL,
     dtstart         TEXT NOT NULL,
@@ -267,7 +274,7 @@ CREATE TABLE IF NOT EXISTS suchflug_events (
 ```
 
 **Keine Zellentabelle.** Das Raster entsteht bei jeder Rechnung aus `zellen_aus_box()`; die
-Abdeckung kommt aus `position_history` und wird in `progress_snapshot` mit `kind='suchflug'`
+Abdeckung kommt aus `position_history` und wird in `progress_snapshot` mit `kind='reddung'`
 zwischengespeichert — dasselbe Muster wie Bummel und Kutter. Gemessen: 39 ms für 1.640 Zellen
 gegen sechs Zweistundenspuren, also unkritisch auch ohne Snapshot.
 
@@ -276,8 +283,8 @@ Snapshot stehen (`app/database.py`, `_build_race_view`-Kommentar).
 
 ## 7. Wo die Prüfung läuft
 
-Im Poller, im vorhandenen Takt (15 s) — ein Job `_check_suchflug`, nach dem Muster von
-`_check_bummel_reveals`. Er rechnet je laufendem Suchflug:
+Im Poller, im vorhandenen Takt (15 s) — ein Job `_check_reddung`, nach dem Muster von
+`_check_bummel_reveals`. Er rechnet je laufender Reddung:
 
 1. **Abdeckung** — `abdeckung(spuren, zellen_aus_box(...), fenster)`.
 2. **Fund** — dieselbe Funktion, ein Ziel mit dem gerechneten Fundradius, dasselbe Fenster.
