@@ -3,3 +3,5 @@ Packages/
 PackagesMetadata/
 __pycache__/
 *.xml.user
+_PackageInt2020/
+PackageSourcesSeehund/

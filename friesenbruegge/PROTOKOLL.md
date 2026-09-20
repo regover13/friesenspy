@@ -3,7 +3,12 @@
 **Der Vertrag zwischen dem FriesenSpy-Server und einer Brügge im Simulator.**
 Verbindlich für alle Umsetzungen — MSFS 2020, MSFS 2024, X-Plane 12.
 
-> Stand 17.09.2026 · Protokollfassung **2** · ✅ **im Flug abgenommen** — Server, MSFS **1.14.0** und X-Plane **1.3.1**
+> Stand 20.09.2026 · Protokollfassung **2** · ✅ **im Flug abgenommen** — Server, MSFS **1.15.0** und X-Plane **1.3.1**
+>
+> ⭐ **1.15.0 (20.09.2026): Rauch und Seehunde laufen jetzt auch in MSFS 2020.** Das Modul ist unverändert;
+> das Paket wird mit dem 2020er SDK gebaut (Details in `msfs-rauch/LIESMICH.md`). Der Server trennt seither
+> sauber nach Simulator: **Urteile über Titel gelten je Simulator** (`bruegge_titel_lauf`), und eine Art gilt nur
+> als „überall", wenn sie in allen dreien nachweislich geht.
 >
 > ⭐⭐ **Ein Modul für MSFS 2020 UND 2024** (17.09.2026, Brügge 1.14.0). Das 2024er Modul
 > importierte `fsIOOpen`/`fsIOWrite`/`fsIOClose` (die Datei-API für die Kennung) — ein WASM-

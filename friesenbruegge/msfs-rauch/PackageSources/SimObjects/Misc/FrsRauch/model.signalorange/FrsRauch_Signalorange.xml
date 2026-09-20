@@ -2,7 +2,13 @@
 	<LODS>
 		<LOD minSize="0" ModelFile="FrsRauch_Signalorange.gltf"/>
 	</LODS>
-	<CompileBehaviors version="2">
-		<IncludeBase RelativeFile="FrsRauch_Signalorange.behavior.xml"/>
-	</CompileBehaviors>
+	<Behaviors>
+		<Include ModelBehaviorFile="Asobo\Generic\FX.xml" />
+		<Component ID="FrsRauch_Signalorange" Node="frs_rauch_signalorange">
+			<UseTemplate Name="ASOBO_GT_FX">
+				<FX_GUID>{C85B96FA-FA58-5189-AD4E-FD19995DC56E}</FX_GUID>
+				<FX_CODE>1 0 &gt;</FX_CODE>
+			</UseTemplate>
+		</Component>
+	</Behaviors>
 </ModelInfo>

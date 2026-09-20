@@ -117,9 +117,8 @@ Copy-Item $wasm "$paket\modules\bruegge.wasm" -Force
 $rauchQuelle = Join-Path (Split-Path $PSScriptRoot -Parent) "msfs-rauch\Packages"
 $rauchPakete = @("devprops-friesenrauch", "devprops-friesenrauch-mat",
                  "devprops-friesenrauch-vfx")
-# Die Mindestversionen des Rauchs koennen ueber denen des Moduls liegen -- er wurde mit
-# einem neueren SDK kompiliert. Der hoehere Wert gewinnt: Ein Paket, das eine Fassung
-# verspricht, mit der seine Inhalte nie gebaut wurden, verspricht zu viel.
+# (Bis 20.09.2026 gewann hier der hoehere Wert der Rauch-Teile, weil sie mit dem 2024er SDK
+# gebaut waren. Jetzt baut das 2020er SDK -- s. bauen.ps1 und die Schleife unten.)
 # ⭐ EINE ZAHL FUER BEIDE SIMULATOREN (16.09.2026) -- hier stand sie je Schalter verschieden.
 #
 # Seit 1.14.0 ist es EIN Paket fuer MSFS 2020 und 2024, also darf es auch nur EIN Manifest
@@ -144,15 +143,17 @@ $rauchDa = 0
 foreach ($rp in $rauchPakete) {
     $pfad = Join-Path $rauchQuelle $rp
     if (-not (Test-Path (Join-Path $pfad "manifest.json"))) {
-        Write-Warning "Rauchpaket fehlt: $rp -- im Project Editor bauen (msfs-rauch\FriesenRauch.xml)"
+        Write-Warning ("Rauchpaket fehlt: $rp -- bauen mit msfs-rauch" + [char]92 + "bauen.ps1")
         continue
     }
     Get-ChildItem $pfad -Directory | Copy-Item -Destination $paket -Recurse -Force
-    $rm = [System.IO.File]::ReadAllText((Join-Path $pfad "manifest.json")) | ConvertFrom-Json
-    if ([version]$rm.minimum_game_version -gt $minSpiel) { $minSpiel = [version]$rm.minimum_game_version }
-    if ([version]$rm.minimum_compatibility_version -gt $minKompat) {
-        $minKompat = [version]$rm.minimum_compatibility_version
-    }
+    # ⚠ DIE MINDESTVERSION DER TEILE ZAEHLT NICHT MEHR (20.09.2026). Seit die Teile mit dem
+    # MSFS-2020-SDK gebaut werden, tragen ihre Manifeste `minimum_game_version 1.39.12` (die
+    # Fassung dieses SDK) und keine `minimum_compatibility_version`. Uebernaehme das Paket den
+    # hoeheren Wert, verlangte es von MSFS 2024 (steht bei 1.8.x) eine Version, die es dort nie
+    # gibt. Gemessen ist nur, dass MSFS 2024 solche Teile akzeptiert hat -- die Testpakete lagen
+    # dort mit 1.39.12 und liefen --, aber ein Paket soll nichts verlangen, was ein Simulator
+    # gar nicht erreicht. Es bleibt bei den festen Werten oben.
     $rauchDa++
 }
 if ($rauchDa -eq $rauchPakete.Count) {
@@ -160,9 +161,8 @@ if ($rauchDa -eq $rauchPakete.Count) {
 } else {
     Write-Warning "Nur $rauchDa von $($rauchPakete.Count) Rauchteilen -- das Paket bleibt unvollstaendig."
 }
-if ($Fuer2020 -and $rauchDa -gt 0) {
-    Write-Warning "Der Rauch ist fuer MSFS 2024 kompiliert und in MSFS 2020 UNGEPRUEFT."
-}
+# (Bis 20.09.2026 stand hier: "Der Rauch ist fuer MSFS 2024 kompiliert und in MSFS 2020 UNGEPRUEFT."
+# Er ist jetzt mit dem 2020er SDK gebaut und in BEIDEN Simulatoren im Flug belegt.)
 
 # Die Paketversion kommt aus BRUEGGE_VERSION in bruegge.cpp -- EINE Wahrheit, nicht zwei.
 #

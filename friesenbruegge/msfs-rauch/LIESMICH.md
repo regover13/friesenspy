@@ -1,7 +1,16 @@
 # Der Rauch
 
-> Stand 14.09.2026 · ✅ **im Flug abgenommen** in beiden Simulatoren
-> („wind und rauch OK", Nutzer) · MSFS-Paket **1.10.0**
+> Stand 20.09.2026 · ✅ **im Flug abgenommen** in beiden Simulatoren
+> („wind und rauch OK", Nutzer) · MSFS-Paket **1.15.0**
+>
+> ⭐ **Seit 20.09.2026 EIN Bau für MSFS 2020 UND 2024**, gebaut mit dem **2020er SDK**. Vorher baute das
+> 2024er SDK, und das Ergebnis lief in MSFS 2020 nicht: **kein Rauch** (die 2024er Behavior-Vorlage
+> `ASOBO_VFX_Template` + `CompileBehaviors` kennt MSFS 2020 nicht — das Modell lud, ohne jede
+> Fehlermeldung, und es rauchte nicht) und **rosa Seehunde** (die 2024er Toolchain macht aus PNG-Texturen
+> `.KTX2`, die MSFS 2020 nicht liest). Jetzt: Behaviors **direkt im Modell-XML** unter `<Behaviors>` mit
+> `ASOBO_GT_FX` aus `Asobo\Generic\FX.xml` (Doku `Model_Definitions` des 2020er SDK), Texturen als `.DDS`.
+> Im Flug belegt: sechs Säulen in MSFS 2020, und in MSFS 2024 sahen sie neben dem alten Bau **identisch**
+> aus. Es gibt nur noch diese eine Fassung. Die Seehund-Textur ist seitdem um 40 % dunkler (s. `seehund/`).
 
 Sechs Rauchsäulen, 90 m hoch, 30 Sekunden Lebensdauer. Sie sind das Sichtzeichen der
 FriesenBrügge: Wo eine Säule steht, ist etwas — eine Kolonie, ein Ziel, eine Baake.
@@ -23,11 +32,14 @@ und es besser auf den Wind reagiert"*).
 | [`bauen.ps1`](bauen.ps1) | ruft beide auf, startet den Package Builder und **räumt den Simulator hinterher ab** |
 | `rauch_msfs.png` | die Textur — **eine** Wolke, kein Atlas (s. unten) |
 
-Gebaut wird mit `.\bauen.ps1`. **Das startet MSFS 2024 sichtbar im Baumodus** und dauert
-rund anderthalb Minuten; der Simulator beendet sich nicht von selbst, deshalb räumt das
-Skript vier Prozesse ab: `fspackagetool`, `FlightSimulator2024`, `gamelaunchhelper` und
-`gamingservicesui`. Der letzte fehlte anfangs und blieb als leeres Fenster „Microsoft
-Flight Simulator 2024" stehen.
+Erst `python paket_bauen.py` (schreibt Quellen, Paketdefinitionen und den abgedunkelten Seehund
+nach `PackageSourcesSeehund/`), dann `.\bauen.ps1`. **Das 2020er Werkzeug startet MSFS 2020 im
+Baumodus** (`FlightSimulator.exe -I ; BuildAssetPackages …`, ohne Fenster) und dauert rund 45
+Sekunden; der Simulator beendet sich nicht von selbst, deshalb räumt das Skript vier Prozesse ab:
+`fspackagetool`, `FlightSimulator`, `gamelaunchhelper` und `gamingservicesui`. Wer nur das
+Werkzeug beendet, lässt den Simulator stehen, und der nächste Bau schreibt dann **nichts** (gemessen
+20.09.2026). Das Skript bricht ab, wenn schon ein Simulator läuft (`-Trotzdem` erzwingt es). Der
+2024er Weg (`C:\MSFS 2024 SDK`, Start von `FlightSimulator2024`) steht nur noch in der Git-Historie.
 
 ⚠ **Niemals bauen, während jemand im Simulator sitzt.**
 

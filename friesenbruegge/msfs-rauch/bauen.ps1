@@ -1,87 +1,97 @@
-# Baut die Rauch-Effekte und raeumt hinter sich auf.
+# Baut den Rauch und den Seehund mit dem MSFS-2020-SDK -- fuer BEIDE Simulatoren.
 #
-# ⚠⚠ DER BAU STARTET DEN SIMULATOR -- SICHTBAR, MIT FENSTER.
+# (Bis 20.09.2026 baute dieses Skript mit dem 2024er SDK und startete MSFS 2024 sichtbar. Das
+# Ergebnis lief in MSFS 2020 nicht: rosa Seehunde -- KTX2-Texturen --, kein Rauch -- die 2024er
+# Behavior-Vorlage. Der Bau mit dem 2020er SDK laeuft in beiden, im Flug belegt.)
 #
-# `fspackagetool.exe` ist nur ein Starter; die eigentliche Arbeit macht MSFS 2024 selbst im
-# Baumodus. Auf dem Bildschirm erscheint der normale Startbildschirm ("Spiel wird
-# gestartet... (2 Min. 24 Sek.)"), und NACH dem Bau beendet sich der Prozess NICHT von
-# selbst -- das Fenster bleibt stehen, bis jemand es wegraeumt.
+# ⚠⚠ AUCH DAS 2020er WERKZEUG STARTET DEN SIMULATOR -- im Baumodus, ohne Fenster.
 #
-# Am 14.09.2026 sechsmal passiert, jedes Mal musste der Nutzer es von Hand schliessen
-# ("das screenshot ding startest du immer! ich muss es immer von hand beenden"). Dieses
-# Skript gibt es, damit das nicht mehr von der Sorgfalt des Aufrufers abhaengt.
+# Gemessen am 20.09.2026: `fspackagetool.exe` ruft `FlightSimulator.exe -I ; BuildAssetPackages
+# <Projekt> ...` auf, und dieser Prozess bleibt nach dem Bau stehen. Wer nur das Werkzeug
+# beendet, laesst den Simulator zurueck -- und der naechste Bau kommt dann nicht durch (er
+# schrieb NICHTS, 200 Sekunden lang). Deshalb raeumt dieses Skript vier Prozesse ab, wie
+# `bauen.ps1` es fuer 2024 tut; hier heisst der Simulator `FlightSimulator`, nicht
+# `FlightSimulator2024`.
 #
-# ⚠ NICHT AUFRUFEN, WAEHREND JEMAND FLIEGT. Der Simulator-Start kommt einer laufenden
-# Sitzung dazwischen. Erst ansagen, dann bauen.
+# ⚠ NICHT AUFRUFEN, WAEHREND JEMAND IM SIMULATOR SITZT (Nutzer, 20.09.2026: "ich bin in SIM
+# kein kompellieren!"). Der Bau laeuft rund eine Minute, belastet den Rechner und startet einen
+# zweiten Simulatorprozess -- erst ansagen, dann bauen. Das Skript bricht ab, wenn schon ein
+# Simulator laeuft.
+#
+# Der Bau nimmt FriesenRauch.xml, die `paket_bauen.py` zusammen mit den Quellen erzeugt.
 param(
-    [int]$MaxMinuten = 10    # Notbremse, falls der Bau wirklich haengt
+    [int]$MaxMinuten = 8,     # Notbremse
+    [switch]$Trotzdem         # nur wenn der Nutzer es ausdruecklich will
 )
 
 $ErrorActionPreference = 'Stop'
 $hier = $PSScriptRoot
-$werkzeug = "C:\MSFS 2024 SDK\Tools\bin\fspackagetool.exe"
-if (-not (Test-Path $werkzeug)) { throw "fspackagetool nicht gefunden: $werkzeug" }
+$sdk2020 = $env:MSFS_SDK; if (-not $sdk2020) { $sdk2020 = 'D:\MSFS SDK' }
+$werkzeug = Join-Path $sdk2020 'Tools\bin\fspackagetool.exe'
+if (-not (Test-Path $werkzeug)) { throw "fspackagetool (2020) nicht gefunden: $werkzeug" }
+if (-not (Test-Path "$hier\FriesenRauch.xml")) {
+    throw "FriesenRauch.xml fehlt -- erst 'python paket_bauen.py' ausfuehren."
+}
 
 function Raeum-Auf {
-    # ⚠ VIER PROZESSE, NICHT DREI. gamingservicesui fehlte bis zum 14.09.2026 -- das ist
-    # der Xbox-Startbildschirm, der als Fenster "Microsoft Flight Simulator 2024" stehen
-    # bleibt, nachdem alles andere weg ist. Der Nutzer musste ihn jedes Mal von Hand
-    # schliessen ("er ist immer noch da!!").
-    Get-Process fspackagetool, FlightSimulator2024, gamelaunchhelper, gamingservicesui -ErrorAction SilentlyContinue |
+    Get-Process fspackagetool, FlightSimulator, gamelaunchhelper, gamingservicesui -ErrorAction SilentlyContinue |
         Stop-Process -Force -ErrorAction SilentlyContinue
 }
 
-# Altlasten zuerst: Laeuft noch ein Bauprozess, endet der naechste Aufruf sofort mit Exit 43,
-# ohne zu bauen -- das hat am 14.09.2026 zweimal wie ein Fehler ausgesehen und war keiner.
+$laeuft = Get-Process FlightSimulator, FlightSimulator2024 -ErrorAction SilentlyContinue
+if ($laeuft -and -not $Trotzdem) {
+    throw "Ein Simulator laeuft ($(($laeuft | ForEach-Object Name) -join ', ')) -- nicht bauen, solange jemand drinsitzt."
+}
 Raeum-Auf
 Start-Sleep -Seconds 2
 
-$spb = "$hier\Packages\devprops-friesenrauch-vfx\VisualEffectLibs\devprops\friesenrauch"
-$start = Get-Date
-Write-Output "Baue -- MSFS startet dabei sichtbar, das dauert ein paar Minuten."
+# Der Bau merkt sich Zeitstempel: Eine geaenderte Textur oder Datei wird sonst nicht immer
+# neu gebaut (die abgedunkelte Seehund-Textur blieb beim ersten Versuch unberuehrt).
+foreach ($d in 'Packages\devprops-friesenrauch', 'Packages\devprops-friesenrauch-mat', 'Packages\devprops-friesenrauch-vfx', '_PackageInt') {
+    $x = Join-Path $hier $d
+    if (Test-Path -LiteralPath $x) { Remove-Item -LiteralPath $x -Recurse -Force }
+}
 
-# ⚠ MIT `&` STARTEN, NICHT MIT `Start-Process -NoNewWindow`. Letzteres startet den Prozess
-# zwar, aber er schreibt keine einzige Datei -- am 14.09.2026 dreimal belegt (8 Minuten
-# Laufzeit, null Ergebnis). Offenbar braucht das Werkzeug die Konsole des Aufrufers.
+$start = Get-Date
+Write-Output "Baue Rauch und Seehund -- der Simulator startet dabei im Baumodus (ohne Fenster)."
 $auftrag = Start-Job -ScriptBlock {
     param($w, $d)
     Set-Location $d
     & $w "FriesenRauch.xml" 2>&1 | Out-String
 } -ArgumentList $werkzeug, $hier
 
-# Fertig ist der Bau, wenn unter Packages\ eine Weile NICHTS MEHR geschrieben wurde --
-# nicht, wenn der Prozess endet. Er endet naemlich nicht.
-#
-# ⚠ HIER STAND "wenn alle sechs .spb neuer sind als der Start", und das war zu eng.
-# Am 14.09.2026 kam der Seehund als SimObject dazu; an den Rauch-Effekten aenderte sich
-# dabei nichts, also schrieb der Builder die .spb gar nicht neu. Der Bau war nach zwei
-# Minuten fertig -- das Skript haette bis zum 10-Minuten-Timeout gewartet und dann
-# "NICHT fertig" gemeldet, obwohl alles dastand.
-#
-# Die Ruhe-Erkennung ist unabhaengig davon, WAS gebaut wird: Sobald seit $RuheSekunden
-# keine Datei mehr angefasst wurde und mindestens eine neuer ist als der Start, ist der
-# Builder durch. Das traegt auch alles, was spaeter noch dazukommt.
-$RuheSekunden = 40
+# Fertig ist der Bau, wenn die letzten Dateien der drei Teilpakete da sind und eine Weile
+# nichts mehr geschrieben wurde -- der Prozess endet ja nicht von selbst.
+$erwartet = @(
+    "$hier\Packages\devprops-friesenrauch-vfx\VisualEffectLibs\devprops\friesenrauch\VisualEffectLibrary.xml",
+    "$hier\Packages\devprops-friesenrauch-mat\MaterialLibs\friesenrauch-mat\Library.xml",
+    "$hier\Packages\devprops-friesenrauch\SimObjects\Misc\FrsSeehund\texture\SEEHUND.PNG.DDS.json"
+)
+$RuheSekunden = 20
 $fertig = $false
 while (((Get-Date) - $start).TotalMinutes -lt $MaxMinuten) {
-    Start-Sleep -Seconds 10
-    $neueste = Get-ChildItem "$hier\Packages" -Recurse -File -ErrorAction SilentlyContinue |
-               Where-Object { $_.LastWriteTime -gt $start } |
-               Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    if ($neueste -and ((Get-Date) - $neueste.LastWriteTime).TotalSeconds -ge $RuheSekunden) {
-        $fertig = $true
-        break
+    Start-Sleep -Seconds 5
+    if (@($erwartet | Where-Object { Test-Path $_ }).Count -eq $erwartet.Count) {
+        # ⚠ NICHT `Get-ChildItem "...\devprops-friesenrauch*" -Recurse`: Ein Platzhalter im Pfad
+        # durchsucht die Unterordner nicht -- das lieferte nichts, die Ruhe-Erkennung schlug nie an,
+        # und das Skript wartete jedes Mal die vollen acht Minuten (20.09.2026, zweimal).
+        $neueste = Get-ChildItem "$hier\Packages" -Recurse -File -ErrorAction SilentlyContinue |
+                   Where-Object { $_.FullName -like '*devprops-friesenrauch*' } |
+                   Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if ($neueste -and ((Get-Date) - $neueste.LastWriteTime).TotalSeconds -ge $RuheSekunden) { $fertig = $true; break }
     }
 }
 
-Start-Sleep -Seconds 15      # dem Manifest-Schreiben noch Luft lassen
+Start-Sleep -Seconds 3
 Raeum-Auf
 Remove-Job $auftrag -Force -ErrorAction SilentlyContinue
+$noch = Get-Process fspackagetool, FlightSimulator, gamelaunchhelper, gamingservicesui -ErrorAction SilentlyContinue
+if ($noch) { Write-Warning "Prozess noch da: $(($noch | ForEach-Object Name) -join ', ')" }
 
 $dauer = [int]((Get-Date) - $start).TotalSeconds
 if ($fertig) {
-    Write-Output "Effekte gebaut nach $dauer s. Simulator beendet."
+    Write-Output "Rauch und Seehund gebaut nach $dauer s. Simulator beendet."
 } else {
-    Write-Output "NICHT fertig nach $dauer s -- Zeitstempel unter Packages\ pruefen."
+    Write-Output "NICHT fertig nach $dauer s -- unter Packages\ nachsehen."
     exit 1
 }

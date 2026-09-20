@@ -25,7 +25,7 @@
 			<Flags>
 				<FSXCompatibility>false</FSXCompatibility>
 			</Flags>
-			<AssetDir>PackageSources\SimObjects\Misc\FrsSeehund\</AssetDir>
+			<AssetDir>PackageSourcesSeehund\SimObjects\Misc\FrsSeehund\</AssetDir>
 			<OutputDir>SimObjects\Misc\FrsSeehund\</OutputDir>
 		</AssetGroup>
 	</AssetGroups>

@@ -58,6 +58,13 @@ from pathlib import Path
 
 HIER = Path(__file__).resolve().parent
 QUELLEN = HIER / "PackageSources"
+#: Der Seehund wird vor dem Bau abgedunkelt kopiert -- die Quelle in `PackageSources` bleibt
+#: die helle Fassung aus dem Blender-Export, damit eine Neuausgabe sie nicht doppelt abdunkelt.
+QUELLEN_SEEHUND = HIER / "PackageSourcesSeehund"
+#: 0,6 = 40 % dunkler (Nutzerwunsch 20.09.2026: In direkter Sonne rendert MSFS das Tier mit
+#: Helligkeit ~190, obwohl die hellste Texturfarbe nur 113 hat). In MSFS 2024 neben dem alten
+#: Bau geprüft: „die dunklen Seehunde sind besser". Gilt für beide Simulatoren.
+HELLIGKEIT_SEEHUND = 0.6
 DEFINITIONEN = HIER / "PackageDefinitions"
 # ⚠ EIGENE TEXTUR, NICHT DIE VON X-PLANE -- und der Unterschied ist das ganze Bild.
 #
@@ -237,35 +244,30 @@ def wuerfel_gltf(knoten: str, bin_datei: str) -> tuple[str, bytes]:
     return json.dumps(gltf, indent=1), puffer
 
 
-def behavior_xml(kennung: str, knoten: str, fx_guid: str) -> str:
-    r"""Verknüpft den Modellknoten mit dem Partikeleffekt.
+def behaviors_inline(kennung: str, knoten: str, fx_guid: str) -> str:
+    r"""Der `<Behaviors>`-Block im Modell-XML: verknüpft den Knoten mit dem Partikeleffekt.
 
-    ⚠ VIER DINGE WAREN HIER FALSCH, und alle vier blieben stumm oder meldeten sich erst
-    Schritt für Schritt — das Paket baute, die Objekte entstanden im Simulator, und es
-    rauchte nicht (13.09.2026, auf Wangerooge):
+    ⭐ SEIT 20.09.2026 DIE KLASSISCHE FORM, DIREKT IM MODELL-XML -- und sie läuft in BEIDEN
+    Simulatoren. Vorher standen hier die Vorlage `ASOBO_VFX_Template` (eingebunden über
+    `Asobo_EX1\Index.xml`) und `<CompileBehaviors version="2"><IncludeBase …/>`, gebaut mit
+    dem MSFS-2024-SDK. Das kennt MSFS 2020 nicht: Dort lud das Modell, und es rauchte nicht,
+    ohne jede Fehlermeldung. In der 2020er Doku (`Model_Definitions`) stehen die Behaviors
+    direkt im Modell-XML unter `<Behaviors>`, die Vorlage heißt `ASOBO_GT_FX` und kommt aus
+    `Asobo\Generic\FX.xml`. Im Flug belegt am 20.09.2026: sechs Säulen in MSFS 2020, und in
+    MSFS 2024 sahen sie neben dem alten Bau IDENTISCH aus (Nutzer). Es gibt damit nur noch EINE
+    Fassung, und sie wird mit dem 2020er SDK gebaut (`bauen.ps1`).
 
-      1. Der umschließende Tag im model.xml hieß `<Behaviors>` statt `<CompileBehaviors
-         version="2">` — dazu mehr in `simobjects_schreiben()`. Ohne den richtigen Tag
-         wird die Datei nie kompiliert, das Objekt existiert aber trotzdem (nur ohne
-         jedes Verhalten) — deshalb tauchte es im SimObject Spawner auf, aber nicht in
-         der Behaviors-Liste des DevMode.
-      2. Die Vorlage heißt `ASOBO_VFX_Template`. Ich hatte `ASOBO_VFX_Base_Template`
-         geschrieben — abgeleitet aus dem Namen der ParametersFn, nicht nachgeschlagen.
-         Eine unbekannte Vorlage erzeugt keinen Fehler, sie tut einfach nichts.
-      3. `ASOBO_VFX_Template` ist NICHT automatisch bekannt — sie muss eingebunden werden.
-         Der erste Versuch (`Include ModelBehaviorFile="Asobo_EX1\Common\Exterior\
-         Templates\VFX.xml"`, aus echten Flugzeugmodellen wie `Asobo_C172SP` abgeschrieben)
-         schlug weiter fehl: Diese Datei BENUTZT `ASOBO_VFX_Template` bloß, definiert es
-         nicht. Die Definition liegt in `Base\Component\VFX.xml` — die wiederum selbst
-         von `Helper\ParametersFnHelpers.xml` abhängt (für
-         `ASOBO_PFN_Call_Overridable_ParametersFn_Helper`), eingebunden in genau dieser
-         Reihenfolge durch `Base\Index.xml`. Der sichere Weg ist deshalb nicht die
-         Einzeldatei, sondern die Root-Indexdatei `Asobo_EX1\Index.xml` — sie lädt
-         `Base\Index.xml`, `Common\Index.xml` und `Generic\Index.xml` in der richtigen
-         Reihenfolge. Genau das macht auch jedes echte Flugzeugmodell als ALLERERSTEN
-         Include, noch vor dem (unnötigen) Include der Einzeldatei.
-      4. Der Knoten steht als ATTRIBUT am Component (`Node="…"`), nicht als Parameter.
-         So macht es auch Emeralds kompilierte Datei.
+    Die früheren Fehlversuche stehen weiter da, weil sie zeigen, wie still diese Fehler sind
+    (13.09.2026, auf Wangerooge — das Paket baute, die Objekte entstanden, und es rauchte
+    nicht):
+
+      * Eine unbekannte Vorlage erzeugt keinen Fehler, sie tut einfach nichts. (Ich hatte
+        `ASOBO_VFX_Base_Template` geschrieben, aus dem Namen einer ParametersFn abgeleitet,
+        nicht nachgeschlagen.)
+      * Der Knoten steht als ATTRIBUT am Component (`Node="…"`), nicht als Parameter.
+      * `<Behaviors>` mit `IncludeBase` darin war in MSFS 2024 KEIN gültiges Element -- das
+        Objekt existierte, hatte aber nie Verhalten. Die inline-Form hier (`<Include>` und
+        `<Component>` direkt unter `<Behaviors>`) ist etwas anderes, und sie geht.
 
     `FX_CODE` ist die Bedingung, unter der der Effekt läuft (ein RPN-Ausdruck). Die
     SDK-Doku: *„When it becomes true the Visual Effect is spawned. When it becomes false
@@ -283,17 +285,15 @@ def behavior_xml(kennung: str, knoten: str, fx_guid: str) -> str:
     Emerald setzt dort `(A:AMBIENT TEMPERATURE, celsius) 10 <=`, weshalb ihr Schornstein im
     Sommer nicht raucht. Eine Signalsäule brennt dagegen, solange die Patrone brennt.
     """
-    return f"""<ModelBehaviors>
-\t<Include ModelBehaviorFile="Asobo_EX1\\Index.xml" />
-\t<Component ID="{kennung}" Node="{knoten}">
-\t\t<UseTemplate Name="ASOBO_VFX_Template">
-\t\t\t<FX_GUID>{fx_guid}</FX_GUID>
-\t\t\t<FX_NAME>{kennung}</FX_NAME>
-\t\t\t<FX_CODE>1 0 &gt;</FX_CODE>
-\t\t</UseTemplate>
-\t</Component>
-</ModelBehaviors>
-"""
+    return (
+        "\t<Behaviors>\n"
+        '\t\t<Include ModelBehaviorFile="Asobo\\Generic\\FX.xml" />\n'
+        f'\t\t<Component ID="{kennung}" Node="{knoten}">\n'
+        '\t\t\t<UseTemplate Name="ASOBO_GT_FX">\n'
+        f"\t\t\t\t<FX_GUID>{fx_guid}</FX_GUID>\n"
+        "\t\t\t\t<FX_CODE>1 0 &gt;</FX_CODE>\n"
+        "\t\t\t</UseTemplate>\n\t\t</Component>\n\t</Behaviors>\n"
+    )
 
 
 # --------------------------------------------------------------------------- Paketteile
@@ -371,6 +371,11 @@ def simobjects_schreiben() -> None:
         (wurzel / modell).mkdir(exist_ok=True)
         (wurzel / modell / "model.CFG").write_text(
             f"[models]\nnormal={kennung}.xml\n", encoding="utf-8", newline="\r\n")
+        # (Bis 20.09.2026 stand hier <CompileBehaviors version="2"> mit einer eigenen
+        # .behavior.xml -- die 2024er Form, die MSFS 2020 nicht kennt. Jetzt die klassische
+        # Form direkt im Modell-XML, s. `behaviors_inline`. Die Notizen unten beschreiben den
+        # alten Weg und bleiben als Chronik der Fehlversuche stehen.)
+        #
         # ⚠ DER TAG HEISST <CompileBehaviors version="2">, NICHT <Behaviors>.
         #
         # Das war der eigentliche Fehler (13.09.2026, auf Wangerooge geprueft): Das Objekt
@@ -407,15 +412,12 @@ def simobjects_schreiben() -> None:
             # richtig -- eine Rauchsaeule, die man erst sieht, wenn man daneben steht, ist
             # als Marke wertlos.
             f'\t\t<LOD minSize="0" ModelFile="{kennung}.gltf"/>\n'
-            '\t</LODS>\n\t<CompileBehaviors version="2">\n'
-            f'\t\t<IncludeBase RelativeFile="{kennung}.behavior.xml"/>\n'
-            "\t</CompileBehaviors>\n</ModelInfo>\n", encoding="utf-8", newline="\r\n")
+            '\t</LODS>\n' + behaviors_inline(kennung, knoten, guid(name, "fx"))
+            + "</ModelInfo>\n", encoding="utf-8", newline="\r\n")
         gltf_json, gltf_puffer = wuerfel_gltf(knoten, f"{kennung}.bin")
         (wurzel / modell / f"{kennung}.gltf").write_text(
             gltf_json, encoding="utf-8", newline="\n")
         (wurzel / modell / f"{kennung}.bin").write_bytes(gltf_puffer)
-        (wurzel / modell / f"{kennung}.behavior.xml").write_text(
-            behavior_xml(kennung, knoten, guid(name, "fx")), encoding="utf-8", newline="\r\n")
 
         teile += [f"[fltsim.{i}]", f"title={kennung}", f"model={name}", "texture=", ""]
 
@@ -518,7 +520,7 @@ def definitionen_schreiben() -> None:
           # mitbringt. Eine Umbenennung ist faellig, fasst aber viele Pfade an und gehoert
           # deshalb in einen eigenen Schritt.
           gruppe("SeehundObjects", "SimObject",
-                 "PackageSources\\SimObjects\\Misc\\FrsSeehund\\",
+                 "PackageSourcesSeehund\\SimObjects\\Misc\\FrsSeehund\\",
                  "SimObjects\\Misc\\FrsSeehund\\"))
 
     (HIER / "FriesenRauch.xml").write_text(
@@ -535,13 +537,36 @@ def definitionen_schreiben() -> None:
     print("  3 Paketdefinitionen + Projektdatei")
 
 
+def seehund_schreiben() -> None:
+    """Den Seehund mit abgedunkelter Textur nach `PackageSourcesSeehund/` kopieren."""
+    import shutil
+    from PIL import Image
+
+    ziel = QUELLEN_SEEHUND / "SimObjects" / "Misc" / "FrsSeehund"
+    # ⚠ NICHT `rmtree` VOR DEM KOPIEREN: Auf einem OneDrive-Ordner scheiterte das am 20.09.2026 mit
+    # "Zugriff verweigert" mitten im Loeschen und liess einen halben Baum zurueck -- der Bau fand
+    # dann den Seehund nicht und wartete acht Minuten. Ueberschreiben (`dirs_exist_ok`) kommt ohne
+    # Loeschen aus; alle Dateien der Quelle werden ohnehin neu geschrieben.
+    shutil.copytree(QUELLEN / "SimObjects" / "Misc" / "FrsSeehund", ziel, dirs_exist_ok=True)
+    png = ziel / "texture" / "seehund.png"
+    bild = Image.open(png)
+    rgb = bild.convert("RGB")
+    dunkel = Image.new("RGB", rgb.size)
+    dunkel.putdata([tuple(round(c * HELLIGKEIT_SEEHUND) for c in q) for q in rgb.getdata()])
+    if bild.mode == "RGBA":
+        dunkel.putalpha(bild.getchannel("A"))
+    dunkel.save(png)
+    print(f"  Seehund: Textur auf {HELLIGKEIT_SEEHUND:.0%} abgedunkelt")
+
+
 def main() -> None:
     material_schreiben()
     simobjects_schreiben()
+    seehund_schreiben()
     definitionen_schreiben()
     print("\nJetzt bauen:")
     print(r"  .\bauen.ps1")
-    print("  ⚠ startet MSFS SICHTBAR im Baumodus und beendet es danach selbst.")
+    print("  ⚠ startet MSFS 2020 im Baumodus (ohne Fenster) und beendet es danach selbst.")
     print("    Nicht aufrufen, waehrend jemand fliegt -- erst ansagen.")
 
 

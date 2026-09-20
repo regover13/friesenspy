@@ -2,7 +2,13 @@
 	<LODS>
 		<LOD minSize="0" ModelFile="FrsRauch_Navy.gltf"/>
 	</LODS>
-	<CompileBehaviors version="2">
-		<IncludeBase RelativeFile="FrsRauch_Navy.behavior.xml"/>
-	</CompileBehaviors>
+	<Behaviors>
+		<Include ModelBehaviorFile="Asobo\Generic\FX.xml" />
+		<Component ID="FrsRauch_Navy" Node="frs_rauch_navy">
+			<UseTemplate Name="ASOBO_GT_FX">
+				<FX_GUID>{487E4435-3173-5F67-BF58-36DBA02DCDAB}</FX_GUID>
+				<FX_CODE>1 0 &gt;</FX_CODE>
+			</UseTemplate>
+		</Component>
+	</Behaviors>
 </ModelInfo>

@@ -1,5 +1,16 @@
 [
   {
+    "version": "15.3.0",
+    "date": "2026-09-20",
+    "highlight": false,
+    "title": "Rauch und Seehunde jetzt auch in MSFS 2020",
+    "items": [
+      "🌉 Die FriesenBrügge (Fassung 1.15.0) zeigt Rauchsäulen und Seehunde jetzt auch in **MSFS 2020**. Bisher gab es dort gar keinen Rauch, und die Seehunde waren rosa. Beides ist jetzt so gebaut, dass es in MSFS 2020 und MSFS 2024 gleich aussieht — im Flug in beiden geprüft.",
+      "🦭 Die Seehunde sind dunkler geworden, rund 40 %. In der Sonne wirkten sie zuvor wie helle Steine.",
+      "📦 Wer die FriesenBrügge nutzt, lädt sie einmal neu von der Download-Seite und startet den Simulator neu. X-Plane ist davon nicht betroffen."
+    ]
+  },
+  {
     "version": "15.2.0",
     "date": "2026-09-19",
     "highlight": false,

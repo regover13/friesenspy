@@ -105,7 +105,7 @@ static void log_zeile(const char* format, ...) {
 // Feste Größen
 // ---------------------------------------------------------------------------------------
 
-#define BRUEGGE_VERSION   "1.14.0"
+#define BRUEGGE_VERSION   "1.15.0"
 #define BRUEGGE_URL       "https://friesenspy.devprops.de/api/bruegge/melden"
 // ⭐ WELCHER SIMULATOR -- ZUR LAUFZEIT, NICHT BEIM UEBERSETZEN (16.09.2026).
 //

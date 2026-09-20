@@ -92,3 +92,20 @@ Fünf Dinge, die jeweils Zeit gekostet haben und in den Dateien ausführlich ste
 **Im Simulator gesehen hat das Modell niemand** — weder in MSFS noch in X-Plane. Das ist
 der nächste Schritt; die Art `robbe` ist auf dem Server für beide Simulatoren zugeordnet,
 unsere Titel auf den vorderen Rängen.
+
+## MSFS 2020 (20.09.2026)
+
+**Der Seehund war in MSFS 2020 rosa** — alle drei Größen. Ursache: Das 2024er Werkzeug macht aus
+`seehund.png` eine `.KTX2`-Datei, und die liest MSFS 2020 nicht; ohne Textur zeigt es die
+Ersatzfarbe. (Die Konsole meldete `VFS Bitmap Loader: Failed to load texture …SEEHUND.PNG.KTX2`.)
+
+**Gebaut wird seitdem mit dem 2020er SDK** (`msfs-rauch/bauen.ps1`): Die Textur wird `SEEHUND.PNG.DDS`
+mit `MSFT_texture_dds`, und dieselbe Datei läuft in MSFS 2024. Gemessen neben dem alten Bau in MSFS 2024:
+gleiches Bild.
+
+**Die Textur ist um 40 % dunkler** (Faktor 0,6 auf alle Farbwerte, `HELLIGKEIT_SEEHUND` in
+`msfs-rauch/paket_bauen.py`). In direkter Sonne rendert MSFS das Tier mit Helligkeit rund 190, obwohl die
+hellste Texturfarbe nur 113 hat — die Helligkeit kommt von der Beleuchtung in **beiden** Simulatoren.
+Nutzerurteil in MSFS 2024: „die dunklen Seehunde sind besser". Die Quelle unter `PackageSources/` bleibt die
+helle Fassung aus dem Blender-Export; abgedunkelt wird erst beim Bau, damit ein neuer Export sie nicht
+doppelt abdunkelt. **X-Plane bleibt unverändert** (dort wurde nichts geändert und nichts gemessen).
