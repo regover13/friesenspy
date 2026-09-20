@@ -1,5 +1,14 @@
 [
   {
+    "version": "15.6.1",
+    "date": "2026-09-20",
+    "highlight": false,
+    "title": "Objekte setzen sich wieder selbst auf den Boden",
+    "items": [
+      "🌉 Die Höhe des Piloten wird nicht mehr benutzt: Objekte in der Nähe standen mit der Version 15.6.0 ein paar Fuß zu hoch, wenn der Pilot auf einem erhöhten Vorfeld stand. Der Simulator setzt sie wieder selbst auf den Boden, so wie schon bei den Booten."
+    ]
+  },
+  {
     "version": "15.6.0",
     "date": "2026-09-20",
     "highlight": false,

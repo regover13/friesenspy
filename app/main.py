@@ -110,8 +110,6 @@ from app.database import (
     bruegge_soll_fuer,
     bruegge_soll_setzen,
     bruegge_arten_anforderbar,
-    bruegge_art_versatz,
-    bruegge_gelaende_am_piloten,
     bruegge_arten_uebersicht,
     bruegge_art_setzen,
     bruegge_art_loeschen,
@@ -2107,50 +2105,12 @@ async def admin_bruegge_soll_setzen(request: Request):
         if body.get("kurs_zufall"):
             kurs = round(secrets.randbelow(3600) / 10.0, 1)
 
-        # ⭐ FESTE HOEHE STATT OnGround -- fuer ALLE Objekte, wo es geht (20.09.2026, Nutzer: "mach
-        # das doch einfach fuer alle Objekte").
-        #
-        # Anlass: Flugzeugmodelle bleiben mit OnGround=1 frei beweglich und huepfen. Der Nutzer
-        # sah es an einem Hubschrauber (gemessen: der Schwerpunkt wanderte um 225 Pixel, einer
-        # kippte auf den Kopf) und an einer Pitts, und Reiner meldete es von einer C172. Mit
-        # `auf_boden=false` UND einer Hoehe FRIERT die Bruegge das Objekt ein
-        # (`objekt_festhalten`, Hoehe + Lage + Ort) -- und dann steht es: Der Nutzer setzte den Heli
-        # von Hand auf 4 ft, "hier bewegt sich dann gar nichts".
-        #
-        # Wer keine Hoehe angibt (und nicht ausdruecklich OnGround verlangt), bekommt sie hier:
-        # Gelaende am Piloten + Versatz der Art (`bruegge_art.boden_versatz_ft`).
-        #
-        # ⚠ GRENZE: Das Gelaende kennt der Server nur AM PILOTEN. Weiter als 3 km weg, ohne Pilot
-        # oder in X-Plane (dort sondiert die Bruegge selbst) bleibt es beim Aufsetzen -- OnGround
-        # trifft bis 10 km (13.09.2026 gemessen). Kein Fehler, aber die Antwort sagt es (`boden`).
-        cid_wert = int(body["cid"]) if body.get("cid") else None
-        hoehe_wert = (float(body["erwartete_hoehe_ft"]) if body.get("erwartete_hoehe_ft") is not None
-                      else None)
-        auf_boden_wert = body.get("auf_boden")
-        boden_hinweis = "aufsetzen"
-        if auf_boden_wert is True:
-            boden_hinweis = "aufsetzen"
-        elif hoehe_wert is not None:
-            auf_boden_wert, boden_hinweis = False, "feste-hoehe"
-        else:
-            g = bruegge_gelaende_am_piloten(conn, cid_wert) if cid_wert else None
-            if (g and g["simulator"].startswith("msfs")
-                    and geo.haversine(lat, lon, g["lat"], g["lon"]) <= _BRUEGGE_AUTOHOEHE_KM):
-                hoehe_wert = round(g["hoehe"] + bruegge_art_versatz(conn, art), 1)
-                auf_boden_wert, boden_hinweis = False, "feste-hoehe-automatisch"
-            elif auf_boden_wert is False:
-                # AUSDRUECKLICH abgewaehlt, aber keine Zahl moeglich: Der Aufrufer hat entschieden, und ein
-                # ausdrueckliches False bleibt eines (tests/test_bruegge_endpunkt.py). Die Bruegge nimmt dann
-                # die Gelaendehoehe an IHREM Piloten -- ohne Einfrieren, wie bisher.
-                boden_hinweis = "ohne-hoehe"
-            else:
-                # NICHTS gesagt und keine Zahl moeglich: das sichere Aufsetzen.
-                auf_boden_wert, boden_hinweis = True, "aufsetzen"
         bruegge_soll_setzen(
             conn, kennung_id, art, lat, lon,
-            cid=cid_wert,
+            cid=int(body["cid"]) if body.get("cid") else None,
             kurs=kurs,
-            erwartete_hoehe_ft=hoehe_wert,
+            erwartete_hoehe_ft=(float(body["erwartete_hoehe_ft"])
+                                if body.get("erwartete_hoehe_ft") is not None else None),
             gilt_bis=str(body["gilt_bis"])[:32] if body.get("gilt_bis") else None,
             bemerkung=str(body.get("bemerkung") or "")[:200] or None,
             # VORGABE IST `True`, und das ist der Kern der Sache: `OnGround=1` laesst den
@@ -2162,12 +2122,12 @@ async def admin_bruegge_soll_setzen(request: Request):
             # Bis eben stand das Feld gar nicht im Endpunkt, und der Admin setzte alles mit
             # gerechneter Hoehe. Aufgefallen an einem Buckelwal, der sechs Fuss ueber dem
             # Boden schwebte.
-            auf_boden=bool(auf_boden_wert),
+            auf_boden=bool(body.get("auf_boden", True)),
         )
         conn.commit()
     finally:
         conn.close()
-    return {"status": "ok", "id": kennung_id, "boden": boden_hinweis}
+    return {"status": "ok", "id": kennung_id}
 
 
 @app.delete("/api/admin/bruegge/soll/{soll_id}")
@@ -2303,20 +2263,6 @@ async def admin_arten_lesen(request: Request):
         conn.close()
 
 
-#: So weit vom Piloten darf ein Objekt stehen, damit dessen Gelaendehoehe noch gilt.
-_BRUEGGE_AUTOHOEHE_KM = 3.0
-
-
-def _versatz_pruefen(wert) -> float:
-    try:
-        z = float(wert)
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail="boden_versatz_ft: eine Zahl")
-    if not (-50.0 <= z <= 100.0):
-        raise HTTPException(status_code=400, detail="boden_versatz_ft: zwischen -50 und 100 ft")
-    return z
-
-
 @app.post("/api/admin/bruegge/arten")
 async def admin_art_setzen(request: Request):
     """Eine Art anlegen, umbenennen im Sinn der Bedeutung, aus- oder wieder einschalten.
@@ -2355,9 +2301,7 @@ async def admin_art_setzen(request: Request):
         bruegge_art_setzen(
             conn, art,
             bedeutung=(str(body["bedeutung"])[:200] if "bedeutung" in body else ...),
-            status=(str(body["status"])[:10] if "status" in body else ...),
-            boden_versatz_ft=(_versatz_pruefen(body["boden_versatz_ft"])
-                              if "boden_versatz_ft" in body else ...))
+            status=(str(body["status"])[:10] if "status" in body else ...))
         conn.commit()
         return {"ok": True, "arten": bruegge_arten_uebersicht(conn)}
     finally:
