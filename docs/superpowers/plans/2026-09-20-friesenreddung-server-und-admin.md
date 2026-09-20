@@ -2352,13 +2352,8 @@ git commit -m "FriesenReddung: Admin-Oberflaeche, Doku, Changelog"
 | 6 Datenmodell | 2 |
 | 7 Wo die Prüfung läuft | 6 |
 | 8 Was der Admin bedient | 7, 8 |
-| 9 Abhängigkeiten | Task 5 (Ersatzarten); die MSFS-2020-Fackeln bleiben **offen**, s. unten |
+| 9 Abhängigkeiten | Task 5 (Ersatzarten) — keine offene Abhängigkeit |
 | 10 Offene Punkte | keine Aufgabe — absichtlich |
-
-**Eine Lücke, die stehenbleibt:** Die Fackeln sind für MSFS 2020 nicht im Katalog (Issue #43).
-Der Plan baut nichts dagegen — ein MSFS-2020-Pilot sieht bis zu jenem Prüflauf keine Fackel.
-Das ist kein Fehler des Plans, sondern eine Abhängigkeit, und sie gehört in den Changelog-Text
-nur dann, wenn sie bis zum Release nicht behoben ist.
 
 **Platzhalter:** keine. Jeder Schritt trägt Code oder einen Befehl.
 

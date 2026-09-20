@@ -344,10 +344,10 @@ Wasser", Kalendertermin, Push. Dazu:
 
 ## 9. Abhängigkeiten
 
-* **Die Fackeln sind für MSFS 2020 nicht im Katalog.** `FrsRauch_Signalorange` und
-  `FrsRauch_Hellblau` sind eigene Objekte der Brügge und stehen als aktiv für `msfs2024` und
-  `xplane12`; für `msfs2020` fehlt die Zeile. Ein Paket bedient beide MSFS — es fehlt der
-  Prüflauf, das ist **Issue #43**. Ohne ihn sieht ein MSFS-2020-Pilot keine Fackel.
+* **Die Fackeln laufen in allen drei Simulatoren** — geprüft und aktiviert.
+  `FrsRauch_Signalorange` und `FrsRauch_Hellblau` sind eigene Objekte der FriesenBrügge, die sie
+  selbst kennt (`friesenbruegge/msfs/bruegge.cpp`); dass im Katalog keine `msfs2020`-Zeile
+  steht, steuert hier nichts. **Keine Abhängigkeit.**
 * **Für den Normalfall keine Abhängigkeit:** Die vier Flugzeugarten sind in allen drei
   Simulatoren aktiv (s. Abschnitt 2). Nur die Sonderfälle brauchen die Auflösung je Simulator —
   **keine Bootsart** ist überall aktiv (`boot_klein`/`boot_gross` fehlen in MSFS 2024,
