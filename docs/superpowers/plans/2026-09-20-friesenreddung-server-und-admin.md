@@ -1092,3 +1092,1278 @@ Expected: PASS — beide Dateien, keine Regression im Melde-Endpunkt
 git add app/database.py app/main.py tests/test_reddung_objekte.py
 git commit -m "bruegge_soll kennt den Simulator -- eine Art, die dort keinen Titel hat, kommt gar nicht erst an"
 ```
+
+---
+
+### Task 5: Havarist und Fackeln als Brügge-Objekte
+
+**Files:**
+- Modify: `app/database.py` — `_DDL` (Spalte `bruegge_steht.hoehe_gemessen`), Migrationsliste,
+  `bruegge_steht_melden`, neue Funktionen `reddung_objekte_abgleichen`, `reddung_grund_lernen`
+- Modify: `app/main.py` — `hoehe_gemessen` aus der Meldung lesen
+- Test: `tests/test_reddung_objekte.py` (anfügen)
+
+**⚠ Zuerst ein Fund, der den Rest erst richtig macht:** `hoehe_gemessen` wird bisher **nirgends
+gespeichert**. Das Protokoll definiert es (Abschnitt 1), die X-Plane-Brügge sendet es, und der
+Server wirft es weg. Ohne die Spalte setzt eine ungemessene `0,0`-Meldung die Grundhöhe falsch —
+und zwar so, dass es aussieht wie ein Wattobjekt auf Meereshöhe.
+
+**Interfaces:**
+- Consumes: `bruegge_soll_setzen` mit `simulator` (Task 4), `bruegge_titel_fuer` (vorhanden),
+  `reddung_grund_merken` (Task 2), `app.reddung.HAVARIST`
+- Produces:
+  - `reddung_objekte_abgleichen(conn, ev: dict) -> list[str]` — die gesetzten Soll-IDs
+  - `reddung_grund_lernen(conn, ev: dict) -> bool`
+  - Konstanten `_REDDUNG_SIMULATOREN`, `_HAVARIST_VORGABE_ART`, `_HAVARIST_ERSATZ`,
+    `_GRUND_MESS_MAX_KM`
+
+- [ ] **Step 1: Write the failing test** (an `tests/test_reddung_objekte.py` anfügen)
+
+```python
+# --- Havarist, Fackeln, Grundhoehe ----------------------------------------
+
+from app.database import (
+    create_reddung_event, get_reddung_event, reddung_grund_lernen,
+    reddung_objekte_abgleichen, set_reddung_aufgenommen, set_reddung_gefunden,
+    set_reddung_aufgeloest, update_reddung_event,
+)
+
+SEKTOR = dict(sued=53.54, west=6.95, nord=53.90, ost=7.55)
+
+
+def _art(conn, art, simulatoren, titel="T"):
+    conn.execute("INSERT OR REPLACE INTO bruegge_art (art, bedeutung, status, angelegt_am) "
+                 "VALUES (?,?,'aktiv','2026-09-20T00:00:00Z')", (art, art))
+    for sim in simulatoren:
+        conn.execute(
+            "INSERT OR REPLACE INTO bruegge_katalog (simulator, titel, art, rang, status, quelle) "
+            "VALUES (?,?,?,1,'aktiv','bord')", (sim, f"{titel}-{sim}", art))
+
+
+def _ev(conn, **extra):
+    eid = create_reddung_event(conn, name="Reddung Probe", dtstart="2026-09-25T17:00:00Z",
+                               dtend="2026-09-25T22:00:00Z", **SEKTOR,
+                               havarist_lat=53.72, havarist_lon=7.25, **extra)
+    return get_reddung_event(conn, eid)
+
+
+def test_eine_art_fuer_alle_simulatoren_gibt_eine_zeile(conn):
+    """Der Normalfall -- flugzeug_echo laeuft ueberall."""
+    _art(conn, "flugzeug_echo", ("msfs2020", "msfs2024", "xplane12"))
+    ev = _ev(conn)
+    ids = reddung_objekte_abgleichen(conn, ev)
+    zeilen = conn.execute("SELECT id, art, simulator, auf_boden, gilt_bis FROM bruegge_soll "
+                          "ORDER BY id").fetchall()
+    assert len(zeilen) == 1 and zeilen[0][0] in ids
+    assert zeilen[0][1] == "flugzeug_echo"
+    assert zeilen[0][2] is None, "eine Art fuer alle braucht keinen Simulatorfilter"
+    assert zeilen[0][3] == 1, "OnGround wie bei den Booten (15.6.1)"
+    assert zeilen[0][4] == "2026-09-25T22:00:00Z", "laeuft mit dtend von selbst ab"
+
+
+def test_eine_luckenhafte_art_wird_je_simulator_ersetzt(conn):
+    """boot_klein gibt es in MSFS 2024 nicht -- dort muss eine andere Art einspringen,
+    sonst erscheint bei der Haelfte der Piloten stumm nichts."""
+    _art(conn, "boot_klein", ("msfs2020", "xplane12"))
+    _art(conn, "schnellboot", ("msfs2024",))
+    ev = _ev(conn, havarist_art="boot_klein")
+    reddung_objekte_abgleichen(conn, ev)
+    je_sim = dict(conn.execute(
+        "SELECT simulator, art FROM bruegge_soll WHERE id LIKE '%havarist%'").fetchall())
+    assert je_sim["msfs2024"] == "schnellboot"
+    assert je_sim["msfs2020"] == "boot_klein" and je_sim["xplane12"] == "boot_klein"
+
+
+def test_ohne_fund_gibt_es_keine_fackel(conn):
+    _art(conn, "flugzeug_echo", ("msfs2024",))
+    reddung_objekte_abgleichen(conn, _ev(conn))
+    assert conn.execute("SELECT count(*) FROM bruegge_soll WHERE art LIKE 'rauch%'").fetchone()[0] == 0
+
+
+def test_nach_dem_fund_steht_die_orange_fackel(conn):
+    _art(conn, "flugzeug_echo", ("msfs2024",))
+    _art(conn, "rauch_signalorange", ("msfs2024",))
+    ev = _ev(conn)
+    set_reddung_gefunden(conn, ev["id"], "2026-09-25T17:30:00Z", 111)
+    reddung_objekte_abgleichen(conn, get_reddung_event(conn, ev["id"]))
+    arten = [r[0] for r in conn.execute(
+        "SELECT art FROM bruegge_soll WHERE art LIKE 'rauch%'").fetchall()]
+    assert arten == ["rauch_signalorange"]
+
+
+def test_nach_der_aufnahme_wechselt_die_fackel_auf_hellblau(conn):
+    _art(conn, "flugzeug_echo", ("msfs2024",))
+    _art(conn, "rauch_signalorange", ("msfs2024",))
+    _art(conn, "rauch_hellblau", ("msfs2024",))
+    ev = _ev(conn)
+    set_reddung_gefunden(conn, ev["id"], "2026-09-25T17:30:00Z", 111)
+    reddung_objekte_abgleichen(conn, get_reddung_event(conn, ev["id"]))
+    set_reddung_aufgenommen(conn, ev["id"], "2026-09-25T17:50:00Z", 222)
+    reddung_objekte_abgleichen(conn, get_reddung_event(conn, ev["id"]))
+    arten = [r[0] for r in conn.execute(
+        "SELECT art FROM bruegge_soll WHERE art LIKE 'rauch%'").fetchall()]
+    assert arten == ["rauch_hellblau"], "orange darf nicht daneben stehenbleiben"
+
+
+def test_endet_der_abend_mit_dem_fund_wird_die_fackel_gleich_hellblau(conn):
+    """Orange heisst 'gefunden, noch nicht gerettet'. Ist nichts mehr zu tun, waere das
+    eine falsche Auskunft an alle, die noch in der Luft sind."""
+    _art(conn, "flugzeug_echo", ("msfs2024",))
+    _art(conn, "rauch_hellblau", ("msfs2024",))
+    ev = _ev(conn, aufnehmen_noetig=0)
+    set_reddung_gefunden(conn, ev["id"], "2026-09-25T17:30:00Z", 111)
+    reddung_objekte_abgleichen(conn, get_reddung_event(conn, ev["id"]))
+    arten = [r[0] for r in conn.execute(
+        "SELECT art FROM bruegge_soll WHERE art LIKE 'rauch%'").fetchall()]
+    assert arten == ["rauch_hellblau"]
+
+
+def test_nach_der_aufloesung_ist_alles_weg(conn):
+    _art(conn, "flugzeug_echo", ("msfs2024",))
+    ev = _ev(conn)
+    reddung_objekte_abgleichen(conn, ev)
+    set_reddung_aufgeloest(conn, ev["id"], "2026-09-25T22:00:00Z")
+    reddung_objekte_abgleichen(conn, get_reddung_event(conn, ev["id"]))
+    assert conn.execute("SELECT count(*) FROM bruegge_soll").fetchone()[0] == 0
+
+
+def test_die_grundhoehe_kommt_aus_einer_gemessenen_meldung(conn):
+    _art(conn, "flugzeug_echo", ("msfs2024",))
+    ev = _ev(conn)
+    ids = reddung_objekte_abgleichen(conn, ev)
+    conn.execute("INSERT INTO bruegge_positions (cid, lat, lon, gemeldet_am, simulator) "
+                 "VALUES (111, 53.73, 7.26, '2026-09-25T17:05:00Z', 'msfs2024')")
+    conn.execute("INSERT INTO bruegge_steht (kennung, id, cid, zustand, hoehe_ft, "
+                 "hoehe_gemessen, gemeldet_am) VALUES ('k1', ?, 111, 'steht', 20.0, 1, "
+                 "'2026-09-25T17:05:00Z')", (ids[0],))
+    assert reddung_grund_lernen(conn, get_reddung_event(conn, ev["id"])) is True
+    ev2 = get_reddung_event(conn, ev["id"])
+    assert ev2["havarist_grund_ft"] == 20.0 and ev2["havarist_grund_quelle"] == "gemessen"
+
+
+def test_eine_UNGEMESSENE_meldung_setzt_nichts(conn):
+    """⚠ Der X-Plane-Fall: Ohne geladenes Gelaende bekommt das Objekt Meereshoehe, und die
+    Meldung sieht genau wie ein Wattobjekt auf 0,0 ft aus (PROTOKOLL, hoehe_gemessen)."""
+    _art(conn, "flugzeug_echo", ("xplane12",))
+    ev = _ev(conn)
+    ids = reddung_objekte_abgleichen(conn, ev)
+    conn.execute("INSERT INTO bruegge_positions (cid, lat, lon, gemeldet_am, simulator) "
+                 "VALUES (111, 53.73, 7.26, '2026-09-25T17:05:00Z', 'xplane12')")
+    conn.execute("INSERT INTO bruegge_steht (kennung, id, cid, zustand, hoehe_ft, "
+                 "hoehe_gemessen, gemeldet_am) VALUES ('k1', ?, 111, 'steht', 0.0, 0, "
+                 "'2026-09-25T17:05:00Z')", (ids[0],))
+    assert reddung_grund_lernen(conn, get_reddung_event(conn, ev["id"])) is False
+    assert get_reddung_event(conn, ev["id"])["havarist_grund_ft"] is None
+
+
+def test_eine_meldung_von_weit_weg_setzt_nichts(conn):
+    """⚠ Am Bodensee gemessen: 2.106 ft statt 1.297 ft bei 691 km Abstand -- aus der Ferne
+    antwortet der Simulator aus einer groben Gelaendestufe, nicht aus geladenem Terrain."""
+    _art(conn, "flugzeug_echo", ("msfs2024",))
+    ev = _ev(conn)
+    ids = reddung_objekte_abgleichen(conn, ev)
+    conn.execute("INSERT INTO bruegge_positions (cid, lat, lon, gemeldet_am, simulator) "
+                 "VALUES (111, 47.65, 9.18, '2026-09-25T17:05:00Z', 'msfs2024')")
+    conn.execute("INSERT INTO bruegge_steht (kennung, id, cid, zustand, hoehe_ft, "
+                 "hoehe_gemessen, gemeldet_am) VALUES ('k1', ?, 111, 'steht', 2106.5, 1, "
+                 "'2026-09-25T17:05:00Z')", (ids[0],))
+    assert reddung_grund_lernen(conn, get_reddung_event(conn, ev["id"])) is False
+
+
+def test_die_meldung_traegt_hoehe_gemessen_in_die_tabelle():
+    """Verankert am Quelltext: Ohne dieses Feld ist der X-Plane-Vorbehalt oben nicht pruefbar."""
+    import pathlib
+    assert "hoehe_gemessen" in pathlib.Path("app/main.py").read_text(encoding="utf-8")
+    assert "hoehe_gemessen" in pathlib.Path("app/database.py").read_text(encoding="utf-8")
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `/home/claude/.venv-friesenspy/bin/python -m pytest tests/test_reddung_objekte.py -q`
+Expected: FAIL — `ImportError: cannot import name 'reddung_objekte_abgleichen'`
+
+- [ ] **Step 3: Write minimal implementation**
+
+`bruegge_steht` in `_DDL` um die Spalte erweitern, mit Kommentar:
+
+```sql
+    -- Ob `hoehe_ft` eine MESSUNG ist. X-Plane probt das Gelaende selbst und bekommt ohne
+    -- geladenes Terrain Meereshoehe -- die Meldung sieht dann genau wie ein Wattobjekt auf
+    -- 0,0 ft aus (PROTOKOLL.md, Abschnitt 1). MSFS sendet das Feld nicht, dort gilt 1.
+    -- NULL = alte Meldung, vor dieser Spalte.
+    hoehe_gemessen INTEGER,
+```
+
+Migration + Anwendung in `init_db` wie in Task 4. In `bruegge_steht_melden` das Feld mitschreiben
+(`hoehe_gemessen` aus dem Eintrag, Vorgabe `1`, wenn das Feld fehlt — so sendet MSFS es).
+In `app/main.py` an der Stelle, die `hoehe_ft=_bruegge_zahl(eintrag.get("hoehe_ft"))` übergibt,
+`hoehe_gemessen=eintrag.get("hoehe_gemessen")` ergänzen.
+
+Dann die Objektverwaltung:
+
+```python
+#: Die drei Simulatoren, für die ein Havarist gesetzt werden kann.
+_REDDUNG_SIMULATOREN = ("msfs2020", "msfs2024", "xplane12")
+
+#: Vorgabe-Art des Havaristen. Ein Fliegerverein sucht Flieger, und `flugzeug_echo` ist die
+#: einzige Kleinflugzeug-Art mit aktiven Titeln in ALLEN drei Simulatoren.
+_HAVARIST_VORGABE_ART = "flugzeug_echo"
+
+#: Ersatz je Art, wenn sie in einem Simulator keinen aktiven Titel hat. Ohne das erschiene das
+#: Objekt bei einem Teil der Piloten stumm nicht.
+_HAVARIST_ERSATZ = {
+    "boot_klein": ("schiff_segel", "schnellboot", "boot_gross"),
+    "boot_gross": ("schiff_segel", "schiff_tanker", "boot_klein"),
+    "schiff_segel": ("boot_klein", "schnellboot", "boot_gross"),
+    "schnellboot": ("boot_klein", "schiff_segel", "boot_gross"),
+    "segelflugzeug": ("flugzeug_echo",),
+    "flugzeug_klassik": ("flugzeug_echo",),
+}
+
+#: So weit darf der meldende Pilot höchstens weg sein, damit seine Höhenmeldung als Messung
+#: gilt. Belegt sind brauchbare Werte bis 200 km; der erste falsche lag bei 691 km (Bodensee,
+#: 2.106 statt 1.297 ft). Dazwischen ist eine Lücke — 200 km ist die belegte Grenze, nicht die
+#: gemessene Kante.
+_GRUND_MESS_MAX_KM = 200.0
+
+#: Die Fackel steht NEBEN dem Havaristen, nicht in ihm — sonst steckt die Rauchsäule im Wrack.
+_FACKEL_VERSATZ_GRAD = 0.0003    # ~33 m nach Norden
+
+
+def _art_je_simulator(conn: sqlite3.Connection, art: str) -> dict[str, str | None]:
+    """Welche Art ist in welchem Simulator setzbar? ``None`` = dort gibt es keine."""
+    ergebnis: dict[str, str | None] = {}
+    for sim in _REDDUNG_SIMULATOREN:
+        vorhanden = bruegge_titel_fuer(conn, sim)
+        if art in vorhanden:
+            ergebnis[sim] = art
+            continue
+        ergebnis[sim] = next((e for e in _HAVARIST_ERSATZ.get(art, ()) if e in vorhanden), None)
+    return ergebnis
+
+
+def _soll_zeilen_setzen(conn: sqlite3.Connection, basis_id: str, art: str,
+                        lat: float, lon: float, gilt_bis: str) -> list[str]:
+    """Eine Zeile, wenn die Art überall geht — sonst eine je Simulator.
+
+    Eine Zeile mit ``simulator = NULL`` ist der Normalfall und spart drei Einträge; die
+    Aufspaltung entsteht nur bei einer lückenhaften Art.
+    """
+    je_sim = _art_je_simulator(conn, art)
+    ids: list[str] = []
+    if len(set(je_sim.values())) == 1 and art in set(je_sim.values()):
+        bruegge_soll_setzen(conn, basis_id, art, lat, lon, auf_boden=True,
+                            gilt_bis=gilt_bis, simulator=None)
+        return [basis_id]
+    for sim, gewaehlt in je_sim.items():
+        sid = f"{basis_id}-{sim}"
+        if gewaehlt is None:
+            bruegge_soll_loeschen(conn, sid)
+            continue
+        bruegge_soll_setzen(conn, sid, gewaehlt, lat, lon, auf_boden=True,
+                            gilt_bis=gilt_bis, simulator=sim)
+        ids.append(sid)
+    bruegge_soll_loeschen(conn, basis_id)
+    return ids
+
+
+def reddung_objekte_abgleichen(conn: sqlite3.Connection, ev: dict) -> list[str]:
+    """Havarist und Fackel in ``bruegge_soll`` auf den Stand des Events bringen.
+
+    Vollständiger Abgleich, kein Strom von Befehlen (PROTOKOLL.md, Abschnitt 2): Die Funktion
+    darf in jedem Poller-Takt laufen und schreibt denselben Zustand.
+
+    Die Fackel folgt den Latches — orange nach dem Fund, hellblau nach der Aufnahme, und gleich
+    hellblau, wenn der Abend mit dem Fund endet.
+    """
+    basis = f"reddung-{ev['id']}"
+    hav_id, fackel_id = f"{basis}-havarist", f"{basis}-fackel"
+    alle_ids = [hav_id, fackel_id] + [f"{hav_id}-{s}" for s in _REDDUNG_SIMULATOREN] \
+        + [f"{fackel_id}-{s}" for s in _REDDUNG_SIMULATOREN]
+
+    if ev.get("aufgeloest_am") or ev.get("havarist_lat") is None:
+        for sid in alle_ids:
+            bruegge_soll_loeschen(conn, sid)
+        return []
+
+    lat, lon = float(ev["havarist_lat"]), float(ev["havarist_lon"])
+    gilt_bis = ev["dtend"]
+    ids = _soll_zeilen_setzen(conn, hav_id, ev.get("havarist_art") or _HAVARIST_VORGABE_ART,
+                              lat, lon, gilt_bis)
+
+    fackel = None
+    if ev.get("aufgenommen_am") or (ev.get("gefunden_am") and not ev.get("aufnehmen_noetig")):
+        fackel = "rauch_hellblau"
+    elif ev.get("gefunden_am"):
+        fackel = "rauch_signalorange"
+    if fackel:
+        ids += _soll_zeilen_setzen(conn, fackel_id, fackel,
+                                   lat + _FACKEL_VERSATZ_GRAD, lon, gilt_bis)
+    else:
+        for sid in [fackel_id] + [f"{fackel_id}-{s}" for s in _REDDUNG_SIMULATOREN]:
+            bruegge_soll_loeschen(conn, sid)
+    return ids
+
+
+def reddung_grund_lernen(conn: sqlite3.Connection, ev: dict) -> bool:
+    """Die Geländehöhe an der Unglücksstelle aus einer Brügge-Rückmeldung lernen.
+
+    Zwei Vorbehalte aus PROTOKOLL.md, und beide sind Fallstricke:
+
+    * ``hoehe_gemessen = 0`` heißt „die Höhe ist geraten" (X-Plane ohne geladenes Gelände).
+      Solche Meldungen sehen genau wie ein Wattobjekt auf 0,0 ft aus.
+    * Aus der Ferne antwortet der Simulator aus einer groben Geländestufe — am Bodensee
+      2.106 ft statt 1.297 ft bei 691 km. Deshalb muss der meldende Pilot nah sein.
+
+    Geprüft wird gegen seine AKTUELLE Position aus ``bruegge_positions``: Die Brügge meldet im
+    Sekundentakt, Meldung und Position liegen also Sekunden auseinander.
+    """
+    from app.geo import haversine
+    basis = f"reddung-{ev['id']}-havarist"
+    rows = conn.execute(
+        "SELECT s.hoehe_ft, s.hoehe_gemessen, p.lat, p.lon FROM bruegge_steht s "
+        "JOIN bruegge_positions p ON p.cid = s.cid "
+        "WHERE s.zustand = 'steht' AND (s.id = ? OR s.id LIKE ?) AND s.hoehe_ft IS NOT NULL "
+        "ORDER BY s.gemeldet_am DESC", (basis, basis + "-%")).fetchall()
+    for hoehe, gemessen, plat, plon in rows:
+        if gemessen == 0:
+            continue
+        if haversine(float(plat), float(plon),
+                     float(ev["havarist_lat"]), float(ev["havarist_lon"])) > _GRUND_MESS_MAX_KM:
+            continue
+        return reddung_grund_merken(conn, ev["id"], float(hoehe), "gemessen")
+    return False
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `/home/claude/.venv-friesenspy/bin/python -m pytest tests/test_reddung_objekte.py tests/test_bruegge_endpunkt.py tests/test_bruegge_festhalten.py -q`
+Expected: PASS — keine Regression an den vorhandenen Brügge-Tests
+
+- [ ] **Step 5: Gegenprobe**
+
+1. `if gemessen == 0: continue` entfernen — erwartet rot in
+   `test_eine_UNGEMESSENE_meldung_setzt_nichts`.
+2. Die Abstandsprüfung entfernen — erwartet rot in
+   `test_eine_meldung_von_weit_weg_setzt_nichts`.
+3. Im Fackelzweig den `else`-Ast (Löschen) entfernen — erwartet rot in
+   `test_nach_der_aufnahme_wechselt_die_fackel_auf_hellblau`
+   (dann stehen orange **und** hellblau).
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add app/database.py app/main.py tests/test_reddung_objekte.py
+git commit -m "FriesenReddung: Havarist und Fackeln als Bruegge-Objekte, Grundhoehe aus der Rueckmeldung"
+```
+
+---
+
+### Task 6: Der Poller-Job
+
+**Files:**
+- Modify: `app/poller.py` — Job-Registrierung bei den anderen `interval`-Jobs, neue Methode
+  `_check_reddung`
+- Test: `tests/test_reddung_poller.py`
+
+**Interfaces:**
+- Consumes: alles aus Task 1–5, `canonicalize_legs`, `get_push_subscriptions_for_events`,
+  `send_web_push`, `self.broadcast_notify`
+- Produces: `Poller._check_reddung()` — die Methode wird im Test direkt aufgerufen
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/test_reddung_poller.py
+# -*- coding: utf-8 -*-
+"""Der Poller-Job der FriesenReddung: Fund, Aufnahme, Einlieferung, Verfall (20.09.2026)."""
+from __future__ import annotations
+
+import asyncio
+import math
+
+import pytest
+
+from app.database import (
+    create_reddung_event, get_connection, get_reddung_event, init_db, upsert_pilot,
+)
+from app.poller import Poller
+
+LAT, LON = 53.72, 7.25
+G_LAT = 1.0 / 111.32
+G_LON = 1.0 / (111.32 * math.cos(math.radians(LAT)))
+
+
+@pytest.fixture()
+def db(tmp_path):
+    p = str(tmp_path / "t.db")
+    init_db(p)
+    return p
+
+
+def _event(pfad, **extra):
+    c = get_connection(pfad)
+    try:
+        eid = create_reddung_event(
+            c, name="Reddung Probe", dtstart="2026-09-25T17:00:00Z",
+            dtend="2026-09-25T22:00:00Z",
+            sued=LAT - 2 * G_LAT, west=LON - 2 * G_LON,
+            nord=LAT + 2 * G_LAT, ost=LON + 2 * G_LON,
+            havarist_lat=LAT, havarist_lon=LON, havarist_grund_ft=10.0, **extra)
+        c.commit()
+        return eid
+    finally:
+        c.close()
+
+
+def _punkte(pfad, cid, punkte, alt=900, gs=110):
+    c = get_connection(pfad)
+    try:
+        upsert_pilot(c, {"cid": cid, "name": f"Pilot {cid}"})
+        for lat, lon, ts in punkte:
+            c.execute("INSERT INTO position_history (cid, callsign, latitude, longitude, "
+                      "altitude, groundspeed, heading, ts) VALUES (?,?,?,?,?,?,?,?)",
+                      (cid, f"FRS{cid}", lat, lon, alt, gs, 90, ts))
+        c.commit()
+    finally:
+        c.close()
+
+
+def _lauf(pfad):
+    # Der Konstruktor nimmt db_path als erstes Argument (app/poller.py:413). Der Scheduler
+    # wird NICHT gestartet -- der Test ruft die Methode direkt, sonst laufen 20 fremde Jobs mit.
+    p = Poller(pfad, callsign_prefix="FRS")
+    asyncio.run(p._check_reddung())
+
+
+def test_der_ueberflug_latcht_den_fund(db):
+    eid = _event(db)
+    _punkte(db, 111, [(LAT, LON - 2 * G_LON, "2026-09-25T17:10:00Z"),
+                      (LAT, LON, "2026-09-25T17:10:30Z")])
+    _lauf(db)
+    c = get_connection(db)
+    try:
+        ev = get_reddung_event(c, eid)
+    finally:
+        c.close()
+    assert ev["gefunden_von"] == 111 and ev["gefunden_am"] == "2026-09-25T17:10:30Z"
+
+
+def test_der_fund_wird_mit_dem_segmentENDE_gestempelt(db):
+    """Der Augenblick, in dem der Ueberflug BEWIESEN ist -- nie ein fruehrerer."""
+    eid = _event(db)
+    _punkte(db, 111, [(LAT, LON - 2 * G_LON, "2026-09-25T17:10:00Z"),
+                      (LAT, LON, "2026-09-25T17:10:30Z")])
+    _lauf(db)
+    c = get_connection(db)
+    try:
+        assert get_reddung_event(c, eid)["gefunden_am"] == "2026-09-25T17:10:30Z"
+    finally:
+        c.close()
+
+
+def test_der_ueberflug_des_finders_ist_nicht_gleich_die_aufnahme(db):
+    """Sonst waere jeder Fund sofort eine Rettung."""
+    eid = _event(db, landung_noetig=0)
+    _punkte(db, 111, [(LAT, LON - 2 * G_LON, "2026-09-25T17:10:00Z"),
+                      (LAT, LON, "2026-09-25T17:10:30Z")], gs=25)
+    _lauf(db)
+    c = get_connection(db)
+    try:
+        ev = get_reddung_event(c, eid)
+    finally:
+        c.close()
+    assert ev["gefunden_am"] is not None
+    assert ev["aufgenommen_am"] is None
+
+
+def test_ein_schwebeflug_nach_dem_fund_nimmt_auf(db):
+    eid = _event(db, landung_noetig=0)
+    _punkte(db, 111, [(LAT, LON - 2 * G_LON, "2026-09-25T17:10:00Z"),
+                      (LAT, LON, "2026-09-25T17:10:30Z")])
+    _lauf(db)
+    _punkte(db, 222, [(LAT, LON, "2026-09-25T17:40:00Z"),
+                      (LAT, LON, "2026-09-25T17:40:15Z")], alt=200, gs=10)
+    _lauf(db)
+    c = get_connection(db)
+    try:
+        assert get_reddung_event(c, eid)["aufgenommen_von"] == 222
+    finally:
+        c.close()
+
+
+def test_ein_schwebeflug_genuegt_NICHT_wenn_eine_landung_verlangt_ist(db):
+    eid = _event(db, landung_noetig=1)
+    _punkte(db, 111, [(LAT, LON - 2 * G_LON, "2026-09-25T17:10:00Z"),
+                      (LAT, LON, "2026-09-25T17:10:30Z")])
+    _lauf(db)
+    _punkte(db, 222, [(LAT, LON, "2026-09-25T17:40:00Z"),
+                      (LAT, LON, "2026-09-25T17:40:15Z")], alt=200, gs=10)
+    _lauf(db)
+    c = get_connection(db)
+    try:
+        assert get_reddung_event(c, eid)["aufgenommen_am"] is None
+    finally:
+        c.close()
+
+
+def test_ein_vollstopp_nimmt_auch_mit_verlangter_landung_auf(db):
+    eid = _event(db, landung_noetig=1)
+    _punkte(db, 111, [(LAT, LON - 2 * G_LON, "2026-09-25T17:10:00Z"),
+                      (LAT, LON, "2026-09-25T17:10:30Z")])
+    _lauf(db)
+    _punkte(db, 222, [(LAT, LON, "2026-09-25T17:40:00Z"),
+                      (LAT, LON, "2026-09-25T17:40:15Z")], alt=30, gs=0)
+    _lauf(db)
+    c = get_connection(db)
+    try:
+        assert get_reddung_event(c, eid)["aufgenommen_von"] == 222
+    finally:
+        c.close()
+
+
+def test_endet_der_abend_mit_dem_fund_wird_nichts_mehr_geprueft(db):
+    eid = _event(db, aufnehmen_noetig=0)
+    _punkte(db, 111, [(LAT, LON - 2 * G_LON, "2026-09-25T17:10:00Z"),
+                      (LAT, LON, "2026-09-25T17:10:30Z")])
+    _lauf(db)
+    _punkte(db, 222, [(LAT, LON, "2026-09-25T17:40:00Z"),
+                      (LAT, LON, "2026-09-25T17:40:15Z")], alt=30, gs=0)
+    _lauf(db)
+    c = get_connection(db)
+    try:
+        ev = get_reddung_event(c, eid)
+    finally:
+        c.close()
+    assert ev["gefunden_am"] is not None and ev["aufgenommen_am"] is None
+    assert ev["aufgeloest_am"] is not None, "der Fund loest die Lage auf"
+
+
+def test_bei_dtend_wird_aufgeloest_auch_ohne_fund(db):
+    eid = _event(db)
+    c = get_connection(db)
+    try:
+        c.execute("UPDATE reddung_events SET dtend = '2026-09-25T17:05:00Z' WHERE id = ?", (eid,))
+        c.commit()
+    finally:
+        c.close()
+    _lauf(db)
+    c = get_connection(db)
+    try:
+        ev = get_reddung_event(c, eid)
+    finally:
+        c.close()
+    assert ev["aufgeloest_am"] is not None and ev["gefunden_am"] is None
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `/home/claude/.venv-friesenspy/bin/python -m pytest tests/test_reddung_poller.py -q`
+Expected: FAIL — `AttributeError: 'Poller' object has no attribute '_check_reddung'`
+
+- [ ] **Step 3: Write minimal implementation**
+
+Job registrieren, bei `transport_event_check`:
+
+```python
+        # FriesenReddung: Fund, Aufnahme, Einlieferung latchen und die Fackel tauschen
+        self._scheduler.add_job(
+            self._check_reddung,
+            "interval",
+            seconds=60,
+            id="reddung_check",
+        )
+```
+
+Und die Methode, nach `_check_transport_events`:
+
+```python
+    async def _check_reddung(self) -> None:
+        """Periodisch: FriesenReddung latchen — Fund, Aufnahme, Einlieferung, Auflösung.
+
+        Die vier Stufen sind Latches (``_set_reddung_latch``): Jede wird höchstens einmal
+        gesetzt, und die Bedingung ``IS NULL`` im UPDATE macht das auch bei zwei gleichzeitigen
+        Takten sicher.
+
+        ⚠ **Die Reihenfolge ist keine Geschmacksfrage.** Der Fund muss vor der Aufnahme
+        gelatcht sein, weil fürs Aufnehmen nur Spurenpunkte NACH ``gefunden_am`` zählen — sonst
+        wäre der Überflug des Finders gleichzeitig die Rettung. Und der Objektabgleich läuft
+        ZULETZT, damit die Fackel den Stand nach allen Latches zeigt.
+        """
+        try:
+            from datetime import datetime, timedelta, timezone
+            from app import reddung as rd
+            from app.abdeckung import abdeckung
+            from app.database import (
+                canonicalize_legs, clear_reddung_aufnahme, get_push_subscriptions_for_events,
+                get_reddung_event, list_reddung_events, reddung_grund_lernen,
+                reddung_objekte_abgleichen, reddung_spuren, set_reddung_aufgeloest,
+                set_reddung_aufgenommen, set_reddung_eingeliefert, set_reddung_gefunden,
+            )
+
+            now_dt = datetime.now(timezone.utc)
+            now = now_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+            conn = get_connection(self.db_path)
+            pushes: list[dict] = []
+            try:
+                for ev in list_reddung_events(conn, since=None):
+                    if now < (ev.get("dtstart") or "") or ev.get("aufgeloest_am"):
+                        continue
+                    name = ev.get("name") or "FriesenReddung"
+                    push_on = bool(ev.get("push_enabled"))
+                    ziel = rd.havarist_ziel(ev)
+                    if ziel is None:
+                        continue
+
+                    # Die Grundhöhe zuerst — sie verschiebt die Höhenschranke aller folgenden
+                    # Prüfungen. Wer sie danach lernt, wertet einen Takt mit der falschen.
+                    if reddung_grund_lernen(conn, ev):
+                        ev = get_reddung_event(conn, ev["id"])
+
+                    # 1 — Fund
+                    if not ev.get("gefunden_am"):
+                        spuren = reddung_spuren(conn, ev["dtstart"], min(now, ev["dtend"]))
+                        erg = abdeckung(spuren, [ziel], rd.fenster_suchen(ev))
+                        t = erg.treffer.get(rd.HAVARIST)
+                        if t and set_reddung_gefunden(conn, ev["id"], t.ts, t.cid):
+                            ev = get_reddung_event(conn, ev["id"])
+                            if push_on:
+                                pushes.append({"title": name,
+                                               "body": "Der Havarist ist gefunden! 🚨",
+                                               "url": "/"})
+
+                    # 2 — Aufnehmen (nur Punkte NACH dem Fund)
+                    if ev.get("gefunden_am") and ev.get("aufnehmen_noetig") \
+                            and not ev.get("aufgenommen_am"):
+                        spuren = reddung_spuren(conn, ev["dtstart"], min(now, ev["dtend"]),
+                                                ab=ev["gefunden_am"])
+                        erg = abdeckung(spuren, [ziel], rd.fenster_aufnehmen(ev))
+                        t = erg.treffer.get(rd.HAVARIST)
+                        if t and set_reddung_aufgenommen(conn, ev["id"], t.ts, t.cid):
+                            ev = get_reddung_event(conn, ev["id"])
+                            if push_on:
+                                pushes.append({"title": name,
+                                               "body": "Aufgenommen — jetzt einliefern!",
+                                               "url": "/"})
+
+                    # 3 — Aufnahme verfallen lassen, wenn der Aufnehmende weg ist
+                    if ev.get("aufgenommen_am") and not ev.get("eingeliefert_am") \
+                            and ev.get("aufnahme_verfaellt"):
+                        letzte = conn.execute(
+                            "SELECT max(ts) FROM position_history WHERE cid = ?",
+                            (ev["aufgenommen_von"],)).fetchone()[0]
+                        grenze = (now_dt - timedelta(minutes=_REDDUNG_SCHONFRIST_MIN)) \
+                            .strftime("%Y-%m-%dT%H:%M:%SZ")
+                        if not letzte or letzte < grenze:
+                            clear_reddung_aufnahme(conn, ev["id"])
+                            ev = get_reddung_event(conn, ev["id"])
+                            if push_on:
+                                pushes.append({"title": name,
+                                               "body": "Die Rettung ist wieder offen.",
+                                               "url": "/"})
+
+                    # 4 — Einliefern: erste Landung des Aufnehmenden nach der Aufnahme
+                    if ev.get("aufgenommen_am") and not ev.get("eingeliefert_am"):
+                        legs = canonicalize_legs(conn, start=ev["aufgenommen_am"], end=ev["dtend"],
+                                                 cids=[ev["aufgenommen_von"]])
+                        gelandet = [l for l in legs if (l.get("arrival") or "").strip()]
+                        if gelandet:
+                            leg = gelandet[0]
+                            if set_reddung_eingeliefert(conn, ev["id"], leg.get("logoff_time") or now,
+                                                        ev["aufgenommen_von"],
+                                                        (leg.get("arrival") or "").upper()):
+                                ev = get_reddung_event(conn, ev["id"])
+                                if push_on:
+                                    pushes.append({"title": name,
+                                                   "body": f"Eingeliefert in {leg.get('arrival')} ✅",
+                                                   "url": "/"})
+
+                    # 5 — Auflösen: Ziel erreicht oder Zeit vorbei
+                    fertig = bool(ev.get("eingeliefert_am")) or (
+                        bool(ev.get("gefunden_am")) and not ev.get("aufnehmen_noetig"))
+                    if fertig or now >= (ev.get("dtend") or ""):
+                        if set_reddung_aufgeloest(conn, ev["id"], now):
+                            ev = get_reddung_event(conn, ev["id"])
+                            if push_on and not fertig:
+                                pushes.append({"title": name,
+                                               "body": "Vorbei — der Havarist blieb unentdeckt.",
+                                               "url": "/"})
+
+                    # 6 — Objekte ZULETZT: die Fackel zeigt den Stand nach allen Latches
+                    reddung_objekte_abgleichen(conn, ev)
+                subscriptions = get_push_subscriptions_for_events(conn) if pushes else []
+                conn.commit()
+            finally:
+                conn.close()
+            for payload in pushes:
+                self.broadcast_notify("events", None, payload)
+            if pushes and subscriptions and self.vapid_private_key:
+                for payload in pushes:
+                    asyncio.create_task(send_web_push(
+                        self.vapid_private_key, self.vapid_contact_email, self.db_path,
+                        subscriptions, payload, label="Reddung",
+                    ))
+        except Exception:
+            logger.exception("Error in _check_reddung")
+```
+
+Dazu oben in `app/poller.py` bei den anderen Modulkonstanten:
+
+```python
+#: Schonfrist, bis die Aufnahme eines verschwundenen Piloten verfällt. Ein Absturz zum Desktop
+#: mit Wiederanmeldung ist im Simulator Alltag — ohne sie reichte ein zweiminütiger Aussetzer
+#: die Rettung an jemand anderen weiter. ⚠ Die Zahl ist GESCHÄTZT, nicht gemessen; nach dem
+#: ersten Abend gegen `position_history` prüfen (Spec, offener Punkt 4).
+_REDDUNG_SCHONFRIST_MIN = 10
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `/home/claude/.venv-friesenspy/bin/python -m pytest tests/test_reddung_poller.py -q`
+Expected: PASS, 8 Tests
+
+- [ ] **Step 5: Gegenprobe**
+
+1. Im Aufnahme-Zweig `ab=ev["gefunden_am"]` entfernen — erwartet rot in
+   `test_der_ueberflug_des_finders_ist_nicht_gleich_die_aufnahme`.
+2. Den Objektabgleich (Schritt 6) VOR die Latches ziehen — erwartet rot in
+   `tests/test_reddung_objekte.py::test_nach_dem_fund_steht_die_orange_fackel`, sobald der
+   Poller-Test denselben Ablauf fährt. (Nur wenn dieser Test hier scheitert: Reihenfolge prüfen.)
+3. `ev.get("aufnehmen_noetig")` im Aufnahme-Zweig entfernen — erwartet rot in
+   `test_endet_der_abend_mit_dem_fund_wird_nichts_mehr_geprueft`.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add app/poller.py tests/test_reddung_poller.py
+git commit -m "FriesenReddung: Poller latcht Fund, Aufnahme, Einlieferung und Aufloesung"
+```
+
+---
+
+### Task 7: Admin-Endpunkte
+
+**Files:**
+- Modify: `app/main.py` — Importe erweitern, sechs Endpunkte hinter den Transport-Endpunkten
+- Test: `tests/test_reddung_api.py`
+
+**Interfaces:**
+- Consumes: `require_admin`, `_validate_event_times`, `get_settings`, alles aus Task 2/3/5
+- Produces:
+  - `GET /api/admin/reddung/events` → `{"events": [ {…ev, "stand": {…}} ]}`
+  - `POST /api/admin/reddung/events` → `{"status": "ok", "id": int}`
+  - `POST /api/admin/reddung/events/{event_id}` → `{"status": "ok"}`
+  - `DELETE /api/admin/reddung/events/{event_id}` → `{"status": "ok"}`
+  - `POST /api/admin/reddung/events/{event_id}/push` → `{"status": "ok", "push_enabled": bool}`
+  - `POST /api/admin/reddung/events/{event_id}/aufnahme-freigeben` → `{"status": "ok"}`
+
+**Kein öffentlicher Endpunkt in dieser Runde.** Karte und Kniebrett kommen später; bis dahin
+gibt es nichts, was ein Pilot abfragen könnte, und damit auch keine neue Zeile in
+`tests/test_api_schutz.py::BEWUSST_OFFEN`.
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/test_reddung_api.py
+# -*- coding: utf-8 -*-
+"""Die Admin-Endpunkte der FriesenReddung (20.09.2026).
+
+Der wichtigste Test ist der letzte: Die Koordinate des Havaristen steht im Admin (dort sitzt,
+wer das Event macht) -- aber der Stand, der spaeter in eine Pilotenansicht wandert, enthaelt
+sie nicht. Das ist die Kernanforderung aus #21.
+"""
+from __future__ import annotations
+
+import pytest
+from fastapi.testclient import TestClient
+
+
+@pytest.fixture()
+def client(tmp_path, monkeypatch):
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "t.db"))
+    monkeypatch.setenv("ADMIN_PASSWORD", "geheim")
+    monkeypatch.setenv("SECRET_KEY", "x" * 32)
+    from app.config import get_settings
+    get_settings.cache_clear()
+    import importlib
+    from app import main as m
+    importlib.reload(m)
+    c = TestClient(m.app)
+    c.post("/api/admin/login", json={"password": "geheim"})
+    return c
+
+
+SEKTOR = {"sued": 53.54, "west": 6.95, "nord": 53.90, "ost": 7.55}
+
+
+def test_ohne_anmeldung_geht_nichts(tmp_path, monkeypatch):
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "t2.db"))
+    monkeypatch.setenv("ADMIN_PASSWORD", "geheim")
+    monkeypatch.setenv("SECRET_KEY", "x" * 32)
+    from app.config import get_settings
+    get_settings.cache_clear()
+    import importlib
+    from app import main as m
+    importlib.reload(m)
+    roh = TestClient(m.app)
+    assert roh.get("/api/admin/reddung/events").status_code == 401
+
+
+def test_anlegen_lesen_aendern_loeschen(client):
+    r = client.post("/api/admin/reddung/events",
+                    json={"name": "Reddung Probe", "dtstart": "2026-09-25T17:00:00Z", **SEKTOR})
+    assert r.status_code == 200
+    eid = r.json()["id"]
+    liste = client.get("/api/admin/reddung/events").json()["events"]
+    assert liste[0]["name"] == "Reddung Probe"
+    assert liste[0]["stand"]["zellen"] > 0
+    assert client.post(f"/api/admin/reddung/events/{eid}",
+                       json={"havarist_lat": 53.72, "havarist_lon": 7.25,
+                             "havarist_art": "flugzeug_echo"}).status_code == 200
+    assert client.get("/api/admin/reddung/events").json()["events"][0]["havarist_lat"] == 53.72
+    assert client.delete(f"/api/admin/reddung/events/{eid}").status_code == 200
+    assert client.get("/api/admin/reddung/events").json()["events"] == []
+
+
+def test_ein_sektor_ausserhalb_des_sektors_wird_abgewiesen(client):
+    """Sued ueber Nord ergibt ein Rechteck mit negativer Hoehe -- das Raster waere leer."""
+    r = client.post("/api/admin/reddung/events",
+                    json={"name": "Kaputt", "dtstart": "2026-09-25T17:00:00Z",
+                          "sued": 53.9, "west": 6.95, "nord": 53.54, "ost": 7.55})
+    assert r.status_code == 400
+
+
+def test_ein_riesiger_sektor_wird_abgewiesen(client):
+    """Sonst legt ein Verrutschen auf der Karte ein Raster mit Millionen Zellen an und der
+    Poller-Takt bleibt stehen."""
+    r = client.post("/api/admin/reddung/events",
+                    json={"name": "Zu gross", "dtstart": "2026-09-25T17:00:00Z",
+                          "sued": 48.0, "west": 5.0, "nord": 55.0, "ost": 15.0})
+    assert r.status_code == 400
+
+
+def test_push_umschalten(client):
+    eid = client.post("/api/admin/reddung/events",
+                      json={"name": "P", "dtstart": "2026-09-25T17:00:00Z", **SEKTOR}).json()["id"]
+    r = client.post(f"/api/admin/reddung/events/{eid}/push", json={"enabled": False})
+    assert r.json()["push_enabled"] is False
+
+
+def test_aufnahme_freigeben(client):
+    """Der Knopf, den es unabhaengig von der Automatik geben muss."""
+    from app.database import get_connection, set_reddung_aufgenommen
+    from app.config import get_settings
+    eid = client.post("/api/admin/reddung/events",
+                      json={"name": "A", "dtstart": "2026-09-25T17:00:00Z", **SEKTOR}).json()["id"]
+    c = get_connection(get_settings().DB_PATH)
+    set_reddung_aufgenommen(c, eid, "2026-09-25T17:50:00Z", 222)
+    c.commit(); c.close()
+    assert client.post(f"/api/admin/reddung/events/{eid}/aufnahme-freigeben").status_code == 200
+    ev = client.get("/api/admin/reddung/events").json()["events"][0]
+    assert ev["aufgenommen_am"] is None
+
+
+def test_der_stand_traegt_die_koordinate_nicht(client):
+    """⚠ Im Admin-Event steht sie (dort sitzt der Veranstalter). Im `stand` nicht -- der ist
+    die Vorlage fuer die spaetere Pilotenansicht."""
+    import json
+    eid = client.post("/api/admin/reddung/events",
+                      json={"name": "V", "dtstart": "2026-09-25T17:00:00Z", **SEKTOR}).json()["id"]
+    client.post(f"/api/admin/reddung/events/{eid}",
+                json={"havarist_lat": 53.72, "havarist_lon": 7.25})
+    ev = client.get("/api/admin/reddung/events").json()["events"][0]
+    assert ev["havarist_lat"] == 53.72
+    assert "53.72" not in json.dumps(ev["stand"]) and "7.25" not in json.dumps(ev["stand"])
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `/home/claude/.venv-friesenspy/bin/python -m pytest tests/test_reddung_api.py -q`
+Expected: FAIL — 404 statt 200/401
+
+- [ ] **Step 3: Write minimal implementation**
+
+```python
+#: Größter erlaubter Sektor. 40 x 40 km ist die Vorgabe; 200 km Kante sind 40.000 Zellen bei
+#: 1-km-Raster und damit noch rechenbar. Ohne Grenze legt ein Verrutschen auf der Karte ein
+#: Raster mit Millionen Zellen an, und der Poller-Takt bleibt stehen.
+_REDDUNG_SEKTOR_MAX_KM = 200.0
+
+
+def _validate_reddung_sektor(body: dict) -> str | None:
+    from app.geo import haversine
+    try:
+        sued, west = float(body["sued"]), float(body["west"])
+        nord, ost = float(body["nord"]), float(body["ost"])
+    except (KeyError, TypeError, ValueError):
+        return "Sektor unvollständig (sued/west/nord/ost)"
+    if nord <= sued or ost <= west:
+        return "Sektor verdreht: nord muss über sued und ost über west liegen"
+    hoch = haversine(sued, west, nord, west)
+    breit = haversine(sued, west, sued, ost)
+    if max(hoch, breit) > _REDDUNG_SEKTOR_MAX_KM:
+        return (f"Sektor zu groß ({hoch:.0f} x {breit:.0f} km) — höchstens "
+                f"{_REDDUNG_SEKTOR_MAX_KM:.0f} km je Kante")
+    return None
+
+
+@app.get("/api/admin/reddung/events")
+async def admin_reddung_events(request: Request):
+    """Alle FriesenReddungen mit ihrem Stand. Die Koordinate des Havaristen steht dabei im
+    Event selbst — hier sitzt, wer das Event macht —, aber NICHT im `stand`."""
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        events = []
+        for ev in list_reddung_events(conn):
+            events.append({**ev, "stand": compute_reddung_stand(conn, ev)})
+        return {"events": events}
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/reddung/events")
+async def admin_create_reddung_event(request: Request):
+    require_admin(request)
+    body = await request.json()
+    if not body.get("dtstart"):
+        raise HTTPException(status_code=400, detail="dtstart erforderlich")
+    terr = _validate_event_times(body.get("dtstart"), body.get("dtend"))
+    if terr:
+        raise HTTPException(status_code=400, detail=terr)
+    serr = _validate_reddung_sektor(body)
+    if serr:
+        raise HTTPException(status_code=400, detail=serr)
+    felder = {k: body[k] for k in (
+        "kante_km", "korridor_km", "hoehe_max_ft", "gs_max_kt", "gs_min_kt",
+        "havarist_lat", "havarist_lon", "havarist_art", "aufnehmen_noetig",
+        "landung_noetig", "aufnahme_verfaellt", "badge_name") if k in body}
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        eid = create_reddung_event(
+            conn, name=body.get("name") or "FriesenReddung", dtstart=body["dtstart"],
+            dtend=body.get("dtend") or None,
+            sued=body["sued"], west=body["west"], nord=body["nord"], ost=body["ost"],
+            source="manual", **felder)
+        conn.commit()
+        return {"status": "ok", "id": eid}
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/reddung/events/{event_id}")
+async def admin_update_reddung_event(request: Request, event_id: int):
+    require_admin(request)
+    body = await request.json()
+    if {"sued", "west", "nord", "ost"} <= set(body):
+        serr = _validate_reddung_sektor(body)
+        if serr:
+            raise HTTPException(status_code=400, detail=serr)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        if get_reddung_event(conn, event_id) is None:
+            raise HTTPException(status_code=404, detail="unbekannt")
+        try:
+            update_reddung_event(conn, event_id, **body)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        conn.commit()
+        return {"status": "ok"}
+    finally:
+        conn.close()
+
+
+@app.delete("/api/admin/reddung/events/{event_id}")
+async def admin_delete_reddung_event(request: Request, event_id: int):
+    """Löscht das Event UND nimmt seine Objekte aus `bruegge_soll` — sonst stünde ein Wrack
+    bis zum `gilt_bis` weiter im Simulator, zu dem es kein Event mehr gibt."""
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        ev = get_reddung_event(conn, event_id)
+        if ev is None:
+            raise HTTPException(status_code=404, detail="unbekannt")
+        reddung_objekte_abgleichen(conn, {**ev, "aufgeloest_am": "geloescht"})
+        delete_reddung_event(conn, event_id)
+        conn.commit()
+        return {"status": "ok"}
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/reddung/events/{event_id}/push")
+async def admin_reddung_push(request: Request, event_id: int):
+    require_admin(request)
+    body = await request.json()
+    an = bool(body.get("enabled"))
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        update_reddung_event(conn, event_id, push_enabled=1 if an else 0)
+        conn.commit()
+        return {"status": "ok", "push_enabled": an}
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/reddung/events/{event_id}/aufnahme-freigeben")
+async def admin_reddung_aufnahme_freigeben(request: Request, event_id: int):
+    """Die Aufnahme von Hand freigeben — der Knopf, den es unabhängig von der Automatik
+    geben muss, weil die im Einzelfall falsch liegt."""
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        ev = get_reddung_event(conn, event_id)
+        if ev is None:
+            raise HTTPException(status_code=404, detail="unbekannt")
+        clear_reddung_aufnahme(conn, event_id)
+        reddung_objekte_abgleichen(conn, get_reddung_event(conn, event_id))
+        conn.commit()
+        return {"status": "ok"}
+    finally:
+        conn.close()
+```
+
+Die neuen Namen in den `from app.database import (...)`-Block von `app/main.py` aufnehmen:
+`clear_reddung_aufnahme, compute_reddung_stand, create_reddung_event, delete_reddung_event,
+get_reddung_event, list_reddung_events, reddung_objekte_abgleichen, update_reddung_event`.
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `/home/claude/.venv-friesenspy/bin/python -m pytest tests/test_reddung_api.py tests/test_api_schutz.py -q`
+Expected: PASS — auch der Riegel-Test bleibt grün, weil alle neuen Pfade `require_admin` tragen
+
+- [ ] **Step 5: Gegenprobe**
+
+1. `require_admin(request)` in `admin_reddung_events` entfernen — erwartet rot in
+   `test_ohne_anmeldung_geht_nichts` **und** in
+   `tests/test_api_schutz.py::test_jeder_gatefreie_endpunkt_hat_eine_pruefung_oder_einen_grund`.
+2. `_validate_reddung_sektor` im Anlegen weglassen — erwartet rot in
+   `test_ein_sektor_ausserhalb_des_sektors_wird_abgewiesen` und
+   `test_ein_riesiger_sektor_wird_abgewiesen`.
+3. Im Löschen den `reddung_objekte_abgleichen`-Aufruf weglassen — kein Test fängt das;
+   **stattdessen** einen ergänzen, der nach dem Löschen `bruegge_soll` leer erwartet.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add app/main.py tests/test_reddung_api.py
+git commit -m "FriesenReddung: Admin-Endpunkte"
+```
+
+---
+
+### Task 8: Admin-Oberfläche, Doku, Changelog
+
+**Files:**
+- Modify: `app/static/admin.html` — Chip in der `typ-nav`, Panel `typ-reddung`, Formular, Liste
+- Modify: `docs/architecture.md` — Abschnitt zur Tabelle und zum Job
+- Modify: `COORDINATION.md` — Eintrag oben
+- Modify: `app/CHANGELOG.json` — ein Eintrag, `"highlight": false`
+- Test: `tests/test_reddung_api.py` (Quelltext-Wachen anfügen)
+
+**Die `typ-nav` ist schon vorbereitet.** In `app/static/admin.html` steht bei den Chips ein
+Kommentar: *„Kieker, Suchflug, Deichkontrolle und Baake kommen mit ihrem Typ dazu. Ein Chip ohne
+Inhalt dahinter ist eine Einladung ins Leere."* Dort kommt der neue Chip hin — und der Kommentar
+nennt „Suchflug", was nach der Umbenennung „FriesenReddung" heißen muss.
+
+**Keine README-Änderung in dieser Runde, und das ist eine Entscheidung:** Die README ist das
+Handbuch der **Mitglieder**. Sichtbar ist bisher nur der Admin-Bereich; der Absatz entsteht mit
+der Karten- und Kniebrett-Ansicht, zusammen mit dem Hilfetext hinter dem `?`.
+
+- [ ] **Step 1: Write the failing test** (an `tests/test_reddung_api.py` anfügen)
+
+```python
+# --- Admin-Oberflaeche (Quelltext-Wachen) ---------------------------------
+
+import pathlib
+
+ADMIN = pathlib.Path("app/static/admin.html")
+
+
+def test_der_chip_fuer_die_reddung_steht_in_der_typ_leiste():
+    q = ADMIN.read_text(encoding="utf-8")
+    assert 'data-typ="reddung"' in q
+    assert 'id="typ-reddung"' in q
+
+
+def test_der_alte_arbeitstitel_steht_nicht_mehr_im_admin():
+    assert "Suchflug" not in ADMIN.read_text(encoding="utf-8")
+
+
+def test_neben_dem_landehaken_steht_was_er_bedeutet():
+    """Sonst legt jemand ein Event an, das nur Hubschrauberpiloten abschliessen koennen,
+    ohne es zu wissen (Spec, Abschnitt 4)."""
+    q = ADMIN.read_text(encoding="utf-8")
+    assert "Hubschrauber" in q and "Wasserflugzeug" in q
+    assert "Vollstopp" in q
+
+
+def test_der_fundradius_wird_angezeigt_und_nicht_eingegeben():
+    """Er ist gerechnet. Ein Eingabefeld dafuer waere der Weg zum luegenden Balken."""
+    q = ADMIN.read_text(encoding="utf-8")
+    assert 'id="reddung-fundradius"' in q
+    assert 'name="fundradius' not in q and 'id="reddung-fundradius-input"' not in q
+
+
+def test_die_herkunft_der_grundhoehe_steht_neben_der_zahl():
+    assert "grund_quelle" in ADMIN.read_text(encoding="utf-8")
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `/home/claude/.venv-friesenspy/bin/python -m pytest tests/test_reddung_api.py -q`
+Expected: FAIL — `assert 'data-typ="reddung"' in q`
+
+- [ ] **Step 3: Write minimal implementation**
+
+Chip ergänzen und den Kommentar berichtigen:
+
+```html
+          <!-- Die zweite Ebene: ein Chip je Event-Typ. Bummel, Kutter und FriesenReddung sind
+               da; Kieker, Deichkontrolle und Baake kommen mit ihrem Typ dazu.
+               Ein Chip ohne Inhalt dahinter ist eine Einladung ins Leere. -->
+          <div class="typ-nav">
+            <button class="typ-btn active" data-typ="bummel">🏁 Bummel</button>
+            <button class="typ-btn" data-typ="kutter">🦐 Kutter</button>
+            <button class="typ-btn" data-typ="reddung">🚨 Reddung</button>
+          </div>
+```
+
+Panel hinter `typ-kutter` einfügen. Aufbau, in dieser Reihenfolge:
+
+1. **Formular** — Name, Zeitfenster, Sektor (vier Felder plus Knopf „auf der Karte setzen"),
+   Zellkante, Korridor, Höhenschranke (in **ft AGL**, mit dem Zusatz „über dem Havaristen"),
+   Geschwindigkeitsfenster, Art des Havaristen (Auswahl aus `/api/admin/bruegge/arten`),
+   Lage des Havaristen (zwei Felder plus Kartenklick), die drei Haken.
+2. **Der gerechnete Fundradius** als reine Anzeige:
+   `<span id="reddung-fundradius"></span>` — bei jeder Änderung von Kante oder Korridor neu
+   gerechnet: `(korridor + kante / Math.SQRT2).toFixed(2)`.
+3. **Die erwartete Suchdauer** daneben: `sektorFlaeche / (piloten * 2 * korridor * 204)` Stunden
+   bei 110 kt — mit `piloten = 5` als Annahme und einem Hinweis, dass es eine Schätzung ist.
+4. **Liste der Events** mit Abdeckungsbalken (Muster: der gruppierte Balken des Kutters), den
+   drei Latches mit Namen und Zeit, der Grundhöhe **samt `grund_quelle`**, und den Knöpfen
+   „Aufnahme freigeben", „Push aus/an", „Löschen".
+
+Die Texte neben den Haken wörtlich aus der Spec:
+
+```html
+<label><input type="checkbox" id="reddung-aufnehmen-noetig" checked> Aufnehmen nötig</label>
+<div class="hint">Ist der Haken aus, endet der Abend mit dem Fund — keine Aufnahme, keine
+  Einlieferung.</div>
+
+<label><input type="checkbox" id="reddung-landung-noetig" checked> Landung zur Rettung nötig</label>
+<div class="hint" id="reddung-landung-hint">Aufnehmen verlangt eine Landung an der
+  Unglücksstelle (Vollstopp unter 300 ft AGL) — sieh nach, ob dort jemand landen kann.</div>
+```
+
+Und der Hinweis wechselt mit dem Haken:
+
+```javascript
+// Ohne diesen Text legt jemand ein Event an, das nur Hubschrauberpiloten abschliessen
+// koennen, ohne es zu wissen (Spec, Abschnitt 4).
+const _REDDUNG_HINT_LANDUNG = 'Aufnehmen verlangt eine Landung an der Unglücksstelle '
+  + '(Vollstopp unter 300 ft AGL) — sieh nach, ob dort jemand landen kann.';
+const _REDDUNG_HINT_SCHWEBE = 'Aufnehmen per Schwebeflug, unter 30 kt über der Unglücksstelle. '
+  + 'Das verlangt einen Hubschrauber oder ein Wasserflugzeug.';
+function _reddungHinweise() {
+  const auf = document.getElementById('reddung-aufnehmen-noetig');
+  const lnd = document.getElementById('reddung-landung-noetig');
+  lnd.disabled = !auf.checked;          // der aeussere Haken sperrt den inneren
+  document.getElementById('reddung-landung-hint').textContent =
+    lnd.checked ? _REDDUNG_HINT_LANDUNG : _REDDUNG_HINT_SCHWEBE;
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `/home/claude/.venv-friesenspy/bin/python -m pytest tests/test_reddung_api.py tests/test_admin_ui_static.py tests/test_admin_tabs.py -q`
+Expected: PASS — auch die vorhandenen Admin-Wachen bleiben grün
+
+- [ ] **Step 5: Doku und Changelog**
+
+`docs/architecture.md`: Abschnitt bei den anderen Tabellen und beim Poller — Tabelle
+`reddung_events`, der Job `_check_reddung`, die vier Stufen, und der Satz, dass
+`havarist_lat/lon` nur an die Brügge und in den Admin gehen.
+
+`COORDINATION.md` oben:
+
+```markdown
+## 2026-09-20 (abends) — FriesenReddung: Server und Admin
+
+**Angefasst:** `app/reddung.py` (neu), `app/database.py` (Tabelle `reddung_events`, Spalten
+`bruegge_soll.simulator` und `bruegge_steht.hoehe_gemessen`), `app/poller.py` (`_check_reddung`),
+`app/main.py`, `app/static/admin.html`, vier neue Testdateien.
+
+**Wer hier weiterbaut, sollte drei Dinge wissen:**
+
+1. ⚠ **Der Fundradius wird GERECHNET** (`korridor + kante/√2`). Macht ihn jemand einstellbar,
+   lügt der Fortschrittsbalken: Eine abgedeckte Zelle heißt nur, dass ein Track im Korridor an
+   ihrem MITTELPUNKT vorbeilief.
+2. ⚠ **Die Höhenschranke ist AGL über dem Havaristen**, und die Grundhöhe lernt der Server aus
+   `bruegge_steht.hoehe_ft` — aber nur mit `hoehe_gemessen != 0` und nur von einem Piloten
+   näher als 200 km. Beide Vorbehalte stehen in `friesenbruegge/PROTOKOLL.md`.
+3. ⚠ **`compute_reddung_stand` gibt NIE eine Koordinate heraus.** Zwei Tests halten das fest.
+
+**Neu und für andere Eventtypen nutzbar:** `bruegge_soll.simulator` (NULL = für alle) — eine Art
+ohne aktiven Titel in einem Simulator erscheint dort sonst stumm nicht.
+```
+
+`app/CHANGELOG.json`: ein Eintrag, Nummer aus dem ersten Eintrag um eine MINOR erhöhen,
+`"highlight": false`. Vorschlag für den Text:
+
+```json
+{
+  "version": "<nächste MINOR>",
+  "date": "<heute>",
+  "highlight": false,
+  "title": "FriesenReddung — der neue Eventtyp steht auf dem Server",
+  "items": [
+    "🚨 Die **FriesenReddung** (Reddung ist Platt für Rettung) ist der Eventtyp, der die Umfrage im Forum gewonnen hat: Irgendwo im Suchgebiet liegt eine abgestürzte Maschine, die Gruppe teilt sich auf und sucht sie. Wer tief und langsam darüber hinwegfliegt, hat sie für alle gefunden — dann steht eine orange Rauchfackel daneben, und es muss jemand hin und den Piloten aufnehmen. Gewertet wird die abgesuchte Fläche der ganzen Gruppe, nicht nur der Fund: Wer eine Fläche abfliegt und nichts findet, hat das Gebiet für alle verkleinert. **Angelegt werden kann sie noch nicht von euch, und zu sehen ist sie noch nicht** — Karte und Kniebrett kommen als nächstes."
+  ]
+}
+```
+
+- [ ] **Step 6: Volle Suite, Rebase, Commit, Push**
+
+```bash
+/home/claude/.venv-friesenspy/bin/python -m pytest -q          # muss vollständig grün sein
+git fetch origin && git status -sb                             # fremde Arbeit im Baum? nicht mitnehmen
+git add app/ docs/ COORDINATION.md tests/
+git commit -m "FriesenReddung: Admin-Oberflaeche, Doku, Changelog"
+```
+
+---
+
+## Selbstdurchsicht (nach dem Schreiben des Plans erledigt)
+
+**Spec-Abdeckung** — jeder Abschnitt der Spec hat eine Aufgabe:
+
+| Spec | Aufgabe |
+|---|---|
+| 1 Ablauf, vier Stufen | 6 |
+| 1 Abend endet mit dem Fund | 2 (Feld), 5 (Fackel), 6 (Latch) |
+| 1 Abbruch des Aufnehmenden | 2 (Feld), 6 (Verfall), 7 (Knopf) |
+| 2 Flugzeug als Vorgabe, Art je Simulator | 4, 5 |
+| 3 Wertung: Gruppe + Beitrag je Pilot | 3 |
+| 4 Zahlen, gerechneter Fundradius | 1 |
+| 4 Höhenschranke AGL, Grundhöhe lernen | 1, 2, 5 |
+| 4 Aufnehmen mit den Landeregeln | 1, 6 |
+| 5 Verdeckung | 3, 7 (je ein Test) |
+| 6 Datenmodell | 2 |
+| 7 Wo die Prüfung läuft | 6 |
+| 8 Was der Admin bedient | 7, 8 |
+| 9 Abhängigkeiten | Task 5 (Ersatzarten); die MSFS-2020-Fackeln bleiben **offen**, s. unten |
+| 10 Offene Punkte | keine Aufgabe — absichtlich |
+
+**Eine Lücke, die stehenbleibt:** Die Fackeln sind für MSFS 2020 nicht im Katalog (Issue #43).
+Der Plan baut nichts dagegen — ein MSFS-2020-Pilot sieht bis zu jenem Prüflauf keine Fackel.
+Das ist kein Fehler des Plans, sondern eine Abhängigkeit, und sie gehört in den Changelog-Text
+nur dann, wenn sie bis zum Release nicht behoben ist.
+
+**Platzhalter:** keine. Jeder Schritt trägt Code oder einen Befehl.
+
+**Typen quer durch die Aufgaben geprüft:** `Ziel` ist überall `(str, float, float, float)`;
+`Fenster` wird nur über `app.reddung`-Funktionen gebaut, nie von Hand; `abdeckung()` liefert
+`Abdeckung` mit `treffer[schluessel].cid/.ts`; die Latch-Setzer heißen durchgehend
+`set_reddung_<stufe>` und geben `bool`. `HAVARIST` ist die einzige Zeichenkette, mit der der
+Havarist adressiert wird.
