@@ -6832,7 +6832,13 @@
     }
 
     async function rdLoeschen(id) {
-      if (!confirm('Event löschen? Havarist und Fackel werden aus den Simulatoren genommen.')) return;
+      // `confirmCritical` wie bei Bummel und Transport: Der Endpunkt verlangt seit dem
+      // 21.09.2026 das Passwort erneut (`require_confirm`), und das Loeschen nimmt Wrack und
+      // Fackel aus allen Simulatoren mit. Mit dem nativen `confirm()` kaeme die Abfrage erst
+      // ueber den 403-Umweg in `api()`.
+      const ok = await confirmCritical('Event löschen?',
+        'Havarist und Fackel werden aus den Simulatoren genommen.', 'Löschen', true);
+      if (!ok) return;
       const res = await api('DELETE', '/api/admin/reddung/events/' + id);
       if (res && res.ok) { toast('Gelöscht'); loadReddung(); }
     }

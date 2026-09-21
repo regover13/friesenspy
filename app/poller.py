@@ -418,6 +418,19 @@ def _vrp_faellig(stand: str) -> bool:
 _REDDUNG_SCHONFRIST_MIN = 10
 
 
+def _meldet_noch(conn, cid: int, grenze: str) -> bool:
+    """Hat dieser Pilot seit ``grenze`` gemeldet?
+
+    Eine Zeile statt eines Kommentars, weil zwei Stufen dieselbe Frage stellen: Stufe 2 darf
+    niemanden latchen, der weg ist, und Stufe 4 nimmt die Aufnahme weg, wenn er geht. Standen
+    die beiden Prüfungen nicht an derselben Zahl, latchte Stufe 2 im Takt, was Stufe 4
+    unmittelbar danach wieder löste.
+    """
+    letzte = conn.execute("SELECT max(ts) FROM position_history WHERE cid = ?",
+                          (int(cid),)).fetchone()[0]
+    return bool(letzte and letzte >= grenze)
+
+
 class VatsimPoller:
     def __init__(
         self,
@@ -2738,135 +2751,171 @@ class VatsimPoller:
 
             now_dt = datetime.now(timezone.utc)
             now = now_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+            # Wer laenger als die Schonfrist nichts gemeldet hat, gilt als weg -- dieselbe
+            # Grenze, die Stufe 4 zum Verfall benutzt.
+            grenze_weg = (now_dt - timedelta(minutes=_REDDUNG_SCHONFRIST_MIN)) \
+                .strftime("%Y-%m-%dT%H:%M:%SZ")
             conn = get_connection(self.db_path)
             pushes: list[dict] = []
             subscriptions: list = []
             try:
                 for ev in list_reddung_events(conn):
-                    if now < (ev.get("dtstart") or ""):
-                        continue
-                    if ev.get("aufgeloest_am"):
-                        # ⚠ NACHLAUF, und er muss VOR dem Ueberspringen stehen. Ein
-                        # aufgeloestes Event lief bisher gar nicht mehr durch diese Schleife --
-                        # also hat niemand mehr seine Objekte weggenommen, und im Admin stand
-                        # ein Wrack zu einem Event, das laengst vorbei war (gemeldet am
-                        # 20.09.2026).
-                        #
-                        # Erst NACH `dtend`: Bis dahin sollen Wrack und rote Fackel stehen und
-                        # die Stelle markieren. `gilt_bis` allein genuegt dafuer nicht -- es
-                        # haelt die Zeilen nur aus der AUSLIEFERUNG heraus, weg sind sie damit
-                        # nicht.
-                        if now >= (ev.get("dtend") or ""):
-                            reddung_objekte_abgleichen(conn, ev, weg=True)
-                        continue
-                    name = ev.get("name") or "FriesenReddung"
-                    push_on = bool(ev.get("push_enabled"))
-                    ziel = rd.havarist_ziel(ev)
-                    if ziel is None:
-                        continue
-                    bis = min(now, ev["dtend"])
-                    box = (ev["sued"], ev["west"], ev["nord"], ev["ost"])
-
-                    if reddung_grund_lernen(conn, ev):
-                        ev = get_reddung_event(conn, ev["id"])
-
-                    # 1 -- Abdeckung UND Fund fortschreiben (ein Aufruf, nur neue Punkte)
-                    stand = reddung_fortschreiben(conn, ev, bis=bis)
-                    if not ev.get("gefunden_am"):
-                        t = stand.get("fund")
-                        if t and set_reddung_gefunden(conn, ev["id"], t["ts"], t["cid"]):
-                            ev = get_reddung_event(conn, ev["id"])
-                            if push_on:
-                                pushes.append({"title": name,
-                                               "body": "Der Havarist ist gefunden! \U0001f6a8",
-                                               "url": "/"})
-
-                    # 2 -- Aufnehmen, nur mit Punkten NACH dem Fund
-                    if ev.get("gefunden_am") and ev.get("aufnehmen_noetig") \
-                            and not ev.get("aufgenommen_am"):
-                        spuren = reddung_spuren(conn, ev["dtstart"], bis, ab=ev["gefunden_am"],
-                                                box=box)
-                        erg = abdeckung(spuren, [ziel], rd.fenster_aufnehmen(ev))
-                        t = erg.treffer.get(rd.HAVARIST)
-                        if t and set_reddung_aufgenommen(conn, ev["id"], t.ts, t.cid):
-                            ev = get_reddung_event(conn, ev["id"])
-                            if push_on:
-                                pushes.append({"title": name,
-                                               "body": "Aufgenommen -- jetzt einliefern!",
-                                               "url": "/"})
-
-                    # 3 -- Einliefern: erste Landung des Aufnehmenden nach der Aufnahme.
+                    # ⚠ EIN `try` JE EVENT, nicht einer um die ganze Schleife.
                     #
-                    # ZUERST die Bruegge: Sie meldet im Sekundentakt und kennt `am_boden`, der
-                    # Simulator weiss es also sofort. canonicalize_legs ist der richtige Weg
-                    # fuer die Flugwertung, aber der langsame hier -- VATSIM alle 15 s, dazu
-                    # der Vollstopp und der Poller-Takt, zusammen Minuten. Gemeldet am
-                    # 20.09.2026: "warum dauert es dann so lange, bis eine Landung bemerkt
-                    # wird?"
-                    if ev.get("aufgenommen_am") and not ev.get("eingeliefert_am"):
-                        schnell = reddung_landung_aus_bruegge(
-                            conn, ev["aufgenommen_von"], ev["aufgenommen_am"])
-                        if schnell and set_reddung_eingeliefert(
-                                conn, ev["id"], schnell[1], ev["aufgenommen_von"], schnell[0]):
+                    # Vorher beendete ein einziges kaputtes Event den Takt fuer ALLE:
+                    # kein Commit, keine Latches, keine Objekte -- und das jede Minute
+                    # neu, sichtbar nur als `logger.exception`. Eine Zeichenkette in
+                    # einem Zahlenfeld genuegte dafuer (21.09.2026).
+                    try:
+                        if now < (ev.get("dtstart") or ""):
+                            continue
+                        if ev.get("aufgeloest_am"):
+                            # ⚠ NACHLAUF, und er muss VOR dem Ueberspringen stehen. Ein
+                            # aufgeloestes Event lief bisher gar nicht mehr durch diese Schleife --
+                            # also hat niemand mehr seine Objekte weggenommen, und im Admin stand
+                            # ein Wrack zu einem Event, das laengst vorbei war (gemeldet am
+                            # 20.09.2026).
+                            #
+                            # Erst NACH `dtend`: Bis dahin sollen Wrack und rote Fackel stehen und
+                            # die Stelle markieren. `gilt_bis` allein genuegt dafuer nicht -- es
+                            # haelt die Zeilen nur aus der AUSLIEFERUNG heraus, weg sind sie damit
+                            # nicht.
+                            if now >= (ev.get("dtend") or ""):
+                                reddung_objekte_abgleichen(conn, ev, weg=True)
+                            continue
+                        name = ev.get("name") or "FriesenReddung"
+                        push_on = bool(ev.get("push_enabled"))
+                        ziel = rd.havarist_ziel(ev)
+                        if ziel is None:
+                            continue
+                        bis = min(now, ev["dtend"])
+                        box = (ev["sued"], ev["west"], ev["nord"], ev["ost"])
+
+                        if reddung_grund_lernen(conn, ev):
                             ev = get_reddung_event(conn, ev["id"])
-                            if push_on:
-                                pushes.append({
-                                    "title": name,
-                                    "body": f"Eingeliefert in {schnell[0]} \u2705",
-                                    "url": "/"})
-                    if ev.get("aufgenommen_am") and not ev.get("eingeliefert_am"):
-                        legs = canonicalize_legs(conn, start=ev["aufgenommen_am"],
-                                                 end=ev["dtend"], cids=[ev["aufgenommen_von"]])
-                        gelandet = [l for l in legs if (l.get("arrival") or "").strip()]
-                        if gelandet:
-                            leg = gelandet[0]
-                            if set_reddung_eingeliefert(
-                                    conn, ev["id"], leg.get("logoff_time") or now,
-                                    ev["aufgenommen_von"], (leg.get("arrival") or "").upper()):
+
+                        # 1 -- Abdeckung UND Fund fortschreiben (ein Aufruf, nur neue Punkte)
+                        stand = reddung_fortschreiben(conn, ev, bis=bis)
+                        if not ev.get("gefunden_am"):
+                            t = stand.get("fund")
+                            if t and set_reddung_gefunden(conn, ev["id"], t["ts"], t["cid"]):
+                                ev = get_reddung_event(conn, ev["id"])
+                                if push_on:
+                                    pushes.append({"title": name,
+                                                   "body": "Der Havarist ist gefunden! \U0001f6a8",
+                                                   "url": "/"})
+
+                        # 2 -- Aufnehmen, nur mit Punkten NACH dem Fund
+                        if ev.get("gefunden_am") and ev.get("aufnehmen_noetig") \
+                                and not ev.get("aufgenommen_am"):
+                            # ⚠ `aufnahme_ab` und nicht nur `gefunden_am`: Nach einem Verfall oder
+                            # einer Admin-Freigabe muss NEU geschwebt werden. Sonst ist der alte
+                            # Treffer des Verschwundenen weiter der zeitlich erste, und der Latch
+                            # springt jeden Takt erneut an (s. `clear_reddung_aufnahme`).
+                            ab = max(ev["gefunden_am"], ev.get("aufnahme_ab") or "")
+                            spuren = reddung_spuren(conn, ev["dtstart"], bis, ab=ab, box=box)
+                            # ⚠ Wer nicht mehr meldet, kommt gar nicht erst in die Rechnung.
+                            #
+                            # Sonst latcht Stufe 2 den Schwebeflug eines laengst Verschwundenen,
+                            # Stufe 4 nimmt ihn im selben Lauf wieder weg -- und im naechsten Takt
+                            # von vorn, alle 30 s, mit zwei Push-Nachrichten je Runde. Der alte
+                            # Test sah nur den ersten Takt und hielt das fuer richtig.
+                            #
+                            # Gefiltert werden die SPUREN, nicht der Treffer: `abdeckung` gibt je
+                            # Ziel genau einen zurueck -- den zeitlich ersten. Wirft man den weg,
+                            # kommt niemand dran, obwohl vielleicht gerade jemand am Wrack
+                            # schwebt. (21.09.2026)
+                            if ev.get("aufnahme_verfaellt"):
+                                spuren = [(c, pk) for c, pk in spuren
+                                          if _meldet_noch(conn, c, grenze_weg)]
+                            erg = abdeckung(spuren, [ziel], rd.fenster_aufnehmen(ev))
+                            t = erg.treffer.get(rd.HAVARIST)
+                            if t and set_reddung_aufgenommen(conn, ev["id"], t.ts, t.cid):
+                                ev = get_reddung_event(conn, ev["id"])
+                                if push_on:
+                                    pushes.append({"title": name,
+                                                   "body": "Aufgenommen -- jetzt einliefern!",
+                                                   "url": "/"})
+
+                        # 3 -- Einliefern: erste Landung des Aufnehmenden nach der Aufnahme.
+                        #
+                        # ZUERST die Bruegge: Sie meldet im Sekundentakt und kennt `am_boden`, der
+                        # Simulator weiss es also sofort. canonicalize_legs ist der richtige Weg
+                        # fuer die Flugwertung, aber der langsame hier -- VATSIM alle 15 s, dazu
+                        # der Vollstopp und der Poller-Takt, zusammen Minuten. Gemeldet am
+                        # 20.09.2026: "warum dauert es dann so lange, bis eine Landung bemerkt
+                        # wird?"
+                        if ev.get("aufgenommen_am") and not ev.get("eingeliefert_am"):
+                            schnell = reddung_landung_aus_bruegge(
+                                conn, ev["aufgenommen_von"], ev["aufgenommen_am"])
+                            if schnell and set_reddung_eingeliefert(
+                                    conn, ev["id"], schnell[1], ev["aufgenommen_von"], schnell[0]):
                                 ev = get_reddung_event(conn, ev["id"])
                                 if push_on:
                                     pushes.append({
                                         "title": name,
-                                        "body": f"Eingeliefert in {leg.get('arrival')} \u2705",
+                                        "body": f"Eingeliefert in {schnell[0]} \u2705",
                                         "url": "/"})
+                        if ev.get("aufgenommen_am") and not ev.get("eingeliefert_am"):
+                            legs = canonicalize_legs(conn, start=ev["aufgenommen_am"],
+                                                     end=ev["dtend"], cids=[ev["aufgenommen_von"]])
+                            gelandet = [l for l in legs if (l.get("arrival") or "").strip()]
+                            if gelandet:
+                                leg = gelandet[0]
+                                if set_reddung_eingeliefert(
+                                        conn, ev["id"], leg.get("logoff_time") or now,
+                                        ev["aufgenommen_von"], (leg.get("arrival") or "").upper()):
+                                    ev = get_reddung_event(conn, ev["id"])
+                                    if push_on:
+                                        pushes.append({
+                                            "title": name,
+                                            "body": f"Eingeliefert in {leg.get('arrival')} \u2705",
+                                            "url": "/"})
 
-                    # 4 -- Aufnahme verfallen lassen, wenn der Aufnehmende weg ist.
-                    #
-                    # ⚠ NACH dem Einliefern, nicht davor. Hat der Poller einmal
-                    # stillgestanden und rechnet nach, kann ein Pilot aufgenommen UND
-                    # gelandet sein -- prueft der Verfall zuerst, loescht er die Aufnahme,
-                    # bevor die Landung gesehen wird, und die Rettung ist verloren, obwohl
-                    # sie stattgefunden hat. Die Bedingung `not eingeliefert_am` allein
-                    # genuegt dafuer nicht: Sie waere im selben Takt noch nicht gesetzt.
-                    if ev.get("aufgenommen_am") and not ev.get("eingeliefert_am") \
-                            and ev.get("aufnahme_verfaellt"):
-                        letzte = conn.execute(
-                            "SELECT max(ts) FROM position_history WHERE cid = ?",
-                            (ev["aufgenommen_von"],)).fetchone()[0]
-                        grenze = (now_dt - timedelta(minutes=_REDDUNG_SCHONFRIST_MIN)) \
-                            .strftime("%Y-%m-%dT%H:%M:%SZ")
-                        if not letzte or letzte < grenze:
-                            clear_reddung_aufnahme(conn, ev["id"])
-                            ev = get_reddung_event(conn, ev["id"])
-                            if push_on:
-                                pushes.append({"title": name,
-                                               "body": "Die Rettung ist wieder offen.",
-                                               "url": "/"})
+                        # 4 -- Aufnahme verfallen lassen, wenn der Aufnehmende weg ist.
+                        #
+                        # ⚠ NACH dem Einliefern, nicht davor. Hat der Poller einmal
+                        # stillgestanden und rechnet nach, kann ein Pilot aufgenommen UND
+                        # gelandet sein -- prueft der Verfall zuerst, loescht er die Aufnahme,
+                        # bevor die Landung gesehen wird, und die Rettung ist verloren, obwohl
+                        # sie stattgefunden hat. Die Bedingung `not eingeliefert_am` allein
+                        # genuegt dafuer nicht: Sie waere im selben Takt noch nicht gesetzt.
+                        if ev.get("aufgenommen_am") and not ev.get("eingeliefert_am") \
+                                and ev.get("aufnahme_verfaellt"):
+                            letzte = conn.execute(
+                                "SELECT max(ts) FROM position_history WHERE cid = ?",
+                                (ev["aufgenommen_von"],)).fetchone()[0]
+                            if not letzte or letzte < grenze_weg:
+                                clear_reddung_aufnahme(conn, ev["id"])
+                                ev = get_reddung_event(conn, ev["id"])
+                                if push_on:
+                                    pushes.append({"title": name,
+                                                   "body": "Die Rettung ist wieder offen.",
+                                                   "url": "/"})
 
-                    # 5 -- Aufloesen: Ziel erreicht oder Zeit vorbei
-                    fertig = bool(ev.get("eingeliefert_am")) or (
-                        bool(ev.get("gefunden_am")) and not ev.get("aufnehmen_noetig"))
-                    if fertig or now >= (ev.get("dtend") or ""):
-                        if set_reddung_aufgeloest(conn, ev["id"], now):
-                            ev = get_reddung_event(conn, ev["id"])
-                            if push_on and not fertig:
-                                pushes.append({
-                                    "title": name,
-                                    "body": "Vorbei -- der Havarist blieb unentdeckt.",
-                                    "url": "/"})
+                        # 5 -- Aufloesen: Ziel erreicht oder Zeit vorbei
+                        fertig = bool(ev.get("eingeliefert_am")) or (
+                            bool(ev.get("gefunden_am")) and not ev.get("aufnehmen_noetig"))
+                        if fertig or now >= (ev.get("dtend") or ""):
+                            if set_reddung_aufgeloest(conn, ev["id"], now):
+                                ev = get_reddung_event(conn, ev["id"])
+                                # ⚠ `fertig` heisst NUR "eingeliefert" (oder Fund genuegte).
+                                # Der Text hing bis zum 21.09.2026 allein daran -- und log
+                                # damit jeden Abend an, an dem gefunden und aufgenommen, aber
+                                # nicht mehr eingeliefert wurde.
+                                if push_on and not fertig:
+                                    if ev.get("gefunden_am"):
+                                        text = ("Vorbei -- gefunden, aber nicht mehr "
+                                                "eingeliefert.")
+                                    else:
+                                        text = "Vorbei -- der Havarist blieb unentdeckt."
+                                    pushes.append({"title": name, "body": text, "url": "/"})
 
-                    # 6 -- Objekte ZULETZT
-                    reddung_objekte_abgleichen(conn, ev)
+                        # 6 -- Objekte ZULETZT
+                        reddung_objekte_abgleichen(conn, ev)
+                    except Exception:
+                        logger.exception('FriesenReddung %s uebersprungen', ev.get('id'))
+                        continue
                 if pushes:
                     subscriptions = get_push_subscriptions_for_events(conn)
                 conn.commit()

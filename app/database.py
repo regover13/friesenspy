@@ -335,6 +335,15 @@ CREATE TABLE IF NOT EXISTS reddung_events (
     aufnehmen_noetig INTEGER DEFAULT 1,     -- 0 = der Abend endet mit dem Fund
     landung_noetig  INTEGER DEFAULT 1,      -- 0 = Schwebeflug genuegt (Winde, Wasserung)
     aufnahme_verfaellt INTEGER DEFAULT 1,   -- 1 = verfaellt, wenn der Aufnehmende abmeldet
+    -- ⚠ Ab WANN ein Schwebeflug als Aufnahme zaehlt. NULL = ab dem Fund.
+    --
+    -- Ohne diese Spalte latchte der Poller nach jedem Verfall denselben alten Schwebeflug
+    -- sofort wieder: Stufe 2 rechnet jeden Takt ALLE Spuren ab `gefunden_am`, und der Treffer
+    -- des verschwundenen Piloten bleibt der zeitlich erste. Latch, Verfall, Latch, Verfall --
+    -- alle 30 s, mit zwei Push-Nachrichten je Runde an alle Abonnenten; und wer wirklich am
+    -- Wrack schwebte, kam nie an die Reihe. Aus demselben Grund hielt der Admin-Knopf
+    -- „Aufnahme freigeben" nur bis zum naechsten Takt.
+    aufnahme_ab     TEXT,
     gefunden_am     TEXT,  gefunden_von     INTEGER,
     aufgenommen_am  TEXT,  aufgenommen_von  INTEGER,
     eingeliefert_am TEXT,  eingeliefert_von INTEGER,  eingeliefert_icao TEXT,
@@ -1072,6 +1081,8 @@ _BRUEGGE_SOLL_MIGRATIONS = [
     "ALTER TABLE reddung_events ADD COLUMN fund_radius_m REAL DEFAULT 150",
     "ALTER TABLE reddung_events DROP COLUMN fund_radius_ft",
     "ALTER TABLE bruegge_soll ADD COLUMN nur_nah_m REAL",
+    # Ab wann ein Schwebeflug als Aufnahme zaehlt -- s. den Kommentar an der Spalte.
+    "ALTER TABLE reddung_events ADD COLUMN aufnahme_ab TEXT",
 ]
 
 _PANEL_DIAG_MIGRATIONS = [
@@ -9756,14 +9767,31 @@ def set_reddung_aufgeloest(conn: sqlite3.Connection, event_id: int, ts: str) -> 
     return (cur.rowcount or 0) > 0
 
 
-def clear_reddung_aufnahme(conn: sqlite3.Connection, event_id: int) -> None:
+def clear_reddung_aufnahme(conn: sqlite3.Connection, event_id: int,
+                           ab: str | None = None) -> None:
     """Die Aufnahme freigeben -- der Aufnehmende hat abgebrochen oder der Admin greift ein.
 
     Kein Latch-Gegenstück, sondern ein Rücksetzen: Danach kann ein anderer übernehmen, und die
     Fackel geht beim nächsten Objektabgleich zurück auf orange.
+
+    ⚠ **``ab`` setzt der ADMIN, der Verfall nicht** -- und der Unterschied ist wesentlich.
+
+    *Admin-Freigabe:* Der Aufnehmende meldet weiter, er steht vielleicht noch am Wrack. Ohne
+    Zeitriegel latcht ihn der nächste Takt sofort wieder, und der Knopf hielte 30 Sekunden
+    (so war es bis zum 21.09.2026). ``ab=_now_utc()`` heißt: Ab jetzt muss neu geschwebt
+    werden.
+
+    *Verfall:* Hier ist der Pilot gerade verschwunden. Ein Zeitriegel wäre hier sogar
+    schädlich -- er sperrte auch den, der in diesem Moment am Wrack schwebt und übernehmen
+    könnte. Dass der Verschwundene nicht erneut latcht, stellt Stufe 2 selbst sicher: Sie
+    latcht nur jemanden, der noch meldet.
     """
-    conn.execute("UPDATE reddung_events SET aufgenommen_am = NULL, aufgenommen_von = NULL "
-                 "WHERE id = ?", (int(event_id),))
+    if ab is None:
+        conn.execute("UPDATE reddung_events SET aufgenommen_am = NULL, aufgenommen_von = NULL "
+                     "WHERE id = ?", (int(event_id),))
+        return
+    conn.execute("UPDATE reddung_events SET aufgenommen_am = NULL, aufgenommen_von = NULL, "
+                 "aufnahme_ab = ? WHERE id = ?", (ab, int(event_id)))
 
 
 def reddung_grund_merken(conn: sqlite3.Connection, event_id: int, hoehe_ft: float,
@@ -9927,6 +9955,15 @@ _REDDUNG_STEHT_KT = 5.0
 #: diese Bedingung wäre jede Außenlandung eine Einlieferung.
 _REDDUNG_PLATZ_KM = 4.0
 
+#: Groesste Meldeluecke, die eine Einlieferung noch ueberlebt. ⚠ GESCHAETZT, nicht gemessen --
+#: wie die Schonfrist. Der Anlass: Die Bruegge-Einlieferung prueft nur die MOMENTANPOSITION
+#: (am Boden, langsam, Platz in der Naehe). Wer nach der Aufnahme zum Desktop abstuerzt und
+#: seinen Simulator am Heimatplatz neu startet, erfuellt das sofort -- Event aufgeloest,
+#: Wertung vergeben, kein Meter geflogen. Ein Neustart kostet Minuten und reisst dabei die
+#: VATSIM-Verbindung; ein blosser Aussetzer ist kuerzer. Fuenf Minuten trennen die beiden
+#: Faelle nach heutigem Wissen. Gefunden am 21.09.2026.
+_REDDUNG_LUECKE_MAX_S = 300.0
+
 
 def _reddung_punkte_neu(conn: sqlite3.Connection, ev: dict, von: str, bis: str,
                         box: tuple) -> list[tuple[int, list]]:
@@ -9952,6 +9989,28 @@ def _reddung_punkte_neu(conn: sqlite3.Connection, ev: dict, von: str, bis: str,
         davor = [pkt for pkt in punkte if pkt[4] <= von]
         raus.append((cid, davor[-1:] + neu))
     return raus
+
+
+def _reddung_durchgehend_gemeldet(conn: sqlite3.Connection, cid: int,
+                                  von: str, bis: str) -> bool:
+    """War dieser Pilot zwischen ``von`` und ``bis`` ohne groessere Luecke online?
+
+    Gemessen an ``position_history`` (VATSIM, rund alle 15 s) -- nicht an ``bruegge_spur``:
+    Die wird nur im Suchsektor geschrieben, und der Zielflugplatz liegt meist ausserhalb.
+
+    Die erste Meldung muss ebenfalls dicht an ``von`` liegen, sonst rutscht ein Neustart
+    durch, bei dem der Pilot zwischen Aufnahme und Wiederanmeldung gar nichts gemeldet hat.
+    """
+    ts = [r[0] for r in conn.execute(
+        "SELECT ts FROM position_history WHERE cid = ? AND ts >= ? AND ts <= ? ORDER BY ts",
+        (int(cid), von, bis)).fetchall()]
+    if not ts:
+        return False
+    marken = [von] + ts + [bis]
+    for davor, danach in zip(marken, marken[1:]):
+        if (_parse_iso(danach) - _parse_iso(davor)).total_seconds() > _REDDUNG_LUECKE_MAX_S:
+            return False
+    return True
 
 
 def reddung_landung_aus_bruegge(conn: sqlite3.Connection, cid: int,
@@ -9982,6 +10041,10 @@ def reddung_landung_aus_bruegge(conn: sqlite3.Connection, cid: int,
     if (gs or 0) > _REDDUNG_STEHT_KT:
         return None
     if not gemeldet or gemeldet < nach:
+        return None
+    # ⚠ Kontinuitaet, nicht nur Momentaufnahme: War der Pilot zwischen Aufnahme und jetzt
+    # durchgehend da? Ein Sim-Neustart hinterlaesst eine Luecke, ein Flug nicht.
+    if not _reddung_durchgehend_gemeldet(conn, int(cid), nach, gemeldet):
         return None
     icao = nearest_airport_icao_fast(float(lat), float(lon), _REDDUNG_PLATZ_KM)
     if not icao:

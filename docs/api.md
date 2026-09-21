@@ -1121,7 +1121,9 @@ Alle FriesenReddungen mit ihrem Stand — für die Eventliste, später die Karte
 
 ## Admin: FriesenReddung
 
-Alle sechs verlangen Admin-Cookie **und** Bestätigungs-Cookie (sonst `401`).
+Alle sechs verlangen den Admin-Cookie (sonst `401`).
+
+**`DELETE` verlangt zusätzlich den Bestätigungs-Cookie** (`require_confirm`, seit 22.09.2026) — es nimmt Wrack und Fackeln aus allen Simulatoren mit. Anlegen, Ändern und die Aufnahme-Freigabe kommen bewusst ohne aus: Ein Veranstalter baut ein Event in vielen kleinen Schritten, und jedes Mal das Passwort wäre eine Zumutung ohne Gewinn. Dasselbe Muster bei Bummel und Transport.
 
 | Methode | Pfad | Zweck |
 |---|---|---|
@@ -1132,7 +1134,9 @@ Alle sechs verlangen Admin-Cookie **und** Bestätigungs-Cookie (sonst `401`).
 | `POST` | `/api/admin/reddung/events/{id}/push` | `{"enabled": bool}` |
 | `POST` | `/api/admin/reddung/events/{id}/aufnahme-freigeben` | Aufnahme zurücknehmen |
 
-**Anlegen** verlangt `name`, `dtstart` und den Sektor (`sued`, `west`, `nord`, `ost`). Abgewiesen mit `400`: ein verdrehter Sektor (Süd über Nord), ein verdrehtes Zeitfenster, ein Sektor, dessen Raster Millionen Zellen ergäbe, und ein unbekanntes Feld.
+**Anlegen** verlangt `name`, `dtstart` und den Sektor (`sued`, `west`, `nord`, `ost`). Abgewiesen mit `400`: ein verdrehter Sektor (Süd über Nord), ein verdrehtes Zeitfenster, ein Sektor, dessen Raster zu viele Zellen ergäbe, ein unbekanntes Feld — und seit dem 22.09.2026 jedes Zahlenfeld außerhalb seines Bereichs (`_REDDUNG_BEREICHE`) sowie `gs_min_kt > gs_max_kt`.
+
+⚠ **Das Ändern prüft gegen den GESPEICHERTEN Stand, nicht gegen den Körper.** Vorher griff die Sektorprüfung nur, wenn alle vier Ecken mitkamen, und die Zeitprüfung nur mit beiden Zeiten — ein Teil-Update wie `{"nord": 53.0}` ging ungeprüft durch und verdrehte den Sektor. Ein Ändern verwirft außerdem den fortgeschriebenen Stand (`delete_progress_snapshot`), weil die Zellschlüssel danach auf andere Zellen zeigen.
 
 ⚠ **`aufnahme-freigeben` weist ab** (`400`), wenn bereits eingeliefert oder aufgelöst wurde. Ohne diese Sperre hinterließ ein Klick nach Abschluss eine **Einlieferung ohne Aufnahme** — real passiert am 20.09.2026, behoben in 15.14.0.
 

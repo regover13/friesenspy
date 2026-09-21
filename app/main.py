@@ -6362,12 +6362,63 @@ def _validate_reddung_sektor(body: dict) -> str | None:
     if max(hoch, breit) > _REDDUNG_SEKTOR_MAX_KM:
         return (f"Sektor zu groß ({hoch:.0f} x {breit:.0f} km) — höchstens "
                 f"{_REDDUNG_SEKTOR_MAX_KM:.0f} km je Kante")
-    kante = float(body.get("kante_km") or 0.3)
+    # ⚠ `or 0.3` nur fuer FEHLENDE Angaben -- `kante_km: 0` rechnete sonst mit 0,3, wurde
+    # aber als 0 gespeichert. `zellen_aus_box` klemmt dann auf 0,05 km, und aus dem
+    # Standardsektor wurden 634.382 Zellen: genau der Poller-Stillstand, den dieser Deckel
+    # verhindern soll. Der Wertebereich selbst steht in `_validate_reddung_felder`.
+    kante = float(body["kante_km"]) if body.get("kante_km") is not None else 0.3
     zellen = (hoch / max(kante, 0.05)) * (breit / max(kante, 0.05))
     if zellen > _REDDUNG_ZELLEN_MAX:
         return (f"Sektor und Zellkante ergeben {zellen:,.0f} Zellen — höchstens "
                 f"{_REDDUNG_ZELLEN_MAX:,.0f}. Kleineren Sektor ziehen oder die Zellkante "
                 f"vergrößern.").replace(",", ".")
+    return None
+
+
+#: Wertebereiche der Zahlenfelder: ``(untere, obere, ganzzahlig)``. Ohne sie landete jede
+#: Zeichenkette ungeprüft in der Datenbank -- und danach scheiterte **die ganze Liste** mit
+#: 500, weil ``compute_reddung_stand`` für jedes Event ``float()`` aufruft. Schlimmer noch:
+#: ``_check_reddung`` hat einen einzigen ``try`` um alle Events, ein kaputtes beendete also
+#: jeden Takt für alle. Gefunden am 21.09.2026.
+_REDDUNG_BEREICHE = {
+    "kante_km":        (0.05, 50.0, False),
+    "korridor_km":     (0.01, 50.0, False),
+    "hoehe_max_ft":    (1.0, 60000.0, False),
+    "gs_max_kt":       (1.0, 1000.0, False),
+    "gs_min_kt":       (0.0, 1000.0, False),
+    "fund_radius_m":   (1.0, 50000.0, False),
+    "fund_hoehe_ft":   (1.0, 60000.0, False),
+    "havarist_lat":    (-90.0, 90.0, False),
+    "havarist_lon":    (-180.0, 180.0, False),
+    "havarist_grund_ft": (-1500.0, 30000.0, False),
+    "aufnehmen_noetig":  (0, 1, True),
+    "landung_noetig":    (0, 1, True),
+    "aufnahme_verfaellt": (0, 1, True),
+}
+
+
+def _validate_reddung_felder(body: dict) -> str | None:
+    """Zahlenfelder auf Typ und Bereich prüfen. ``None`` heißt in Ordnung.
+
+    Gilt für Anlegen UND Ändern: Beim Ändern kommen einzelne Felder, und genau darüber lief
+    die Lücke -- ein Teil-Update wurde gar nicht geprüft.
+    """
+    for feld, (unten, oben, ganz) in _REDDUNG_BEREICHE.items():
+        if feld not in body or body[feld] is None:
+            continue
+        wert = body[feld]
+        if isinstance(wert, bool):
+            wert = int(wert)
+        if not isinstance(wert, (int, float)):
+            return f'{feld}: Zahl erwartet, „{wert}“ ist keine'
+        if ganz and float(wert) not in (0.0, 1.0):
+            return f"{feld}: nur 0 oder 1"
+        if not (unten <= float(wert) <= oben):
+            return f"{feld}: {wert} liegt außerhalb von {unten} bis {oben}"
+    unten = body.get("gs_min_kt")
+    oben = body.get("gs_max_kt")
+    if unten is not None and oben is not None and float(unten) > float(oben):
+        return "gs_min_kt darf nicht über gs_max_kt liegen"
     return None
 
 
@@ -6408,6 +6459,11 @@ async def admin_create_reddung_event(request: Request):
     terr = _validate_event_times(body.get("dtstart"), body.get("dtend"))
     if terr:
         raise HTTPException(status_code=400, detail=terr)
+    # ⚠ VOR dem Sektor: Die Zellenrechnung nimmt `kante_km` und wirft bei einer Zeichenkette
+    # ValueError -- also 500 statt 400.
+    ferr = _validate_reddung_felder(body)
+    if ferr:
+        raise HTTPException(status_code=400, detail=ferr)
     serr = _validate_reddung_sektor(body)
     if serr:
         raise HTTPException(status_code=400, detail=serr)
@@ -6432,22 +6488,43 @@ async def admin_update_reddung_event(request: Request, event_id: int):
     Bedienfehler, kein Serverfehler."""
     require_admin(request)
     body = await request.json()
-    if {"sued", "west", "nord", "ost"} <= set(body):
-        serr = _validate_reddung_sektor(body)
-        if serr:
-            raise HTTPException(status_code=400, detail=serr)
-    if body.get("dtstart") or body.get("dtend"):
-        terr = _validate_event_times(body.get("dtstart"), body.get("dtend"))
-        if terr:
-            raise HTTPException(status_code=400, detail=terr)
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Objekt erwartet")
     conn = get_connection(get_settings().DB_PATH)
     try:
-        if get_reddung_event(conn, event_id) is None:
+        alt = get_reddung_event(conn, event_id)
+        if alt is None:
             raise HTTPException(status_code=404, detail="unbekannt")
+        # ⚠ GEGEN DEN GESPEICHERTEN STAND pruefen, nicht gegen den Koerper allein.
+        #
+        # Vorher griff die Sektorpruefung nur, wenn alle vier Ecken mitkamen, und die
+        # Zeitpruefung nur mit beiden Zeiten. Ein Teil-Update ging also ungeprueft durch:
+        # `{"nord": 53.0}` (unter `sued`) ergab einen verdrehten Sektor, `{"nord": 60}` rund
+        # 26.000 Zellen, und `{"dtend": …}` allein ein Ende vor dem Start -- worauf der Poller
+        # das Event sofort aufloeste. Gefunden am 21.09.2026.
+        zusammen = {**{k: alt[k] for k in
+                       ("sued", "west", "nord", "ost", "kante_km", "dtstart", "dtend")
+                       if k in alt.keys()},
+                    **body}
+        ferr = _validate_reddung_felder(body)
+        if ferr:
+            raise HTTPException(status_code=400, detail=ferr)
+        terr = _validate_event_times(zusammen.get("dtstart"), zusammen.get("dtend"))
+        if terr:
+            raise HTTPException(status_code=400, detail=terr)
+        serr = _validate_reddung_sektor(zusammen)
+        if serr:
+            raise HTTPException(status_code=400, detail=serr)
         try:
             update_reddung_event(conn, event_id, **body)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+        # ⚠ Der fortgeschriebene Stand haengt an Sektor, Zellkante und Hoehenschranke -- seine
+        # Zellschluessel `z<i>_<j>` zeigen nach einer Aenderung auf ANDERE Zellen. Ohne das
+        # Verwerfen stand `zellen 4, abgedeckt 8, anteil 2.0` in der Liste, und vier Zellen
+        # galten als abgesucht, ueber die nie jemand geflogen war. Bummel und Kutter tun
+        # dasselbe an derselben Stelle.
+        delete_progress_snapshot(conn, "reddung", event_id)
         reddung_objekte_abgleichen(conn, get_reddung_event(conn, event_id))
         conn.commit()
         return {"status": "ok"}
@@ -6463,6 +6540,7 @@ async def admin_delete_reddung_event(request: Request, event_id: int):
     Event, das es nicht mehr gibt, und ohne jede Stelle, an der es noch abgeräumt würde.
     """
     require_admin(request)
+    require_confirm(request)
     conn = get_connection(get_settings().DB_PATH)
     try:
         ev = get_reddung_event(conn, event_id)
@@ -6518,7 +6596,7 @@ async def admin_reddung_aufnahme_freigeben(request: Request, event_id: int):
             raise HTTPException(status_code=400, detail="Der Fall ist abgeschlossen.")
         if not ev.get("aufgenommen_am"):
             raise HTTPException(status_code=400, detail="Es ist niemand aufgenommen.")
-        clear_reddung_aufnahme(conn, event_id)
+        clear_reddung_aufnahme(conn, event_id, _now_iso())
         reddung_objekte_abgleichen(conn, get_reddung_event(conn, event_id))
         conn.commit()
         return {"status": "ok"}

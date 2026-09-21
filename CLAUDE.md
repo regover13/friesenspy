@@ -300,6 +300,44 @@ belassen es bei einer einfachen Hash-Aktualitätsprüfung.").
   durch — gemessen 28 Anfragen je Sekunde auf aip.dfs.de. In `_hole()` gebunden ist jeder
   Weg zur DFS gebremst, auch ein künftiger.
 
+## Die Brügge-Position ist fälschbar — und das bleibt bewusst so (Nutzerentscheidung 21.09.2026)
+
+**Befund:** `schranke_m` (`app/bruegge.py:114`) bemisst, wie weit eine Brügge-Meldung von der
+VATSIM-Position abweichen darf — aus `gs_kt` **derselben Meldung**. Wer eine absurde
+Geschwindigkeit behauptet, bekommt eine beliebig große Toleranz, und `lage_gilt` wird wahr.
+Damit lässt sich die Nähe-Schranke `bruegge_soll.nur_nah_m` aushebeln: Ein Skript meldet
+Gitterpunkte über dem (öffentlichen) Suchsektor und liest die Koordinate des Havaristen aus
+der Antwort von `/api/bruegge/melden`. Dasselbe fälscht die Abdeckung und den Fund.
+
+**Die Toleranz selbst ist richtig.** Sie beantwortet „gehört diese Meldung zu diesem
+Piloten?" und muss großzügig sein, weil sie gegen eine bis zu 29 s alte VATSIM-Position
+vergleicht (Weg = Geschwindigkeit × Zeit, Faktor 2 beim Zuordnen, 3 beim Lösen). Der Fehler
+ist, dass dieselbe Schranke als Antwort auf „ist diese Position echt?" mitbenutzt wird.
+**Für die Wertung gibt es keine Toleranz** — eine zugeordnete Brügge-Position wird unverändert
+übernommen (`app/main.py:1619`).
+
+**Nicht behoben, auf ausdrückliche Entscheidung des Nutzers.** Seine Abwägung: Versehentlich
+kann es nicht passieren, kaputt geht nichts, und wer ein Skript schreibt, um die eigene Gruppe
+zu betrügen, tut das bewusst — *„ganz ehrlich, wenn sich einer diese Mühe macht, dann soll er
+damit erfolgreich sein."* Dazu: Jede erfundene Position steht hinterher unter seiner CID in
+`bruegge_positions` und `bruegge_spur`, und nginx begrenzt `/api/bruegge/melden` auf 180
+Anfragen je Minute.
+
+⚠ **Wer das später doch schließen will, kennt bitte diese drei Zahlen**, damit er nicht dasselbe
+zweimal verwirft:
+- Ein Deckel auf `gs_kt` (etwa 800 kt; höchster je gemessener echter Wert: 762) macht aus
+  „unbegrenzt" ein „34 km im Extremfall". **Der eigentliche Gewinn steckt aber in
+  `ist_sprung`:** Dort liegt nur rund eine Sekunde zwischen zwei Meldungen, der Deckel senkt
+  den erlaubten Sprung von 103 km auf 784 m. Ein Sondierer müsste sich dann Schritt für
+  Schritt vorarbeiten und bliebe an seine echte Position gefesselt.
+- Die Nähe gegen die **VATSIM-Position** zu prüfen statt gegen die gemeldete wäre der saubere
+  Weg — die kommt vom Netz und ist nicht fälschbar. Preis: Sie ist bis zu 29 s alt, der Riegel
+  müsste von 1 km auf etwa 5 km aufgehen. Für den Zweck (LittleNavMap soll das Wrack nicht aus
+  der Ferne zeigen) reicht das.
+- Ein Angreifer braucht **keinen Simulator und keinen Flug**: `curl` genügt, er kann dabei
+  geparkt stehen. Auf VATSIM ist nichts Auffälliges zu sehen — die erfundene Geschwindigkeit
+  steht nur in unseren Anfragen.
+
 ## Die FriesenBrügge ist Pflicht, sobald ein Event etwas in den Simulator stellt (stehende Regel)
 
 **Die Trennlinie ist nicht „wie wichtig ist Genauigkeit", sondern: Stellen wir etwas in den

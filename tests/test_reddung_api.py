@@ -80,6 +80,25 @@ def test_ohne_anmeldung_geht_nichts(db):
         assert e.value.status_code == 401
 
 
+def test_loeschen_verlangt_das_passwort_erneut(db):
+    """⚠ Das Loeschen raeumt Wrack und Fackel aus ALLEN Simulatoren -- ein Klick, unumkehrbar.
+
+    `DELETE /api/admin/bummel/races/{id}` und `.../transport/events/{id}` verlangen dafuer
+    `require_confirm`; die Reddung tat es bis zum 21.09.2026 nicht. Anlegen und Aendern
+    bleiben bewusst ohne: Der Veranstalter baut ein Event in vielen kleinen Schritten, und
+    jedes Mal das Passwort waere eine Zumutung ohne Gewinn.
+    """
+    eid = _anlegen()
+    nur_admin = FakeReq(cookies={ADMIN_COOKIE: TOKEN})
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(main.admin_delete_reddung_event(nur_admin, eid))
+    assert e.value.status_code == 403 and e.value.detail == "confirm_required"
+    # Anlegen und Aendern gehen weiterhin ohne zweite Abfrage.
+    asyncio.run(main.admin_update_reddung_event(
+        FakeReq(cookies={ADMIN_COOKIE: TOKEN}, body={"korridor_km": 2.0}), eid))
+    assert _liste()[0]["korridor_km"] == 2.0
+
+
 def test_anlegen_lesen_aendern_loeschen(db):
     eid = _anlegen()
     liste = _liste()
@@ -190,6 +209,107 @@ def test_der_stand_traegt_die_koordinate_nicht(db):
     assert ev["havarist_lat"] == 53.72
     text = json.dumps(ev["stand"])
     assert "53.72" not in text and "7.25" not in text
+
+
+def test_eine_zellkante_von_null_wird_abgewiesen(db):
+    """⚠ `kante_km: 0` rechnete mit 0,3 (`or 0.3`) und wurde als 0 gespeichert.
+
+    `zellen_aus_box` klemmt dann auf 0,05 km -- aus dem Standardsektor wurden 634.382 Zellen,
+    und der Poller-Takt blieb stehen. Genau das, was der Zellendeckel verhindern soll.
+    """
+    with pytest.raises(HTTPException) as e:
+        _anlegen(kante_km=0)
+    assert e.value.status_code == 400
+
+
+def test_die_zellenrechnung_nimmt_eine_null_kante_ernst():
+    """Zweiter Riegel, direkt an der Funktion geprueft.
+
+    Die Feldpruefung faengt `kante_km: 0` bereits ab -- deshalb wird dieser Fix ueber den
+    Endpunkt nicht sichtbar. Er ist trotzdem noetig: `or 0.3` rechnete mit 0,3, waehrend 0
+    gespeichert wurde. Wer die Bereichspruefung lockert, faellt sonst wieder in die Falle.
+    """
+    koerper = {**SEKTOR, "kante_km": 0}
+    fehler = main._validate_reddung_sektor(koerper)
+    assert fehler and "Zellen" in fehler, f"eine Null-Kante muss auffallen, nicht {fehler!r}"
+
+
+def test_zeichenketten_in_zahlenfeldern_werden_abgewiesen(db):
+    """⚠ Sie landeten ungeprueft in der Datenbank -- und danach scheiterte DIE GANZE LISTE
+    mit 500, weil `compute_reddung_stand` je Event `float()` aufruft. Der Poller-Takt brach
+    ebenfalls ab, jede Minute neu."""
+    for feld, wert in (("havarist_lat", "abc"), ("korridor_km", "x"), ("hoehe_max_ft", "x"),
+                       ("fund_radius_m", "viel"), ("aufnehmen_noetig", "ja")):
+        with pytest.raises(HTTPException) as e:
+            _anlegen(**{feld: wert})
+        assert e.value.status_code == 400, f"{feld}={wert!r} muss 400 geben"
+
+
+def test_unsinnige_zahlenbereiche_werden_abgewiesen(db):
+    for feld, wert in (("havarist_lat", 1000), ("havarist_lon", -500), ("fund_radius_m", -5),
+                       ("korridor_km", -1), ("kante_km", 999), ("hoehe_max_ft", 0)):
+        with pytest.raises(HTTPException) as e:
+            _anlegen(**{feld: wert})
+        assert e.value.status_code == 400, f"{feld}={wert} muss 400 geben"
+
+
+def test_gs_min_darf_nicht_ueber_gs_max_liegen(db):
+    with pytest.raises(HTTPException) as e:
+        _anlegen(gs_min_kt=200, gs_max_kt=100)
+    assert e.value.status_code == 400
+
+
+def test_ein_teil_update_wird_gegen_den_gespeicherten_stand_geprueft(db):
+    """⚠ Die Luecke: Die Sektorpruefung griff nur, wenn ALLE VIER Ecken mitkamen.
+
+    `{"nord": 53.0}` (unter `sued`) ergab einen verdrehten Sektor, `{"nord": 60}` rund 26.000
+    Zellen -- beides mit 200 quittiert und gespeichert.
+    """
+    eid = _anlegen()
+    for koerper in ({"nord": 53.0}, {"nord": 60.0}, {"kante_km": 0}):
+        with pytest.raises(HTTPException) as e:
+            asyncio.run(main.admin_update_reddung_event(FakeReq(body=koerper), eid))
+        assert e.value.status_code == 400, f"{koerper} muss 400 geben"
+    # Der Sektor steht unveraendert.
+    assert _liste()[0]["nord"] == SEKTOR["nord"]
+
+
+def test_ein_halbes_zeitfenster_wird_gegen_den_gespeicherten_stand_geprueft(db):
+    """`{"dtend": …}` allein lief durch `_validate_event_times(None, dtend)` -- und das ist
+    stumm. Gespeichert wurde ein Ende VOR dem Start, worauf der Poller das Event sofort
+    aufloeste."""
+    eid = _anlegen()
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(main.admin_update_reddung_event(
+            FakeReq(body={"dtend": "2026-09-24T17:00:00Z"}), eid))
+    assert e.value.status_code == 400
+
+
+def test_eine_sektoraenderung_verwirft_den_fortgeschriebenen_stand(db):
+    """⚠ Die Zellschluessel `z<i>_<j>` zeigen danach auf ANDERE Zellen.
+
+    Ohne Verwerfen stand `zellen 4, abgedeckt 8, anteil 2.0` in der Liste -- und vier Zellen
+    galten als abgesucht, ueber die nie jemand geflogen war.
+    """
+    from app.database import get_progress_snapshot, write_progress_snapshot
+    eid = _anlegen()
+    c = get_connection(db)
+    try:
+        write_progress_snapshot(c, "reddung", eid,
+                                {"v": 1, "bis": "2026-09-25T17:30:00Z",
+                                 "treffer": {"z0_0": [111, "2026-09-25T17:10:00Z"]},
+                                 "je_pilot": {"111": 1}, "fund": None},
+                                "2026-09-25T17:30:00Z")
+        c.commit()
+        assert get_progress_snapshot(c, "reddung", eid) is not None
+    finally:
+        c.close()
+    asyncio.run(main.admin_update_reddung_event(FakeReq(body={"kante_km": 2.0}), eid))
+    c = get_connection(db)
+    try:
+        assert get_progress_snapshot(c, "reddung", eid) is None, "der alte Stand muss weg"
+    finally:
+        c.close()
 
 
 # --- Admin-Oberflaeche (Quelltext-Wachen) ---------------------------------

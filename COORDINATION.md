@@ -6,6 +6,53 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-22 — Neun Fehler aus dem Fable-Gegenlesen behoben (15.17.0)
+
+> ⚠ **15.16.0 war beim Rebase schon vergeben** (Marken/Wuerfel-Sitzung, Eintrag
+> direkt darunter). Diese Arbeit ist deshalb 15.17.0.
+
+**Angefasst:** `app/poller.py`, `app/database.py`, `app/main.py`, `app/static/admin.html`,
+die vier Reddung-Testdateien, CLAUDE.md, docs/api.md.
+
+⚠ **Neue Spalte `reddung_events.aufnahme_ab`** — ab wann ein Schwebeflug als Aufnahme zaehlt.
+Gesetzt wird sie NUR von der Admin-Freigabe, **nicht vom Verfall**: Beim Verfall sperrte sie
+auch den, der gerade uebernehmen will. Dass der Verschwundene nicht erneut latcht, regelt der
+Melde-Filter in Stufe 2.
+
+⚠ **Stufe 2 filtert die SPUREN, nicht den Treffer.** `abdeckung` gibt je Ziel genau einen
+zurueck — den zeitlich ersten. Wirft man den weg, kommt niemand dran, obwohl vielleicht
+gerade jemand am Wrack schwebt. (Erster Anlauf war genau so falsch.)
+
+⚠ **`reddung_landung_aus_bruegge` verlangt Kontinuitaet** (`_reddung_durchgehend_gemeldet`,
+`_REDDUNG_LUECKE_MAX_S = 300`). Die Zahl ist GESCHAETZT wie die Schonfrist — sie trennt einen
+Sim-Neustart (Minuten, VATSIM-Verbindung reisst) von einem blossen Aussetzer.
+
+⚠ **`_validate_reddung_felder` gilt fuer Anlegen UND Aendern**, und das Aendern prueft gegen
+den GESPEICHERTEN Stand (`zusammen`), nicht gegen den Koerper allein. Genau darueber lief die
+Luecke: Ein Teil-Update wurde gar nicht geprueft.
+
+⚠ **`require_confirm` NUR beim Loeschen** — wie Bummel und Transport. Es auf Anlegen und
+Aendern zu legen war ein erster, zurueckgenommener Anlauf: Ein Veranstalter baut ein Event in
+vielen kleinen Schritten, jedes Mal Passwort waere eine Zumutung ohne Gewinn.
+
+⚠ **Ein `try` JE EVENT** in `_check_reddung`. Vorher beendete ein kaputtes Event den Takt
+fuer alle — kein Commit, keine Latches, keine Objekte, jede Minute neu.
+
+**Nicht behoben, auf Ansage des Nutzers:** Die Bruegge-Position ist faelschbar (Toleranz
+skaliert mit der selbst gemeldeten Geschwindigkeit). Begruendung und die drei Zahlen fuer
+einen spaeteren Anlauf stehen in `CLAUDE.md`.
+
+⚠ **Fuer die Marken-Sitzung: `defusedxml` fehlt in jedem frischen venv.**
+`friesenbruegge/msfs-rauch/rauch_bauen.py` importiert es, und dadurch brechen
+`tests/test_msfs_marken_paket.py` (37 Errors) und `tests/test_xplane_marken.py` ab --
+Fehlerbild `ModuleNotFoundError`, sieht nach kaputtem Code aus, ist aber nur die fehlende
+Abhaengigkeit. **Nicht in `requirements.txt` aufnehmen**: Die beschreibt die App, und
+`friesenbruegge/` kommt gar nicht ins Docker-Image (Dockerfile kopiert nur `app/` und
+`scripts/`). CI faehrt keine Tests, es blockiert also nichts. Wer die volle Suite laufen
+laesst: `pip install defusedxml` ins eigene venv.
+
+---
+
 ## 2026-09-20 (nachts) — Marken (Wuerfel, Saeulen, Licht) in allen drei Simulatoren, 15.16.0
 
 **Angefasst:** `app/bruegge_arten.py` (15 neue Arten `wuerfel_<farbe>` x7, `saeule_<farbe>` x7, `licht`),

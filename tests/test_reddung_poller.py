@@ -155,6 +155,110 @@ def test_ein_schwebeflug_nach_dem_fund_nimmt_auf(db):
     assert _ev(db, eid)["aufgenommen_von"] == 222
 
 
+def test_nach_einem_verfall_latcht_derselbe_schwebeflug_nicht_wieder(db):
+    """⚠ Der Fehler, den der Test darueber NICHT gesehen hat: den ZWEITEN Takt.
+
+    Stufe 2 rechnet die Aufnahme aus allen Spuren seit dem Fund. Verfaellt die Aufnahme, weil
+    der Pilot verschwunden ist, bleibt sein Schwebeflug in `position_history` -- und war bis
+    zum 21.09.2026 im naechsten Takt wieder der zeitlich erste Treffer. Latch, Verfall, Latch,
+    Verfall, alle 30 s, mit zwei Push-Nachrichten je Runde an alle Abonnenten.
+    """
+    eid = _event(db, landung_noetig=0)
+    _punkte(db, 111, _quer(120))          # Fund frueh, damit der Schwebeflug danach liegt
+    _lauf(db)
+    # 222 schwebte vor 100 Minuten und meldet seitdem nicht mehr -- Latch und Verfall im
+    # selben Lauf, das ist gewollt.
+    _punkte(db, 222, _stand(db, 100, gs=10), alt=200, gs=10)
+    _lauf(db)
+    ev = _ev(db, eid)
+    assert ev["aufgenommen_von"] is None, "verfallen, denn er ist weg"
+    # ⚠ KEIN Zeitriegel beim Verfall -- der sperrte auch den, der gerade uebernehmen will.
+    # Dass der Verschwundene nicht erneut latcht, regelt der Melde-Filter in Stufe 2.
+    assert ev["aufnahme_ab"] is None
+    # Und jetzt der Takt, auf den es ankommt: nichts Neues ist passiert.
+    _lauf(db)
+    assert _ev(db, eid)["aufgenommen_von"] is None, "derselbe alte Schwebeflug darf nicht erneut latchen"
+
+
+def test_ein_kaputtes_event_reisst_den_takt_nicht_fuer_alle(db):
+    """⚠ Ein einziger `try` um die ganze Schleife liess ein kaputtes Event den Takt fuer ALLE
+    beenden -- kein Commit, keine Latches, keine Objekte, jede Minute neu.
+
+    Der Fall ist real: Bis zum 21.09.2026 kam eine Zeichenkette in einem Zahlenfeld ungeprueft
+    in die Datenbank. Die Eingabepruefung schliesst das jetzt aus; dieser Test haelt die
+    zweite Verteidigungslinie fest.
+    """
+    kaputt = _event(db)
+    heil = _event(db)
+    c = get_connection(db)
+    try:
+        c.execute("UPDATE reddung_events SET korridor_km = 'kaputt' WHERE id = ?", (kaputt,))
+        c.commit()
+    finally:
+        c.close()
+    _punkte(db, 111, _quer(90))
+    _lauf(db)                              # darf NICHT werfen
+    assert _ev(db, heil, )["gefunden_von"] == 111, "das heile Event muss gewertet werden"
+
+
+def test_der_abschluss_push_behauptet_nicht_unentdeckt_wenn_gefunden_wurde(db):
+    """`fertig` heisst nur "eingeliefert" -- der Text hing allein daran und log jeden Abend
+    an, an dem gefunden, aber nicht mehr eingeliefert wurde."""
+    eid = _event(db, ende_in_h=-0.01, landung_noetig=0)   # Fenster ist gerade vorbei
+    _punkte(db, 111, _quer(90))
+    p = VatsimPoller(db_path=db, callsign_prefix="FRS", poll_interval=60)
+    gesendet = []
+    p.broadcast_notify = lambda kanal, ziel, payload: gesendet.append(payload)
+    asyncio.run(p._check_reddung())
+    ev = _ev(db, eid)
+    assert ev["gefunden_von"] == 111 and ev["aufgeloest_am"]
+    # ⚠ Erst pruefen, DASS gemeldet wurde -- sonst ist der Test trivial gruen.
+    assert gesendet, "zum Abschluss muss eine Meldung rausgehen"
+    texte = " ".join(str(g) for g in gesendet)
+    assert "unentdeckt" not in texte, f"gefunden, trotzdem 'unentdeckt': {texte}"
+    assert "nicht mehr eingeliefert" in texte, f"der richtige Text fehlt: {texte}"
+
+
+def test_die_admin_freigabe_haelt_laenger_als_einen_takt(db):
+    """⚠ Der Knopf hielt bis zum 21.09.2026 genau 30 Sekunden.
+
+    Anders als beim Verfall meldet der Pilot hier weiter -- der Admin greift ja ein, WEIL die
+    Automatik falsch lag. Der Melde-Filter aus Stufe 2 hilft deshalb nicht; es braucht den
+    Zeitriegel `aufnahme_ab`. Ohne ihn rechnet der naechste Takt wieder ab dem Fund, findet
+    denselben Schwebeflug und latcht ihn erneut -- samt Push an alle.
+    """
+    from app.database import clear_reddung_aufnahme
+    eid = _event(db, landung_noetig=0)
+    _punkte(db, 111, _quer(120))
+    _lauf(db)
+    _punkte(db, 222, _stand(db, 2, gs=10), alt=200, gs=10)
+    _lauf(db)
+    assert _ev(db, eid)["aufgenommen_von"] == 222
+    # Der Admin gibt frei -- mit Zeitpunkt, wie es der Endpunkt tut.
+    c = get_connection(db)
+    try:
+        clear_reddung_aufnahme(c, eid, _iso(JETZT))
+        c.commit()
+    finally:
+        c.close()
+    _lauf(db)
+    assert _ev(db, eid)["aufgenommen_von"] is None, "der alte Schwebeflug liegt vor der Freigabe"
+
+
+def test_nach_einem_verfall_kann_ein_anderer_uebernehmen(db):
+    """Die Kehrseite: Der Riegel darf nicht das ganze Event blockieren."""
+    eid = _event(db, landung_noetig=0)
+    _punkte(db, 111, _quer(120))
+    _lauf(db)
+    _punkte(db, 222, _stand(db, 100, gs=10), alt=200, gs=10)
+    _lauf(db)
+    assert _ev(db, eid)["aufgenommen_von"] is None
+    # 333 schwebt JETZT am Wrack und meldet auch -- er muss drankommen.
+    _punkte(db, 333, _stand(db, 2, gs=10), alt=200, gs=10)
+    _lauf(db)
+    assert _ev(db, eid)["aufgenommen_von"] == 333
+
+
 def test_ein_schwebeflug_genuegt_NICHT_wenn_eine_landung_verlangt_ist(db):
     eid = _event(db, landung_noetig=1)
     _punkte(db, 111, _quer(90))
@@ -363,6 +467,62 @@ def test_die_landung_kommt_aus_der_bruegge_und_nicht_aus_vatsim(db):
     ev = _ev(db, eid)
     assert ev["eingeliefert_von"] == 222
     assert ev["eingeliefert_icao"] == "EDWF"
+
+
+def test_ein_sim_neustart_am_heimatplatz_ist_keine_einlieferung(db):
+    """⚠ Die Bruegge-Einlieferung prueft nur die MOMENTANPOSITION: am Boden, langsam, Platz
+    in der Naehe.
+
+    Wer nach der Aufnahme zum Desktop abstuerzt und seinen Simulator am Heimatplatz neu
+    startet, erfuellte das bis zum 21.09.2026 sofort -- Event aufgeloest, Wertung vergeben,
+    kein Meter geflogen. Der Kommentar an der Schonfrist nennt genau diesen Absturz selbst
+    „im Simulator Alltag".
+    """
+    from app.geo import icao_to_coords
+    eid = _event(db, landung_noetig=0)
+    _punkte(db, 111, _quer(120))
+    _lauf(db)
+    # Aufnahme vor 30 Minuten, danach meldet 222 NICHTS mehr -- er ist abgestuerzt.
+    c = get_connection(db)
+    try:
+        c.execute("UPDATE reddung_events SET aufgenommen_am = ?, aufgenommen_von = 222 "
+                  "WHERE id = ?", (_iso(JETZT - timedelta(minutes=30)), eid))
+        lat, lon = icao_to_coords("EDWF")
+        c.execute("INSERT OR REPLACE INTO bruegge_positions (cid, lat, lon, gs_kt, am_boden, "
+                  "gemeldet_am, simulator) VALUES (222, ?, ?, 0, 1, ?, 'msfs2024')",
+                  (lat, lon, _iso(JETZT)))
+        c.commit()
+    finally:
+        c.close()
+    _lauf(db)
+    assert _ev(db, eid)["eingeliefert_von"] is None, "30 Minuten Funkstille sind kein Flug"
+
+
+def test_wer_durchgehend_gemeldet_hat_liefert_ein(db):
+    """Die Kehrseite: Ein echter Flug darf nicht an der Kontinuitaetspruefung scheitern."""
+    from app.geo import icao_to_coords
+    eid = _event(db, landung_noetig=0)
+    _punkte(db, 111, _quer(120))
+    _lauf(db)
+    _punkte(db, 222, _stand(db, 30, gs=10), alt=200, gs=10)
+    c = get_connection(db)
+    try:
+        c.execute("UPDATE reddung_events SET aufgenommen_am = ?, aufgenommen_von = 222 "
+                  "WHERE id = ?", (_iso(JETZT - timedelta(minutes=30)), eid))
+        # Er fliegt zum Platz und meldet dabei alle 15 Sekunden.
+        for k in range(120):
+            c.execute("INSERT INTO position_history (cid, callsign, latitude, longitude, "
+                      "altitude, groundspeed, heading, ts) VALUES (222,'FRS222',?,?,600,110,90,?)",
+                      (LAT + k * 0.002, LON, _iso(JETZT - timedelta(seconds=15 * (120 - k)))))
+        lat, lon = icao_to_coords("EDWF")
+        c.execute("INSERT OR REPLACE INTO bruegge_positions (cid, lat, lon, gs_kt, am_boden, "
+                  "gemeldet_am, simulator) VALUES (222, ?, ?, 0, 1, ?, 'msfs2024')",
+                  (lat, lon, _iso(JETZT)))
+        c.commit()
+    finally:
+        c.close()
+    _lauf(db)
+    assert _ev(db, eid)["eingeliefert_icao"] == "EDWF"
 
 
 def test_eine_aussenlandung_ist_keine_einlieferung(db):

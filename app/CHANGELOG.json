@@ -1,5 +1,20 @@
 [
   {
+    "version": "15.17.0",
+    "date": "2026-09-22",
+    "highlight": false,
+    "title": "Neun Fehler in der FriesenReddung, gefunden beim Gegenlesen",
+    "items": [
+      "🚨 **Die Aufnahme lief nach einem Abbruch als Dauerschleife.** Wer den Havaristen aufnahm und dann verschwand, wurde vom Server im nächsten Takt erneut als Aufnehmender gesetzt — und sofort wieder gestrichen, alle 30 Sekunden, mit **zwei Benachrichtigungen an alle je Runde**. Wer wirklich am Wrack schwebte, kam dabei nie an die Reihe. Ab jetzt zählt nur, wer auch noch meldet.",
+      "🚨 **„Aufnahme freigeben“ hielt genau einen Takt.** Der Knopf setzte die Aufnahme zurück, und 30 Sekunden später stand derselbe Pilot wieder da — samt Benachrichtigung. Jetzt merkt sich der Server den Zeitpunkt: Nach einer Freigabe muss neu geschwebt werden.",
+      "🚨 **Ein Absturz zum Desktop galt als Rettung.** Die Einlieferung prüfte nur, ob der Pilot gerade an einem Flugplatz steht. Wer nach der Aufnahme abstürzte und seinen Simulator am Heimatplatz neu startete, hatte damit „eingeliefert“ — Event beendet, Wertung vergeben, kein Meter geflogen. Jetzt zählt nur eine Landung, vor der auch wirklich geflogen wurde.",
+      "🔧 **Eine Zahl, die keine war, legte alle Reddungen lahm.** Zeichenketten in Zahlenfeldern kamen ungeprüft in die Datenbank; danach scheiterte die ganze Liste, und der Poller brach jede Minute ab. Alle Zahlenfelder haben jetzt Wertebereiche. Ebenso konnte eine Zellkante von 0 den Suchsektor in 634.382 Zellen zerlegen und den Server anhalten.",
+      "🔧 **Wer beim Bearbeiten nur ein Feld änderte, umging die Prüfungen.** Ein einzelner Eckpunkt konnte den Sektor verdrehen, ein einzelnes Datum das Ende vor den Anfang legen — worauf das Event sofort beendet wurde. Geprüft wird jetzt gegen den gespeicherten Stand, nicht gegen das, was gerade gesendet wird.",
+      "🔧 **Nach einer Sektoränderung stimmte der Fortschritt nicht mehr** — es konnten mehr Felder als abgesucht gelten, als es überhaupt gab. Die Rechnung beginnt jetzt neu, wie bei FriesenBummel und FriesenKutter.",
+      "🔧 Drei kleinere: Ein fehlerhaftes Event hält nicht mehr alle anderen auf; die Abschlussmeldung behauptet nicht mehr „blieb unentdeckt“, wenn gefunden wurde; und das Löschen einer Reddung verlangt das Passwort erneut — es nimmt Wrack und Rauchsäulen aus allen Simulatoren mit."
+    ]
+  },
+  {
     "version": "15.16.0",
     "date": "2026-09-20",
     "highlight": false,

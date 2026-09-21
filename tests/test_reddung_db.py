@@ -100,10 +100,26 @@ def test_aufnahme_zuruecknehmen_macht_den_latch_wieder_frei(conn):
     """Bricht der Aufnehmende ab, muss ein anderer uebernehmen koennen."""
     eid = _ev(conn)
     set_reddung_aufgenommen(conn, eid, "2026-09-25T17:50:00Z", 222)
-    clear_reddung_aufnahme(conn, eid)
+    clear_reddung_aufnahme(conn, eid, "2026-09-25T18:00:00Z")
     ev = get_reddung_event(conn, eid)
     assert ev["aufgenommen_am"] is None and ev["aufgenommen_von"] is None
     assert set_reddung_aufgenommen(conn, eid, "2026-09-25T18:05:00Z", 333) is True
+
+
+def test_die_freigabe_merkt_sich_ab_wann_neu_geschwebt_werden_muss(conn):
+    """⚠ Ohne diesen Zeitpunkt ist die Freigabe wirkungslos.
+
+    Der Poller rechnet die Aufnahme jeden Takt aus ALLEN Spuren seit dem Fund. Steht dort
+    nichts, ab wann neu zu schweben ist, bleibt der alte Treffer des Verschwundenen der
+    zeitlich erste -- und der naechste Takt latcht ihn sofort wieder. Bis zum 21.09.2026 war
+    das so: Der Admin-Knopf hielt 30 Sekunden, und nach einem Verfall lief es als
+    Dauerschleife mit zwei Push-Nachrichten je Takt.
+    """
+    eid = _ev(conn)
+    assert get_reddung_event(conn, eid)["aufnahme_ab"] is None, "vor dem ersten Mal: ab Fund"
+    set_reddung_aufgenommen(conn, eid, "2026-09-25T17:50:00Z", 222)
+    clear_reddung_aufnahme(conn, eid, "2026-09-25T18:00:00Z")
+    assert get_reddung_event(conn, eid)["aufnahme_ab"] == "2026-09-25T18:00:00Z"
 
 
 def test_grundhoehe_merken_und_ihre_herkunft(conn):
