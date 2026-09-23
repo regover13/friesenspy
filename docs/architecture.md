@@ -50,8 +50,8 @@ Klassen und Maße sind aus `index.html` übernommen; der offene Bereich steht im
 (`#tab=events&typ=kutter`) und wird per `history.replaceState` nachgeführt.
 
 **Einen Event-Typ ergänzen** heißt: einen `.typ-btn` und ein `.typ-panel` anlegen und den Typ in
-`_typLader` eintragen. Geplant sind Kieker (#20), Suchflug (#21), Deichkontrolle (#22) und
-Baake (#24). Ein Chip ohne Inhalt dahinter gehört nicht in die Leiste.
+`_typLader` eintragen. **FriesenReddung (#21) ist seit dem 20.09.2026 gebaut** und damit das
+Vorbild; geplant sind noch Kieker (#20), Deichkontrolle (#22) und Baake (#24). Ein Chip ohne Inhalt dahinter gehört nicht in die Leiste.
 
 **Geladen wird erst beim ersten Öffnen** (`_tabLader` / `_typLader`, Merkliste `_geladen`).
 `showAdmin()` lädt bewusst nichts mehr; einzige Ausnahme ist `_pollStatsimBackfillStatus()`,
@@ -359,7 +359,7 @@ Marshallinseln, Aleuten). Nutzer-Entscheidung 16.08.2026: nicht in dieser Umstel
 ### `app/abdeckung.py` (seit 20.09.2026)
 
 Die gemeinsame Abdeckungsrechnung der drei geplanten Eventtypen — Zählflug (#20),
-Deichkontrolle (#22), Suchflug (#21). **Reine Funktionen, kein Datenbankzugriff:** Der
+Deichkontrolle (#22), FriesenReddung (#21). **Reine Funktionen, kein Datenbankzugriff:** Der
 Aufrufer holt die Spuren, das Modul rechnet.
 
 - `abdeckung(spuren, ziele, fenster) -> Abdeckung` — wer hat welches Ziel **zuerst** tief und
@@ -374,7 +374,7 @@ Aufrufer holt die Spuren, das Modul rechnet.
   Zelle gilt als komplett abgesucht, obwohl nur ein Streifen von 2 · Korridor durch ihre Mitte
   führte.
 
-**Ein Ziel ist immer ein Kreis** (Punkt + Radius). Der Havarist des Suchflugs ist darin nichts
+**Ein Ziel ist immer ein Kreis** (Punkt + Radius). Der Havarist der FriesenReddung ist darin nichts
 Besonderes, nur ein engerer Radius in derselben Liste — und das Ergebnis nennt Schlüssel,
 niemals Koordinaten (die Verdeckungsanforderung aus #21 gilt damit auf Modulebene, nicht erst
 in der API; ein Test hält es fest).

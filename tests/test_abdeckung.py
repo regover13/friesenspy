@@ -3,7 +3,7 @@
 
 Drei Eventtypen wollen dieselbe Frage beantwortet haben: *Ist dieses Ziel tief und langsam
 überflogen worden, und von wem zuerst?* Zählflug (#20) fragt es für eine Punktliste,
-Deichkontrolle (#22) für Abschnitte einer Linie, Suchflug (#21) für ein Zellraster **und** für
+Deichkontrolle (#22) für Abschnitte einer Linie, FriesenReddung (#21) für ein Zellraster **und** für
 den Havaristen — der ist nur ein Ziel mit engem Radius.
 
 **Warum die Tests gegen Strecken prüfen und nicht gegen Punkte.** Gemessen am 20.09.2026 über
@@ -398,7 +398,7 @@ class TestRandfaelle:
         assert erg.treffer == {} and erg.je_pilot == {1: 0}
 
     def test_havarist_und_raster_im_selben_lauf(self):
-        """Der Suchflug in einem Aufruf: 400 m um den Havaristen, 1,5 km je Rasterzelle."""
+        """Der FriesenReddung in einem Aufruf: 400 m um den Havaristen, 1,5 km je Rasterzelle."""
         ziele = zellen_aus_box(LAT - 0.09, LON - 0.15, LAT + 0.09, LON + 0.15,
                                kante_km=2.0, korridor_km=1.5)
         ziele.append(("havarist", nord(1), ost(1), 0.4))
@@ -411,7 +411,7 @@ class TestRandfaelle:
         assert 0 < erg2.anteil < 1
 
     def test_die_koordinate_taucht_im_ergebnis_nicht_auf(self):
-        """Die Kernanforderung des Suchflugs (#21): Der Server darf die Lage des Havaristen
+        """Die Kernanforderung der FriesenReddung (#21): Der Server darf die Lage des Havaristen
         NIEMALS herausgeben. Das Ergebnis dieses Moduls geht in API-Antworten — es darf den
         Schluessel nennen, nicht den Ort."""
         import json

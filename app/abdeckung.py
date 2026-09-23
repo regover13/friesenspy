@@ -6,7 +6,7 @@ beantworten (Ausgangspunkt: die Umfrage im Forum, September 2026):
 
 * **Zählflug** (#20) — eine Punktliste: Sandbänke, Kolonien, Bojen.
 * **Deichkontrolle** (#22) — eine Linie, in Abschnitte geschnitten.
-* **Suchflug** (#21) — ein Sektor als Zellraster **und** der Havarist. Der ist hier nichts
+* **FriesenReddung** (#21) — ein Sektor als Zellraster **und** der Havarist. Der ist hier nichts
   Besonderes, sondern ein Ziel mit engem Radius in derselben Liste.
 
 Deshalb kennt dieses Modul nur eine Form: **den Kreis.** Ein Ziel ist ein Punkt mit Radius.
@@ -15,7 +15,7 @@ Zellraster und Linienabschnitte entstehen aus :func:`zellen_aus_box` und
 woher sie kommen. Eine Geometrie heißt: eine Stelle, an der ein Vorzeichenfehler wohnen kann.
 
 **Hier ist keine Datenbank.** Wer rechnen will, holt die Spuren selbst — aus
-``position_history``, aus ``statsim_position_history``, oder (beim Suchflug) im Sekundentakt
+``position_history``, aus ``statsim_position_history``, oder (bei der FriesenReddung) im Sekundentakt
 aus dem Meldeweg der FriesenBrügge. Das Modul rechnet aus Zahlen und ist ohne Fixture prüfbar.
 
 Gerechnet wird gegen STRECKEN, nicht gegen Punkte
@@ -99,7 +99,7 @@ Punkt = tuple[float, float, "float | None", "float | None", str]
 Spur = tuple[int, list[Punkt]]
 
 #: Schlüssel, lat, lon, Radius in km. Der Schlüssel ist frei wählbar und muss eindeutig sein;
-#: er ist das Einzige, was nach außen gehen darf (s. Verdeckung beim Suchflug).
+#: er ist das Einzige, was nach außen gehen darf (s. Verdeckung bei der FriesenReddung).
 Ziel = tuple[str, float, float, float]
 
 _KM_JE_GRAD_LAT = 111.32
