@@ -52,8 +52,13 @@ hat nichts gesehen, und die Wertung soll sich in einem Satz erklären lassen. Fe
 Geschwindigkeit (``NULL``), ist der Überflug nicht belegt — ``NULL`` heißt nicht ``0``.
 
 Welche Höhe hineingegeben wird, entscheidet der Aufrufer und nicht dieses Modul: ``altitude``
-aus ``position_history`` ist MSL, über dem Wattenmeer ist die Geländehöhe ~0 und MSL ≈ AGL;
-die FriesenBrügge kennt zusätzlich die echte AGL.
+aus ``position_history`` ist MSL, die FriesenBrügge kennt zusätzlich die echte AGL.
+
+⚠ **``MSL ≈ AGL`` gilt nur über dem Wasser.** Über dem Watt ist die Geländehöhe ~0, und
+dort fällt der Unterschied nicht auf -- ein Suchsektor darf aber überall liegen, im
+Mittelgebirge, über einer Großstadt, in Brandenburg. Wer die Schranken gegen MSL prüft,
+verschiebt sie dort um die gesamte Geländehöhe. Deshalb lernt die FriesenReddung die
+Geländehöhe an der Unglücksstelle und rechnet gegen sie.
 
 Warum das schnell ist
 ---------------------

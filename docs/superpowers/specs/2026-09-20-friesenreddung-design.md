@@ -542,6 +542,21 @@ werten Flugbewegungen aus und bleiben unberührt.
 Dazu der Hinweis in der Live-Ansicht (`GET /api/me/reddung`) — er muss vor dem Flug kommen,
 nicht hinterher in der Bilanz.
 
+### 0. Zwei Einengungen, die nie welche waren
+
+Der Entwurf schreibt „**Der Havarist ist im Regelfall eine abgestürzte oder notgelandete
+Maschine**, nicht ein Boot". Der erste Halbsatz stimmt, der zweite ist eine Zuspitzung, die
+der Nutzer am 23.09.2026 zurückgewiesen hat: *„In der Regel ist es ein Flugzeug, kann aber
+auch ein Boot sein, oder ein Hund, oder ein Mensch, oder einfach ein Mülleimer. Ist doch
+völlig egal."* Zur Wahl stehen 31 Arten; `flugzeug_echo` ist eine **Voreinstellung**, keine
+Regel.
+
+Dasselbe beim Ort: „Wattenmeer" stand im Titel des Issues und klang nach Bedingung. *„Vielleicht
+suchen wir aber auch in den Bergen. Vielleicht auch in Ostdeutschland. Vielleicht in einer
+Großstadt."* Der Sektor ist ein Rechteck auf der Karte, sonst nichts. **Praktische Folge:** Die
+Annahme `MSL ≈ AGL`, die über dem Watt trägt, trägt sonst nirgends — deshalb lernt der Server
+die Geländehöhe an der Unglücksstelle, statt sie mit null anzusetzen.
+
 ### 2. `wilga` war keine Wilga
 
 Die Art bündelte drei verschiedene Flugzeuge, eines je Simulator:

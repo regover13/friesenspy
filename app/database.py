@@ -10172,7 +10172,9 @@ def compute_reddung_stand(conn: sqlite3.Connection, ev: dict) -> dict:
 #: Die drei Simulatoren, für die ein Havarist gesetzt werden kann.
 _REDDUNG_SIMULATOREN = ("msfs2020", "msfs2024", "xplane12")
 
-#: Vorgabe-Art des Havaristen. Ein Fliegerverein sucht Flieger, und `flugzeug_echo` hat
+#: Vorgabe-Art des Havaristen -- eine VORGABE, keine Regel. Der Admin kann jede Art wählen,
+#: die alle drei Simulatoren setzen können: Boot, Seehund, Fahrzeug, Gabelstapler. Ein
+#: Fliegerverein sucht meistens Flieger, deshalb steht `flugzeug_echo` voreingestellt; es hat
 #: aktive Titel in allen drei Simulatoren.
 _HAVARIST_VORGABE_ART = "flugzeug_echo"
 
