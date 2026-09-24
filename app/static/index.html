@@ -1216,24 +1216,31 @@
       color: var(--green);
       white-space: nowrap;
     }
-    #bummel-banner, #kutter-banner {
+    #bummel-banner, #kutter-banner, #reddung-banner {
       border: 1px solid var(--green-dim);
       background: linear-gradient(180deg, rgba(45,156,219,0.10), rgba(45,156,219,0.02));
       padding: 12px 14px;
       margin-bottom: 16px;
     }
-    #bummel-banner .bb-title, #kutter-banner .bb-title {
+    #bummel-banner .bb-title, #kutter-banner .bb-title, #reddung-banner .bb-title {
       font-family: var(--text-display);
       font-size: 0.8rem;
       letter-spacing: 0.06em;
       color: var(--green);
       margin-bottom: 6px;
     }
-    #bummel-banner .bb-sub, #kutter-banner .bb-sub {
+    #bummel-banner .bb-sub, #kutter-banner .bb-sub, #reddung-banner .bb-sub, #reddung-results .bb-sub {
       font-family: var(--text-mono);
       font-size: 0.78rem;
       color: var(--text-label);
       margin-bottom: 4px;
+    }
+    /* FriesenReddung: ein schlichter Balken -- die Flaeche hat keine Aufschluesselung wie die
+       Kutter-Fracht, nur einen Anteil. */
+    .reddung-balken { height: 10px; background: rgba(45,156,219,0.15); margin: 8px 0 6px; }
+    .reddung-balken > span { display: block; height: 100%; background: var(--green); }
+    .reddung-live-block + .reddung-live-block {
+      margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--green-dim);
     }
     .bummel-rank-1 { color: #ffd24a; font-weight: 700; }
     .bummel-avg-row {
@@ -4391,6 +4398,7 @@
        TAB: LIVE
        ===================================================================== -->
   <div id="tab-live" class="tab-panel active">
+    <div id="reddung-banner" hidden></div>
     <div id="bummel-banner" hidden></div>
     <div id="kutter-banner" hidden></div>
     <div class="panel">
@@ -15127,6 +15135,71 @@ async function _refreshKutterDetail() {
 }
 
 // ==========================================================================
+//  FRIESENREDDUNG — Takt, Live-Block, Karte, Bilanz (Spec 2026-09-23)
+// ==========================================================================
+// ⚠ Die Koordinate des Havaristen kommt hier nie an: `/api/reddung/events` und der
+// Raster-Endpunkt fuehren sie nicht, auch nicht nach dem Fund. Den Ort zeigt die
+// Rauchsaeule im Simulator (Nutzerentscheidung 24.09.2026).
+//
+// ⚠ Alle Zustaende stehen HIER oben -- vor dem ersten Aufruf auf oberster Ebene
+// (`setInterval(_reddungTakt, …)` weiter unten). Ein `let` dahinter legte die Seite lahm.
+let _reddungListe = [];          // letzte Antwort von /api/reddung/events
+
+function _jetztIso() {
+  return new Date().toISOString().slice(0, 19) + 'Z';
+}
+
+// Ein Takt fuer alles: Live-Block, Karte und Bilanz lesen dieselbe Liste.
+async function _reddungTakt() {
+  try {
+    const res = await fetch('/api/reddung/events');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    _reddungListe = (await res.json()) || [];
+  } catch (e) {
+    // Ein Aussetzer nimmt nichts weg: Block, Ebene und Bilanz bleiben, wie sie waren.
+    return;
+  }
+  _reddungBannerZeigen();
+}
+
+function _reddungBalken(pct) {
+  return `<div class="reddung-balken"><span style="width:${Math.max(0, Math.min(100, pct))}%"></span></div>`;
+}
+
+function _reddungMarkenHtml(st) {
+  const zeit = ts => (ts || '').slice(11, 16) + ' UTC';
+  const z = [];
+  if (st.gefunden) z.push(`Gefunden von ${escHtml(st.gefunden.name || '?')} um ${zeit(st.gefunden.ts)}`);
+  if (st.aufgenommen) z.push(`Aufgenommen von ${escHtml(st.aufgenommen.name || '?')} um ${zeit(st.aufgenommen.ts)}`);
+  if (st.eingeliefert) z.push(`Eingeliefert in ${escHtml(st.eingeliefert.icao || '?')} von ${escHtml(st.eingeliefert.name || '?')} um ${zeit(st.eingeliefert.ts)}`);
+  if (!z.length) return '<div class="bb-sub">Noch nicht gefunden.</div>';
+  return z.map(t => `<div class="bb-sub">${t}</div>`).join('');
+}
+
+function _reddungBannerZeigen() {
+  const banner = document.getElementById('reddung-banner');
+  if (!banner) return;
+  const jetzt = _jetztIso();
+  const laufend = _reddungListe.filter(r => (r.dtstart || '') <= jetzt && jetzt <= (r.dtend || ''));
+  if (!laufend.length) { banner.hidden = true; banner.innerHTML = ''; return; }
+  banner.innerHTML = laufend.map(_reddungBannerBlock).join('');
+  banner.hidden = false;
+}
+
+function _reddungBannerBlock(r) {
+  const st = r.stand || {};
+  const pct = Math.round((st.anteil || 0) * 100);
+  const kante = st.kante_km || 1;
+  const offenKm2 = Math.round((st.offen || 0) * kante * kante);
+  let html = `<div class="reddung-live-block"><div class="bb-title">🚨 ${escHtml(r.name || 'FriesenReddung')} läuft gerade</div>`;
+  html += _reddungBalken(pct);
+  html += `<div class="bb-sub">${pct} % abgesucht · noch offen: ${offenKm2} km²</div>`;
+  html += _reddungMarkenHtml(st);
+  html += `<div style="margin-top:8px;"><button class="btn-share" onclick="reddungAufKarte(${Number(r.id)})">${icon('map')} Zur Karte</button></div></div>`;
+  return html;
+}
+
+// ==========================================================================
 //  TAB SWITCHING
 // ==========================================================================
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -15477,6 +15550,8 @@ fetchBummelActive();
 setInterval(fetchBummelActive, 60000);  // Bummel-Banner langsam pollen (wie Prefiles)
 fetchKutterActive();
 setInterval(fetchKutterActive, 25000);  // Kutter-Live-Block im Kutter-Detail-Takt (Live-Aktualität)
+_reddungTakt();
+setInterval(_reddungTakt, 30000);  // FriesenReddung: Live-Block, Karte und Bilanz im Takt des Pollers
 // Delegierter Karten-Klick des Kutter-Blocks (überlebt die innerHTML-Refreshs).
 _on(document.getElementById('kutter-banner'), 'click', e => {
   const el = e.target.closest('[data-callsign]');
@@ -15802,6 +15877,7 @@ async function alleDatenNeuLaden() {
   }
   fetchBummelActive();
   fetchKutterActive();
+  _reddungTakt();
   fetchAndRenderPrefiles();
   fetchAndRenderTeamspeak();
 }

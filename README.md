@@ -392,9 +392,12 @@ sich im Minutentakt nach, denn ein Event kann beginnen, während die Seite läng
 verschwindet, sobald deine FriesenBrügge das erste Mal gemeldet hat. Ein Klick auf das × legt
 ihn für dieses Event weg — beim nächsten meldet er sich wieder.
 
-> **Noch nicht zu sehen:** Sektor, Fortschritt und Fackeln laufen bereits auf dem Server, und
-> ein Event lässt sich im Admin anlegen. Die Ansicht für Mitglieder — Sektor und abgesuchte
-> Fläche auf der Karte und im Kniebrett — kommt als nächster Schritt.
+**Was du davon siehst:**
+
+- **Live-Ansicht:** Läuft eine FriesenReddung, steht sie ganz oben — mit dem Balken, wie viel
+  vom Sektor schon abgesucht ist, wie viel Fläche noch offen ist, und wer gefunden,
+  aufgenommen und eingeliefert hat. Laufen mehrere gleichzeitig, stehen sie untereinander.
+  Wo der Havarist liegt, steht dort nie — den Ort zeigt dir die Rauchsäule im Simulator.
 
 ---
 
