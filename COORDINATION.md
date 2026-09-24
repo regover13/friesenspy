@@ -6,6 +6,27 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-24 — Kniebrett 2.3.1 ausgeliefert (Download-ZIP)
+
+**Auf der Download-Seite liegt jetzt `friesenspy-efb.zip` 2.3.1** (24.09.2026, sha256 lokal =
+Server `130ae65b…28e4`). Die vorige Fassung 2.3.0 liegt als
+`/opt/friesenspy/data/efb/friesenspy-efb-2.3.0.zip` daneben. Kein Neustart nötig.
+
+| Datei | Fassung |
+|---|---|
+| `friesenspy-efb.zip` | **2.3.1** |
+
+Inhalt: Quelltext-Fix `e02eba4` — Coherent GT ohne `globalThis` (Reiner Kaste, Uwe Zumkier)
+warf in `makeDeviceId` einen `ReferenceError`, die dauerhafte Anmeldung kam nie zustande.
+Im Bundle steht `globalThis` nur noch in `globalesObjekt`. **Die Fassung 2.3.1 ist nicht im
+Simulator eines betroffenen Mitglieds gegengeprüft** — der Fehler ist auf dem eigenen Rechner
+nicht nachstellbar.
+
+⚠ **Dieser Commit ist nicht gepusht** (ein Push deployt den Container neu). Das macht die
+Server-Session, wenn gerade niemand fliegt.
+
+---
+
 ## 2026-09-22 — Neun Fehler aus dem Fable-Gegenlesen behoben (15.17.0)
 
 > ⚠ **15.16.0 war beim Rebase schon vergeben** (Marken/Wuerfel-Sitzung, Eintrag
