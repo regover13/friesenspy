@@ -139,15 +139,58 @@ Schlüssel, rund 16 kB JSON. Das ist der ungünstigste Fall und wird alle 30 s g
 kompaktere Kodierung (Bitfeld, Lauflängen) wäre vorzeitige Optimierung und würde den Endpunkt
 unlesbar machen.
 
+### Die Abdeckung endet mit der Auflösung — auf dem Leseweg genauso wie im Poller
+
+Gefunden im Spec-Review vom 24.09.2026, und es ist ein vorhandener Fehler, den die neuen
+Ansichten erst sichtbar machen: **Der Poller schreibt nach `aufgeloest_am` nicht mehr fort**
+(`app/poller.py`, `if ev.get("aufgeloest_am"): … continue`). `compute_reddung_stand` tut es
+aber weiter, bis `min(jetzt, dtend)`. Damit hängt die abgesuchte Fläche eines Abends, der vor
+`dtend` aufgelöst wurde, davon ab, **ob zwischen Auflösung und `dtend` zufällig jemand die
+Eventliste geöffnet hatte** — und nach zwölf Stunden ist `bruegge_spur` weg, dann bleibt die
+Lücke für immer. Bilanz und Kennzahlen würden so eine Zahl zeigen, die vom Zufall abhängt;
+Live-Block und Karte, die alle 30 s fragen, machten den Zufall nur häufiger.
+
+**Regel:** Beide Lesewege — `compute_reddung_stand` und der Raster-Endpunkt — schreiben höchstens
+bis `min(jetzt, dtend, aufgeloest_am)` fort. Dasselbe Ende wie im Poller, also eine Wahrheit.
+
+`_REDDUNG_STAND_FASSUNG` wird dafür **nicht** erhöht: Die Rechnung selbst ändert sich nicht, nur
+ihr Ende. Snapshots, die schon über die Auflösung hinaus fortgeschrieben sind, bleiben wie sie
+sind — `bis > von` ist dann falsch und es wird nichts angefasst. Ein Erhöhen würde dagegen genau
+die Neuberechnung ohne Brügge-Punkte auslösen, vor der Nachtrag 3 der ersten Spec warnt.
+
+### Der Stand bekommt die Zellkante
+
+`compute_reddung_stand` gibt `korridor_km`, `fund_radius_m` und den Sektor heraus, aber **nicht
+`kante_km`** — und ohne sie lässt sich keine Fläche nennen. Gebraucht wird sie an drei Stellen:
+`flaeche_km2` in den Kennzahlen, „abgesuchte Fläche in km²" in der Bilanz, „wie viel Fläche
+noch offen ist" im Live-Block. Der Stand bekommt deshalb `kante_km` dazu. Das ist eine Zahl ohne
+Ortsbezug; der Test, der die Koordinate aus dem Stand fernhält, bleibt unberührt.
+
 ---
 
 ## 4. Kartenansicht
 
 **Eine Ebene „FriesenReddung"**, eingehängt über `_liveEbenenControl.addOverlay(...)` — also
 nachträglich, nicht beim Kartenaufbau. Grund: Sie soll **nur da sein, wenn es etwas zu zeigen
-gibt** (eine Reddung läuft, oder eine ist heute abgelaufen). Ein dauerhaft sichtbarer Haken, der
-meistens nichts tut, ist genau das, was Kompassnadel und Folgen-Pfeil im Projekt schon bewusst
-vermeiden. Gibt es nichts, wird die Ebene wieder entfernt.
+gibt**. Ein dauerhaft sichtbarer Haken, der meistens nichts tut, ist genau das, was
+Kompassnadel und Folgen-Pfeil im Projekt schon bewusst vermeiden. Gibt es nichts, wird die
+Ebene wieder entfernt.
+
+**Was „etwas zu zeigen" heißt, ist eine Liste, keine Zeitspanne:**
+
+1. jede Reddung, die gerade läuft,
+2. jede, deren `dtend` weniger als 24 Stunden zurückliegt — die Nachbesprechung im Forum
+   findet am Abend danach statt, nicht am selben,
+3. **die eine, die jemand aus der Bilanz heraus geöffnet hat** — gleich welchen Alters.
+
+⚠ Punkt 3 fehlte zuerst, und damit widersprach dieser Abschnitt dem Abschnitt 6: Das
+Bilanz-Panel hat einen Knopf zur Karte, und er stünde bei jedem älteren Abend ins Leere.
+
+**Die Ebene erscheint eingeschaltet**, und der Knopf „Zur Karte" schaltet sie ein, falls jemand
+sie abgewählt hat. Eine Ebene, die man erst im zugeklappten Ebenen-Knopf suchen muss, findet
+während eines laufenden Abends niemand. Ein Abwählen gilt bis zum Neuladen der Seite und wird
+nicht gespeichert — sonst verschwände sie beim nächsten Abend still, und wieder sucht sie
+niemand.
 
 **Gezeichnet wird:**
 
@@ -162,9 +205,19 @@ Ohne Rand verschmelzen benachbarte Zellen optisch zu einer Fläche; genau das is
 („dieser Streifen ist abgesucht"), und ein Gitternetz aus 1.600 Linienzügen wäre sowohl teurer
 als auch unruhiger.
 
-⚠ **Eigener Canvas-Renderer für diese Ebene** (`L.canvas()`), sonst legt Leaflet je Zelle ein
-SVG-Element an. Bei 1.600 Rechtecken ist das der Unterschied zwischen einer ruhigen und einer
-stockenden Karte — auf dem Cockpit-Tablet zuerst.
+⚠ **KEIN Canvas-Renderer — alle abgesuchten Zellen sind EIN Polygon.** Hier stand zuerst
+„eigener Canvas-Renderer (`L.canvas()`)", und das wäre auf genau dieser Karte kaputt gewesen:
+`liveMap` läuft mit leaflet-rotate, und das Plugin trägt SVG-Pfade und DOM-Marker, den
+Canvas-Renderer aber nicht. Die FSE-Ebenen hatten bis zum 16.08.2026 einen und zeigten einen
+Versatz, der sich mit jeder Zoomstufe verdoppelte — hineingezoomt hunderte Kilometer daneben
+(Kommentar über `_fseZoneBauen` in `index.html`). Gefunden im Spec-Review vom 24.09.2026.
+
+Stattdessen fasst die Ebene die abgedeckten Zellen **je Zeile zu Läufen zusammen** (benachbarte
+Zellen einer Zeile werden ein Rechteck) und übergibt alle Läufe als Ringe an **ein einziges**
+`L.polygon` — Leaflet zeichnet ein Mehrfachpolygon als **einen** SVG-Pfad. Die Zahl der
+DOM-Elemente ist damit eins, egal wie viel abgesucht ist; bei 40 Zeilen sind es selten mehr als
+ein paar Dutzend Ringe. Bei jedem Nachladen wird der Pfad mit `setLatLngs` ersetzt, nicht neu
+angelegt.
 
 **Nachgeladen alle 30 s**, solange die Ebene an ist und eine Reddung läuft. Der Takt folgt dem
 Poller: Die Einlieferung wird dort seit dem 20.09.2026 im 30-s-Takt geprüft, und die Abdeckung
@@ -241,7 +294,7 @@ Karte, kein Satz.
 | `event_count` | abgeschlossene Reddungen im Zeitraum |
 | `participations` | Σ Einträge in `je_pilot` — siehe Warnung darunter |
 | `gefunden_count` | wie oft der Havarist gefunden wurde |
-| `flaeche_km2` | Σ abgedeckte Zellen × Kante², gerundet |
+| `flaeche_km2` | Σ `abgedeckt` × `kante_km`², gerundet — die Kante steht seit dieser Runde im Stand |
 | `avg_rettung_min` | Mittel über `dauer_min`, nur über Abende mit Einlieferung |
 
 `/api/stats/special-events` bekommt `reddung` als dritten Schlüssel, die Oberfläche eine
@@ -261,8 +314,8 @@ nennen.
 `aufgeloest_am` filtert, zählt solche Abende zu früh und bekommt eine Abdeckung, die noch wächst.
 
 ⚠ **Nichts wird nachgerechnet.** Die Kennzahlen kommen aus den fortgeschriebenen Snapshots. Bei
-einem abgeschlossenen Event ist `alt["bis"] == dtend`, und `reddung_fortschreiben` läuft nicht
-erneut an — das ist auch die einzige Fassung, die trägt: `bruegge_spur` wird nach zwölf Stunden
+einem abgeschlossenen Event steht der Snapshot am Ende seines Fensters (`dtend` bzw.
+`aufgeloest_am`, s. Abschnitt 3), und `reddung_fortschreiben` läuft nicht erneut an — das ist auch die einzige Fassung, die trägt: `bruegge_spur` wird nach zwölf Stunden
 aufgeräumt, eine Neuberechnung fände nur noch VATSIM-Punkte vor, verwürfe sie mangels Meldung
 und setzte die abgesuchte Fläche eines verkündeten Abends auf null (Nachtrag 3 der ersten Spec).
 **`_REDDUNG_STAND_FASSUNG` wird in dieser Runde nicht erhöht** — die Rechnung ändert sich nicht.
@@ -300,8 +353,15 @@ Neu, jeder an Bezeichnern verankert statt an Kommentartexten:
    Fund, Abend mit Einlieferung, und dass `avg_rettung_min` Abende ohne Einlieferung auslässt.
 3. **Quelltexttests der Oberfläche** (Muster `tests/test_events_liste.py`,
    `tests/test_kutter_balken.py`): `#reddung-banner` und `#reddung-results` sind vorhanden,
-   der Klick in der Eventliste ruft `openReddungDetail`, die Kartenebene bekommt einen eigenen
-   Renderer, und der Teilen-Text enthält keine Koordinatenfelder.
+   der Klick in der Eventliste ruft `openReddungDetail`, und der Teilen-Text enthält keine
+   Koordinatenfelder. **Die Reddung-Ebene benutzt kein `L.canvas`** — der Test gehört an den
+   Bezeichner der Ebene, nicht an einen Kommentar; ein Canvas an dieser Karte ist der Fehler
+   vom 16.08.2026, und genau so etwas kehrt beim nächsten „das wäre doch schneller" zurück.
+4. **Das Ende der Fortschreibung** (in `tests/test_reddung_db.py`): Ein aufgelöstes Event, zu
+   dem es nach `aufgeloest_am` noch Punkte gibt, zählt diese nicht — weder über
+   `compute_reddung_stand` noch über den Raster-Endpunkt. Rote Gegenprobe: ohne die Schranke
+   wächst `abgedeckt`.
+5. **`kante_km` steht im Stand** — und die Koordinatenprüfung darauf läuft weiter grün.
 
 Die Testsuite läuft in `/home/claude/.venv-friesenspy`.
 
@@ -321,7 +381,8 @@ Die Testsuite läuft in `/home/claude/.venv-friesenspy`.
 ## 11. Reihenfolge der Umsetzung
 
 1. `raster_masse` in `app/abdeckung.py`, `zellen_aus_box` darauf umgestellt.
-2. `zellen_abgedeckt` in der Rückgabe von `reddung_fortschreiben`.
+2. `zellen_abgedeckt` in der Rückgabe von `reddung_fortschreiben`; `kante_km` im Stand; die
+   Schranke `aufgeloest_am` auf beiden Lesewegen.
 3. Der Raster-Endpunkt samt `_havarist_freigabe` und seinen Tests.
 4. Kartenebene (der größte und riskanteste Brocken — deshalb vor den einfachen Ansichten).
 5. Live-Block.
