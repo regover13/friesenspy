@@ -691,3 +691,44 @@ def test_eine_aufgeloeste_reddung_gibt_keinen_hinweis_mehr(db, als_pilot):
     finally:
         c.close()
     assert asyncio.run(main.meine_reddung(FakeReq())) == {"laeuft": False}
+
+
+# --- Raster-Endpunkt (Spec 2026-09-23, Abschnitt 3) ------------------------------------
+
+def test_raster_endpunkt_liefert_geometrie_und_zellen(db):
+    eid = _anlegen()
+    d = main.reddung_raster_endpunkt(eid)
+    assert d["id"] == eid and d["name"] == "Reddung Probe"
+    assert set(d) == {"id", "name", "dtstart", "dtend", "sektor", "raster", "zellen",
+                      "abgedeckt", "anteil", "aufgeloest"}
+    assert d["zellen"] == d["raster"]["zeilen"] * d["raster"]["spalten"]
+    assert d["abgedeckt"] == []
+
+
+def test_raster_endpunkt_kennt_unbekannte_ids_nicht(db):
+    """Eine leere 200 waere fuer die Karte nicht von „noch unberuehrt" zu unterscheiden."""
+    with pytest.raises(HTTPException) as e:
+        main.reddung_raster_endpunkt(9999)
+    assert e.value.status_code == 404
+
+
+def test_raster_endpunkt_traegt_keine_koordinate_auch_nach_dem_fund(db):
+    """⚠ Der Riegel an der Stelle, die jeder Browser erreicht."""
+    eid = _anlegen()
+    asyncio.run(main.admin_update_reddung_event(
+        FakeReq(body={"havarist_lat": 53.72, "havarist_lon": 7.25}), eid))
+    c = get_connection(db)
+    try:
+        c.execute("UPDATE reddung_events SET gefunden_am='2026-09-25T18:00:00Z', "
+                  "gefunden_von=111, aufgeloest_am='2026-09-25T18:00:00Z' WHERE id=?", (eid,))
+        c.commit()
+    finally:
+        c.close()
+    text = json.dumps(main.reddung_raster_endpunkt(eid))
+    for zahl in ("53.72", "7.25", "havarist"):
+        assert zahl not in text, f"{zahl} steht in der Raster-Antwort"
+
+
+def test_raster_endpunkt_liegt_hinter_dem_login_gate():
+    """Er steht NICHT in den gate-freien Praefixen -- sonst waere die Flaeche oeffentlich."""
+    assert not "/api/reddung/events/1/raster".startswith(main._GATE_ALLOW_PREFIXES)

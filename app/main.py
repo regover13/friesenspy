@@ -112,6 +112,7 @@ from app.database import (
     bruegge_soll_fuer,
     clear_reddung_aufnahme,
     compute_reddung_stand,
+    reddung_raster,
     create_reddung_event,
     delete_reddung_event,
     get_reddung_event,
@@ -6034,6 +6035,30 @@ def reddung_events():
                 "landung_noetig": ev.get("landung_noetig"),
                 "stand": stand,
             })
+        conn.commit()          # das Fortschreiben hat den Snapshot ergaenzt
+        return raus
+    finally:
+        conn.close()
+
+
+@app.get("/api/reddung/events/{event_id}/raster")
+def reddung_raster_endpunkt(event_id: int):
+    """Das Suchraster einer FriesenReddung für die Karte — Geometrie und abgesuchte Zellen.
+
+    ⚠ **Ohne die Lage des Havaristen, auch nach dem Fund.** Den Ort zeigt die Rauchsäule im
+    Simulator (Nutzerentscheidung 24.09.2026, Spec 2026-09-23 Abschnitt 2). Die Zusicherung
+    steckt in ``reddung_raster``; Tests in ``tests/test_reddung_db.py`` und hier.
+
+    Liegt hinter dem Login-Gate wie die Eventliste. Unbekannte id → 404: Eine leere Antwort
+    wäre für die Karte nicht von „noch unberührt" zu unterscheiden.
+    """
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        ev = get_reddung_event(conn, event_id)
+        if not ev:
+            raise HTTPException(status_code=404, detail="Event nicht gefunden")
+        raus = {"id": ev["id"], "name": ev.get("name"), "dtstart": ev.get("dtstart"),
+                "dtend": ev.get("dtend"), **reddung_raster(conn, ev)}
         conn.commit()          # das Fortschreiben hat den Snapshot ergaenzt
         return raus
     finally:

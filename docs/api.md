@@ -1119,6 +1119,20 @@ Alle FriesenReddungen mit ihrem Stand — für die Eventliste, später die Karte
 
 ---
 
+## GET /api/reddung/events/{id}/raster
+
+Das Suchraster einer FriesenReddung für die Kartenebene. Hinter dem Login-Gate; `404` bei unbekannter id.
+
+**Response** `{"id": int, "name": string, "dtstart": string, "dtend": string, "sektor": {"sued", "west", "nord", "ost"}, "raster": {"zeilen": int, "spalten": int, "d_lat": float, "d_lon": float}, "zellen": int, "abgedeckt": ["z0_0", …], "anteil": float, "aufgeloest": bool}`
+
+Zelle `z{i}_{j}` reicht von `sued + i·d_lat` bis `sued + (i+1)·d_lat` und von `west + j·d_lon` bis `west + (j+1)·d_lon`. Die Maße kommen aus `raster_masse` (`app/abdeckung.py`), derselben Funktion, die auch die gewerteten Zellen schneidet — die Karte rechnet nichts nach. Der Sektor geht sortiert hinaus.
+
+⚠ **Ohne die Lage des Havaristen — vor dem Fund, danach und nach der Auflösung.** Den Ort zeigt die Rauchsäule im Simulator.
+
+Geschrieben wird höchstens bis `min(jetzt, dtend, aufgeloest_am)` — dasselbe Ende wie im Poller.
+
+---
+
 ## Admin: FriesenReddung
 
 Alle sechs verlangen den Admin-Cookie (sonst `401`).
