@@ -403,6 +403,10 @@ ihn für dieses Event weg — beim nächsten meldet er sich wieder.
   teilt euch auf. Sie aktualisiert sich alle 30 Sekunden, auch im Kniebrett, und ist nur da,
   solange eine FriesenReddung läuft oder am Vortag lief. „Zur Karte" im Live-Block springt
   direkt auf den Sektor.
+- **Events:** Ein Klick auf die FriesenReddung in der Eventliste öffnet ihre Bilanz — Balken und
+  abgesuchte Fläche, wer gefunden, aufgenommen und wo eingeliefert hat, wie lange die Rettung
+  dauerte, und darunter, welche Fläche jeder als Erster abgesucht hat. Der Knopf **Teilen**
+  legt dir das Ganze als fertigen Absatz fürs Forum in die Zwischenablage.
 
 ---
 

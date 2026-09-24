@@ -194,3 +194,78 @@ def test_die_readme_beschreibt_die_karte():
     assert "**Karte:**" in abschnitt
     layer = README[README.index("## 🗺️ Karten-Layer"):]
     assert "**FriesenReddung**" in layer[:layer.index("\n---")]
+
+
+# --- Bilanz und Teilen -----------------------------------------------------------------
+
+def test_die_eventliste_oeffnet_die_bilanz():
+    """Bisher fiel der Klick bis _prefillEventForm durch und fuellte das Suchformular."""
+    rumpf = _ohne_kommentare(_funktion("renderFriesenEvents"))
+    assert "else if (ev.is_reddung) openReddungDetail(ev._reddungId);" in rumpf
+    assert rumpf.index("openReddungDetail") < rumpf.index("_prefillEventForm(ev)")
+
+
+def test_jede_andere_ansicht_schliesst_die_bilanz():
+    for name in ("_prefillEventForm", "openBummel", "openKutterDetail"):
+        assert "_reddungZu();" in _funktion(name), name
+    suche = INDEX[INDEX.index("getElementById('events-search-btn').addEventListener"):]
+    assert "_reddungZu();" in suche[:suche.index("searchEvents();")]
+
+
+def test_die_bilanz_schliesst_die_anderen():
+    rumpf = _funktion("openReddungDetail")
+    for panel in ("bummel-results", "kutter-results", "events-results"):
+        assert f"getElementById('{panel}').classList.add('hidden')" in rumpf, panel
+
+
+def test_der_takt_frischt_die_offene_bilanz_auf():
+    rumpf = _ohne_kommentare(_funktion("_reddungTakt"))
+    assert rumpf.index("_reddungBannerZeigen()") < rumpf.index("_reddungBilanzZeigen()")
+
+
+def test_die_bilanz_hat_ihr_panel_mit_teilen_knopf():
+    ev = INDEX[INDEX.index('<div id="tab-events"'):]
+    assert ev.index('id="kutter-results"') < ev.index('id="reddung-results"')
+    assert 'onclick="copyReddungShareHeader(this)"' in ev
+
+
+@pytest.mark.skipif(not _NODE, reason="node fehlt")
+def test_der_teilen_text_nennt_die_marken_und_keinen_ort():
+    r = {"id": 3, "name": "Vermisst über der Jade", "dtend": "2026-09-24T20:00:00Z",
+         "stand": {"anteil": 0.42, "abgedeckt": 672, "zellen": 1600, "kante_km": 1.0,
+                   "sektor": {"sued": 53.54, "west": 6.95, "nord": 53.9, "ost": 7.55},
+                   "gefunden": {"cid": 1, "name": "Stefan", "ts": "2026-09-24T19:12:00Z"},
+                   "aufgenommen": {"cid": 2, "name": "Wolfgang", "ts": "2026-09-24T19:30:00Z"},
+                   "eingeliefert": {"cid": 2, "name": "Wolfgang", "icao": "EDWF",
+                                    "ts": "2026-09-24T19:50:00Z"},
+                   "dauer_min": 38,
+                   "je_pilot": [{"cid": 1, "name": "Stefan", "zellen": 400},
+                                {"cid": 3, "name": "Nur Doppelt", "zellen": 0}]}}
+    text = _node(_funktion("_reddungTeilenText"),
+                 f"_reddungTeilenText({json.dumps(r)}, '2026-09-25T10:00:00Z')")
+    assert "FriesenReddung" in text and "Vermisst über der Jade" in text
+    assert "42 %" in text and "672 km²" in text
+    assert "Stefan um 19:12 UTC" in text and "EDWF" in text and "38 Minuten" in text
+    assert "Stefan (400 Zellen)" in text and "Nur Doppelt" not in text
+    for zahl in ("53.54", "6.95", "53.9", "7.55"):
+        assert zahl not in text, f"Koordinate {zahl} im Teilen-Text"
+
+
+@pytest.mark.skipif(not _NODE, reason="node fehlt")
+def test_der_teilen_text_unterscheidet_noch_nicht_und_nicht_gefunden():
+    r = {"id": 3, "name": "X", "dtend": "2026-09-24T20:00:00Z",
+         "stand": {"anteil": 0.1, "abgedeckt": 10, "zellen": 100, "kante_km": 1.0,
+                   "je_pilot": []}}
+    q = _funktion("_reddungTeilenText")
+    assert "Noch nicht gefunden" in _node(q, f"_reddungTeilenText({json.dumps(r)}, '2026-09-24T19:00:00Z')")
+    danach = _node(q, f"_reddungTeilenText({json.dumps(r)}, '2026-09-24T21:00:00Z')")
+    assert "Nicht gefunden" in danach and "Noch" not in danach
+
+
+def test_die_zustaende_der_bilanz_stehen_vor_dem_ersten_aufruf():
+    assert INDEX.index("let _reddungOffenId") < INDEX.index("setInterval(_reddungTakt, 30000)")
+
+
+def test_die_readme_beschreibt_die_bilanz():
+    abschnitt = README[README.index("## 🚨 FriesenReddung"):README.index("## 🔧 Verwaltung")]
+    assert "**Events:**" in abschnitt and "Teilen" in abschnitt

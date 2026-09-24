@@ -4590,6 +4590,16 @@
       </div>
     </div>
 
+    <div id="reddung-results" class="hidden">
+      <div class="panel">
+        <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+          <span id="reddung-title">🚨 FriesenReddung</span>
+          <button class="btn-share" onclick="copyReddungShareHeader(this)">⎘ Teilen</button>
+        </div>
+        <div id="reddung-content"></div>
+      </div>
+    </div>
+
     <!-- Steuert nur Karte + Liste unten (events-results) — deshalb direkt darüber, auch
          wenn ein Bummel/Kutter-Panel darüber eingeblendet ist. -->
     <div class="panel">
@@ -10039,6 +10049,7 @@ function renderFriesenEvents(data) {
       _lastClickedEventKey = _eventKey(ev);
       if (ev.is_bummel) openBummel(ev);
       else if (ev.is_transport) ev._kutterId ? openKutterDetail(ev._kutterId) : openKutter(ev);
+      else if (ev.is_reddung) openReddungDetail(ev._reddungId);
       else _prefillEventForm(ev);
     });
   });
@@ -10057,6 +10068,7 @@ function _prefillEventForm(ev) {
   document.getElementById('events-results').classList.add('hidden');
   document.getElementById('bummel-results').classList.add('hidden');
   document.getElementById('kutter-results').classList.add('hidden');
+  _reddungZu();
   clearInterval(_kutterPollTimer);
   _kutterPollTimer = null;
   _kutterOpenId = null;
@@ -10090,6 +10102,7 @@ let _activeBummelId = null;  // id des gerade geöffneten Rennens (für den Teil
 
 async function openBummel(ev) {
   document.getElementById('kutter-results').classList.add('hidden');
+  _reddungZu();
   clearInterval(_kutterPollTimer);
   _kutterPollTimer = null;
   _kutterOpenId = null;
@@ -15084,6 +15097,7 @@ async function openKutter(ev) {
 
 async function openKutterDetail(id) {
   document.getElementById('bummel-results').classList.add('hidden');
+  _reddungZu();
   _activeBummel = null; _activeBummelId = null;
   _kutterOpenId = id;
   setUrlState({ tab: 'events', kutter: id });
@@ -15156,6 +15170,7 @@ let _reddungAbgewaehlt = false;
 let _reddungSelbst = false;
 const _reddungZeichnung = new Map();    // id -> { rahmen, flaeche }
 const _reddungRasterFertig = new Map(); // id -> Raster abgelaufener Reddungen: einmal geladen
+let _reddungOffenId = null;             // die gerade offene Bilanz unter Events
 
 function _jetztIso() {
   return new Date().toISOString().slice(0, 19) + 'Z';
@@ -15173,6 +15188,7 @@ async function _reddungTakt() {
   }
   _reddungBannerZeigen();
   _reddungKarteAbgleichen();
+  _reddungBilanzZeigen();
 }
 
 function _reddungBalken(pct) {
@@ -15366,6 +15382,93 @@ async function reddungAufKarte(id) {
   if (s && liveMap) liveMap.fitBounds([[s.sued, s.west], [s.nord, s.ost]], { padding: [30, 30] });
 }
 
+function _reddungZu() {
+  const w = document.getElementById('reddung-results');
+  if (w) w.classList.add('hidden');
+  _reddungOffenId = null;
+}
+
+async function openReddungDetail(id) {
+  document.getElementById('bummel-results').classList.add('hidden');
+  document.getElementById('kutter-results').classList.add('hidden');
+  document.getElementById('events-results').classList.add('hidden');
+  clearInterval(_kutterPollTimer);
+  _kutterPollTimer = null;
+  _kutterOpenId = null;
+  _activeBummel = null;
+  _activeBummelId = null;
+  _reddungOffenId = Number(id);
+  const wrap = document.getElementById('reddung-results');
+  wrap.classList.remove('hidden');
+  _reddungBilanzZeigen();      // sofort aus der vorhandenen Liste …
+  await _reddungTakt();        // … und frisch, sobald sie da ist
+  wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// Im Takt aufgefrischt -- laeuft der Abend noch, waechst die Bilanz mit.
+function _reddungBilanzZeigen() {
+  if (_reddungOffenId == null) return;
+  const r = _reddungListe.find(x => x.id === _reddungOffenId);
+  const titel = document.getElementById('reddung-title');
+  const inhalt = document.getElementById('reddung-content');
+  if (!r || !titel || !inhalt) return;
+  titel.textContent = '🚨 ' + (r.name || 'FriesenReddung');
+  inhalt.innerHTML = _reddungBilanzHtml(r);
+}
+
+function _reddungBilanzHtml(r) {
+  const st = r.stand || {};
+  const pct = Math.round((st.anteil || 0) * 100);
+  const kante = st.kante_km || 1;
+  const km2 = Math.round((st.abgedeckt || 0) * kante * kante);
+  const vorbei = (r.dtend || '') < _jetztIso();
+  let html = _reddungBalken(pct);
+  html += `<div class="bb-sub">${pct} % abgesucht — ${st.abgedeckt || 0} von ${st.zellen || 0} Zellen, ${km2} km²</div>`;
+  if (st.gefunden) html += _reddungMarkenHtml(st);
+  else html += `<div class="bb-sub">${vorbei ? 'Nicht gefunden.' : 'Noch nicht gefunden.'}</div>`;
+  if (st.dauer_min != null) {
+    html += `<div class="bb-sub">Rettung in ${_fmtMin(st.dauer_min)} — vom Fund bis zur Einlieferung</div>`;
+  }
+  const piloten = st.je_pilot || [];
+  if (piloten.length) {
+    html += '<div class="table-scroll"><table><thead><tr><th>Pilot</th><th>Als Erster abgesucht</th><th>Anteil</th></tr></thead><tbody>';
+    piloten.forEach(p => {
+      const anteil = st.zellen ? Math.round(100 * p.zellen / st.zellen) : 0;
+      html += `<tr><td>${escHtml(p.name || String(p.cid))}</td><td class="mono">${p.zellen} Zellen</td><td class="mono">${anteil} %</td></tr>`;
+    });
+    html += '</tbody></table></div>';
+  }
+  html += `<div style="margin-top:8px;"><button class="btn-share" onclick="reddungAufKarte(${Number(r.id)})">${icon('map')} Zur Karte</button></div>`;
+  return html;
+}
+
+// Forumsfertiger Absatz. Wo der Havarist lag, steht nicht darin -- so wenig wie auf der Karte.
+function _reddungTeilenText(r, jetztIso) {
+  const st = r.stand || {};
+  const zeit = ts => (ts || '').slice(11, 16) + ' UTC';
+  const pct = Math.round((st.anteil || 0) * 100);
+  const kante = st.kante_km || 1;
+  const km2 = Math.round((st.abgedeckt || 0) * kante * kante);
+  const z = [`🚨 FriesenReddung — ${r.name || 'FriesenReddung'}`, `Abgesucht: ${pct} % (${km2} km²)`];
+  if (st.gefunden) z.push(`Gefunden: ${st.gefunden.name} um ${zeit(st.gefunden.ts)}`);
+  else z.push((r.dtend || '') < jetztIso ? 'Nicht gefunden' : 'Noch nicht gefunden');
+  if (st.aufgenommen) z.push(`Aufgenommen: ${st.aufgenommen.name} um ${zeit(st.aufgenommen.ts)}`);
+  if (st.eingeliefert) {
+    z.push(`Eingeliefert: ${st.eingeliefert.icao} von ${st.eingeliefert.name} um ${zeit(st.eingeliefert.ts)}`);
+  }
+  if (st.dauer_min != null) z.push(`Rettung in ${st.dauer_min} Minuten`);
+  const piloten = (st.je_pilot || []).filter(p => p.zellen > 0);
+  if (piloten.length) {
+    z.push('Abgesucht haben: ' + piloten.map(p => `${p.name} (${p.zellen} Zellen)`).join(', '));
+  }
+  return z.join('\n');
+}
+
+function copyReddungShareHeader(btn) {
+  const r = _reddungListe.find(x => x.id === _reddungOffenId);
+  if (r) _copyText(_reddungTeilenText(r, _jetztIso()), btn);
+}
+
 // ==========================================================================
 //  TAB SWITCHING
 // ==========================================================================
@@ -15448,6 +15551,7 @@ document.getElementById('events-search-btn').addEventListener('click', () => {
   _activeBummel = null;
   document.getElementById('bummel-results').classList.add('hidden');
   document.getElementById('kutter-results').classList.add('hidden');
+  _reddungZu();
   clearInterval(_kutterPollTimer);
   _kutterPollTimer = null;
   _kutterOpenId = null;
