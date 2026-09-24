@@ -4505,6 +4505,7 @@
               <li><strong>Platzrunden</strong> — 412 deutsche Platzrunden mit Höhe, über jeder Kartensorte</li>
               <li><strong>Meldepunkte</strong> — VFR-Meldepunkte weltweit; gefüllt heißt meldepflichtig, hohl heißt auf Anforderung</li>
               <li><strong>FSE-Plätze</strong> und <strong>FSE-Landeflächen</strong> — zwei eigene Haken: Plätze aus FSEconomy mit Bahnlänge, Belag und dem Namen, unter dem der Platz im Simulator zu finden ist</li>
+              <li><strong>FriesenReddung</strong> — der Suchsektor als rot gestrichelter Rahmen, darin blau, was schon abgesucht ist; erscheint nur, solange eine FriesenReddung läuft oder am Vortag lief. Wo der Havarist liegt, zeigt sie nie</li>
               <li><strong>Verkehr</strong> — der fremde VATSIM-Verkehr (grau, siehe oben); aus Platzgründen erst ab Zoomstufe 7</li>
               <li><strong>Radar Label</strong> — blendet die Beschriftungen am Fremdverkehr aus, wenn das Bild ruhiger sein soll; der Haken erscheint erst mit eingeschaltetem „Verkehr"</li>
             </ul>
@@ -15144,6 +15145,17 @@ async function _refreshKutterDetail() {
 // ⚠ Alle Zustaende stehen HIER oben -- vor dem ersten Aufruf auf oberster Ebene
 // (`setInterval(_reddungTakt, …)` weiter unten). Ein `let` dahinter legte die Seite lahm.
 let _reddungListe = [];          // letzte Antwort von /api/reddung/events
+let _reddungGeoeffnetId = null;         // aus Live-Block oder Bilanz auf die Karte geholt
+let _reddungGruppe = null;              // L.layerGroup der Ebene „FriesenReddung"
+let _reddungEbeneDa = false;            // steht der Eintrag gerade in der Ebenen-Auswahl?
+// Vom Nutzer abgewaehlt -- gilt bis zum Neuladen und wird bewusst NICHT gespeichert: Sonst
+// verschwaende die Ebene beim naechsten Abend still, und wieder saehe sie niemand.
+let _reddungAbgewaehlt = false;
+// Eigenes addTo/removeLayer loest overlayadd/overlayremove aus; das darf nicht als Wahl des
+// Nutzers zaehlen (dasselbe Muster wie _groundEbeneStilllegen).
+let _reddungSelbst = false;
+const _reddungZeichnung = new Map();    // id -> { rahmen, flaeche }
+const _reddungRasterFertig = new Map(); // id -> Raster abgelaufener Reddungen: einmal geladen
 
 function _jetztIso() {
   return new Date().toISOString().slice(0, 19) + 'Z';
@@ -15160,6 +15172,7 @@ async function _reddungTakt() {
     return;
   }
   _reddungBannerZeigen();
+  _reddungKarteAbgleichen();
 }
 
 function _reddungBalken(pct) {
@@ -15197,6 +15210,160 @@ function _reddungBannerBlock(r) {
   html += _reddungMarkenHtml(st);
   html += `<div style="margin-top:8px;"><button class="btn-share" onclick="reddungAufKarte(${Number(r.id)})">${icon('map')} Zur Karte</button></div></div>`;
   return html;
+}
+
+// Welche Reddungen die Karte zeigt -- eine Liste, keine Zeitspanne (Spec Abschnitt 4):
+// die laufenden, die vor weniger als 24 h endeten (die Nachbesprechung ist am Abend danach),
+// und die eine, die jemand aus der Bilanz geholt hat, gleich welchen Alters.
+function _reddungZuZeigen(liste, jetztIso, geoeffnetId) {
+  const jetzt = Date.parse(jetztIso);
+  const TAG_MS = 24 * 3600 * 1000;
+  const ids = [];
+  (liste || []).forEach(r => {
+    const start = Date.parse(r.dtstart || ''), ende = Date.parse(r.dtend || '');
+    const laeuft = start <= jetzt && jetzt <= ende;
+    const frisch = ende < jetzt && jetzt - ende < TAG_MS;
+    if (laeuft || frisch || r.id === geoeffnetId) ids.push(r.id);
+  });
+  return ids;
+}
+
+// Die abgesuchten Zellen je Zeile zu Laeufen zusammenfassen -- ein Rechteck je Lauf. Die
+// letzte Zeile/Spalte ragt ueber den Sektor (die Zellenzahl ist aufgerundet); gekappt wird
+// am Rahmen, sonst stuende gefuellte Flaeche ausserhalb der Aufgabe.
+function _reddungLaeufe(abgedeckt, raster, sektor) {
+  const zeilen = new Map();
+  (abgedeckt || []).forEach(k => {
+    const m = /^z(\d+)_(\d+)$/.exec(k);
+    if (!m) return;
+    const i = Number(m[1]), j = Number(m[2]);
+    if (!zeilen.has(i)) zeilen.set(i, []);
+    zeilen.get(i).push(j);
+  });
+  const ringe = [];
+  [...zeilen.keys()].sort((a, b) => a - b).forEach(i => {
+    const js = zeilen.get(i).sort((a, b) => a - b);
+    let von = js[0], bis = js[0];
+    const schliessen = () => {
+      const s = sektor.sued + i * raster.d_lat;
+      const n = Math.min(s + raster.d_lat, sektor.nord);
+      const w = sektor.west + von * raster.d_lon;
+      const o = Math.min(sektor.west + (bis + 1) * raster.d_lon, sektor.ost);
+      ringe.push([[s, w], [s, o], [n, o], [n, w]]);
+    };
+    for (let k = 1; k < js.length; k++) {
+      if (js[k] === bis + 1) { bis = js[k]; continue; }
+      schliessen();
+      von = bis = js[k];
+    }
+    schliessen();
+  });
+  return ringe;
+}
+
+function _reddungKarteAbgleichen() {
+  if (typeof liveMap === 'undefined' || !liveMap || !_liveEbenenControl) return;
+  if (!_reddungGruppe) {
+    _reddungGruppe = L.layerGroup();
+    liveMap.on('overlayremove', e => {
+      if (e.layer === _reddungGruppe && !_reddungSelbst) _reddungAbgewaehlt = true;
+    });
+    liveMap.on('overlayadd', e => {
+      if (e.layer !== _reddungGruppe || _reddungSelbst) return;
+      _reddungAbgewaehlt = false;
+      _reddungKarteAbgleichen();   // wieder eingeschaltet: sofort laden, nicht erst im Takt
+    });
+  }
+  const jetzt = _jetztIso();
+  const ids = _reddungZuZeigen(_reddungListe, jetzt, _reddungGeoeffnetId);
+  if (!ids.length) {
+    if (_reddungEbeneDa) {
+      _reddungSelbst = true;
+      try {
+        liveMap.removeLayer(_reddungGruppe);
+        _liveEbenenControl.removeLayer(_reddungGruppe);
+      } finally {
+        _reddungSelbst = false;
+      }
+      _reddungEbeneDa = false;
+    }
+    return;
+  }
+  if (!_reddungEbeneDa) {
+    _liveEbenenControl.addOverlay(_reddungGruppe, 'FriesenReddung');
+    _reddungEbeneDa = true;
+  }
+  if (!_reddungAbgewaehlt && !liveMap.hasLayer(_reddungGruppe)) {
+    _reddungSelbst = true;
+    try { _reddungGruppe.addTo(liveMap); } finally { _reddungSelbst = false; }
+  }
+  for (const [id, z] of _reddungZeichnung) {
+    if (!ids.includes(id)) {
+      _reddungGruppe.removeLayer(z.rahmen);
+      _reddungGruppe.removeLayer(z.flaeche);
+      _reddungZeichnung.delete(id);
+    }
+  }
+  // Geladen wird nur, solange die Ebene an ist -- abgewaehlt kostet sie keine Anfrage.
+  if (!liveMap.hasLayer(_reddungGruppe)) return;
+  ids.forEach(id => _reddungRasterHolen(id, jetzt));
+}
+
+async function _reddungRasterHolen(id, jetztIso) {
+  const r = _reddungListe.find(x => x.id === id);
+  if (!r) return;
+  const vorbei = (r.dtend || '') < jetztIso;
+  let d = vorbei ? _reddungRasterFertig.get(id) : null;
+  if (!d) {
+    try {
+      const res = await fetch('/api/reddung/events/' + id + '/raster');
+      if (!res.ok) return;
+      d = await res.json();
+    } catch (e) {
+      return;
+    }
+    // Abgelaufen aendert sich nichts mehr -- einmal laden, nie wieder fragen.
+    if (vorbei) _reddungRasterFertig.set(id, d);
+  }
+  _reddungZeichnen(id, d);
+}
+
+// ⚠ SVG, KEIN Canvas: liveMap laeuft mit leaflet-rotate, und das Plugin traegt den
+// Canvas-Renderer nicht (s. Kommentar ueber _fseZoneBauen). Alle Laeufe sind EIN Pfad.
+function _reddungZeichnen(id, d) {
+  if (!_reddungGruppe || !d || !d.sektor || !d.raster) return;
+  const s = d.sektor;
+  const ringe = _reddungLaeufe(d.abgedeckt, d.raster, s);
+  // Jeder Lauf ein EIGENES Polygon: Als flache Liste naehme Leaflet die Ringe ab dem zweiten
+  // als Loecher des ersten.
+  const polys = ringe.map(r => [r]);
+  let z = _reddungZeichnung.get(id);
+  if (!z) {
+    z = {
+      rahmen: L.rectangle([[s.sued, s.west], [s.nord, s.ost]],
+        { color: '#e05555', weight: 2, dashArray: '8 6', fill: false, interactive: false }),
+      flaeche: L.polygon(polys,
+        { stroke: false, fillColor: '#2d9cdb', fillOpacity: 0.3, interactive: false }),
+    };
+    _reddungGruppe.addLayer(z.rahmen);
+    _reddungGruppe.addLayer(z.flaeche);
+    _reddungZeichnung.set(id, z);
+  } else {
+    z.flaeche.setLatLngs(polys);
+  }
+}
+
+async function reddungAufKarte(id) {
+  _reddungGeoeffnetId = Number(id);
+  _reddungAbgewaehlt = false;
+  const tab = document.querySelector('.tab-btn[data-tab="karte"]');
+  if (tab) tab.click();
+  await new Promise(r => setTimeout(r, 300));
+  if (!liveMap) await initLiveMap();
+  _reddungKarteAbgleichen();
+  const r = _reddungListe.find(x => x.id === Number(id));
+  const s = r && r.stand && r.stand.sektor;
+  if (s && liveMap) liveMap.fitBounds([[s.sued, s.west], [s.nord, s.ost]], { padding: [30, 30] });
 }
 
 // ==========================================================================
@@ -15251,6 +15418,8 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
           }
           // Erst jetzt: Der Knopf ruft invalidateSize() selbst, und das braucht eine Karte.
           _vollbildWiederherstellen();
+          // Die FriesenReddung-Ebene sofort, nicht erst mit dem naechsten Takt.
+          _reddungKarteAbgleichen();
           refreshLiveData();
         });
       });

@@ -398,6 +398,11 @@ ihn für dieses Event weg — beim nächsten meldet er sich wieder.
   vom Sektor schon abgesucht ist, wie viel Fläche noch offen ist, und wer gefunden,
   aufgenommen und eingeliefert hat. Laufen mehrere gleichzeitig, stehen sie untereinander.
   Wo der Havarist liegt, steht dort nie — den Ort zeigt dir die Rauchsäule im Simulator.
+- **Karte:** Die Ebene **FriesenReddung** zeigt den Sektor als rot gestrichelten Rahmen und
+  darin blau, was schon abgesucht ist — so seht ihr in der Luft, wo noch niemand war, und
+  teilt euch auf. Sie aktualisiert sich alle 30 Sekunden, auch im Kniebrett, und ist nur da,
+  solange eine FriesenReddung läuft oder am Vortag lief. „Zur Karte" im Live-Block springt
+  direkt auf den Sektor.
 
 ---
 
@@ -620,6 +625,8 @@ Alle Karten in FriesenSpy (Live-Tab, Track-Ansicht, Event-Suche) verwenden diese
 **Meldepunkte**: Die visuellen Meldepunkte (VRP) als große Dreiecke mit Namen — gefüllt heißt meldepflichtig, hohl heißt auf Anforderung; das Popup nennt die Höhe, wenn sie veröffentlicht ist. Ab Zoomstufe 9, der Name ab Stufe 11, weltweit. Ihr Gewinn zeigt sich im Anflug: Das OpenAIP-Bild endet bei Zoom 14 und die OpenFlightMap trägt Luftfahrtinhalt nur bis Stufe 12 — die Meldepunkte stehen auf jeder Stufe und über jeder Karte, auch über dem Satellitenbild. Von Hand zu pflegen ist daran nichts; die Ebene braucht einen `OPENAIP_API_KEY`. Datenquelle: OpenAIP (CC BY-NC 4.0).
 
 **FSE-Plätze** und **FSE-Landeflächen**: Die Plätze aus FSEconomy mit Bahnlänge, Belag und Höhe — im Popup steht auch der Name, unter dem der Platz **im Simulator** zu finden ist (Emden heißt dort EHOW, Papenburg EDHJ). Die ICAO-Beschriftung erscheint ab Zoomstufe 11.
+
+**FriesenReddung**: Suchsektor und abgesuchte Fläche einer FriesenReddung — rot gestrichelter Rahmen, darin blau, was schon jemand abgeflogen hat. Die Ebene taucht nur auf, solange eine FriesenReddung läuft oder am Vortag lief, und ist dann eingeschaltet; schaltest du sie ab, bleibt sie bis zum Neuladen der Seite aus. Die Lage des Havaristen zeigt sie nie.
 
 **Sichtflugkarte** (blaues Symbol, ein hochkantes Blatt mit Textzeilen): Die amtliche DFS-Sichtflugkarte eines Platzes, halbtransparent über der Karte. Sie erscheint von allein, sobald du im Kartenfeld fliegst. Antippen des Symbols nagelt das Blatt fest oder nimmt es weg.
 
