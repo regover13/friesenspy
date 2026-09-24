@@ -29,7 +29,7 @@ keine davon zurückkommt.
 | Frage | Entscheidung | Verworfen, und warum |
 |---|---|---|
 | Was zeigt die Karte im laufenden Abend? | **Sektorrahmen plus Raster: abgesucht oder offen** | *Nur Rahmen und Prozentbalken* — nimmt dem Abend das taktische Element, das #21 gerade ausmacht. *Raster mit „wer hat was"* — mehr Daten je Takt, schwierige Farbgebung, und der eigene Beitrag steht in der Bilanz. |
-| Zeigt die Karte die Unglücksstelle nach der Auflösung? | **Ja, der genaue Punkt** | *Nur die Rasterzelle* — bis zu einem Kilometer Unschärfe macht die Nachbesprechung ungenau. *Gar nicht* — wer an dem Abend nicht geflogen ist, erführe nie, wo der Havarist lag. |
+| Zeigt die Karte die Unglücksstelle? | **Ja, der genaue Punkt — ab dem Fund** | *Nur die Rasterzelle* — bis zu einem Kilometer Unschärfe macht die Nachbesprechung ungenau. *Gar nicht* — wer an dem Abend nicht geflogen ist, erführe nie, wo der Havarist lag. |
 | Wie weit geht die Bilanz? | **Panel mit Teilen-Text** | *Zusätzlich Badge-Bilder* — eigene Runde, siehe Abschnitt 8. *Nur das Panel* — dann tippt die Nachbesprechung jemand von Hand. |
 | Welche Kennzahlen? | **Kachelzeile im Schnitt von Kutter und Bummel** | *Zusätzlich eine Finder-Rangliste* — eine Darstellung, die es bei den anderen Eventtypen nicht gibt; erst einführen, wenn sie dort auch gewollt ist. *Nur Grundzahlen* — Fläche und Rettungsdauer sind gerade das Eigene dieses Eventtyps. |
 
@@ -38,24 +38,36 @@ keine davon zurückkommt.
 ## 2. Die Verdeckung wird umformuliert, nicht aufgegeben
 
 Heute gilt: `compute_reddung_stand` **gibt nie eine Koordinate heraus**, und
-`tests/test_reddung_db.py` hält es fest. Die Karte stellt diese Zusage neu, denn nach
-`aufgeloest_am` ist die Lage ohnehin öffentlich — im Simulator steht dort bis `dtend` die rote
-Fackel, sichtbar für jeden, der hinfliegt.
+`tests/test_reddung_db.py` hält es fest. Die Karte stellt diese Zusage neu, denn **ab dem Fund
+ist die Lage ohnehin öffentlich**: Die Nähe-Sperre (`bruegge_soll.nur_nah_m`) gilt nur vor dem
+Fund, danach stehen Wrack und orange Rauchsäule im Simulator für jeden sichtbar, der in die
+Gegend fliegt — „das ist der Sinn einer Rauchsäule" (erste Spec, Abschnitt 12).
 
 **Neue Fassung der Zusage:**
 
 > Die Lage des Havaristen verlässt den Server in Richtung Browser **ausschließlich über
-> `GET /api/reddung/events/{id}/raster`, und dort erst, wenn `aufgeloest_am` gesetzt ist.**
+> `GET /api/reddung/events/{id}/raster`, und dort erst, wenn `gefunden_am` gesetzt ist** — oder
+> `aufgeloest_am`, falls ihn bis `dtend` niemand gefunden hat.
+
+⚠ **Nicht erst ab `aufgeloest_am`** — so stand es zuerst, beschlossen auf eine falsch gestellte
+Frage hin (sie behauptete, erst die Auflösung mache die Lage öffentlich). `aufgeloest_am` wird
+aber erst mit der **Einlieferung** gesetzt. Die Website hätte den Ort damit genau in der Phase
+verschwiegen, in der „irgendeiner" hinfliegen soll, um aufzunehmen — während der Simulator ihn
+längst zeigt. Berichtigt im Spec-Review vom 24.09.2026, Nutzerentscheidung „ab dem Fund".
 
 ⚠ **`compute_reddung_stand` bleibt unangetastet koordinatenfrei.** Der vorhandene Test gilt
 unverändert weiter, und `/api/reddung/events` (die Liste, die die Eventliste füllt) gibt die
-Koordinate auch **nach** der Auflösung nicht heraus. Die Freigabe geschieht in einer eigenen
+Koordinate auch **nach** dem Fund nicht heraus. Die Freigabe geschieht in einer eigenen
 kleinen Funktion im neuen Endpunkt:
 
 ```python
 def _havarist_freigabe(ev: dict) -> dict | None:
-    """Die Lage — aber nur nach der Auflösung. Die EINZIGE Stelle, die sie herausgibt."""
-    if not ev.get("aufgeloest_am"):
+    """Die Lage — aber erst ab dem Fund. Die EINZIGE Stelle, die sie herausgibt.
+
+    Hat bis `dtend` niemand gefunden, gibt die Auflösung sie frei: Dann markiert die rote
+    Fackel die Stelle, und die Bilanz soll zeigen können, wo er lag.
+    """
+    if not (ev.get("gefunden_am") or ev.get("aufgeloest_am")):
         return None
     if ev.get("havarist_lat") is None or ev.get("havarist_lon") is None:
         return None
@@ -196,7 +208,9 @@ niemand.
 
 * der **Sektorrahmen** als gestricheltes Rechteck — die Grenze der Aufgabe,
 * die **abgesuchten Zellen** gefüllt, ohne eigenen Rand,
-* nach der Auflösung: die **Unglücksstelle** als Marke, dazu ein Kreis mit `fund_radius_m`.
+* ab dem Fund: die **Unglücksstelle** als Marke, dazu ein Kreis mit `fund_radius_m` — für alle,
+  die zum Aufnehmen hinfliegen, und im Kniebrett ebenso. Findet niemand, erscheint sie mit der
+  Auflösung bei `dtend`.
 
 **Nur die abgesuchten Zellen, nicht die offenen.** Das liest sich richtig herum („was gefüllt
 ist, hat jemand angesehen"), hält die Zeichenlast am Anfang des Abends klein — wenn ohnehin fast
@@ -309,9 +323,9 @@ anderer dort zuerst war, ist Doppelarbeit und kein Grund, ihn aus der Statistik 
 Wer stattdessen nur Einträge mit `zellen > 0` zählt, misst etwas anderes und muss es anders
 nennen.
 
-**Abgeschlossen heißt `dtend` vorbei**, nicht `aufgeloest_am` gesetzt. Bei
-`aufnehmen_noetig = 0` löst schon der Fund die Lage auf, während der Abend weiterläuft; wer auf
-`aufgeloest_am` filtert, zählt solche Abende zu früh und bekommt eine Abdeckung, die noch wächst.
+**Abgeschlossen heißt `dtend` vorbei**, nicht `aufgeloest_am` gesetzt — wie bei Bummel und
+Kutter. Seit die Abdeckung mit der Auflösung endet (Abschnitt 3), stünden die Zahlen zwar schon
+früher fest; ein Abend, der im Kalender noch läuft, gehört aber nicht in eine Rückschau.
 
 ⚠ **Nichts wird nachgerechnet.** Die Kennzahlen kommen aus den fortgeschriebenen Snapshots. Bei
 einem abgeschlossenen Event steht der Snapshot am Ende seines Fensters (`dtend` bzw.
@@ -346,9 +360,10 @@ Neu, jeder an Bezeichnern verankert statt an Kommentartexten:
      das bindet Endpunkt und Rechenkern aneinander.
    * `raster_masse` und `zellen_aus_box` liefern dieselbe Geometrie (der Mittelpunkt von
      `z{i}_{j}` liegt in der Zelle, die `d_lat`/`d_lon` aufspannen).
-   * **`havarist` ist `None`, solange `aufgeloest_am` leer ist** — und gesetzt, sobald es steht.
-     Beide Richtungen, das ist der Kern der Verdeckung.
-   * `/api/reddung/events` führt die Koordinate auch **nach** der Auflösung nicht.
+   * **`havarist` ist `None`, solange weder `gefunden_am` noch `aufgeloest_am` steht** — und
+     gesetzt, sobald eines von beiden steht. Alle drei Fälle (vor dem Fund, gefunden, bei
+     `dtend` ungefunden aufgelöst), das ist der Kern der Verdeckung.
+   * `/api/reddung/events` führt die Koordinate auch **nach** dem Fund nicht.
 2. **`tests/test_reddung_kpi.py`** — reines Aggregat ohne Datenbank: leere Liste, Abend ohne
    Fund, Abend mit Einlieferung, und dass `avg_rettung_min` Abende ohne Einlieferung auslässt.
 3. **Quelltexttests der Oberfläche** (Muster `tests/test_events_liste.py`,
