@@ -24,6 +24,30 @@
 - **Nicht pushen.** Ein Push deployt den Container neu; das entscheidet der Nutzer.
 - Commits enden mit `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 
+## Arbeitsweise (Vorgabe des Nutzers, 25.09.2026)
+
+**Der Plan wird selbstständig und am Stück abgearbeitet — alle Tasks, ohne Zwischenfreigaben.**
+Umsetzung nativ (superpowers:executing-plans) in einem eigenen git-Worktree auf dem Branch
+`reddung-nutzeransichten`, nicht im gemeinsamen Arbeitsbaum auf `main`: Andere Sitzungen
+arbeiten dort, und ein Push nach `main` deployt.
+
+1. **Fragen werden gesammelt, nicht gestellt.** Jede Unklarheit kommt mit der getroffenen
+   Annahme in eine nummerierte Liste, die am Ende gebündelt vorgelegt wird. Weitergearbeitet
+   wird unter der Annahme.
+2. **Angehalten wird nur, wenn eine Entscheidung für die weiteren Schritte zwingend nötig
+   ist** — etwa wenn der Code dem Plan so widerspricht, dass jede Lösung eine Entscheidung des
+   Nutzers wäre, wenn ein Test sich nur durch Aufweichen der Spec grün bekommen ließe, oder
+   bei allem Unumkehrbaren und nach außen Wirkenden. „Task fertig" ist kein Haltepunkt.
+3. **Passt ein Anker nicht** (Zeile nicht gefunden, Name anders), wird die gleichwertige Stelle
+   selbst gesucht und die Abweichung für den Abschlussbericht notiert.
+4. **Scheitert ein Schritt, wird die Ursache gesucht** (superpowers:systematic-debugging) —
+   nie ein Test gelockert, damit er grün wird.
+5. **Task 9 ändert nichts.** Seine Vorschläge sind die gesammelten Fragen dieses Tasks und
+   halten die übrigen nicht auf.
+6. **Am Ende:** Gesamtsuite grün, Review über den ganzen Branch, dann ein Abschlussbericht mit
+   dem Erledigten, den Abweichungen vom Plan, den gesammelten Fragen und dem Bericht aus
+   Task 9. Übernahme nach `main` und Push sind die letzte Frage — nie ohne Freigabe.
+
 ## Review Focus
 
 1. **Sektor mit vertauschten Ecken in der Datenbank** (`nord < sued` oder `ost < west`) — erwartet: Der Raster-Endpunkt liefert den Sektor sortiert, die Karte zeichnet Rahmen und Zellen an der richtigen Stelle. Test in Task 2.
