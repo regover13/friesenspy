@@ -569,3 +569,74 @@ def test_im_bruegge_zeitraum_kommt_kein_vatsim_punkt_dazu(conn):
     punkte = _reddung_punkte_mischen(conn, _iso(t0 - timedelta(minutes=1)), _iso(JETZT),
                                      grenzen)[111]
     assert len(punkte) == 31, f"31 Bruegge-Punkte, keine VATSIM-Punkte dazwischen: {len(punkte)}"
+
+
+# --- Nutzeransichten (Spec 2026-09-23): Kante, Ende, Raster ----------------------------
+
+from app.database import reddung_raster, set_reddung_aufgeloest, set_reddung_gefunden  # noqa: E402
+
+
+def test_die_kante_steht_im_stand(conn):
+    """Ohne sie laesst sich keine Flaeche nennen -- Bilanz, Live-Block und Kennzahlen
+    brauchen sie."""
+    stand = compute_reddung_stand(conn, get_reddung_event(conn, _kleiner_sektor(conn)))
+    assert stand["kante_km"] == 1.0
+
+
+def test_nach_der_aufloesung_wird_nichts_mehr_gezaehlt(conn):
+    """⚠ Der Poller schreibt nach `aufgeloest_am` nicht mehr fort -- der Leseweg darf es auch
+    nicht. Sonst haengt die Flaeche eines frueh aufgeloesten Abends davon ab, ob zufaellig
+    jemand die Seite offen hatte (Spec Abschnitt 3). Rote Gegenprobe: ohne die Schranke ist
+    `abgedeckt` hier > 0 (vgl. test_ein_ueberflug_deckt_zellen_ab)."""
+    eid = _kleiner_sektor(conn)
+    set_reddung_aufgeloest(conn, eid, _iso(JETZT - timedelta(minutes=90)))
+    _spur(conn, 111, _quer(vor_min=60))       # geflogen NACH der Aufloesung
+    assert compute_reddung_stand(conn, get_reddung_event(conn, eid))["abgedeckt"] == 0
+    assert reddung_raster(conn, get_reddung_event(conn, eid))["abgedeckt"] == []
+
+
+def test_das_raster_nennt_die_abgedeckten_zellen(conn):
+    eid = _kleiner_sektor(conn)
+    _spur(conn, 111, _quer())
+    ev = get_reddung_event(conn, eid)
+    r = reddung_raster(conn, ev)
+    from app import reddung as rd
+    alle = {z[0] for z in rd.zellen_fuer(ev)}
+    assert r["abgedeckt"] and set(r["abgedeckt"]) <= alle
+    assert r["zellen"] == r["raster"]["zeilen"] * r["raster"]["spalten"] == len(alle)
+    assert r["abgedeckt"] == sorted(r["abgedeckt"])
+    assert set(r) == {"sektor", "raster", "zellen", "abgedeckt", "anteil", "aufgeloest"}
+
+
+def test_ein_leerer_sektor_hat_ein_raster_ohne_zellen(conn):
+    r = reddung_raster(conn, get_reddung_event(conn, _kleiner_sektor(conn)))
+    assert r["abgedeckt"] == [] and r["zellen"] > 0 and r["anteil"] == 0.0
+
+
+def test_das_raster_sortiert_vertauschte_ecken(conn):
+    """Review-Fokus 1: Steht der Sektor verdreht in der Tabelle, muss die Karte trotzdem am
+    richtigen Ort zeichnen -- sie rechnet von `sued`/`west` aus."""
+    eid = _kleiner_sektor(conn)
+    ev = get_reddung_event(conn, eid)
+    conn.execute("UPDATE reddung_events SET sued=?, nord=?, west=?, ost=? WHERE id=?",
+                 (ev["nord"], ev["sued"], ev["ost"], ev["west"], eid))
+    s = reddung_raster(conn, get_reddung_event(conn, eid))["sektor"]
+    assert s["sued"] < s["nord"] and s["west"] < s["ost"]
+    assert s["sued"] == pytest.approx(ev["sued"]) and s["west"] == pytest.approx(ev["west"])
+
+
+def test_das_raster_enthaelt_NIEMALS_die_koordinate(conn):
+    """⚠ Weder vor dem Fund noch danach noch nach der Aufloesung (Spec Abschnitt 2,
+    Nutzerentscheidung 24.09.2026: den Ort zeigt die Rauchsaeule im Simulator)."""
+    import json
+    eid = _kleiner_sektor(conn)
+    _spur(conn, 111, _quer())
+    for schritt in ("vorher", "gefunden", "aufgeloest"):
+        if schritt == "gefunden":
+            set_reddung_gefunden(conn, eid, _iso(JETZT - timedelta(minutes=30)), 111)
+        if schritt == "aufgeloest":
+            set_reddung_aufgeloest(conn, eid, _iso(JETZT - timedelta(minutes=20)))
+        text = json.dumps(reddung_raster(conn, get_reddung_event(conn, eid)))
+        for zahl in (f"{LAT:.4f}", f"{LON:.4f}", f"{LAT:.3f}", f"{LON:.3f}"):
+            assert zahl not in text, f"{schritt}: Koordinate {zahl} steht im Raster"
+        assert "havarist" not in text, schritt

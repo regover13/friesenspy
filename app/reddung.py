@@ -90,6 +90,11 @@ def korridor_km(ev: dict) -> float:
     return _zahl(ev, "korridor_km", _VORGABE_KORRIDOR_KM)
 
 
+def kante_km(ev: dict) -> float:
+    """Die Zellkante des Rasters — die Feinheit der Buchhaltung, nie größer als der Korridor."""
+    return _zahl(ev, "kante_km", _VORGABE_KANTE_KM)
+
+
 def fund_radius_m(ev: dict) -> float:
     """Die seitliche Reichweite fürs FINDEN in METERN — deutlich enger als der Suchkorridor."""
     return _zahl(ev, "fund_radius_m", _VORGABE_FUND_RADIUS_M)
@@ -128,7 +133,7 @@ def zellen_fuer(ev: dict) -> list[Ziel]:
     """Das Zellraster des Sektors. Kante gleich Korridor ergibt ein lückenloses Raster."""
     return zellen_aus_box(
         float(ev["sued"]), float(ev["west"]), float(ev["nord"]), float(ev["ost"]),
-        kante_km=_zahl(ev, "kante_km", _VORGABE_KANTE_KM),
+        kante_km=kante_km(ev),
         korridor_km=_zahl(ev, "korridor_km", _VORGABE_KORRIDOR_KM),
     )
 

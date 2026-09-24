@@ -10108,11 +10108,25 @@ def reddung_fortschreiben(conn: sqlite3.Connection, ev: dict, *, bis: str) -> di
     return {
         "zellen": len(zellen),
         "abgedeckt": len(treffer),
+        # ⚠ Absichtlich ein anderer Name als `abgedeckt` -- das ist hier die ANZAHL. Der
+        # Raster-Endpunkt reicht die Liste als `abgedeckt` heraus (Spec Abschnitt 3).
+        "zellen_abgedeckt": sorted(treffer),
         "anteil": (len(treffer) / len(zellen)) if zellen else 0.0,
         "je_pilot": je_pilot,
         "fund": fund,
         "bis": von,
     }
+
+
+def _reddung_lese_ende(ev: dict) -> str:
+    """Bis wohin die Lesewege fortschreiben: jetzt, ``dtend`` oder die Auflösung.
+
+    ⚠ Dasselbe Ende wie im Poller, der nach ``aufgeloest_am`` nicht mehr rechnet
+    (``_check_reddung``). Ohne die Schranke hinge die Fläche eines früh aufgelösten Abends
+    davon ab, ob zwischen Auflösung und ``dtend`` zufällig jemand die Seite offen hatte --
+    und nach zwölf Stunden ist ``bruegge_spur`` weg (Spec 2026-09-23, Abschnitt 3).
+    """
+    return min(_now_utc(), ev["dtend"], ev.get("aufgeloest_am") or ev["dtend"])
 
 
 def compute_reddung_stand(conn: sqlite3.Connection, ev: dict) -> dict:
@@ -10128,7 +10142,7 @@ def compute_reddung_stand(conn: sqlite3.Connection, ev: dict) -> dict:
     """
     from app import reddung as rd
 
-    stand = reddung_fortschreiben(conn, ev, bis=min(_now_utc(), ev["dtend"]))
+    stand = reddung_fortschreiben(conn, ev, bis=_reddung_lese_ende(ev))
 
     namen = {int(r[0]): r[1] for r in conn.execute("SELECT cid, name FROM pilots").fetchall()}
     je_pilot = sorted(
@@ -10163,9 +10177,37 @@ def compute_reddung_stand(conn: sqlite3.Connection, ev: dict) -> dict:
         "eingeliefert": wer("eingeliefert"),
         "aufgeloest": bool(ev.get("aufgeloest_am")),
         "korridor_km": rd.korridor_km(ev),
+        "kante_km": rd.kante_km(ev),
         "fund_radius_m": rd.fund_radius_m(ev),
         "sektor": {k: ev[k] for k in ("sued", "west", "nord", "ost")},
         "dauer_min": dauer,
+    }
+
+
+def reddung_raster(conn: sqlite3.Connection, ev: dict) -> dict:
+    """Das Raster einer FriesenReddung für die Karte: Geometrie und abgesuchte Zellen.
+
+    ⚠ **Gibt NIE die Koordinate des Havaristen heraus** -- vor dem Fund nicht, danach nicht,
+    nach der Auflösung nicht (Spec 2026-09-23, Abschnitt 2; Nutzerentscheidung 24.09.2026:
+    den Ort zeigt die Rauchsäule im Simulator). ``tests/test_reddung_db.py`` hält es fest.
+
+    Der Sektor geht SORTIERT hinaus: Die Karte rechnet jede Zelle von ``sued``/``west`` aus,
+    und ein verdreht gespeichertes Rechteck läge sonst gespiegelt.
+    """
+    from app import reddung as rd
+    from app.abdeckung import raster_masse
+
+    stand = reddung_fortschreiben(conn, ev, bis=_reddung_lese_ende(ev))
+    sued, nord = sorted((float(ev["sued"]), float(ev["nord"])))
+    west, ost = sorted((float(ev["west"]), float(ev["ost"])))
+    zeilen, spalten, d_lat, d_lon = raster_masse(sued, west, nord, ost, rd.kante_km(ev))
+    return {
+        "sektor": {"sued": sued, "west": west, "nord": nord, "ost": ost},
+        "raster": {"zeilen": zeilen, "spalten": spalten, "d_lat": d_lat, "d_lon": d_lon},
+        "zellen": stand["zellen"],
+        "abgedeckt": stand["zellen_abgedeckt"],
+        "anteil": stand["anteil"],
+        "aufgeloest": bool(ev.get("aufgeloest_am")),
     }
 
 
