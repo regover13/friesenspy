@@ -29,55 +29,41 @@ keine davon zurückkommt.
 | Frage | Entscheidung | Verworfen, und warum |
 |---|---|---|
 | Was zeigt die Karte im laufenden Abend? | **Sektorrahmen plus Raster: abgesucht oder offen** | *Nur Rahmen und Prozentbalken* — nimmt dem Abend das taktische Element, das #21 gerade ausmacht. *Raster mit „wer hat was"* — mehr Daten je Takt, schwierige Farbgebung, und der eigene Beitrag steht in der Bilanz. |
-| Zeigt die Karte die Unglücksstelle? | **Ja, der genaue Punkt — ab dem Fund** | *Nur die Rasterzelle* — bis zu einem Kilometer Unschärfe macht die Nachbesprechung ungenau. *Gar nicht* — wer an dem Abend nicht geflogen ist, erführe nie, wo der Havarist lag. |
+| Zeigt die Karte die Unglücksstelle? | **Nein — das tut die Rauchsäule im Simulator** | *Ab dem Fund* bzw. *nach der Auflösung* — doppelt, was der Rauch schon leistet (Abschnitt 2). *Schalter je Event* — der Weg zurück, falls es doch gewollt wird; in dieser Runde nicht gebaut. |
 | Wie weit geht die Bilanz? | **Panel mit Teilen-Text** | *Zusätzlich Badge-Bilder* — eigene Runde, siehe Abschnitt 8. *Nur das Panel* — dann tippt die Nachbesprechung jemand von Hand. |
 | Welche Kennzahlen? | **Kachelzeile im Schnitt von Kutter und Bummel** | *Zusätzlich eine Finder-Rangliste* — eine Darstellung, die es bei den anderen Eventtypen nicht gibt; erst einführen, wenn sie dort auch gewollt ist. *Nur Grundzahlen* — Fläche und Rettungsdauer sind gerade das Eigene dieses Eventtyps. |
 
 ---
 
-## 2. Die Verdeckung wird umformuliert, nicht aufgegeben
+## 2. Die Verdeckung bleibt, wie sie ist
 
-Heute gilt: `compute_reddung_stand` **gibt nie eine Koordinate heraus**, und
-`tests/test_reddung_db.py` hält es fest. Die Karte stellt diese Zusage neu, denn **ab dem Fund
-ist die Lage ohnehin öffentlich**: Die Nähe-Sperre (`bruegge_soll.nur_nah_m`) gilt nur vor dem
-Fund, danach stehen Wrack und orange Rauchsäule im Simulator für jeden sichtbar, der in die
-Gegend fliegt — „das ist der Sinn einer Rauchsäule" (erste Spec, Abschnitt 12).
+**Die Lage des Havaristen erscheint auf keiner Karte — weder vor dem Fund noch danach.**
+Nutzerentscheidung vom 24.09.2026: *„Eigentlich haben wir den Rauch … ich will das
+wahrscheinlich gar nicht auf der Karte."*
 
-**Neue Fassung der Zusage:**
+Die Stelle zeigt der Simulator: Ab dem Fund stehen Wrack und Rauchsäule dort für jeden
+sichtbar, der in die Gegend fliegt (die Nähe-Sperre `bruegge_soll.nur_nah_m` gilt nur vor dem
+Fund). Eine Marke auf der Karte doppelte das — und machte aus dem Hinfliegen zum Aufnehmen
+einen Blick aufs Kniebrett.
 
-> Die Lage des Havaristen verlässt den Server in Richtung Browser **ausschließlich über
-> `GET /api/reddung/events/{id}/raster`, und dort erst, wenn `gefunden_am` gesetzt ist** — oder
-> `aufgeloest_am`, falls ihn bis `dtend` niemand gefunden hat.
+Damit gilt die Zusage der ersten Spec unverändert, jetzt für alle Endpunkte dieser Runde:
 
-⚠ **Nicht erst ab `aufgeloest_am`** — so stand es zuerst, beschlossen auf eine falsch gestellte
-Frage hin (sie behauptete, erst die Auflösung mache die Lage öffentlich). `aufgeloest_am` wird
-aber erst mit der **Einlieferung** gesetzt. Die Website hätte den Ort damit genau in der Phase
-verschwiegen, in der „irgendeiner" hinfliegen soll, um aufzunehmen — während der Simulator ihn
-längst zeigt. Berichtigt im Spec-Review vom 24.09.2026, Nutzerentscheidung „ab dem Fund".
+> Die Koordinate des Havaristen verlässt den Server **nur in Richtung FriesenBrügge und
+> Admin** — an keinen Endpunkt, den der Browser eines Piloten erreicht. Auch der neue
+> Raster-Endpunkt nicht, weder nach dem Fund noch nach der Auflösung.
 
-⚠ **`compute_reddung_stand` bleibt unangetastet koordinatenfrei.** Der vorhandene Test gilt
-unverändert weiter, und `/api/reddung/events` (die Liste, die die Eventliste füllt) gibt die
-Koordinate auch **nach** dem Fund nicht heraus. Die Freigabe geschieht in einer eigenen
-kleinen Funktion im neuen Endpunkt:
+**Zwei Anläufe standen zuerst hier, beide zurückgenommen** — festgehalten, damit keiner ohne
+seine Gründe wiederkommt:
 
-```python
-def _havarist_freigabe(ev: dict) -> dict | None:
-    """Die Lage — aber erst ab dem Fund. Die EINZIGE Stelle, die sie herausgibt.
+1. *Nach der Auflösung* (23.09.2026) — beschlossen auf eine falsch gestellte Frage hin: Sie
+   behauptete, erst `aufgeloest_am` mache die Lage öffentlich. `aufgeloest_am` fällt aber erst
+   mit der Einlieferung; öffentlich ist die Lage im Simulator schon ab dem Fund.
+2. *Ab dem Fund* (24.09.2026, Spec-Review) — die Berichtigung von 1., dann ganz verworfen: Der
+   Rauch leistet das bereits.
 
-    Hat bis `dtend` niemand gefunden, gibt die Auflösung sie frei: Dann markiert die rote
-    Fackel die Stelle, und die Bilanz soll zeigen können, wo er lag.
-    """
-    if not (ev.get("gefunden_am") or ev.get("aufgeloest_am")):
-        return None
-    if ev.get("havarist_lat") is None or ev.get("havarist_lon") is None:
-        return None
-    return {"lat": ev["havarist_lat"], "lon": ev["havarist_lon"],
-            "fund_radius_m": rd.fund_radius_m(ev)}
-```
-
-Der Grund für die eigene Funktion ist derselbe wie in der ersten Spec: **Die Zusicherung soll
-eine Eigenschaft des Aufbaus sein, keine Frage der Sorgfalt.** Es gibt genau eine Stelle zu
-prüfen, und sie hat einen Test in beide Richtungen.
+**Wer es doch will, baut einen Schalter je Event** — Spalte in `reddung_events`, Haken im Admin,
+Vorgabe aus — und genau eine Freigabefunktion im Raster-Endpunkt, die ihn abfragt. Diese Runde
+baut beides nicht.
 
 ⚠ **Kein Eintrag in `BEWUSST_OFFEN`.** Der Endpunkt liegt wie die Eventliste hinter dem
 Login-Gate (`tests/test_api_schutz.py`, Stufe 1) — er ist damit ohne weiteres Zutun nur für
@@ -103,8 +89,7 @@ GET /api/reddung/events/{id}/raster
   "zellen": 1600,
   "abgedeckt": ["z0_0", "z0_1", "z1_0"],
   "anteil": 0.42,
-  "aufgeloest": false,
-  "havarist": null
+  "aufgeloest": false
 }
 ```
 
@@ -207,10 +192,9 @@ niemand.
 **Gezeichnet wird:**
 
 * der **Sektorrahmen** als gestricheltes Rechteck — die Grenze der Aufgabe,
-* die **abgesuchten Zellen** gefüllt, ohne eigenen Rand,
-* ab dem Fund: die **Unglücksstelle** als Marke, dazu ein Kreis mit `fund_radius_m` — für alle,
-  die zum Aufnehmen hinfliegen, und im Kniebrett ebenso. Findet niemand, erscheint sie mit der
-  Auflösung bei `dtend`.
+* die **abgesuchten Zellen** gefüllt, ohne eigenen Rand.
+
+Die Unglücksstelle erscheint nicht, auch nach dem Fund nicht (Abschnitt 2).
 
 **Nur die abgesuchten Zellen, nicht die offenen.** Das liest sich richtig herum („was gefüllt
 ist, hat jemand angesehen"), hält die Zeichenlast am Anfang des Abends klein — wenn ohnehin fast
@@ -293,8 +277,8 @@ den Bummel und Kutter längst haben.
 
 **Der Teilen-Text** (`copyReddungShareHeader`, Vorbild `copyKutterShareHeader`) legt einen
 forumsfertigen Absatz in die Zwischenablage: Name, Abdeckung, die Marken mit Namen und Zeiten,
-die Rettungsdauer und die Beiträge. Wo der Havarist lag, steht **nicht** darin — das ist eine
-Karte, kein Satz.
+die Rettungsdauer und die Beiträge. Wo der Havarist lag, steht **nicht** darin — so wenig wie
+auf der Karte (Abschnitt 2).
 
 ---
 
@@ -340,6 +324,7 @@ und setzte die abgesuchte Fläche eines verkündeten Abends auf null (Nachtrag 3
 
 * **Badge-Bilder.** Eigene Runde, zusammen mit dem Forumsbeitrag; dort gehört auch die Frage
   hin, was ein Pilot bekommt, der nur Fläche abgeflogen hat.
+* **Die Unglücksstelle auf der Karte.** Abschnitt 2; der Weg zurück wäre ein Schalter je Event.
 * **„Wer hat welche Zelle" auf der Karte.** Verworfen (Abschnitt 1); der eigene Beitrag steht
   in der Bilanz.
 * **Eine Finder-Rangliste über die Saison.** Verworfen, solange Bummel und Kutter keine haben.
@@ -360,9 +345,9 @@ Neu, jeder an Bezeichnern verankert statt an Kommentartexten:
      das bindet Endpunkt und Rechenkern aneinander.
    * `raster_masse` und `zellen_aus_box` liefern dieselbe Geometrie (der Mittelpunkt von
      `z{i}_{j}` liegt in der Zelle, die `d_lat`/`d_lon` aufspannen).
-   * **`havarist` ist `None`, solange weder `gefunden_am` noch `aufgeloest_am` steht** — und
-     gesetzt, sobald eines von beiden steht. Alle drei Fälle (vor dem Fund, gefunden, bei
-     `dtend` ungefunden aufgelöst), das ist der Kern der Verdeckung.
+   * **Die Antwort enthält die Koordinate des Havaristen nie** — vor dem Fund nicht, danach
+     nicht, nach der Auflösung nicht. Geprüft über den Text der Antwort, wie in
+     `test_der_stand_enthaelt_NIEMALS_die_koordinate_des_havaristen`.
    * `/api/reddung/events` führt die Koordinate auch **nach** dem Fund nicht.
 2. **`tests/test_reddung_kpi.py`** — reines Aggregat ohne Datenbank: leere Liste, Abend ohne
    Fund, Abend mit Einlieferung, und dass `avg_rettung_min` Abende ohne Einlieferung auslässt.
@@ -398,7 +383,7 @@ Die Testsuite läuft in `/home/claude/.venv-friesenspy`.
 1. `raster_masse` in `app/abdeckung.py`, `zellen_aus_box` darauf umgestellt.
 2. `zellen_abgedeckt` in der Rückgabe von `reddung_fortschreiben`; `kante_km` im Stand; die
    Schranke `aufgeloest_am` auf beiden Lesewegen.
-3. Der Raster-Endpunkt samt `_havarist_freigabe` und seinen Tests.
+3. Der Raster-Endpunkt und seine Tests.
 4. Kartenebene (der größte und riskanteste Brocken — deshalb vor den einfachen Ansichten).
 5. Live-Block.
 6. Bilanz-Panel samt Teilen-Text und dem Klick aus der Eventliste.
