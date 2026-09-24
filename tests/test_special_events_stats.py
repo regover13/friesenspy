@@ -113,9 +113,39 @@ def test_special_events_shape(tmp_path, monkeypatch):
     init_db(db)
     _patch(monkeypatch, db)
     res = main.get_special_events_stats(days=365)
-    assert set(res.keys()) == {"kutter", "bummel"}
+    assert set(res.keys()) == {"kutter", "bummel", "reddung"}
     assert set(res["kutter"].keys()) == {
         "event_count", "participations", "flights", "delivered_kg",
         "sunk_kg", "sunk_count", "stolen_kg", "stolen_count"}
     assert set(res["bummel"].keys()) == {
         "race_count", "participations", "legs", "avg_absolute_min"}
+    assert set(res["reddung"].keys()) == {
+        "event_count", "participations", "gefunden_count", "flaeche_km2", "avg_rettung_min"}
+
+
+def test_special_events_zaehlt_abgeschlossene_reddungen(tmp_path, monkeypatch):
+    """Nur Abende, deren dtend vorbei ist -- aus dem Snapshot, ohne Neuberechnung."""
+    from app.database import (_REDDUNG_STAND_FASSUNG, create_reddung_event, upsert_pilot)
+    db = str(tmp_path / "t.db")
+    init_db(db)
+    _patch(monkeypatch, db)
+    now = datetime.now(timezone.utc)
+    conn = get_connection(db)
+    sektor = dict(sued=53.54, west=6.95, nord=53.90, ost=7.55)
+    dtend = _iso(now - timedelta(days=2))
+    fertig = create_reddung_event(conn, name="Fertig", dtstart=_iso(now - timedelta(days=2, hours=3)),
+                                  dtend=dtend, **sektor)
+    upsert_pilot(conn, 111, "Pilot 111")
+    write_progress_snapshot(conn, "reddung", fertig, {
+        "v": _REDDUNG_STAND_FASSUNG, "bis": dtend,
+        "treffer": {"z0_0": [111, dtend], "z0_1": [111, dtend]},
+        "je_pilot": {"111": 2}, "fund": None,
+    }, dtend)
+    create_reddung_event(conn, name="Laeuft", dtstart=_iso(now - timedelta(hours=1)),
+                         dtend=_iso(now + timedelta(hours=2)), **sektor)
+    conn.commit()
+    conn.close()
+
+    r = main.get_special_events_stats(days=30)["reddung"]
+    assert r["event_count"] == 1 and r["participations"] == 1
+    assert r["flaeche_km2"] == 2 and r["gefunden_count"] == 0

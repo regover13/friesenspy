@@ -10423,6 +10423,38 @@ def aggregate_bummel_kpis(views: list[dict]) -> dict:
     }
 
 
+def aggregate_reddung_kpis(staende: list[dict]) -> dict:
+    """Kennzahlen abgeschlossener FriesenReddungen aus fertigen ``compute_reddung_stand``-
+    Dicts. Rein (keine DB). Nur Abende mit mindestens einem Teilnehmer zählen -- leere
+    Probe-Events verfälschen die Anzahl sonst, wie beim Kutter.
+
+    ⚠ ``participations`` zählt JEDEN Eintrag in ``je_pilot``, auch mit null Zellen: Wer eine
+    Fläche abflog, die ein anderer zuerst hatte, war trotzdem dabei (Spec 2026-09-23,
+    Abschnitt 7). ``flaeche_km2`` nimmt die Kante JEDES Abends, sie ist einstellbar.
+    """
+    event_count = participations = gefunden = 0
+    flaeche = 0.0
+    dauern: list[float] = []
+    for st in staende:
+        if not st.get("je_pilot"):
+            continue
+        event_count += 1
+        participations += len(st["je_pilot"])
+        if st.get("gefunden"):
+            gefunden += 1
+        kante = float(st.get("kante_km") or 0.0)
+        flaeche += (st.get("abgedeckt") or 0) * kante * kante
+        if st.get("dauer_min") is not None:
+            dauern.append(float(st["dauer_min"]))
+    return {
+        "event_count": event_count,
+        "participations": participations,
+        "gefunden_count": gefunden,
+        "flaeche_km2": int(round(flaeche)),
+        "avg_rettung_min": round(sum(dauern) / len(dauern), 1) if dauern else None,
+    }
+
+
 def _set_transport_latch(conn: sqlite3.Connection, event_id: int, column: str, ts: str) -> bool:
     """Latch-Spalte setzen, nur wenn noch NULL. True, wenn in diesem Aufruf neu gesetzt."""
     cur = conn.execute(

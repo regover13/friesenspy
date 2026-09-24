@@ -371,10 +371,13 @@ Aggregierte Kennzahlen beider Spezial-Events im Zeitfenster (`?days=30|90|365`, 
 `days>365` würde die Snapshot-Retention überschreiten). NUR abgeschlossene Events/Rennen, bedient aus den
 #66-Snapshots (kein Track-Recompute). Antwort:
 `{"kutter": {event_count, participations, flights, delivered_kg, sunk_kg, sunk_count, stolen_kg, stolen_count},
-  "bummel": {race_count, participations, legs, avg_absolute_min}}`.
+  "bummel": {race_count, participations, legs, avg_absolute_min},
+  "reddung": {event_count, participations, gefunden_count, flaeche_km2, avg_rettung_min}}`.
 Abgrenzung: Kutter „Flüge" = alle Flug-/Verlust-Zeilen (`flight_count`); Bummel „Flüge" = gewertete Tour-Legs
 (`Σ leg_count`). `returned` (am Ladeplatz abgeladen) ist kein Verlust (0 kg). `avg_absolute_min` ist `null` ohne
 gewertetes Rennen. NULL-`dtend`-Events werden ausgeschlossen.
+
+`reddung` zählt nur Abende, deren `dtend` vorbei ist und die mindestens einen Teilnehmer hatten. `participations` zählt auch Piloten ohne eigene Zelle; `flaeche_km2` nimmt die Zellkante jedes Abends; `avg_rettung_min` mittelt nur über Abende mit Einlieferung (sonst `null`). Nachgerechnet wird nichts — der Leseweg endet bei `min(dtend, aufgeloest_am)`.
 
 ---
 

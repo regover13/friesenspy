@@ -204,6 +204,7 @@ Interaktive Karte mit allen aktuell fliegenden Friesen. Sie geht über Wangeroog
 
 **Was du siehst:**
 - **KPI-Box** oben: Gesamtanzahl aktiver Piloten, Flüge, Flugstunden, Durchschnitt pro Tag, aktivster Pilot und durchschnittliche Flugdauer im gewählten Zeitraum
+- **Spezial-Events** über dem Liniendiagramm: je eine Zeile für FriesenKutter, FriesenBummel und FriesenReddung, nur für Abende, die im gewählten Zeitraum zu Ende gingen. Bei der FriesenReddung: Anzahl der Abende, Teilnahmen, wie oft der Havarist gefunden wurde, die insgesamt abgesuchte Fläche und die mittlere Dauer vom Fund bis zur Einlieferung
 - **Liniendiagramm**: Flugaktivität über Zeit — umschaltbar zwischen Piloten, Flügen, Stunden und Ø Flugdauer; wählbare Zeiträume: 30 Tage, 90 Tage (beide mit Wochentag-Labels) und 365 Tage (monatlich)
 - **Pilotenliste**: alle Piloten mit Anzahl geloggter Flüge und letztem Flugdatum — sortierbar nach Flügen, Flugzeit oder Datum (Klick auf Spaltenheader)
 

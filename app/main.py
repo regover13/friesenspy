@@ -52,6 +52,7 @@ from app.database import (
     _DATA_RETENTION_DAYS,
     aggregate_bummel_kpis,
     aggregate_kutter_kpis,
+    aggregate_reddung_kpis,
     apply_bummel_overrides,
     audit_gps_vs_refile,
     canonicalize_flights,
@@ -3211,7 +3212,7 @@ async def get_stats_endpoint(
 
 @app.get("/api/stats/special-events")
 def get_special_events_stats(days: int = 30):
-    """Aggregierte Kennzahlen beider Spezial-Events (FriesenKutter + FriesenBummel) im
+    """Aggregierte Kennzahlen der Spezial-Events (FriesenKutter, FriesenBummel, FriesenReddung) im
     Zeitfenster — NUR abgeschlossene Events/Rennen, bedient aus den #66-Snapshots (kein
     Track-Recompute). ?days=30|90|365."""
     if days not in (30, 90, 365):
@@ -3245,7 +3246,14 @@ def get_special_events_stats(days: int = 30):
                 b_views.append(v)
         bummel = aggregate_bummel_kpis(b_views)
 
-        return {"kutter": kutter, "bummel": bummel}
+        # --- FriesenReddung: dtend vorbei & im Fenster. Nichts wird nachgerechnet: Der
+        # Leseweg endet bei min(dtend, aufgeloest_am), der Snapshot steht dort schon.
+        r_staende = [compute_reddung_stand(conn, ev)
+                     for ev in list_reddung_events(conn, since=since)
+                     if (ev.get("dtend") or "") < now]
+        reddung = aggregate_reddung_kpis(r_staende)
+
+        return {"kutter": kutter, "bummel": bummel, "reddung": reddung}
     finally:
         conn.close()
 
