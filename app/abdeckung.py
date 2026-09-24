@@ -285,6 +285,28 @@ def abdeckung(spuren, ziele: list[Ziel], fenster: Fenster) -> Abdeckung:
                      anteil=len(treffer) / len(ziele))
 
 
+def raster_masse(sued: float, west: float, nord: float, ost: float,
+                 kante_km: float) -> tuple[int, int, float, float]:
+    """Zeilen, Spalten und Zellgröße in Grad — die Geometrie des Sektorrasters.
+
+    **Die einzige Stelle, die sie rechnet.** ``zellen_aus_box`` benutzt sie, und der
+    Raster-Endpunkt gibt sie an die Karte weiter. Rechneten beide selbst, läge irgendwann
+    jede gezeichnete Zelle still neben der gewerteten (Spec 2026-09-23, Abschnitt 3).
+
+    Zelle ``z{i}_{j}`` reicht von ``sued + i·d_lat`` bis ``sued + (i+1)·d_lat`` und von
+    ``west + j·d_lon`` bis ``west + (j+1)·d_lon`` — mit den SORTIERTEN Ecken.
+    """
+    if nord < sued:
+        sued, nord = nord, sued
+    if ost < west:
+        west, ost = ost, west
+    kante_km = max(float(kante_km), 0.05)
+    km_lon = _km_je_grad_lon((sued + nord) / 2.0)
+    zeilen = max(1, math.ceil((nord - sued) * _KM_JE_GRAD_LAT / kante_km))
+    spalten = max(1, math.ceil((ost - west) * km_lon / kante_km))
+    return zeilen, spalten, kante_km / _KM_JE_GRAD_LAT, kante_km / km_lon
+
+
 def zellen_aus_box(sued: float, west: float, nord: float, ost: float,
                    kante_km: float, korridor_km: float, praefix: str = "z") -> list[Ziel]:
     """Ein Rechteck in ein Zellraster schneiden — der Suchsektor.
@@ -307,15 +329,12 @@ def zellen_aus_box(sued: float, west: float, nord: float, ost: float,
         sued, nord = nord, sued
     if ost < west:
         west, ost = ost, west
-    kante_km = max(float(kante_km), 0.05)
-    km_lon = _km_je_grad_lon((sued + nord) / 2.0)
-    zeilen = max(1, math.ceil((nord - sued) * _KM_JE_GRAD_LAT / kante_km))
-    spalten = max(1, math.ceil((ost - west) * km_lon / kante_km))
+    zeilen, spalten, d_lat, d_lon = raster_masse(sued, west, nord, ost, kante_km)
     ziele: list[Ziel] = []
     for i in range(zeilen):
-        zlat = sued + (i + 0.5) * kante_km / _KM_JE_GRAD_LAT
+        zlat = sued + (i + 0.5) * d_lat
         for j in range(spalten):
-            zlon = west + (j + 0.5) * kante_km / km_lon
+            zlon = west + (j + 0.5) * d_lon
             ziele.append((f"{praefix}{i}_{j}", zlat, zlon, float(korridor_km)))
     return ziele
 

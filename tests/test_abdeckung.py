@@ -423,3 +423,31 @@ class TestRandfaelle:
         assert "havarist" in text
         for zahl in (f"{nord(1):.4f}", f"{ost(1):.4f}"):
             assert zahl not in text, f"Koordinate {zahl} steht im Ergebnis"
+
+
+# --- raster_masse: die Geometrie des Sektorrasters (Spec 2026-09-23, Abschnitt 3) ---------
+
+from app.abdeckung import raster_masse, zellen_aus_box  # noqa: E402
+
+
+def test_raster_masse_passt_zu_zellen_aus_box():
+    """Die Karte rechnet Zellen aus (zeilen, spalten, d_lat, d_lon). Weicht das von
+    zellen_aus_box ab, liegt jede gezeichnete Zelle neben der gewerteten."""
+    box = (53.54, 6.95, 53.90, 7.55)
+    zeilen, spalten, d_lat, d_lon = raster_masse(*box, kante_km=1.0)
+    ziele = zellen_aus_box(*box, kante_km=1.0, korridor_km=1.0)
+    assert len(ziele) == zeilen * spalten
+    for schluessel, lat, lon, _r in ziele:
+        i, j = (int(x) for x in schluessel[1:].split("_"))
+        assert box[0] + i * d_lat < lat < box[0] + (i + 1) * d_lat, schluessel
+        assert box[1] + j * d_lon < lon < box[1] + (j + 1) * d_lon, schluessel
+
+
+def test_raster_masse_sortiert_vertauschte_ecken():
+    assert raster_masse(53.90, 7.55, 53.54, 6.95, 1.0) == raster_masse(53.54, 6.95, 53.90, 7.55, 1.0)
+
+
+def test_raster_masse_klemmt_die_kante_wie_zellen_aus_box():
+    """Eine Null-Kante darf kein Raster aus Millionen Zellen ergeben -- dieselbe Klemme."""
+    zeilen, spalten, _, _ = raster_masse(53.54, 6.95, 53.56, 6.97, 0.0)
+    assert zeilen * spalten == len(zellen_aus_box(53.54, 6.95, 53.56, 6.97, 0.0, 1.0))
