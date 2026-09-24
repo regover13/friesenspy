@@ -269,3 +269,49 @@ def test_die_zustaende_der_bilanz_stehen_vor_dem_ersten_aufruf():
 def test_die_readme_beschreibt_die_bilanz():
     abschnitt = README[README.index("## 🚨 FriesenReddung"):README.index("## 🔧 Verwaltung")]
     assert "**Events:**" in abschnitt and "Teilen" in abschnitt
+
+
+# --- Behebungen aus dem Abschluss-Review (Opus + Fable, 24.09.2026) ------------------
+
+@pytest.mark.skipif(not _NODE, reason="node fehlt")
+def test_nach_der_rettung_steht_nicht_mehr_laeuft_gerade():
+    """Review W1 (Opus): Nach der Einlieferung stand bis dtend weiter „läuft gerade" --
+    bei Event 2 am 20.09.2026 waeren das 93 Minuten gewesen. Der Server behandelt ein
+    aufgeloestes Event laengst nicht mehr als laufend (/api/me/reddung)."""
+    quelle = ("function escHtml(s){return String(s);}\nfunction icon(){return '';}\n"
+              + _funktion("_reddungBalken") + _funktion("_reddungMarkenHtml")
+              + _funktion("_reddungBannerBlock"))
+    r = {"id": 2, "name": "Probe", "stand": {"anteil": 0.5, "offen": 10, "kante_km": 1.0,
+                                             "aufgeloest": True,
+                                             "gefunden": {"name": "A", "ts": "2026-09-20T16:40:00Z"}}}
+    html = _node(quelle, f"_reddungBannerBlock({json.dumps(r)})")
+    assert "läuft gerade" not in html and "abgeschlossen" in html
+    assert "noch offen" not in html, "nach der Aufloesung ist nichts mehr offen"
+    r["stand"]["aufgeloest"] = False
+    assert "läuft gerade" in _node(quelle, f"_reddungBannerBlock({json.dumps(r)})")
+
+
+def test_aufgeloeste_raster_werden_nicht_mehr_nachgefragt():
+    """Review W1: Nach der Aufloesung ist die Abdeckung eingefroren -- kein Abruf alle 30 s."""
+    rumpf = _ohne_kommentare(_funktion("_reddungRasterHolen"))
+    assert "stand.aufgeloest" in rumpf
+
+
+def test_zur_karte_schaltet_die_moving_map_ab():
+    """Review W2 (Opus): fitBounds aendert den Zoom, `_naviZoomt` verhindert das Abschalten,
+    und die Karte springt eine Sekunde spaeter zurueck zum eigenen Flugzeug -- im Cockpit
+    der Normalfall. Vorbild ist `_icaoSpringen`."""
+    rumpf = _ohne_kommentare(_funktion("reddungAufKarte"))
+    aus = rumpf.index("_movingMap = false;")
+    assert aus < rumpf.index("fitBounds(")
+    assert "_naviMerke(_NAVI_MOVING_KEY, false);" in rumpf and "_naviKnopfAnstrich();" in rumpf
+
+
+def test_die_abwahl_endet_mit_dem_abend():
+    """Review W3 (Opus) / G3 (Fable): Verschwindet der Eintrag mangels Reddung, gilt die Abwahl
+    nicht fuer den naechsten Abend -- sonst stuende die Ebene dort still abgehakt, genau das,
+    was die Spec mit „nicht speichern" vermeiden wollte."""
+    rumpf = _ohne_kommentare(_funktion("_reddungKarteAbgleichen"))
+    leer = rumpf[rumpf.index("if (!ids.length) {"):]
+    leer = leer[:leer.index("return;")]
+    assert "_reddungAbgewaehlt = false" in leer

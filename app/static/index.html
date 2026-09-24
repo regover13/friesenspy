@@ -15231,9 +15231,15 @@ function _reddungBannerBlock(r) {
   const pct = Math.round((st.anteil || 0) * 100);
   const kante = st.kante_km || 1;
   const offenKm2 = Math.round((st.offen || 0) * kante * kante);
-  let html = `<div class="reddung-live-block"><div class="bb-title">🚨 ${escHtml(r.name || 'FriesenReddung')} läuft gerade</div>`;
+  // Nach der Aufloesung (eingeliefert, oder gefunden ohne Aufnehmen) ist der Fall erledigt,
+  // auch wenn dtend noch aussteht. Der Block bleibt als Ergebnis stehen -- aber nicht mit
+  // „läuft gerade" darueber (Review 24.09.2026: bei Event 2 waeren das 93 Minuten gewesen).
+  const fertig = !!st.aufgeloest;
+  let html = `<div class="reddung-live-block"><div class="bb-title">🚨 ${escHtml(r.name || 'FriesenReddung')} ${fertig ? '— abgeschlossen' : 'läuft gerade'}</div>`;
   html += _reddungBalken(pct);
-  html += `<div class="bb-sub">${pct} % abgesucht · noch offen: ${offenKm2} km²</div>`;
+  html += fertig
+    ? `<div class="bb-sub">${pct} % abgesucht</div>`
+    : `<div class="bb-sub">${pct} % abgesucht · noch offen: ${offenKm2} km²</div>`;
   html += _reddungMarkenHtml(st);
   html += `<div style="margin-top:8px;"><button class="btn-share" onclick="reddungAufKarte(${Number(r.id)})">${icon('map')} Zur Karte</button></div></div>`;
   return html;
@@ -15313,6 +15319,9 @@ function _reddungKarteAbgleichen() {
         _reddungSelbst = false;
       }
       _reddungEbeneDa = false;
+      // Die Abwahl galt diesem Abend. Beim naechsten erscheint die Ebene wieder eingeschaltet
+      // -- sonst stuende sie in einem ueber Tage offenen Tab still abgehakt da.
+      _reddungAbgewaehlt = false;
     }
     return;
   }
@@ -15339,7 +15348,8 @@ function _reddungKarteAbgleichen() {
 async function _reddungRasterHolen(id, jetztIso) {
   const r = _reddungListe.find(x => x.id === id);
   if (!r) return;
-  const vorbei = (r.dtend || '') < jetztIso;
+  // Aufgeloest heisst eingefroren: Die Lesewege zaehlen danach nicht mehr weiter.
+  const vorbei = (r.dtend || '') < jetztIso || !!(r.stand && r.stand.aufgeloest);
   let d = vorbei ? _reddungRasterFertig.get(id) : null;
   if (!d) {
     try {
@@ -15390,7 +15400,16 @@ async function reddungAufKarte(id) {
   _reddungKarteAbgleichen();
   const r = _reddungListe.find(x => x.id === Number(id));
   const s = r && r.stand && r.stand.sektor;
-  if (s && liveMap) liveMap.fitBounds([[s.sued, s.west], [s.nord, s.ost]], { padding: [30, 30] });
+  if (!s || !liveMap) return;
+  // Moving Map ausdruecklich abschalten -- wie in _icaoSpringen: fitBounds aendert den Zoom,
+  // und der Merker haelt die Moving Map dann an, statt sie abzuschalten. Die Karte spraenge
+  // eine Sekunde spaeter zurueck zum eigenen Flugzeug, und im Cockpit ist sie meist an.
+  if (_movingMap) {
+    _movingMap = false;
+    _naviMerke(_NAVI_MOVING_KEY, false);
+    _naviKnopfAnstrich();
+  }
+  liveMap.fitBounds([[s.sued, s.west], [s.nord, s.ost]], { padding: [30, 30] });
 }
 
 function _reddungZu() {
