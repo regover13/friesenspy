@@ -36,7 +36,29 @@ const DEVICE_KEY = "friesenspy_device";
  * WICHTIG fuer die Auswertung auf der Seite: Ein Paket VOR 2.0.0 schickt dieses Feld gar
  * nicht. Sein Fehlen ist deshalb kein Fehler, sondern die Aussage "aelter als 2.0.0".
  */
-const PAKET_VERSION = "2.3.0";
+const PAKET_VERSION = "2.3.1";
+
+/**
+ * Das globale Objekt -- OHNE sich auf `globalThis` zu verlassen.
+ *
+ * Live-Fund 24.09.2026: Ein Coherent GT meldete `ReferenceError: Can't find variable:
+ * globalThis` (WebKit auf dem Stand von Safari 11, `AppleWebKit/604.1.38`). Jeder direkte
+ * Zugriff warf dort -- `makeDeviceId` lieferte keine Kennung, das Kniebrett fiel auf die
+ * Adresse ohne Bindung zurueck, und der Pilot musste sich bei jedem Start neu anmelden. Die
+ * Position aus dem Simulator blieb aus demselben Grund aus. Wer schon eine Kennung hatte,
+ * merkte nichts: `makeDeviceId` laeuft dann gar nicht erst.
+ *
+ * `typeof` wirft bei einem unbekannten Namen nicht, ein Zugriff schon. Deshalb steht
+ * `globalThis` NUR hier, und nur hinter `typeof` (tests/test_kniebrett_ohne_globalthis.py).
+ */
+function globalesObjekt(): Record<string, unknown> {
+  const g: unknown =
+    typeof globalThis !== "undefined" ? globalThis
+      : typeof window !== "undefined" ? window
+        : typeof self !== "undefined" ? self
+          : undefined;
+  return (g || {}) as Record<string, unknown>;
+}
 
 /**
  * Zufaellige Geraete-ID erzeugen -- oder "" , wenn das nicht sicher moeglich ist.
@@ -49,7 +71,7 @@ const PAKET_VERSION = "2.3.0";
  * normal an (buildPanelUrl faellt dann auf die schlichte Panel-Adresse zurueck).
  */
 function makeDeviceId(): string {
-  const c = (globalThis as { crypto?: { getRandomValues?: (a: Uint8Array) => Uint8Array } }).crypto;
+  const c = (globalesObjekt() as { crypto?: { getRandomValues?: (a: Uint8Array) => Uint8Array } }).crypto;
   if (!c || typeof c.getRandomValues !== "function") {
     return "";
   }
@@ -446,7 +468,7 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
       return;
     }
     try {
-      const sv = (globalThis as { SimVar?: { GetSimVarValue(n: string, u: string): number } }).SimVar;
+      const sv = (globalesObjekt() as { SimVar?: { GetSimVarValue(n: string, u: string): number } }).SimVar;
       if (!sv || typeof sv.GetSimVarValue !== "function") {
         // FRUEHER stand hier `this.positionFehler = POSITION_MAX_FEHLER` -- ein endgueltiges
         // Aus beim allerersten Versuch. Das war die Fehlannahme, SimVar sei entweder da oder
@@ -579,7 +601,7 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
       return;
     }
     try {
-      const rvl = (globalThis as {
+      const rvl = (globalesObjekt() as {
         RegisterViewListener?: (n: string) => { trigger?: (...a: unknown[]) => void };
       }).RegisterViewListener;
       if (typeof rvl !== "function") {
@@ -604,7 +626,7 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
    * macht an derselben Stelle dasselbe.
    */
   private async verkehrHolen(): Promise<SimVerkehrRoh[] | null> {
-    const c = (globalThis as { Coherent?: { call(n: string): Promise<unknown> } }).Coherent;
+    const c = (globalesObjekt() as { Coherent?: { call(n: string): Promise<unknown> } }).Coherent;
     if (!c || typeof c.call !== "function") {
       this.startBefund = { coherentDa: false };
       return null;

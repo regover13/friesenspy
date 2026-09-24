@@ -3261,8 +3261,8 @@ def test_paketversion_gehoben_und_gleichlaufend():
     manifest = json.loads(
         (Path(__file__).resolve().parents[1] / "msfs-panel" / "PackageSources" / "FriesenSpy"
          / "manifest.json").read_text(encoding="utf-8"))
-    assert 'const PAKET_VERSION = "2.3.0"' in PANEL_TSX
-    assert manifest["package_version"] == "2.3.0"
+    assert 'const PAKET_VERSION = "2.3.1"' in PANEL_TSX
+    assert manifest["package_version"] == "2.3.1"
 
 
 def test_seite_nimmt_den_brueckenzustand_entgegen():
