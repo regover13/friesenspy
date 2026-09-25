@@ -605,3 +605,36 @@ def test_nach_dem_eventende_werden_die_objekte_weggenommen(db):
         assert c.execute("SELECT count(*) FROM bruegge_soll").fetchone()[0] == 0
     finally:
         c.close()
+
+
+# --- Start-Push (25.09.2026) ----------------------------------------------------------------
+#
+# „es kam kein Push für den Start des Events." Die Suche beginnt mit der Uhrzeit: Zu
+# `dtstart` steht der Havarist im Sektor. Der Hinweis auf die FriesenBruegge gehoert genau
+# hierher -- danach ist es fuer den, der sie nicht hat, zu spaet.
+
+def _meldungen(db):
+    p = VatsimPoller(db_path=db, callsign_prefix="FRS", poll_interval=60)
+    gesendet = []
+    p.broadcast_notify = lambda kanal, ziel, payload: gesendet.append(payload)
+    asyncio.run(p._check_reddung())
+    return [g for g in gesendet if "läuft" in g.get("body", "")]
+
+
+def test_zum_start_geht_genau_ein_push_raus(db):
+    _event(db, start_vor_h=0.05)
+    erst = _meldungen(db)
+    assert len(erst) == 1, erst
+    assert "FriesenBrügge" in erst[0]["body"]
+    assert _meldungen(db) == [], "der naechste Takt darf nicht noch einmal melden"
+
+
+def test_ohne_push_kein_start_push(db):
+    _event(db, start_vor_h=0.05, push_enabled=0)
+    assert _meldungen(db) == []
+
+
+def test_ein_vorbeies_event_meldet_keinen_start(db):
+    """Laeuft der Poller erst nach dtend wieder an, darf niemand „läuft" lesen."""
+    _event(db, start_vor_h=3.0, ende_in_h=-0.5)
+    assert _meldungen(db) == []

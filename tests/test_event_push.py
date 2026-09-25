@@ -164,3 +164,47 @@ class TestEventReminders:
         assert events_due_for_reminder(conn, _iso(now), lead_min=60) == []
         due = transport_events_due_for_reminder(conn, _iso(now), lead_min=60)
         assert [k["name"] for k in due] == ["Kutter Juli"]
+
+
+# --- FriesenReddung: Erinnerung eine Stunde vorher (25.09.2026) --------------------------
+#
+# Nutzer nach dem Abend vom 25.09.: „es kam kein Push für den Start des Events." Die
+# Erinnerung kannte Kalender-Events, Bummel und Kutter -- die Reddung nicht.
+
+def _reddung(conn, name, dtstart, **extra):
+    from app.database import create_reddung_event
+    eid = create_reddung_event(conn, name=name, dtstart=dtstart, sued=53.54, west=6.95,
+                               nord=53.90, ost=7.55, **extra)
+    conn.commit()
+    return eid
+
+
+def test_reddung_erinnerung_fenster_und_dedup(conn):
+    from app.database import reddung_events_due_for_reminder
+    now = datetime(2026, 9, 25, 16, 0, 0, tzinfo=timezone.utc)
+    nah = _reddung(conn, "Nah", _iso(now + timedelta(minutes=30)))
+    _reddung(conn, "Fern", _iso(now + timedelta(minutes=90)))
+    _reddung(conn, "Vorbei", _iso(now - timedelta(minutes=10)))
+    _reddung(conn, "Stumm", _iso(now + timedelta(minutes=20)), push_enabled=0)
+    due = reddung_events_due_for_reminder(conn, _iso(now), lead_min=60)
+    assert [e["id"] for e in due] == [nah]
+    mark_event_reminded(conn, f"reddung:{nah}", _iso(now))
+    conn.commit()
+    assert reddung_events_due_for_reminder(conn, _iso(now), lead_min=60) == []
+
+
+def test_die_erinnerung_meldet_auch_die_reddung(tmp_path):
+    """Die Pruefung laeuft ueber den echten Poller-Job, nicht nur ueber die Abfrage."""
+    import asyncio
+    from app.poller import VatsimPoller
+    db = str(tmp_path / "t.db")
+    init_db(db)
+    c = get_connection(db)
+    jetzt = datetime.now(timezone.utc)
+    _reddung(c, "Abendsuche", _iso(jetzt + timedelta(minutes=8)))
+    c.close()
+    p = VatsimPoller(db_path=db, callsign_prefix="FRS", poll_interval=60)
+    gesendet = []
+    p.broadcast_notify = lambda kanal, ziel, payload: gesendet.append(payload)
+    asyncio.run(p._check_event_reminders())
+    assert any(g["title"] == "FriesenReddung" and "Abendsuche" in g["body"] for g in gesendet), gesendet

@@ -11662,6 +11662,40 @@ def transport_events_due_for_reminder(
     return [dict(r) for r in rows]
 
 
+def reddung_events_due_for_reminder(
+    conn: sqlite3.Connection, now: str, lead_min: int = 60
+) -> list[dict]:
+    """FriesenReddungen mit dtstart in (now, now+lead_min], push_enabled=1, noch nicht erinnert
+    (Schlüssel 'reddung:{id}' in event_reminders_sent) -- wie beim Kutter.
+
+    Fehlte bis zum 25.09.2026: Die Erinnerung kannte Kalender-Events, Bummel und Kutter, die
+    Reddung nicht. Nutzer nach dem ersten Abend mit den neuen Ansichten: „es kam kein Push für
+    den Start des Events."
+    """
+    until = (_parse_iso(now) + timedelta(minutes=lead_min)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    rows = conn.execute(
+        "SELECT id, name, dtstart FROM reddung_events "
+        "WHERE dtstart > ? AND dtstart <= ? AND push_enabled = 1 "
+        "AND ('reddung:' || id) NOT IN (SELECT uid FROM event_reminders_sent) "
+        "ORDER BY dtstart",
+        (now, until),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def reddung_start_melden(conn: sqlite3.Connection, event_id: int, ts: str) -> bool:
+    """Den Start einer FriesenReddung einmal festhalten. True nur beim ersten Mal.
+
+    Als Latch dient ``event_reminders_sent`` (Schlüssel 'reddung-start:{id}') -- dieselbe
+    Tabelle, die schon verschickte Erinnerungen festhält. Eine eigene Spalte wie
+    ``transport_events.started_at`` braucht es nicht: Der Start einer Reddung ist keine
+    Beobachtung wie beim Kutter (erster Flug), sondern die Uhrzeit ``dtstart``.
+    """
+    cur = conn.execute("INSERT OR IGNORE INTO event_reminders_sent (uid, sent_at) VALUES (?, ?)",
+                       (f"reddung-start:{int(event_id)}", ts))
+    return (cur.rowcount or 0) > 0
+
+
 def mark_event_reminded(conn: sqlite3.Connection, uid: str, ts: str) -> None:
     """Erinnerung für ein Event als verschickt markieren (Dedup, idempotent)."""
     conn.execute(

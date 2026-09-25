@@ -2745,6 +2745,7 @@ class VatsimPoller:
                 get_reddung_event, list_reddung_events, reddung_fortschreiben,
                 reddung_grund_lernen, reddung_landung_aus_bruegge,
                 reddung_objekte_abgleichen, reddung_spuren,
+                reddung_start_melden,
                 set_reddung_aufgeloest, set_reddung_aufgenommen, set_reddung_eingeliefert,
                 set_reddung_gefunden,
             )
@@ -2785,6 +2786,17 @@ class VatsimPoller:
                             continue
                         name = ev.get("name") or "FriesenReddung"
                         push_on = bool(ev.get("push_enabled"))
+                        # 0 -- Start: einmal je Reddung, sobald `dtstart` erreicht ist und solange
+                        # sie noch laeuft. Der Hinweis auf die FriesenBruegge gehoert genau hierher
+                        # -- spaeter ist es fuer den, der sie nicht hat, zu spaet. Fehlte bis zum
+                        # 25.09.2026 („es kam kein Push für den Start des Events").
+                        if (now < (ev.get("dtend") or "")
+                                and reddung_start_melden(conn, ev["id"], now) and push_on):
+                            pushes.append({
+                                "title": name,
+                                "body": ("Die FriesenReddung läuft — der Havarist wartet im Sektor. "
+                                         "\U0001f6a8 Ohne FriesenBrügge siehst du ihn nicht."),
+                                "url": "/"})
                         ziel = rd.havarist_ziel(ev)
                         if ziel is None:
                             continue
@@ -2933,18 +2945,19 @@ class VatsimPoller:
             logger.exception("Error in _check_reddung")
 
     async def _check_event_reminders(self) -> None:
-        """Periodisch (~5 min): FriesenEvents, Bummel-Rennen und Kutter-Events, die in ~1 h
-        beginnen, einmalig per Push erinnern. Drei Quellen: generische Kalender-Events
-        (events_due_for_reminder), Bummel-Rennen (bummel_races_due_for_reminder) und
+        """Periodisch (~5 min): FriesenEvents, Bummel-Rennen, Kutter-Events und FriesenReddungen,
+        die in ~1 h beginnen, einmalig per Push erinnern. Vier Quellen: generische Kalender-Events
+        (events_due_for_reminder), Bummel-Rennen (bummel_races_due_for_reminder),
         Kutter-Events (transport_events_due_for_reminder, manuell + Kalender, push_enabled-
-        gated). Kalender-Bummel/-Kutter sind aus der generischen Quelle ausgeschlossen, damit
+        gated) und FriesenReddungen (reddung_events_due_for_reminder, seit 25.09.2026). Kalender-Bummel/-Kutter sind aus der generischen Quelle ausgeschlossen, damit
         es keinen Doppel-Push gibt. Empfänger sind die Events-Abonnenten (notify_events).
         Latchend via event_reminders_sent (synthetische Keys 'bummel:{id}' / 'kutter:{id}')."""
         try:
             from datetime import datetime, timezone
             from app.database import (
                 events_due_for_reminder, bummel_races_due_for_reminder,
-                transport_events_due_for_reminder, mark_event_reminded,
+                transport_events_due_for_reminder, reddung_events_due_for_reminder,
+                mark_event_reminded,
                 get_push_subscriptions_for_events,
             )
             now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -2953,7 +2966,8 @@ class VatsimPoller:
                 generic = events_due_for_reminder(conn, now, lead_min=60)
                 bummels = bummel_races_due_for_reminder(conn, now, lead_min=60)
                 kutters = transport_events_due_for_reminder(conn, now, lead_min=60)
-                any_due = bool(generic or bummels or kutters)
+                reddungen = reddung_events_due_for_reminder(conn, now, lead_min=60)
+                any_due = bool(generic or bummels or kutters or reddungen)
                 subscriptions = get_push_subscriptions_for_events(conn) if any_due else []
                 for ev in generic:
                     mark_event_reminded(conn, ev["uid"], now)  # latchen, auch ohne Empfänger
@@ -2961,14 +2975,16 @@ class VatsimPoller:
                     mark_event_reminded(conn, f"bummel:{r['id']}", now)
                 for k in kutters:
                     mark_event_reminded(conn, f"kutter:{k['id']}", now)
+                for rd_ev in reddungen:
+                    mark_event_reminded(conn, f"reddung:{rd_ev['id']}", now)
                 conn.commit()
             finally:
                 conn.close()
             if any_due:
                 logger.info(
-                    "Event-Erinnerung fällig: generic=%s bummel=%s kutter=%s",
+                    "Event-Erinnerung fällig: generic=%s bummel=%s kutter=%s reddung=%s",
                     [e["uid"] for e in generic], [r["id"] for r in bummels],
-                    [k["id"] for k in kutters],
+                    [k["id"] for k in kutters], [x["id"] for x in reddungen],
                 )
             # Nutzlasten einmal bauen — sie speisen beide Anzeigeflächen (Web-Push im Browser,
             # Sim-Benachrichtigung im Kniebrett). Vorher hing die Formulierung im
@@ -2990,6 +3006,12 @@ class VatsimPoller:
                 reminder_pushes.append({
                     "title": "FriesenKutter",
                     "body": f"🗓 {_lead_phrase(k['dtstart'], now)}: {k.get('name') or 'FriesenKutter'}",
+                    "url": "/",
+                })
+            for rd_ev in reddungen:
+                reminder_pushes.append({
+                    "title": "FriesenReddung",
+                    "body": f"🗓 {_lead_phrase(rd_ev['dtstart'], now)}: {rd_ev.get('name') or 'FriesenReddung'}",
                     "url": "/",
                 })
             for payload in reminder_pushes:

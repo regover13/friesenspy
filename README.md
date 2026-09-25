@@ -537,7 +537,7 @@ FriesenSpy kann dich benachrichtigen, wenn ein Friese auf VATSIM online geht —
 
 Zusätzlich kann FriesenSpy Push-Benachrichtigungen senden, wenn ein Friese dem **FriesenFlieger-TeamSpeak** beitritt (siehe [TS-Login-Benachrichtigung](#ts-login-benachrichtigung-phase-1)).
 
-Über den **„Events"-Schalter** lassen sich außerdem **Event-Erinnerungen** aktivieren: FriesenSpy sendet dann ~1 h vor jedem FriesenEvent im Kalender einen Push — und benachrichtigt auch bei Bummel-Start und Ergebnisenthüllung. Die ~1h-Erinnerung speist sich aus drei Quellen (Kalender-Events, Bummel-Rennen, Kutter-Events) und läuft dadurch auch für **manuell** im Admin angelegte Bummel/Kutter (nicht nur Kalender-Termine); pro Rennen/Event lässt sich der Push im Admin abschalten, dann bleibt auch die Erinnerung aus. Dieser Schalter ist separat opt-in und standardmäßig deaktiviert.
+Über den **„Events"-Schalter** lassen sich außerdem **Event-Erinnerungen** aktivieren: FriesenSpy sendet dann ~1 h vor jedem FriesenEvent im Kalender einen Push — und benachrichtigt auch bei Bummel-Start und Ergebnisenthüllung. Die ~1h-Erinnerung gilt für Kalender-Events, Bummel-Rennen, Kutter-Events und FriesenReddungen und läuft dadurch auch für **manuell** im Admin angelegte Events (nicht nur Kalender-Termine); pro Rennen/Event lässt sich der Push im Admin abschalten, dann bleibt auch die Erinnerung aus. Bei einer **FriesenReddung** kommt zum Beginn eine weitere Meldung — mit dem Hinweis, dass ohne FriesenBrügge kein Havarist zu sehen ist —, danach je eine bei Fund, Aufnahme, Einlieferung und zum Ende. Dieser Schalter ist separat opt-in und standardmäßig deaktiviert.
 
 Das Bell-Symbol 🔔 oben rechts im Header öffnet das Benachrichtigungs-Panel.
 
