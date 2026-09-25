@@ -209,6 +209,7 @@ from app.database import (
 )
 from app import geo
 from app import bruegge
+from app.reddung import analyse_platz as reddung_analyse_platz
 from app.geo import filter_event_pilots
 from app.poller import VatsimPoller, create_poller, send_web_push
 from app.statsim import fetch_flight_track, fetch_pilot_flights
@@ -6019,6 +6020,7 @@ def transport_events():
         conn.close()
 
 
+
 @app.get("/api/reddung/events")
 def reddung_events():
     """Alle FriesenReddungen mit ihrem Stand — für die Eventliste und später die Karte.
@@ -6048,6 +6050,8 @@ def reddung_events():
                 "dtstart": ev.get("dtstart"), "dtend": ev.get("dtend"),
                 "laeuft": (ev.get("dtstart") or "") <= now <= dtend,
                 "vorbei_seit_s": vorbei_seit,
+                # Platz und Radius fuer die Event-Analyse der Bilanz -- nur aus dem Sektor.
+                "analyse": reddung_analyse_platz(ev),
                 "source": ev.get("source"),
                 "aufnehmen_noetig": ev.get("aufnehmen_noetig"),
                 "landung_noetig": ev.get("landung_noetig"),

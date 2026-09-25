@@ -1114,7 +1114,9 @@ Läuft gerade eine FriesenReddung — und fehlt **diesem** Piloten die FriesenBr
 
 Alle FriesenReddungen mit ihrem Stand — für die Eventliste, später die Karte. Öffentlich (hinter dem Login-Gate wie die übrige Seite).
 
-**Response** `[{ "id": int, "name": string, "dtstart": string, "dtend": string, "laeuft": bool, "vorbei_seit_s": int|null, "source": string, "aufnehmen_noetig": 0|1, "landung_noetig": 0|1, "stand": {…} }]`
+**Response** `[{ "id": int, "name": string, "dtstart": string, "dtend": string, "laeuft": bool, "vorbei_seit_s": int|null, "analyse": {"icao": string, "radius_km": int|null}, "source": string, "aufnehmen_noetig": 0|1, "landung_noetig": 0|1, "stand": {…} }]`
+
+`analyse` nennt Platz und Radius für die Event-Analyse der Bilanz: den nächsten Platz zur Sektormitte und einen Radius, der von dort den ganzen Sektor erfasst — oder `{"icao": "global", "radius_km": null}`, wenn im Umkreis von 150 km keiner liegt. Nur aus dem Sektor gerechnet, nie aus der Lage des Havaristen.
 
 `laeuft` und `vorbei_seit_s` (Sekunden seit `dtend`, `null` solange nicht vorbei) rechnet der Server — im Kniebrett ist die Uhr des Geräts die des Sim-PCs, und nach der richtet sich sonst, ob der Live-Block „läuft gerade" sagt.
 

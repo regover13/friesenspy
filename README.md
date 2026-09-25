@@ -401,7 +401,8 @@ ihn für dieses Event weg — beim nächsten meldet er sich wieder.
 - **Live-Ansicht:** Läuft eine FriesenReddung, steht sie ganz oben — mit dem Balken, wie viel
   vom Sektor schon abgesucht ist, wie viel Fläche noch offen ist, wer gefunden hat und wer den
   Piloten aufgenommen und wohin gebracht hat. Laufen mehrere gleichzeitig, stehen sie untereinander.
-  Ist der Pilot gerettet, steht dort bis zum Eventende „abgeschlossen" statt „läuft gerade".
+  Ist der Pilot gerettet, steht dort bis zum Eventende „abgeschlossen" statt „läuft gerade";
+  wann das Event endet, steht jeweils dabei.
   Wo der Havarist liegt, steht dort nie — den Ort zeigt dir die Rauchsäule im Simulator.
 - **Karte:** Die Ebene **FriesenReddung** zeigt den Sektor als rot gestrichelten Rahmen und
   darin blau, was schon abgesucht ist — so seht ihr in der Luft, wo noch niemand war, und
@@ -414,7 +415,9 @@ ihn für dieses Event weg — beim nächsten meldet er sich wieder.
   abgesuchte Fläche, wer gefunden hat, wer aufgenommen und wo eingeliefert hat, wie lange die Rettung
   dauerte, und darunter, welche Fläche jeder als Erster abgesucht hat. Der Knopf **Teilen**
   legt dir das Ganze als fertigen Absatz fürs Forum in die Zwischenablage. Die Bilanz hat eine
-  eigene Adresse: Neu laden oder ein geteilter Link öffnet sie wieder.
+  eigene Adresse: Neu laden oder ein geteilter Link öffnet sie wieder. Darunter zeigt die
+  Event-Analyse, wer im Zeitfenster rund um den Sektor unterwegs war, mit den Flugspuren —
+  gesucht wird um den nächsten Platz zur Sektormitte, weit genug, um den ganzen Sektor zu erfassen.
 
 ---
 

@@ -123,3 +123,34 @@ def test_die_landeschwellen_werden_importiert_und_nicht_abgeschrieben():
     quelle = pathlib.Path(reddung.__file__).read_text(encoding="utf-8")
     assert "_GPS_BLOCK_GS_KT" in quelle and "_GPS_GROUND_AGL_FT" in quelle
     assert "from app.gps_legs import" in quelle
+
+
+# --- Event-Analyse fuer die Bilanz (25.09.2026) ------------------------------------------
+#
+# Nutzer: „zeigt keine tracks an". Bummel und Kutter fuellen beim Oeffnen die Event-Analyse
+# mit ihren Streckenplaetzen; eine Reddung hat keine. Ersatz: der naechste Platz zur
+# Sektormitte und ein Radius, der von dort den ganzen Sektor erfasst.
+
+def test_die_analyse_erfasst_den_ganzen_sektor():
+    from app import geo
+    from app.reddung import analyse_platz
+    ev = {"sued": 53.54, "west": 6.95, "nord": 53.90, "ost": 7.55}
+    a = analyse_platz(ev)
+    assert len(a["icao"]) == 4 and a["icao"] != "GLOBAL"
+    plat, plon = geo.icao_to_coords(a["icao"])
+    for lat in (ev["sued"], ev["nord"]):
+        for lon in (ev["west"], ev["ost"]):
+            assert geo.haversine(plat, plon, lat, lon) <= a["radius_km"], (lat, lon, a)
+
+
+def test_die_analyse_nimmt_verdrehte_ecken():
+    from app.reddung import analyse_platz
+    gerade = analyse_platz({"sued": 53.54, "west": 6.95, "nord": 53.90, "ost": 7.55})
+    verdreht = analyse_platz({"sued": 53.90, "west": 7.55, "nord": 53.54, "ost": 6.95})
+    assert gerade == verdreht
+
+
+def test_ohne_platz_in_reichweite_sucht_die_analyse_global():
+    from app.reddung import analyse_platz
+    a = analyse_platz({"sued": 40.0, "west": -40.0, "nord": 40.3, "ost": -39.6})   # Atlantik
+    assert a == {"icao": "global", "radius_km": None}

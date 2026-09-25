@@ -171,3 +171,34 @@ def fenster_aufnehmen(ev: dict) -> Fenster:
         gs_max_kt=float(_GPS_BLOCK_GS_KT) if mit_landung else SCHWEBE_GS_KT,
         gs_min_kt=0.0,
     )
+
+
+#: So weit darf der naechste Platz von der Sektormitte weg sein, damit die Event-Analyse ihn
+#: nimmt. Liegt keiner so nah (Sektor auf offener See), sucht sie global.
+_ANALYSE_PLATZ_MAX_KM = 150.0
+
+
+def analyse_platz(ev: dict) -> dict:
+    """Platz und Radius für die Event-Analyse der Bilanz: ``{"icao", "radius_km"}``.
+
+    Bummel und Kutter füllen die Event-Analyse mit ihren Streckenplätzen -- eine Reddung hat
+    keine. Ersatz: der nächste Platz zur Sektormitte und ein Radius, der von dort den ganzen
+    Sektor erfasst (Nutzer, 25.09.2026: „zeigt keine tracks an"). Findet sich kein Platz in
+    Reichweite, ``{"icao": "global", "radius_km": None}``.
+
+    Nur aus dem Sektor gerechnet -- der ist öffentlich. Die Lage des Havaristen geht nicht ein.
+    """
+    import math
+    from app import geo
+    sued, nord = sorted((float(ev["sued"]), float(ev["nord"])))
+    west, ost = sorted((float(ev["west"]), float(ev["ost"])))
+    mlat, mlon = (sued + nord) / 2.0, (west + ost) / 2.0
+    icao = geo.nearest_airport_icao_fast(mlat, mlon, _ANALYSE_PLATZ_MAX_KM)
+    lage = geo.icao_to_coords(icao) if icao else None
+    if not lage:
+        return {"icao": "global", "radius_km": None}
+    weitest = max(geo.haversine(lage[0], lage[1], lat, lon)
+                  for lat in (sued, nord) for lon in (west, ost))
+    # Etwas Rand: Wer knapp ausserhalb wendet, gehoert trotzdem zum Abend.
+    return {"icao": icao, "radius_km": int(math.ceil(weitest + 5.0))}
+

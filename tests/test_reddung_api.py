@@ -828,3 +828,13 @@ def test_die_suche_setzt_keine_sektorecke():
     suche = _admin_funktion("_rdIcaoSuche")
     assert "disableClickPropagation" in suche
     assert "/api/airports/search?q=" in suche and "/api/airport/" in suche
+
+
+def test_die_liste_nennt_die_analyse_ohne_koordinate(db):
+    eid = _anlegen()
+    asyncio.run(main.admin_update_reddung_event(
+        FakeReq(body={"havarist_lat": 53.72, "havarist_lon": 7.25}), eid))
+    e = main.reddung_events()[0]
+    assert set(e["analyse"]) == {"icao", "radius_km"}
+    text = json.dumps(e)
+    assert "53.72" not in text and "7.25" not in text

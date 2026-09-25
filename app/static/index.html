@@ -15219,6 +15219,17 @@ async function _reddungTakt() {
   _reddungBilanzZeigen();
 }
 
+// „25.09.2026, 17:00–17:52 UTC" -- ueber Mitternacht mit beiden Daten. Das Ende stand
+// nirgends (Nutzer, 25.09.2026: „event Ende steht niergens").
+function _reddungZeitfenster(r) {
+  const datum = ts => ts.slice(8, 10) + '.' + ts.slice(5, 7) + '.' + ts.slice(0, 4);
+  const uhr = ts => ts.slice(11, 16);
+  const a = r.dtstart || '', b = r.dtend || '';
+  if (!a || !b) return '';
+  if (a.slice(0, 10) === b.slice(0, 10)) return `${datum(a)}, ${uhr(a)}–${uhr(b)} UTC`;
+  return `${datum(a)}, ${uhr(a)} – ${datum(b)}, ${uhr(b)} UTC`;
+}
+
 function _reddungBalken(pct) {
   return `<div class="reddung-balken"><span style="width:${Math.max(0, Math.min(100, pct))}%"></span></div>`;
 }
@@ -15262,9 +15273,10 @@ function _reddungBannerBlock(r) {
   const fertig = !!st.aufgeloest;
   let html = `<div class="reddung-live-block"><div class="bb-title">🚨 ${escHtml(r.name || 'FriesenReddung')} ${fertig ? '— abgeschlossen' : 'läuft gerade'}</div>`;
   html += _reddungBalken(pct);
+  const ende = (r.dtend || '').slice(11, 16);
   html += fertig
-    ? `<div class="bb-sub">${pct} % abgesucht</div>`
-    : `<div class="bb-sub">${pct} % abgesucht · noch offen: ${offenKm2} km²</div>`;
+    ? `<div class="bb-sub">${pct} % abgesucht · Ende ${ende} UTC</div>`
+    : `<div class="bb-sub">${pct} % abgesucht · noch offen: ${offenKm2} km² · Ende ${ende} UTC</div>`;
   html += _reddungMarkenHtml(st);
   html += `<div style="margin-top:8px;"><button class="btn-share" onclick="reddungAufKarte(${Number(r.id)})">${icon('map')} Zur Karte</button></div></div>`;
   return html;
@@ -15485,6 +15497,17 @@ async function openReddungDetail(id) {
   _reddungBilanzZeigen();      // sofort aus der vorhandenen Liste …
   await _reddungTakt();        // … und frisch, sobald sie da ist
   wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // Wie beim Kutter: darunter die Event-Analyse mit den Spuren des Abends. Eine Reddung hat
+  // keine Streckenplaetze -- der Server nennt den naechsten Platz zur Sektormitte und einen
+  // Radius, der den ganzen Sektor erfasst (Nutzer, 25.09.2026: „zeigt keine tracks an").
+  const r = _reddungListe.find(x => x.id === _reddungOffenId);
+  if (r && r.analyse && r.dtstart && r.dtend) {
+    document.getElementById('ev-icao').value = r.analyse.icao;
+    if (r.analyse.radius_km) document.getElementById('ev-radius').value = r.analyse.radius_km;
+    document.getElementById('ev-start').value = r.dtstart.slice(0, 16);
+    document.getElementById('ev-end').value = r.dtend.slice(0, 16);
+    searchEvents();
+  }
 }
 
 // Im Takt aufgefrischt -- laeuft der Abend noch, waechst die Bilanz mit.
@@ -15511,7 +15534,8 @@ function _reddungBilanzHtml(r) {
   const pct = Math.round((st.anteil || 0) * 100);
   const km2 = Math.round(st.flaeche_km2 || 0);     // genau, vom Server (#44)
   const vorbei = r.vorbei_seit_s != null;
-  let html = _reddungBalken(pct);
+  let html = `<div class="bb-sub">${_reddungZeitfenster(r)}</div>`;
+  html += _reddungBalken(pct);
   html += `<div class="bb-sub">${pct} % abgesucht — ${st.abgedeckt || 0} von ${st.zellen || 0} Zellen, ${km2} km²</div>`;
   if (st.gefunden) html += _reddungMarkenHtml(st);
   else html += `<div class="bb-sub">${vorbei ? 'Nicht gefunden.' : 'Noch nicht gefunden.'}</div>`;
@@ -15537,7 +15561,8 @@ function _reddungTeilenText(r) {
   const zeit = ts => (ts || '').slice(11, 16) + ' UTC';
   const pct = Math.round((st.anteil || 0) * 100);
   const km2 = Math.round(st.flaeche_km2 || 0);     // genau, vom Server (#44)
-  const z = [`🚨 FriesenReddung — ${r.name || 'FriesenReddung'}`, `Abgesucht: ${pct} % (${km2} km²)`];
+  const z = [`🚨 FriesenReddung — ${r.name || 'FriesenReddung'}`, _reddungZeitfenster(r),
+             `Abgesucht: ${pct} % (${km2} km²)`].filter(Boolean);
   if (st.gefunden) z.push(`Gefunden: ${st.gefunden.name} um ${zeit(st.gefunden.ts)}`);
   else z.push(r.vorbei_seit_s != null ? 'Nicht gefunden' : 'Noch nicht gefunden');
   // Derselbe Pilot nimmt auf und liefert ein (s. _reddungMarkenHtml) -- ein Name, eine Zeile.

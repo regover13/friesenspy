@@ -243,7 +243,7 @@ def test_der_teilen_text_nennt_die_marken_und_keinen_ort():
                    "dauer_min": 38,
                    "je_pilot": [{"cid": 1, "name": "Stefan", "zellen": 400},
                                 {"cid": 3, "name": "Nur Doppelt", "zellen": 0}]}}
-    text = _node(_funktion("_reddungTeilenText"), f"_reddungTeilenText({json.dumps(r)})")
+    text = _node(_funktion("_reddungZeitfenster") + _funktion("_reddungTeilenText"), f"_reddungTeilenText({json.dumps(r)})")
     assert "FriesenReddung" in text and "Vermisst über der Jade" in text
     assert "42 %" in text and "672 km²" in text
     assert "Stefan um 19:12 UTC" in text and "EDWF" in text and "38 Minuten" in text
@@ -257,7 +257,7 @@ def test_der_teilen_text_unterscheidet_noch_nicht_und_nicht_gefunden():
     r = {"id": 3, "name": "X", "laeuft": True, "vorbei_seit_s": None,
          "stand": {"anteil": 0.1, "abgedeckt": 10, "zellen": 100, "kante_km": 1.0,
                    "flaeche_km2": 10.0, "je_pilot": []}}
-    q = _funktion("_reddungTeilenText")
+    q = _funktion("_reddungZeitfenster") + _funktion("_reddungTeilenText")
     assert "Noch nicht gefunden" in _node(q, f"_reddungTeilenText({json.dumps(r)})")
     r.update(laeuft=False, vorbei_seit_s=3600)
     danach = _node(q, f"_reddungTeilenText({json.dumps(r)})")
@@ -344,7 +344,7 @@ def test_der_teilen_text_nennt_den_retter_nur_einmal():
     r = {"id": 3, "name": "X", "laeuft": False, "vorbei_seit_s": 50000,
          "stand": {"anteil": 0.4, "abgedeckt": 4, "zellen": 10, "kante_km": 1.0,
                    "flaeche_km2": 4.0, "je_pilot": [], **_MARKEN}}
-    text = _node(_funktion("_reddungTeilenText"), f"_reddungTeilenText({json.dumps(r)})")
+    text = _node(_funktion("_reddungZeitfenster") + _funktion("_reddungTeilenText"), f"_reddungTeilenText({json.dumps(r)})")
     assert text.count("Wolfgang") == 1 and "EDWF" in text and "19:50" in text
 
 
@@ -430,3 +430,32 @@ def test_die_neuen_zustaende_stehen_vor_dem_ersten_aufruf():
     erster_aufruf = INDEX.index("setInterval(_reddungTakt, 30000)")
     for name in ("let _reddungTaktNr", "const _reddungRasterNr", "let _reddungListeGeladen"):
         assert INDEX.index(name) < erster_aufruf, name
+
+
+def test_die_bilanz_zeigt_die_spuren_des_abends():
+    """Nutzer, 25.09.2026: „zeigt keine tracks an". Wie beim Kutter: Formular der
+    Event-Analyse mit Platz, Radius und Zeitfenster fuellen und suchen."""
+    rumpf = _ohne_kommentare(_funktion("openReddungDetail"))
+    for stueck in ("getElementById('ev-icao').value", "getElementById('ev-radius').value",
+                   "getElementById('ev-start').value", "getElementById('ev-end').value",
+                   ".analyse", "searchEvents();"):
+        assert stueck in rumpf, stueck
+    assert rumpf.index("await _reddungTakt()") < rumpf.index("searchEvents();")
+
+
+# --- Das Eventende steht dabei (Nutzer, 25.09.2026: „event Ende steht niergens") ----------
+
+@pytest.mark.skipif(not _NODE, reason="node fehlt")
+def test_das_zeitfenster_nennt_beginn_und_ende():
+    q = _funktion("_reddungZeitfenster")
+    gleich = _node(q, "_reddungZeitfenster({dtstart: '2026-09-25T17:00:00Z', dtend: '2026-09-25T17:52:00Z'})")
+    assert gleich == "25.09.2026, 17:00–17:52 UTC"
+    ueber = _node(q, "_reddungZeitfenster({dtstart: '2026-09-25T21:00:00Z', dtend: '2026-09-26T00:30:00Z'})")
+    assert ueber == "25.09.2026, 21:00 – 26.09.2026, 00:30 UTC", "ueber Mitternacht beide Daten"
+
+
+def test_bilanz_live_block_und_teilen_text_nennen_das_ende():
+    assert "_reddungZeitfenster(r)" in _funktion("_reddungBilanzHtml")
+    assert "_reddungZeitfenster(r)" in _funktion("_reddungTeilenText")
+    block = _ohne_kommentare(_funktion("_reddungBannerBlock"))
+    assert "Ende ${" in block and "r.dtend" in block
