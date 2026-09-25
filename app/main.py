@@ -729,17 +729,70 @@ async def efb_package_info():
     }
 
 
+#: (Pfad, mtime_ns, Groesse) -> ZIP-Inhalt ohne Oberordner. Die Pakete wechseln selten und sind
+#: klein (unter 1 MB); neu gerechnet wird nur, wenn die abgelegte Datei sich aendert.
+_ZIP_FLACH_CACHE: dict[tuple, bytes] = {}
+
+
+def _zip_ohne_oberordner(pfad: Path) -> bytes | None:
+    """Die ZIP ohne ihren gemeinsamen Oberordner -- oder ``None``, wenn sie keinen hat.
+
+    Windows legt beim „Alle extrahieren" einen Ordner mit dem Namen der ZIP an. Lag darin noch
+    einmal der Paketordner, zog man den äußeren in ``Community`` bzw. ``plugins`` und hatte
+    ``manifest.json`` eine Ebene zu tief -- der Simulator fand das Paket nicht (Nutzer,
+    25.09.2026: „wenn ich die Community Pakete entpacke, habe ich noch einen Unterordner im
+    Ordner"). Jetzt ist der entpackte Ordner selbst das Paket.
+
+    Umgeschrieben wird nur die AUSLIEFERUNG: Abgelegt bleibt die ZIP, wie sie gebaut wurde --
+    die Versionserkennung (``_efb_package_version``) liest den Oberordner.
+    """
+    import io
+    stat = pfad.stat()
+    schluessel = (str(pfad), stat.st_mtime_ns, stat.st_size)
+    if schluessel in _ZIP_FLACH_CACHE:
+        return _ZIP_FLACH_CACHE[schluessel]
+    with zipfile.ZipFile(pfad) as alt:
+        infos = alt.infolist()
+        oben = {i.filename.split("/", 1)[0] for i in infos}
+        if len(oben) != 1 or not all("/" in i.filename for i in infos):
+            return None
+        praefix = next(iter(oben)) + "/"
+        puffer = io.BytesIO()
+        with zipfile.ZipFile(puffer, "w", zipfile.ZIP_DEFLATED) as neu:
+            for info in infos:
+                rest = info.filename[len(praefix):]
+                if not rest:
+                    continue                     # der Oberordner selbst
+                ziel = zipfile.ZipInfo(rest, date_time=info.date_time)
+                ziel.external_attr = info.external_attr      # Ausfuehrbarkeit (macOS/Linux)
+                ziel.compress_type = zipfile.ZIP_DEFLATED
+                neu.writestr(ziel, b"" if info.is_dir() else alt.read(info))
+    _ZIP_FLACH_CACHE.clear()                     # immer nur der aktuelle Stand je Aufruf-Pfad
+    _ZIP_FLACH_CACHE[schluessel] = puffer.getvalue()
+    return _ZIP_FLACH_CACHE[schluessel]
+
+
+def _paket_ausliefern(pfad: Path, dateiname: str):
+    """Ein Paket als ZIP -- ohne Oberordner, falls es einen hat (s. ``_zip_ohne_oberordner``).
+
+    ⚠ Der Dateiname ist damit zugleich der Ordnername nach dem Entpacken. Er muss dem Ordner
+    entsprechen, den eine frühere Fassung angelegt hat -- sonst liegt nach einem Update ein
+    zweites Paket neben dem alten.
+    """
+    flach = _zip_ohne_oberordner(pfad)
+    if flach is None:
+        return FileResponse(pfad, media_type="application/zip", filename=dateiname)
+    return Response(content=flach, media_type="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="{dateiname}"'})
+
+
 @app.get("/download/efb", include_in_schema=False)
 async def efb_download():
     """Das Community-Package als ZIP. Liegt hinter dem Gate wie der Rest der App."""
     pfad = _efb_zip_path(get_settings())
     if not pfad.is_file():
         raise HTTPException(status_code=404, detail="Kein EFB-Paket hinterlegt")
-    return FileResponse(
-        pfad,
-        media_type="application/zip",
-        filename="friesenflieger-friesenspy-efb.zip",
-    )
+    return _paket_ausliefern(pfad, "friesenflieger-friesenspy-efb.zip")
 
 
 # Die Bruegge liegt nach demselben Muster wie das EFB-Paket: als ZIP im Volume, von Hand
@@ -803,8 +856,7 @@ async def bruegge_download():
     pfad = _bruegge_zip_path(get_settings(), "msfs")
     if not pfad.is_file():
         raise HTTPException(status_code=404, detail="Kein Bruegge-Paket hinterlegt")
-    return FileResponse(pfad, media_type="application/zip",
-                        filename="friesenbruegge.zip")
+    return _paket_ausliefern(pfad, "friesenbruegge.zip")
 
 
 @app.get("/download/bruegge-xplane", include_in_schema=False)
@@ -813,8 +865,9 @@ async def bruegge_xplane_download():
     pfad = _bruegge_zip_path(get_settings(), "xplane")
     if not pfad.is_file():
         raise HTTPException(status_code=404, detail="Kein Bruegge-Paket hinterlegt")
-    return FileResponse(pfad, media_type="application/zip",
-                        filename="friesenbruegge-xplane.zip")
+    # Der Name ist der Plugin-Ordner nach dem Entpacken -- derselbe wie bisher, sonst laege
+    # nach einem Update ein zweites Plugin neben dem alten.
+    return _paket_ausliefern(pfad, "FriesenBruegge.zip")
 
 
 @app.get("/impressum", include_in_schema=False)

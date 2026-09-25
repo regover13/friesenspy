@@ -2291,6 +2291,18 @@ ausfallen).
 Liefert das ZIP als `friesenflieger-friesenspy-efb.zip` (`application/zip`).
 `404`, wenn kein Paket hinterlegt ist. Liegt hinter dem Gate.
 
+**Ausgeliefert ohne Oberordner** (seit 25.09.2026, gilt auch für `/download/bruegge` und
+`/download/bruegge-xplane`): Windows legt beim „Alle extrahieren" einen Ordner mit dem Namen der
+ZIP an, und lag darin noch einmal der Paketordner, war `manifest.json` nach dem Verschieben in
+`Community` eine Ebene zu tief. `_zip_ohne_oberordner` schreibt die Einträge beim Ausliefern um
+(zwischengespeichert, solange sich die abgelegte Datei nicht ändert). **Abgelegt bleibt die ZIP
+mit Oberordner** — so baut sie der Windows-Build, und `_efb_package_version` liest ihn.
+
+⚠ Der Dateiname ist damit der Ordnername nach dem Entpacken und muss dem bisherigen
+Paketordner entsprechen: `friesenflieger-friesenspy-efb.zip`, `friesenbruegge.zip`,
+`FriesenBruegge.zip` (X-Plane; bis 25.09.2026 `friesenbruegge-xplane.zip`). Sonst läge nach einem
+Update ein zweites Paket neben dem alten.
+
 ### Neues Paket hochladen
 
 ```bash

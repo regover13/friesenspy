@@ -170,3 +170,70 @@ def test_seite_verspricht_keine_selbstverwaltung_der_geraete(env):
     seite = (Path(__file__).resolve().parents[1] / "app" / "static" / "efb.html").read_text(encoding="utf-8")
     assert "in der Verwaltung wieder\n      abmelden" not in seite
     assert "das macht aber die Verwaltung" in seite
+
+
+# --- Ohne Oberordner ausliefern (25.09.2026) ------------------------------------------------
+#
+# Nutzer: „wenn ich die Community Pakete entpacke, habe ich noch einen Unterordner im Ordner.
+# Das führt zu fehlern, weil meist die gesamte Ordnerstruktur verschoben wird." Windows legt
+# beim „Alle extrahieren" einen Ordner mit dem Namen der ZIP an -- und darin lag noch einmal
+# der Paketordner. Wer den aeusseren in Community zog, hatte manifest.json eine Ebene zu tief.
+
+import io  # noqa: E402
+
+
+def _zip(pfad: Path, eintraege: dict) -> Path:
+    pfad.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(pfad, "w") as z:
+        for name, inhalt in eintraege.items():
+            z.writestr(name, inhalt)
+    return pfad
+
+
+def _namen(r) -> list[str]:
+    return zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+
+
+def test_das_efb_paket_kommt_ohne_oberordner(env):
+    _paket_bauen(main._efb_zip_path(env.settings), version="2.3.1")
+    r = env.client.get("/download/efb")
+    namen = _namen(r)
+    assert "manifest.json" in namen, namen
+    assert not any(n.startswith("friesenflieger-friesenspy-efb/") for n in namen), namen
+    inhalt = zipfile.ZipFile(io.BytesIO(r.content)).read("manifest.json")
+    assert b'"package_version": "2.3.1"' in inhalt
+    # Abgelegt bleibt es, wie es gebaut wurde -- die Versionserkennung liest den Oberordner.
+    assert env.client.get("/api/efb-package").json()["version"] == "2.3.1"
+
+
+def test_die_bruegge_fuer_msfs_kommt_ohne_oberordner(env):
+    _zip(main._bruegge_zip_path(env.settings, "msfs"), {
+        "friesenbruegge/manifest.json": '{"package_version": "1.17.0"}',
+        "friesenbruegge/layout.json": "{}",
+    })
+    r = env.client.get("/download/bruegge")
+    assert "friesenbruegge.zip" in r.headers["content-disposition"]
+    assert sorted(_namen(r)) == ["layout.json", "manifest.json"]
+
+
+def test_die_bruegge_fuer_xplane_heisst_wie_ihr_pluginordner(env):
+    """Der Ordnername kommt jetzt vom Dateinamen. Hiesse er `friesenbruegge-xplane`, laege nach
+    einem Update ein zweites Plugin neben dem alten `FriesenBruegge`."""
+    _zip(main._bruegge_zip_path(env.settings, "xplane"), {
+        "FriesenBruegge/fassung.json": '{"package_version": "1.4.0"}',
+        "FriesenBruegge/64/win.xpl": "x",
+    })
+    r = env.client.get("/download/bruegge-xplane")
+    assert 'filename="FriesenBruegge.zip"' in r.headers["content-disposition"]
+    assert sorted(_namen(r)) == ["64/win.xpl", "fassung.json"]
+
+
+def test_ein_paket_ohne_gemeinsamen_oberordner_bleibt_wie_es_ist(env):
+    _zip(main._efb_zip_path(env.settings), {"manifest.json": "{}", "html_ui/x.js": "//"})
+    assert sorted(_namen(env.client.get("/download/efb"))) == ["html_ui/x.js", "manifest.json"]
+
+
+def test_die_seite_beschreibt_den_ordner_richtig():
+    seite = Path("app/static/efb.html").read_text(encoding="utf-8")
+    assert "Darin liegt ein Ordner namens" not in seite, "die alte Beschreibung muss weg"
+    assert "manifest.json" in seite
