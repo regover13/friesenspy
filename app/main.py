@@ -6033,11 +6033,21 @@ def reddung_events():
     conn = get_connection(get_settings().DB_PATH)
     try:
         raus = []
+        jetzt = datetime.strptime(now, "%Y-%m-%dT%H:%M:%SZ")
         for ev in list_reddung_events(conn, since=_retention_since(now)):
             stand = compute_reddung_stand(conn, ev)
+            # „Läuft" und „vorbei seit" rechnet der SERVER: Im Kniebrett ist die Uhr des Geräts
+            # die des Sim-PCs, und die geht nicht immer richtig (#44, Punkt 10).
+            dtend = ev.get("dtend") or ""
+            vorbei_seit = None
+            if dtend and dtend < now:
+                vorbei_seit = int((jetzt - datetime.strptime(dtend, "%Y-%m-%dT%H:%M:%SZ"))
+                                  .total_seconds())
             raus.append({
                 "id": ev["id"], "name": ev.get("name"),
                 "dtstart": ev.get("dtstart"), "dtend": ev.get("dtend"),
+                "laeuft": (ev.get("dtstart") or "") <= now <= dtend,
+                "vorbei_seit_s": vorbei_seit,
                 "source": ev.get("source"),
                 "aufnehmen_noetig": ev.get("aufnehmen_noetig"),
                 "landung_noetig": ev.get("landung_noetig"),

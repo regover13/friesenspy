@@ -679,3 +679,83 @@ def test_im_selben_lauf_zaehlt_nichts_nach_dem_fund(conn):
     treffer = get_progress_snapshot(conn, "reddung", eid)["treffer"]
     spaeter = {k: v for k, v in treffer.items() if v[1] > stand["fund"]["ts"]}
     assert not spaeter, f"nach dem Fund gezaehlt: {spaeter}"
+
+
+# --- #44: Nachbesserungen aus dem Review --------------------------------------------------
+
+from app.database import _reddung_grenzen, _reddung_snapshot_schreiben  # noqa: E402
+
+
+def test_grenzen_sortieren_vertauschte_ecken():
+    """#44 Punkt 1: Bei `sued > nord` wurde der BETWEEN leer, und es kam kein Punkt."""
+    assert _reddung_grenzen((53.9, 7.55, 53.54, 6.95)) == _reddung_grenzen((53.54, 6.95, 53.9, 7.55))
+
+
+def test_ein_verdrehter_grosser_sektor_wird_trotzdem_abgesucht(conn):
+    """Beim 4-km-Sektor verdeckt der 15-km-Rand den Fehler -- deshalb 40 km (Fable: 0 von 1640)."""
+    eid = create_reddung_event(
+        conn, name="Gross", dtstart=_iso(JETZT - timedelta(hours=2)),
+        dtend=_iso(JETZT + timedelta(hours=1)),
+        sued=LAT + 20 * GRAD_KM_LAT, nord=LAT - 20 * GRAD_KM_LAT,      # vertauscht
+        west=LON + 20 * GRAD_KM_LON, ost=LON - 20 * GRAD_KM_LON,
+        havarist_lat=LAT, havarist_lon=LON, havarist_grund_ft=10.0)
+    _spur(conn, 111, _quer())
+    assert compute_reddung_stand(conn, get_reddung_event(conn, eid))["abgedeckt"] > 0
+
+
+def test_ein_fertiger_abend_baut_kein_zellraster(conn, monkeypatch):
+    """#44 Punkt 6: Der Takt fragt jede Reddung des Jahres alle 30 s ab. Bei einem Abend, der
+    nichts mehr fortschreibt, kostete das Zellraster 95 % der Zeit -- fuer eine Zahl, die
+    `raster_masse` billig liefert."""
+    from app import reddung as rd
+    from app.database import _REDDUNG_STAND_FASSUNG, write_progress_snapshot
+    ende = _iso(JETZT - timedelta(days=1))
+    eid = create_reddung_event(conn, name="Fertig", dtstart=_iso(JETZT - timedelta(days=1, hours=3)),
+                               dtend=ende, sued=53.54, west=6.95, nord=53.90, ost=7.55)
+    write_progress_snapshot(conn, "reddung", eid, {
+        "v": _REDDUNG_STAND_FASSUNG, "bis": ende, "treffer": {"z0_0": [111, ende]},
+        "je_pilot": {"111": 1}, "fund": None}, ende)
+
+    def verboten(ev):
+        raise AssertionError("zellen_fuer bei einem fertigen Abend")
+    monkeypatch.setattr(rd, "zellen_fuer", verboten)
+    stand = compute_reddung_stand(conn, get_reddung_event(conn, eid))
+    assert stand["abgedeckt"] == 1 and stand["zellen"] > 1000
+
+
+def test_ein_frueheres_bis_ueberschreibt_kein_spaeteres(conn):
+    """#44 Punkt 7: Poller und Browser schreiben denselben Snapshot. Ein langsamer Aufruf durfte
+    ein spaeteres `bis` mit einem frueheren ueberschreiben."""
+    from app.database import _REDDUNG_STAND_FASSUNG
+    eid = _kleiner_sektor(conn)
+    basis = {"v": _REDDUNG_STAND_FASSUNG, "treffer": {}, "je_pilot": {}, "fund": None}
+    _reddung_snapshot_schreiben(conn, eid, {**basis, "bis": "2026-09-25T18:00:00Z"})
+    _reddung_snapshot_schreiben(conn, eid, {**basis, "bis": "2026-09-25T17:00:00Z"})
+    assert get_progress_snapshot(conn, "reddung", eid)["bis"] == "2026-09-25T18:00:00Z"
+    _reddung_snapshot_schreiben(conn, eid, {**basis, "bis": "2026-09-25T19:00:00Z"})
+    assert get_progress_snapshot(conn, "reddung", eid)["bis"] == "2026-09-25T19:00:00Z"
+
+
+def test_eine_andere_fassung_wird_immer_ersetzt(conn):
+    """Stammt der gespeicherte Snapshot aus einer anderen Rechenfassung, gilt er als leer --
+    dann muss der neue ihn ersetzen, auch mit frueherem `bis`."""
+    from app.database import _REDDUNG_STAND_FASSUNG
+    eid = _kleiner_sektor(conn)
+    _reddung_snapshot_schreiben(conn, eid, {"v": -1, "bis": "2026-09-25T18:00:00Z",
+                                            "treffer": {}, "je_pilot": {}, "fund": None})
+    _reddung_snapshot_schreiben(conn, eid, {"v": _REDDUNG_STAND_FASSUNG, "bis": "2026-09-25T17:00:00Z",
+                                            "treffer": {}, "je_pilot": {}, "fund": None})
+    assert get_progress_snapshot(conn, "reddung", eid)["v"] == _REDDUNG_STAND_FASSUNG
+
+
+def test_der_stand_nennt_die_flaeche_genau(conn):
+    """#44 Punkt 8: Fläche und offene Fläche kommen vom Server, mit angeschnittenen Randzellen
+    nur zu ihrem Anteil im Sektor. Zusammen ergeben sie genau den Sektor."""
+    from app.abdeckung import box_flaeche_km2
+    eid = _kleiner_sektor(conn)
+    _spur(conn, 111, _quer())
+    ev = get_reddung_event(conn, eid)
+    st = compute_reddung_stand(conn, ev)
+    assert 0 < st["flaeche_km2"] <= st["abgedeckt"] * st["kante_km"] ** 2
+    gesamt = box_flaeche_km2(ev["sued"], ev["west"], ev["nord"], ev["ost"])
+    assert st["flaeche_km2"] + st["offen_km2"] == pytest.approx(gesamt, abs=0.2)

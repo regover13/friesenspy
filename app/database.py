@@ -9830,8 +9830,16 @@ def _km_je_grad_lon(lat: float) -> float:
 
 
 def _reddung_grenzen(box: tuple) -> tuple:
-    """Sektor plus Rand als ``(sued, nord, west, ost)`` -- s. ``_REDDUNG_RAND_KM``."""
+    """Sektor plus Rand als ``(sued, nord, west, ost)`` -- s. ``_REDDUNG_RAND_KM``.
+
+    Die Ecken werden sortiert wie in ``raster_masse``: Bei ``sued > nord`` wurde der BETWEEN
+    sonst leer, und ein verdreht gespeicherter Sektor bekam keinen einzigen Punkt (#44, Punkt 1).
+    """
     sued, west, nord, ost = box
+    if nord < sued:
+        sued, nord = nord, sued
+    if ost < west:
+        west, ost = ost, west
     d_lat = _REDDUNG_RAND_KM / 111.32
     d_lon = _REDDUNG_RAND_KM / max(_km_je_grad_lon((sued + nord) / 2.0), 1.0)
     return (sued - d_lat, nord + d_lat, west - d_lon, ost + d_lon)
@@ -10052,6 +10060,31 @@ def reddung_landung_aus_bruegge(conn: sqlite3.Connection, cid: int,
     return (icao.upper(), gemeldet)
 
 
+def _reddung_snapshot_schreiben(conn: sqlite3.Connection, event_id: int, payload: dict) -> None:
+    """Den Reddung-Snapshot schreiben -- aber nie ein späteres ``bis`` mit einem früheren.
+
+    Poller, Eventliste und Raster-Endpunkt schreiben denselben Snapshot. Mit ``INSERT OR
+    REPLACE`` gewann der letzte Schreiber, und ein langsamer Aufruf konnte den Stand
+    zurücksetzen (#44, Punkt 7). Die Bedingung steht in DERSELBEN Anweisung, damit zwischen
+    Lesen und Schreiben kein anderer dazwischenkommt.
+
+    Ersetzt wird immer, wenn der gespeicherte Snapshot aus einer anderen Code- oder
+    Rechenfassung stammt -- der gilt beim Lesen ohnehin als leer.
+    """
+    conn.execute(
+        "INSERT INTO progress_snapshot (kind, ref_id, code_version, computed_at, payload_json) "
+        "VALUES ('reddung', ?, ?, ?, ?) "
+        "ON CONFLICT(kind, ref_id) DO UPDATE SET code_version = excluded.code_version, "
+        "computed_at = excluded.computed_at, payload_json = excluded.payload_json "
+        "WHERE progress_snapshot.code_version IS NOT excluded.code_version "
+        "OR json_extract(progress_snapshot.payload_json, '$.v') "
+        "   IS NOT json_extract(excluded.payload_json, '$.v') "
+        "OR json_extract(progress_snapshot.payload_json, '$.bis') "
+        "   < json_extract(excluded.payload_json, '$.bis')",
+        (int(event_id), _PROGRESS_SNAPSHOT_VERSION, _now_utc(), json.dumps(payload)),
+    )
+
+
 def reddung_fortschreiben(conn: sqlite3.Connection, ev: dict, *, bis: str) -> dict:
     """Abdeckung und Fund fortschreiben -- nur neue Punkte, nur noch offene Ziele.
 
@@ -10069,9 +10102,14 @@ def reddung_fortschreiben(conn: sqlite3.Connection, ev: dict, *, bis: str) -> di
     ``fund`` ist ``None`` oder ``{"cid", "ts"}`` — **niemals eine Koordinate.**
     """
     from app import reddung as rd
-    from app.abdeckung import abdeckung
+    from app.abdeckung import abdeckung, raster_masse
 
-    zellen = rd.zellen_fuer(ev)
+    # Die ZAHL der Zellen kommt billig aus `raster_masse`; das Raster selbst wird nur gebaut,
+    # wenn es neue Punkte gibt. Der Takt fragt jede Reddung des Jahres alle 30 s ab, und bei
+    # einem fertigen Abend kostete das Raster 95 % der Zeit (#44, Punkt 6).
+    _z, _s, _dl, _dg = raster_masse(float(ev["sued"]), float(ev["west"]), float(ev["nord"]),
+                                    float(ev["ost"]), rd.kante_km(ev))
+    n_zellen = _z * _s
     alt = get_progress_snapshot(conn, "reddung", ev["id"]) or {}
     if alt.get("v") != _REDDUNG_STAND_FASSUNG:
         alt = {}
@@ -10091,7 +10129,7 @@ def reddung_fortschreiben(conn: sqlite3.Connection, ev: dict, *, bis: str) -> di
         box = (ev["sued"], ev["west"], ev["nord"], ev["ost"])
         spuren = _reddung_punkte_neu(conn, ev, von, bis, box)
         if spuren:
-            offen = [z for z in zellen if z[0] not in treffer]
+            offen = [z for z in rd.zellen_fuer(ev) if z[0] not in treffer]
             if offen:
                 erg = abdeckung(spuren, offen, rd.fenster_suchen(ev))
                 for schluessel, t in erg.treffer.items():
@@ -10115,19 +10153,19 @@ def reddung_fortschreiben(conn: sqlite3.Connection, ev: dict, *, bis: str) -> di
                     del treffer[schluessel]
                     je_pilot[int(cid)] = je_pilot.get(int(cid), 1) - 1
             bis = min(bis, fund["ts"])
-        write_progress_snapshot(conn, "reddung", ev["id"], {
+        _reddung_snapshot_schreiben(conn, ev["id"], {
             "v": _REDDUNG_STAND_FASSUNG, "bis": bis, "treffer": treffer,
             "je_pilot": {str(k): v for k, v in je_pilot.items()}, "fund": fund,
-        }, _now_utc())
+        })
         von = bis
 
     return {
-        "zellen": len(zellen),
+        "zellen": n_zellen,
         "abgedeckt": len(treffer),
         # ⚠ Absichtlich ein anderer Name als `abgedeckt` -- das ist hier die ANZAHL. Der
         # Raster-Endpunkt reicht die Liste als `abgedeckt` heraus (Spec Abschnitt 3).
         "zellen_abgedeckt": sorted(treffer),
-        "anteil": (len(treffer) / len(zellen)) if zellen else 0.0,
+        "anteil": (len(treffer) / n_zellen) if n_zellen else 0.0,
         "je_pilot": je_pilot,
         "fund": fund,
         "bis": von,
@@ -10162,6 +10200,10 @@ def compute_reddung_stand(conn: sqlite3.Connection, ev: dict) -> dict:
     from app import reddung as rd
 
     stand = reddung_fortschreiben(conn, ev, bis=_reddung_lese_ende(ev))
+    from app.abdeckung import box_flaeche_km2, zellen_flaeche_km2
+    box = (float(ev["sued"]), float(ev["west"]), float(ev["nord"]), float(ev["ost"]))
+    flaeche = zellen_flaeche_km2(*box, rd.kante_km(ev), stand["zellen_abgedeckt"])
+    gesamt = box_flaeche_km2(*box)
 
     namen = {int(r[0]): r[1] for r in conn.execute("SELECT cid, name FROM pilots").fetchall()}
     je_pilot = sorted(
@@ -10197,6 +10239,9 @@ def compute_reddung_stand(conn: sqlite3.Connection, ev: dict) -> dict:
         "aufgeloest": bool(ev.get("aufgeloest_am")),
         "korridor_km": rd.korridor_km(ev),
         "kante_km": rd.kante_km(ev),
+        # Genau gerechnet: angeschnittene Randzellen nur mit ihrem Teil im Sektor (#44, Punkt 8).
+        "flaeche_km2": round(flaeche, 1),
+        "offen_km2": round(max(0.0, gesamt - flaeche), 1),
         "fund_radius_m": rd.fund_radius_m(ev),
         "sektor": {k: ev[k] for k in ("sued", "west", "nord", "ost")},
         "dauer_min": dauer,
@@ -10449,7 +10494,8 @@ def aggregate_reddung_kpis(staende: list[dict]) -> dict:
 
     ⚠ ``participations`` zählt JEDEN Eintrag in ``je_pilot``, auch mit null Zellen: Wer eine
     Fläche abflog, die ein anderer zuerst hatte, war trotzdem dabei (Spec 2026-09-23,
-    Abschnitt 7). ``flaeche_km2`` nimmt die Kante JEDES Abends, sie ist einstellbar.
+    Abschnitt 7). ``flaeche_km2`` summiert die genaue Fläche jedes Abends aus dem Stand --
+    angeschnittene Randzellen zählen dort nur mit ihrem Teil im Sektor (#44, Punkt 8).
     """
     event_count = participations = gefunden = 0
     flaeche = 0.0
@@ -10461,8 +10507,7 @@ def aggregate_reddung_kpis(staende: list[dict]) -> dict:
         participations += len(st["je_pilot"])
         if st.get("gefunden"):
             gefunden += 1
-        kante = float(st.get("kante_km") or 0.0)
-        flaeche += (st.get("abgedeckt") or 0) * kante * kante
+        flaeche += float(st.get("flaeche_km2") or 0.0)
         if st.get("dauer_min") is not None:
             dauern.append(float(st["dauer_min"]))
     return {

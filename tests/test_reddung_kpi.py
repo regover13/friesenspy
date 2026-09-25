@@ -11,7 +11,7 @@ INDEX = (Path(__file__).resolve().parents[1] / "app" / "static" / "index.html").
 
 def _stand(**extra):
     basis = {"je_pilot": [{"cid": 1, "zellen": 5}], "abgedeckt": 5, "kante_km": 1.0,
-             "gefunden": None, "dauer_min": None}
+             "flaeche_km2": 4.6, "gefunden": None, "dauer_min": None}
     basis.update(extra)
     return basis
 
@@ -33,10 +33,13 @@ def test_teilnahmen_zaehlen_auch_piloten_ohne_eigene_zelle():
     assert r["participations"] == 2
 
 
-def test_flaeche_nimmt_die_kante_jedes_abends():
+def test_flaeche_summiert_die_genaue_flaeche_jedes_abends():
+    """#44 Punkt 8: nicht mehr `abgedeckt × Kante²` -- das zaehlte angeschnittene Randzellen
+    voll. Der Stand liefert die genaue Flaeche; hier wird nur summiert."""
     # ⚠ Werte ohne halbe km²: Python rundet 12,5 auf 12 (Banker's Rounding).
-    r = aggregate_reddung_kpis([_stand(abgedeckt=10, kante_km=1.0), _stand(abgedeckt=12, kante_km=0.5)])
-    assert r["flaeche_km2"] == 13      # 10 · 1² + 12 · 0,5²
+    r = aggregate_reddung_kpis([_stand(abgedeckt=10, kante_km=1.0, flaeche_km2=9.4),
+                                _stand(abgedeckt=12, kante_km=0.5, flaeche_km2=2.9)])
+    assert r["flaeche_km2"] == 12      # 9,4 + 2,9 = 12,3
 
 
 def test_rettungsdauer_nur_ueber_abende_mit_einlieferung():

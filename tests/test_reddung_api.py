@@ -732,3 +732,27 @@ def test_raster_endpunkt_traegt_keine_koordinate_auch_nach_dem_fund(db):
 def test_raster_endpunkt_liegt_hinter_dem_login_gate():
     """Er steht NICHT in den gate-freien Praefixen -- sonst waere die Flaeche oeffentlich."""
     assert not "/api/reddung/events/1/raster".startswith(main._GATE_ALLOW_PREFIXES)
+
+
+def test_die_liste_sagt_ob_eine_reddung_laeuft(db):
+    """#44 Punkt 10: „läuft" hing an der Uhr des Geräts -- im Kniebrett die des Sim-PCs."""
+    from datetime import datetime, timedelta, timezone
+    jetzt = datetime.now(timezone.utc)
+    iso = lambda d: d.strftime("%Y-%m-%dT%H:%M:%SZ")
+    c = get_connection(db)
+    try:
+        from app.database import create_reddung_event
+        create_reddung_event(c, name="Laeuft", dtstart=iso(jetzt - timedelta(hours=1)),
+                             dtend=iso(jetzt + timedelta(hours=1)), **SEKTOR)
+        create_reddung_event(c, name="Vorbei", dtstart=iso(jetzt - timedelta(hours=5)),
+                             dtend=iso(jetzt - timedelta(hours=2)), **SEKTOR)
+        create_reddung_event(c, name="Kommt", dtstart=iso(jetzt + timedelta(hours=5)),
+                             dtend=iso(jetzt + timedelta(hours=7)), **SEKTOR)
+        c.commit()
+    finally:
+        c.close()
+    je = {e["name"]: e for e in main.reddung_events()}
+    assert je["Laeuft"]["laeuft"] is True and je["Laeuft"]["vorbei_seit_s"] is None
+    assert je["Vorbei"]["laeuft"] is False
+    assert 2 * 3600 - 60 <= je["Vorbei"]["vorbei_seit_s"] <= 2 * 3600 + 60
+    assert je["Kommt"]["laeuft"] is False and je["Kommt"]["vorbei_seit_s"] is None

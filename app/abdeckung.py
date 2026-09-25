@@ -307,6 +307,40 @@ def raster_masse(sued: float, west: float, nord: float, ost: float,
     return zeilen, spalten, kante_km / _KM_JE_GRAD_LAT, kante_km / km_lon
 
 
+def box_flaeche_km2(sued: float, west: float, nord: float, ost: float) -> float:
+    """Fläche des Sektors in km² -- mit derselben Längengrad-Umrechnung wie ``raster_masse``,
+    damit volle Abdeckung genau diese Zahl ergibt."""
+    if nord < sued:
+        sued, nord = nord, sued
+    if ost < west:
+        west, ost = ost, west
+    return (nord - sued) * _KM_JE_GRAD_LAT * (ost - west) * _km_je_grad_lon((sued + nord) / 2.0)
+
+
+def zellen_flaeche_km2(sued: float, west: float, nord: float, ost: float, kante_km: float,
+                       schluessel) -> float:
+    """Fläche der genannten Zellen in km² -- angeschnittene Randzellen nur mit ihrem Teil IM Sektor.
+
+    Die Zellenzahl ist aufgerundet (``raster_masse``); die letzte Zeile und Spalte ragen deshalb
+    über den Sektor. ``Zellen × Kante²`` zählte sie voll: bei Event 2 (20.09.2026) 138 km² gegen
+    126 km² Sektor, also +9 % (#44, Punkt 8). Gezählt wird jetzt nur, was im Sektor liegt.
+    """
+    if nord < sued:
+        sued, nord = nord, sued
+    if ost < west:
+        west, ost = ost, west
+    _z, _s, d_lat, d_lon = raster_masse(sued, west, nord, ost, kante_km)
+    km_lon = _km_je_grad_lon((sued + nord) / 2.0)
+    summe = 0.0
+    for k in schluessel:
+        i, j = (int(x) for x in str(k)[1:].split("_"))
+        hoehe = min(sued + (i + 1) * d_lat, nord) - (sued + i * d_lat)
+        breite = min(west + (j + 1) * d_lon, ost) - (west + j * d_lon)
+        if hoehe > 0 and breite > 0:
+            summe += hoehe * _KM_JE_GRAD_LAT * breite * km_lon
+    return summe
+
+
 def zellen_aus_box(sued: float, west: float, nord: float, ost: float,
                    kante_km: float, korridor_km: float, praefix: str = "z") -> list[Ziel]:
     """Ein Rechteck in ein Zellraster schneiden — der Suchsektor.

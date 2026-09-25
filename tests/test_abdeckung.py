@@ -451,3 +451,26 @@ def test_raster_masse_klemmt_die_kante_wie_zellen_aus_box():
     """Eine Null-Kante darf kein Raster aus Millionen Zellen ergeben -- dieselbe Klemme."""
     zeilen, spalten, _, _ = raster_masse(53.54, 6.95, 53.56, 6.97, 0.0)
     assert zeilen * spalten == len(zellen_aus_box(53.54, 6.95, 53.56, 6.97, 0.0, 1.0))
+
+
+# --- Fläche mit angeschnittenen Randzellen (#44, Punkt 8) -------------------------------
+
+from app.abdeckung import box_flaeche_km2, zellen_flaeche_km2  # noqa: E402
+
+
+def test_volle_abdeckung_ist_genau_die_sektorflaeche():
+    """Die letzte Zeile/Spalte ragt ueber den Sektor (aufgerundet). Voll gezaehlt waren das bei
+    Event 2 138 km^2 Raster gegen 126 km^2 Sektor -- +9 %. Gezaehlt wird jetzt nur, was im
+    Sektor liegt."""
+    box = (53.54, 6.95, 53.575, 7.012)          # kein Vielfaches der Kante
+    zeilen, spalten, _, _ = raster_masse(*box, 1.0)
+    alle = [f"z{i}_{j}" for i in range(zeilen) for j in range(spalten)]
+    assert zellen_flaeche_km2(*box, 1.0, alle) == pytest.approx(box_flaeche_km2(*box))
+    assert box_flaeche_km2(*box) < zeilen * spalten * 1.0
+
+
+def test_eine_innere_zelle_hat_kante_zum_quadrat():
+    box = (53.54, 6.95, 53.90, 7.55)
+    assert zellen_flaeche_km2(*box, 1.0, ["z3_4"]) == pytest.approx(1.0)
+    assert zellen_flaeche_km2(*box, 0.5, ["z3_4"]) == pytest.approx(0.25)
+    assert zellen_flaeche_km2(*box, 1.0, []) == 0.0
