@@ -3986,8 +3986,8 @@
         ? `<button class="btn btn-sm btn-warn" data-action="hide" data-id="${r.id}">Verbergen</button>`
         : `<button class="btn btn-sm" data-action="reveal" data-id="${r.id}">Enthüllen</button>`;
       const pushBtn = r.push_enabled
-        ? `<button class="btn btn-sm" data-action="push-off" data-id="${r.id}">Push aus</button>`
-        : `<button class="btn btn-sm" data-action="push-on" data-id="${r.id}">Push an</button>`;
+        ? `<button class="btn btn-sm" data-action="push-off" data-id="${r.id}">Push ausschalten</button>`
+        : `<button class="btn btn-sm" data-action="push-on" data-id="${r.id}">Push einschalten</button>`;
 
       return `
         <div class="race-card${isActive ? ' active' : ''}" id="race-card-${r.id}">
@@ -5122,7 +5122,7 @@
           + '<div style="color:#8aa0b8;font-size:0.72rem;">Fracht: ' + cargo + '</div></div>'
           + '<div style="display:flex;gap:6px;flex:none;">'
           + '<button class="btn btn-sm" onclick="keCopyLink(' + ev.id + ')" title="Direktlink zum Kutter (fürs Forum/Discord) kopieren">🔗 Link</button>'
-          + '<button class="btn btn-sm" onclick="keTogglePush(' + ev.id + ',' + (pushOn ? 'false' : 'true') + ')">' + (pushOn ? 'Push aus' : 'Push an') + '</button>'
+          + '<button class="btn btn-sm" onclick="keTogglePush(' + ev.id + ',' + (pushOn ? 'false' : 'true') + ')">' + (pushOn ? 'Push ausschalten' : 'Push einschalten') + '</button>'
           + '<button class="btn btn-sm" onclick="keRegenQuips(' + ev.id + ')" title="Gecachte KI-Sprüche löschen — der Poller baut sie in ~60 s neu">🔄 Sprüche neu</button>'
           + '<button class="btn btn-sm" onclick="keEdit(' + ev.id + ')">Bearbeiten</button>'
           + '<button class="btn btn-sm btn-danger" onclick="keDelete(' + ev.id + ')">Löschen</button></div></div>';
@@ -6790,7 +6790,14 @@
           + '<div><strong>' + escH(ev.name) + '</strong> <span class="hint">'
           + escH((ev.dtstart || '').replace('T', ' ').slice(0, 16)) + ' UTC</span>'
           + (ev.aufgeloest_am ? ' <span class="badge badge-done">aufgelöst</span>' : '')
-          + (ev.push_enabled ? '' : ' <span class="hint">· Push aus</span>')
+          // Zustand als Abzeichen wie bei Bummel und Kutter -- vorher stand hier nur ein Hinweis,
+          // wenn Push aus war, und bei eingeschaltetem gar nichts. Neben dem Knopf „Push an"
+          // las sich das wie ein Widerspruch (Nutzer, 25.09.2026).
+          + ' <span style="color:#8aa0b8;font-size:0.72rem;">'
+          + (ev.source === 'calendar' ? '📅 Kalender' : '✎ manuell') + '</span>'
+          + (ev.push_enabled
+             ? ' <span class="badge badge-push-on">Push an</span>'
+             : ' <span class="badge badge-push-off">Push aus</span>')
           + '</div>'
           + '<div class="hint" style="margin:4px 0;">' + anteil + ' % abgesucht ('
           + (st.abgedeckt || 0) + ' von ' + (st.zellen || 0) + ' Zellen bei '
@@ -6817,8 +6824,8 @@
              ? '<button class="btn btn-sm" onclick="rdFreigeben(' + ev.id + ')">Aufnahme freigeben</button> '
              : '')
           + '<button class="btn btn-sm" onclick="rdPush(' + ev.id + ','
-          + (ev.push_enabled ? 'false' : 'true') + ')">Push '
-          + (ev.push_enabled ? 'aus' : 'an') + '</button> '
+          + (ev.push_enabled ? 'false' : 'true') + ')">'
+          + (ev.push_enabled ? 'Push ausschalten' : 'Push einschalten') + '</button> '
           + '<button class="btn btn-sm btn-danger" onclick="rdLoeschen(' + ev.id + ')">Löschen</button>'
           + '</div></div>';
       }).join('');

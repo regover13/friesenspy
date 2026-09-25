@@ -1,5 +1,14 @@
 [
   {
+    "version": "15.19.2",
+    "date": "2026-09-25",
+    "highlight": false,
+    "title": "Admin: Push-Zustand bei der FriesenReddung wie bei den anderen Events",
+    "items": [
+      "🔧 **Admin:** Die FriesenReddung zeigt jetzt wie FriesenBummel und FriesenKutter ein Abzeichen „Push an“ oder „Push aus“ und die Herkunft (Kalender oder manuell). Vorher stand dort nur ein Hinweis, wenn Push aus war — und daneben ein Knopf „Push an“, der sich wie ein Widerspruch las. Die Knöpfe heißen bei allen Eventtypen jetzt „Push einschalten“ und „Push ausschalten“."
+    ]
+  },
+  {
     "version": "15.19.1",
     "date": "2026-09-25",
     "highlight": false,

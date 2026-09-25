@@ -756,3 +756,35 @@ def test_die_liste_sagt_ob_eine_reddung_laeuft(db):
     assert je["Vorbei"]["laeuft"] is False
     assert 2 * 3600 - 60 <= je["Vorbei"]["vorbei_seit_s"] <= 2 * 3600 + 60
     assert je["Kommt"]["laeuft"] is False and je["Kommt"]["vorbei_seit_s"] is None
+
+
+# --- Push im Admin: Zustand und Handlung getrennt (25.09.2026) ---------------------------
+
+def _admin_funktion(name: str) -> str:
+    import re
+    q = ADMIN.read_text(encoding="utf-8")
+    m = re.search(rf"(async )?function {name}\(", q)
+    assert m, name
+    # Bis zur naechsten Funktionsdefinition -- die Einrueckung der schliessenden Klammer ist in
+    # admin.html nicht einheitlich.
+    naechste = re.search(r"\n\s*(async )?function \w+\(", q[m.end():])
+    return q[m.start():m.end() + (naechste.start() if naechste else len(q))]
+
+
+def test_die_reddung_zeigt_den_push_zustand_wie_bummel_und_kutter():
+    """Nutzer, 25.09.2026, vor der Reddung-Zeile: „ist jetzt Push an oder aus?" -- und dann:
+    „warum sieht das nicht so aus wie bei den anderen Events??". Bummel und Kutter zeigen den
+    Zustand als Abzeichen; die Reddung nur einen Hinweis, wenn aus -- und sonst gar nichts."""
+    rumpf = _admin_funktion("loadReddung")
+    assert "badge-push-on" in rumpf and "badge-push-off" in rumpf
+    assert "· Push aus</span>" not in rumpf
+
+
+def test_die_knoepfe_nennen_die_handlung_nicht_den_zustand():
+    """„Push an" als Knopf neben „Push aus" als Zustand las sich wie ein Widerspruch -- bei
+    allen drei Eventtypen gleich."""
+    for name in ("renderRaceCard", "loadKutterEventsAdmin", "loadReddung"):
+        rumpf = _admin_funktion(name)
+        assert "Push einschalten" in rumpf and "Push ausschalten" in rumpf, name
+        assert ">Push an</button>" not in rumpf and ">Push aus</button>" not in rumpf, name
+        assert "'Push aus' : 'Push an'" not in rumpf, name
