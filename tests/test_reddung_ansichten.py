@@ -281,8 +281,9 @@ def test_nach_der_rettung_steht_nicht_mehr_laeuft_gerade():
     bei Event 2 am 20.09.2026 waeren das 93 Minuten gewesen. Der Server behandelt ein
     aufgeloestes Event laengst nicht mehr als laufend (/api/me/reddung)."""
     quelle = ("function escHtml(s){return String(s);}\nfunction icon(){return '';}\n"
+              "var _reddungMeinStatus = null;\n"
               + _funktion("_reddungBalken") + _funktion("_reddungMarkenHtml")
-              + _funktion("_reddungBannerBlock"))
+              + _funktion("_reddungStatusZeile") + _funktion("_reddungBannerBlock"))
     r = {"id": 2, "name": "Probe", "stand": {"anteil": 0.5, "offen": 10, "kante_km": 1.0,
                                              "offen_km2": 9.6,
                                              "aufgeloest": True,
@@ -459,3 +460,40 @@ def test_bilanz_live_block_und_teilen_text_nennen_das_ende():
     assert "_reddungZeitfenster(r)" in _funktion("_reddungTeilenText")
     block = _ohne_kommentare(_funktion("_reddungBannerBlock"))
     assert "Ende ${" in block and "r.dtend" in block
+
+
+# --- Eigener Stand: VATSIM und FriesenBruegge, dauerhaft sichtbar (25.09.2026) ------------
+#
+# „was passiert, wenn einer die Meldung ungeduldig wegklickt. Woher weiß er dann, dass die
+# Brücke meldet?" -- bis dahin: gar nicht. Der Hinweis erschien nur, wenn etwas FEHLTE, und
+# weggeklickt blieb er fuer das ganze Event weg.
+
+@pytest.mark.skipif(not _NODE, reason="node fehlt")
+def test_die_statuszeile_sagt_was_fehlt_und_bestaetigt_wenn_alles_da_ist():
+    q = _funktion("_reddungStatusZeile")
+    ok = _node(q, "_reddungStatusZeile({laeuft: true, bruegge: true, vatsim: true})")
+    assert "Du bist dabei" in ok
+    ohne_vatsim = _node(q, "_reddungStatusZeile({laeuft: true, bruegge: false, vatsim: false})")
+    assert "nicht gewertet" in ohne_vatsim and "VATSIM" in ohne_vatsim
+    ohne_bruegge = _node(q, "_reddungStatusZeile({laeuft: true, bruegge: false, vatsim: true})")
+    assert "FriesenBrügge" in ohne_bruegge and "VATSIM" not in ohne_bruegge.split("nicht gewertet")[1]
+    assert _node(q, "_reddungStatusZeile(null)") == ""
+    assert _node(q, "_reddungStatusZeile({laeuft: false})") == ""
+
+
+def test_der_live_block_zeigt_den_eigenen_stand():
+    """Nicht wegklickbar: Er steht im Block, solange die FriesenReddung laeuft."""
+    block = _ohne_kommentare(_funktion("_reddungBannerBlock"))
+    assert "_reddungStatusZeile(_reddungMeinStatus)" in block
+    assert INDEX.index("let _reddungMeinStatus") < INDEX.index("setInterval(_reddungTakt, 30000)")
+
+
+def test_der_hinweis_nennt_vatsim_und_kommt_bei_neuem_zustand_wieder():
+    rumpf = _funktion("_reddungHinweisPruefen")
+    assert "VATSIM" in rumpf
+    code = _ohne_kommentare(rumpf)
+    assert "_reddungMeinStatus = d" in code and "_reddungBannerZeigen()" in code
+    # Weggeklickt gilt fuer Event UND Zustand -- aendert sich, was fehlt, kommt er wieder.
+    assert "d.vatsim" in code and "d.bruegge" in code
+    weg = _ohne_kommentare(_funktion("_reddungHinweisWeg"))
+    assert "dataset.zustand" in weg

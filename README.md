@@ -389,12 +389,20 @@ alle 15 Sekunden — dazwischen liegt bei Reisegeschwindigkeit fast ein Kilomete
 Fund, der 150 Meter verlangt, ist das der Unterschied zwischen gemessen und geschätzt.
 Schweigt deine Brügge einmal kurz, springt VATSIM ein und füllt die Lücke.
 
-**Fehlt sie, sagt es dir die Live-Ansicht — solange du noch etwas ändern kannst.** Läuft eine
-FriesenReddung und deine FriesenBrügge meldet nicht, erscheint unten links ein Hinweis mit dem
-Namen des Events und dem Weg zur Download-Seite; auf der Website und im Kniebrett. Er meldet
-sich im Minutentakt nach, denn ein Event kann beginnen, während die Seite längst offen ist, und
-verschwindet, sobald deine FriesenBrügge das erste Mal gemeldet hat. Ein Klick auf das × legt
-ihn für dieses Event weg — beim nächsten meldet er sich wieder.
+**Und du musst mit Friesen-Rufzeichen auf VATSIM sein.** Die FriesenBrügge erkennt dich über
+deine VATSIM-Position; ohne Verbindung kann sie dich niemandem zuordnen, und für dich steht dann
+genauso wenig im Sektor wie ohne sie.
+
+**Fehlt eins von beiden, sagt es dir die Live-Ansicht — solange du noch etwas ändern kannst.**
+Läuft eine FriesenReddung, erscheint unten links ein Hinweis, der sagt, *was* fehlt: die
+VATSIM-Verbindung oder die FriesenBrügge (dann mit dem Weg zur Download-Seite); auf der Website
+und im Kniebrett. Er meldet sich im Minutentakt nach, denn ein Event kann beginnen, während die
+Seite längst offen ist, und verschwindet, sobald beides da ist. Ein Klick auf das × legt ihn
+weg — ändert sich, was fehlt, kommt er wieder.
+
+**Ob du dabei bist, steht außerdem dauerhaft im Live-Block der FriesenReddung** und lässt sich
+nicht wegklicken: „✓ Du bist dabei: FriesenBrügge meldet, VATSIM verbunden" — oder „⚠ Du wirst
+nicht gewertet" mit dem Grund.
 
 **Was du davon siehst:**
 

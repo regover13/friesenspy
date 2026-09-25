@@ -1242,6 +1242,7 @@
        Kutter-Fracht, nur einen Anteil. */
     .reddung-balken { height: 10px; background: rgba(45,156,219,0.15); margin: 8px 0 6px; }
     .reddung-balken > span { display: block; height: 100%; background: var(--green); }
+    #reddung-banner .reddung-status-fehlt { color: #e0a33e; }
     .reddung-live-block + .reddung-live-block {
       margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--green-dim);
     }
@@ -9344,11 +9345,19 @@ function _fassungHinweisWeg() {
   if (kasten.dataset.stand) _prefSchreib(_FASSUNG_HINWEIS_KEY, kasten.dataset.stand);
 }
 
-let _reddungHinweisWeggeklickt = null;   // Name des Events, dessen Hinweis weggeklickt wurde
+// Event UND Zustand, fuer den der Hinweis weggeklickt wurde -- aendert sich, was fehlt, kommt
+// er wieder (Nutzer, 25.09.2026: „was passiert, wenn einer die Meldung ungeduldig wegklickt").
+let _reddungHinweisWeggeklickt = null;
+// Letzte Antwort von /api/me/reddung -- der Live-Block zeigt daraus den eigenen Stand, auch
+// wenn der Hinweis weggeklickt ist.
+let _reddungMeinStatus = null;
 
 function _reddungHinweisWeg() {
   const k = document.getElementById('reddung-hinweis');
-  if (k) { _reddungHinweisWeggeklickt = k.dataset.event || ''; k.hidden = true; }
+  if (k) {
+    _reddungHinweisWeggeklickt = (k.dataset.event || '') + '|' + (k.dataset.zustand || '');
+    k.hidden = true;
+  }
 }
 
 /**
@@ -9371,20 +9380,33 @@ function _reddungHinweisPruefen() {
   fetch('/api/me/reddung', { credentials: 'same-origin' })
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (d) {
-      if (!d || !d.laeuft || d.bruegge) { kasten.hidden = true; return; }
-      if (_reddungHinweisWeggeklickt === d.name) return;
+      // Der eigene Stand steht zusaetzlich dauerhaft im Live-Block -- der Hinweis hier laesst
+      // sich wegklicken, die Zeile dort nicht.
+      _reddungMeinStatus = d;
+      _reddungBannerZeigen();
+      if (!d || !d.laeuft || (d.bruegge && d.vatsim)) { kasten.hidden = true; return; }
+      const zustand = (d.vatsim ? 'v' : '-') + (d.bruegge ? 'b' : '-');
+      if (_reddungHinweisWeggeklickt === (d.name || '') + '|' + zustand) return;
       kasten.dataset.event = d.name || '';
+      kasten.dataset.zustand = zustand;
       const text = document.getElementById('reddung-hinweis-text');
       if (text) {
         // ⚠ Im Kniebrett laesst sich kein Link oeffnen -- hinter Coherent GT steht kein
         // Browser. Dort die Adresse als Text, genau wie beim Fassungshinweis darueber.
-        text.innerHTML = '🚨 <strong>' + escHtml(d.name) + '</strong> läuft — und deine '
-          + '<strong>FriesenBrügge</strong> meldet nicht. Ohne sie steht in deinem Simulator '
-          + 'weder das Wrack noch eine Rauchsäule: Der Sektor ist leer, und mitgewertet wirst '
-          + 'du auch nicht. '
-          + (_PANEL_MODUS
-             ? 'friesenspy.devprops.de/download'
-             : '<a href="/download" target="_blank" rel="noopener">Zur Download-Seite</a>');
+        const kopf = '🚨 <strong>' + escHtml(d.name) + '</strong> läuft — ';
+        // Ohne VATSIM kann die FriesenBruegge niemandem zugeordnet werden; dann ist DAS der
+        // Grund, nicht die Bruegge, und der Pilot soll nicht nach einem Paket suchen.
+        text.innerHTML = d.vatsim
+          ? kopf + 'und deine <strong>FriesenBrügge</strong> meldet nicht. Ohne sie steht in '
+            + 'deinem Simulator weder das Wrack noch eine Rauchsäule: Der Sektor ist leer, und '
+            + 'mitgewertet wirst du auch nicht. Auf VATSIM bist du verbunden — es fehlt nur sie. '
+            + (_PANEL_MODUS
+               ? 'friesenspy.devprops.de/download'
+               : '<a href="/download" target="_blank" rel="noopener">Zur Download-Seite</a>')
+          : kopf + 'und du bist nicht mit Friesen-Rufzeichen auf <strong>VATSIM</strong>. Die '
+            + '<strong>FriesenBrügge</strong> erkennt dich nur über deine VATSIM-Position — '
+            + 'ohne Verbindung steht in deinem Simulator weder das Wrack noch eine Rauchsäule, '
+            + 'und mitgewertet wirst du auch nicht.';
       }
       kasten.hidden = false;
     })
@@ -15230,6 +15252,21 @@ function _reddungZeitfenster(r) {
   return `${datum(a)}, ${uhr(a)} – ${datum(b)}, ${uhr(b)} UTC`;
 }
 
+// Der eigene Stand im Live-Block -- nicht wegklickbar. Bestaetigt auch, wenn alles da ist:
+// Vorher gab es nur den Hinweis, wenn etwas FEHLTE, und weggeklickt war er fuer das ganze
+// Event weg (Nutzer, 25.09.2026: „Woher weiß er dann, dass die Brücke meldet?").
+function _reddungStatusZeile(st) {
+  if (!st || !st.laeuft) return '';
+  if (st.vatsim && st.bruegge) {
+    return '<div class="bb-sub">✓ Du bist dabei: FriesenBrügge meldet, VATSIM verbunden.</div>';
+  }
+  // Ohne VATSIM kann die FriesenBruegge dich nicht zuordnen -- dann ist das der Grund.
+  const fehlt = st.vatsim
+    ? 'die FriesenBrügge meldet nicht'
+    : 'keine VATSIM-Verbindung mit Friesen-Rufzeichen, erst darüber erkennt dich die FriesenBrügge';
+  return '<div class="bb-sub reddung-status-fehlt">⚠ Du wirst nicht gewertet — ' + fehlt + '.</div>';
+}
+
 function _reddungBalken(pct) {
   return `<div class="reddung-balken"><span style="width:${Math.max(0, Math.min(100, pct))}%"></span></div>`;
 }
@@ -15278,6 +15315,7 @@ function _reddungBannerBlock(r) {
     ? `<div class="bb-sub">${pct} % abgesucht · Ende ${ende} UTC</div>`
     : `<div class="bb-sub">${pct} % abgesucht · noch offen: ${offenKm2} km² · Ende ${ende} UTC</div>`;
   html += _reddungMarkenHtml(st);
+  if (!fertig) html += _reddungStatusZeile(_reddungMeinStatus);
   html += `<div style="margin-top:8px;"><button class="btn-share" onclick="reddungAufKarte(${Number(r.id)})">${icon('map')} Zur Karte</button></div></div>`;
   return html;
 }

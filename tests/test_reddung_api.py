@@ -838,3 +838,27 @@ def test_die_liste_nennt_die_analyse_ohne_koordinate(db):
     assert set(e["analyse"]) == {"icao", "radius_km"}
     text = json.dumps(e)
     assert "53.72" not in text and "7.25" not in text
+
+
+# --- VATSIM ist die zweite Voraussetzung (Nutzer, 25.09.2026) -----------------------------
+#
+# „packe einen Hinweis dazu, dass dazu auch eine VATSIM connection nötig ist." Ohne Friesen-
+# Rufzeichen auf VATSIM kann die FriesenBruegge niemandem zugeordnet werden -- sie meldet dann
+# fuer diesen Piloten nie. Der Endpunkt sagt deshalb, WAS fehlt.
+
+def _auf_vatsim():
+    from app.database import get_connection as _g
+    c = _g(main.get_settings().DB_PATH)
+    try:
+        c.execute("INSERT OR REPLACE INTO live_positions (cid, callsign, latitude, longitude) "
+                  "VALUES (4711, 'FRS47', 53.7, 7.2)")
+        c.commit()
+    finally:
+        c.close()
+
+
+def test_der_status_nennt_die_vatsim_verbindung(db, als_pilot):
+    _laufendes_event(db)
+    assert asyncio.run(main.meine_reddung(FakeReq()))["vatsim"] is False
+    _auf_vatsim()
+    assert asyncio.run(main.meine_reddung(FakeReq()))["vatsim"] is True

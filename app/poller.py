@@ -2795,7 +2795,8 @@ class VatsimPoller:
                             pushes.append({
                                 "title": name,
                                 "body": ("Die FriesenReddung läuft — der Havarist wartet im Sektor. "
-                                         "\U0001f6a8 Ohne FriesenBrügge siehst du ihn nicht."),
+                                         "\U0001f6a8 Dafür brauchst du die FriesenBrügge und "
+                                         "eine VATSIM-Verbindung mit Friesen-Rufzeichen."),
                                 "url": "/"})
                         ziel = rd.havarist_ziel(ev)
                         if ziel is None:

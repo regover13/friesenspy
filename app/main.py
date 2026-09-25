@@ -2938,8 +2938,9 @@ async def meine_reddung(request: Request):
     Deshalb muss der Hinweis VOR dem Flug kommen und nicht hinterher in der Bilanz: Er ist die
     einzige Stelle, an der es dem Piloten auffällt, solange er noch etwas ändern kann.
 
-    Gibt ``{"laeuft": false}``, wenn gerade keine läuft. Sonst Name des Events und ob die
-    eigene Brügge meldet. **Keine Lage, nichts über den Havaristen.**
+    Gibt ``{"laeuft": false}``, wenn gerade keine läuft. Sonst Name des Events, ob die
+    eigene Brügge meldet und ob der Pilot mit Friesen-Rufzeichen auf VATSIM ist -- ohne das
+    kann ihn die Brügge nicht zuordnen. **Keine Lage, nichts über den Havaristen.**
     """
     settings = get_settings()
     try:
@@ -2960,9 +2961,15 @@ async def meine_reddung(request: Request):
                            (int(cid),)).fetchone()
         grenze = (datetime.strptime(now, "%Y-%m-%dT%H:%M:%SZ")
                   - timedelta(seconds=_BRUEGGE_FRISCH_S)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        # Die zweite Voraussetzung (Nutzer, 25.09.2026): Ohne Friesen-Rufzeichen auf VATSIM
+        # kann die FriesenBruegge niemandem zugeordnet werden -- sie meldet dann fuer diesen
+        # Piloten nie. `live_positions` fuehrt nur Friesen-Rufzeichen (der Poller filtert).
+        auf_vatsim = conn.execute("SELECT 1 FROM live_positions WHERE cid = ?",
+                                  (int(cid),)).fetchone() is not None
         return {"laeuft": True,
                 "name": laufend[0].get("name") or "FriesenReddung",
-                "bruegge": bool(row and (row[0] or "") >= grenze)}
+                "bruegge": bool(row and (row[0] or "") >= grenze),
+                "vatsim": auf_vatsim}
     finally:
         conn.close()
 

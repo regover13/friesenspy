@@ -626,6 +626,7 @@ def test_zum_start_geht_genau_ein_push_raus(db):
     erst = _meldungen(db)
     assert len(erst) == 1, erst
     assert "FriesenBrügge" in erst[0]["body"]
+    assert "VATSIM" in erst[0]["body"], "die zweite Voraussetzung gehoert dazu (25.09.2026)"
     assert _meldungen(db) == [], "der naechste Takt darf nicht noch einmal melden"
 
 
