@@ -887,7 +887,8 @@ main branch
 
 Die Versionsnummer + der Changelog liegen als Repo-Datei **`app/CHANGELOG.json`** (neueste Version
 zuerst; je Eintrag `version`, `date`, `title`, `items`). `app/version.py` liest sie ein, das Frontend
-bekommt sie über `/api/frontend-config`. Im Header erscheint eine kleine Versionsnummer (Klick öffnet
+bekommt sie über `/api/frontend-config`. Im Header stehen rechts zwei kleine Zeilen: oben der
+**Releasename** (Titel des letzten Hauptrelease, z. B. „Luftschloss“), darunter die Versionsnummer (Klick öffnet
 den **Versionsverlauf**); bei einer neuen Version sehen Nutzer einmalig ein **Banner** mit den
 Neuerungen (per ✕ wegklickbar, gemerkt in `localStorage['fs_changelog_seen']`).
 

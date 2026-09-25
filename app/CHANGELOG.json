@@ -1,5 +1,14 @@
 [
   {
+    "version": "15.19.0",
+    "date": "2026-09-25",
+    "highlight": false,
+    "title": "Der Releasename steht im Kopf",
+    "items": [
+      "🏷️ Oben rechts steht jetzt über der Versionsnummer auch der Name des Hauptrelease — derzeit **Luftschloss**. Ein Klick darauf öffnet wie bisher den Versionsverlauf."
+    ]
+  },
+  {
     "version": "15.18.0",
     "date": "2026-09-24",
     "highlight": false,

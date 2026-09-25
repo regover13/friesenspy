@@ -592,7 +592,7 @@
               if (jetzt === letzte) return;
               letzte = jetzt;
               var el = document.getElementById('app-version');
-              send({ kind: 'flaeche', appVersion: el ? el.textContent : null,
+              send({ kind: 'flaeche', appVersion: el ? (el.dataset.version || el.textContent) : null,
                      url: location.href, isPanel: isPanel, viewport: f });
             } catch (_) { /* Diagnose darf nie stoeren */ }
           }, 900);
@@ -605,7 +605,7 @@
         var versionEl = document.getElementById('app-version');
         var base = {
           kind: 'report',
-          appVersion: versionEl ? versionEl.textContent : null,
+          appVersion: versionEl ? (versionEl.dataset.version || versionEl.textContent) : null,
           url: location.href,
           isPanel: isPanel,
           viewport: flaeche(),
@@ -641,7 +641,7 @@
       window._panelDiag = function (kind, data) {
         try {
           var el = document.getElementById('app-version');
-          send({ kind: kind, appVersion: el ? el.textContent : null,
+          send({ kind: kind, appVersion: el ? (el.dataset.version || el.textContent) : null,
                  url: location.href, isPanel: isPanel, data: data });
         } catch (_) { /* Diagnose darf nie stoeren */ }
       };
@@ -1056,6 +1056,9 @@
     }
     .app-version:hover { opacity: 1; color: var(--green); text-decoration: underline; }
     .app-version[hidden] { display: none; }
+    /* Zwei Zeilen: oben der Releasename (Titel des letzten X.0.0-Eintrags), darunter die Nummer */
+    .app-version:not([hidden]) { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.25; }
+    .app-version-name { font-family: var(--text-display); letter-spacing: 0.02em; }
 
     /* =====================================================================
        TAB NAVIGATION
@@ -8306,7 +8309,12 @@ function _initVersionUI(version, changelog, bannerVersion) {
   _bannerVersion = bannerVersion || null;
   const badge = document.getElementById('app-version');
   if (badge && _version) {
-    badge.textContent = 'v' + _version;
+    // Releasename = Titel des neuesten MAJOR-Eintrags (X.0.0), z. B. "Luftschloss"
+    const major = _changelog.find(e => /^\d+\.0\.0$/.test(e.version || ''));
+    badge.dataset.version = 'v' + _version;
+    badge.innerHTML = (major && major.title
+      ? `<span class="app-version-name">${escHtml(major.title)}</span>` : '')
+      + `<span class="app-version-nr">v${escHtml(_version)}</span>`;
     const top = _changelog[0];
     badge.title = top && top.date
       ? `Version ${_version} · ${_fmtChangelogDate(top.date)} — Verlauf anzeigen`
