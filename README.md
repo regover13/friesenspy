@@ -669,7 +669,7 @@ Das **Kniebrett** ist FriesenSpy als eigene App im EFB-Tablet des **Microsoft Fl
 
 **Anmelden:** Beim ersten Start fragt das Tablet nach dem Forum-Login — dieselben Zugangsdaten wie auf der Website. Die anschließende Rückfrage „Kniebrett dauerhaft anmelden?" **bestätigen**: Sonst fragt FriesenSpy bei jedem Start des Simulators erneut. Gemerkt wird dafür eine zufällige Gerätekennung, kein Passwort. Gewarnt wird nur vor dem echten Risiko — die Frage zu bestätigen, während man gar nicht selbst im Simulator sitzt. Gehört ein Rechner nicht mehr dir, löst die Verwaltung die Verknüpfung (Meldung im Forum).
 
-**Taucht mitten im Flug „Diese Anmeldung ist abgelaufen“ auf**, hat das Tablet eine alte Anmeldeseite noch einmal geöffnet. Bist du angemeldet, geht es von selbst zurück ins Kniebrett; sonst führen die Knöpfe „Neu anmelden“ und „Zurück zum Kniebrett“ weiter. Bisher blieb an dieser Stelle ein schwarzes Tablet stehen.
+**Taucht mitten im Flug „Diese Anmeldung ist abgelaufen“ auf**, hat das Tablet eine alte Anmeldeseite noch einmal geöffnet. Bist du angemeldet, geht es von selbst zurück ins Kniebrett; sonst führt „Neu anmelden“ über den Forum-Login wieder hinein. Bisher blieb an dieser Stelle ein schwarzes Tablet stehen.
 
 **Paketversion:** Erforderlich ist mindestens **2.0.0** — ältere Pakete zeigen statt der App nur noch den Hinweis, wo die neue Fassung liegt (sie können sich den Simulator nicht merken, jeder Start begänne mit einer Anmeldung). Die **Windanzeige** braucht **2.1.0**; mit einem älteren Paket bleibt sie einfach aus. Welche Version wo läuft, steht in der Geräteübersicht im Admin.
 

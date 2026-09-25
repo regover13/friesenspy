@@ -6,7 +6,7 @@
     "title": "Kein schwarzes Tablet mehr nach einer alten Anmeldeseite",
     "items": [
       "🔐 **Öffnet das Kniebrett eine alte Anmeldeseite noch einmal, geht es zurück ins Kniebrett** — solange du angemeldet bist. Bisher blieb dann nur eine nackte Fehlerzeile auf schwarzem Grund stehen, und ohne Neustart des Simulators kam man nicht mehr heraus.",
-      "🪧 **Ist die Anmeldung wirklich weg, steht dort jetzt eine lesbare Seite** mit „Neu anmelden“ und „Zurück zum Kniebrett“ (auf der Website: „Zur Startseite“)."
+      "🪧 **Ist die Anmeldung wirklich weg, steht dort jetzt eine lesbare Seite** mit einem Knopf „Neu anmelden“, der dich über den Forum-Login wieder hineinführt."
     ]
   },
   {

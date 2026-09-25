@@ -4920,8 +4920,13 @@ def _rueckruf_abgelehnt(request: Request, status: int, grund: str) -> Response:
     - **Gueltige Sitzung vorhanden:** weiter zum Ziel. Das ist kein Sicherheitsverlust: Es
       entsteht KEINE neue Sitzung, es wird nur eine bestehende benutzt -- genau das, was
       derselbe Browser mit einem Klick auf `/` auch haette.
-    - **Keine Sitzung:** eine lesbare Seite mit dem Weg zurueck statt nacktem JSON. Der
-      Status (400/401) bleibt, damit Protokolle und Tests dasselbe sehen wie vorher.
+    - **Keine Sitzung:** eine lesbare Seite mit EINEM Knopf -- „Neu anmelden“ -- statt
+      nacktem JSON. Der Status (400/401) bleibt, damit Protokolle und Tests dasselbe sehen
+      wie vorher.
+
+    ⚠ Einen zweiten Knopf „Zurück zum Kniebrett“ gab es im ersten Entwurf, und er war eine
+    Taeuschung: Ohne Sitzung leitet `forum_login_gate` jeden Aufruf von `/panel` ohnehin zur
+    Anmeldung um. Er haette dasselbe getan wie „Neu anmelden“, nur unter falschem Namen.
     """
     settings = get_settings()
     kniebrett = _ist_kniebrett(request)
@@ -4935,8 +4940,6 @@ def _rueckruf_abgelehnt(request: Request, status: int, grund: str) -> Response:
         resp.delete_cookie("fs_sso_next", path="/auth/forum")
         return resp
     _logger.info("SSO-Rueckruf abgelehnt (%s), keine Sitzung", grund)
-    zurueck, zurueck_text = ("/panel", "Zurück zum Kniebrett") if kniebrett \
-        else ("/", "Zur Startseite")
     login = "/auth/forum/login?next=/panel" if kniebrett else "/auth/forum/login"
     seite = f"""<!doctype html>
 <html lang="de"><head><meta charset="utf-8">
@@ -4949,13 +4952,11 @@ body{{margin:0;background:#0d1b2a;color:#e8eef4;font-family:sans-serif;
 h1{{font-size:1.4em}} p{{line-height:1.5;color:#b8c4d0}}
 a{{display:block;margin:1em 0;padding:.9em;border-radius:8px;background:#2d9cdb;
    color:#fff;text-decoration:none;font-size:1.1em}}
-a.zwei{{background:transparent;border:1px solid #2d9cdb;color:#2d9cdb}}
 </style></head><body><div class="k">
 <h1>Diese Anmeldung ist abgelaufen</h1>
 <p>Der Anmelde-Link wurde schon benutzt oder ist nicht mehr gültig – das passiert, wenn
 eine alte Seite noch einmal geöffnet wird. Melde dich einfach neu an.</p>
 <a href="{login}">Neu anmelden</a>
-<a class="zwei" href="{zurueck}">{zurueck_text}</a>
 </div></body></html>"""
     return HTMLResponse(seite, status_code=status, headers=_HTML_NO_CACHE)
 

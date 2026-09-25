@@ -559,6 +559,9 @@ def test_ablehnung_ohne_sitzung_ist_eine_lesbare_seite(env):
     assert r.headers["content-type"].startswith("text/html")
     assert "/auth/forum/login?next=/panel" in r.text, "der Weg zurueck muss darauf stehen"
     assert "detail" not in r.text
+    # Ohne Sitzung fuehrt jeder Weg ins Kniebrett ueber die Anmeldung (`forum_login_gate`) --
+    # ein Knopf, der etwas anderes verspricht, waere eine Taeuschung.
+    assert 'href="/panel"' not in r.text and "Zurück zum Kniebrett" not in r.text
 
 
 def test_ablehnung_im_browser_fuehrt_zur_startseite(env):
