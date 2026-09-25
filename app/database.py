@@ -10178,7 +10178,7 @@ def reddung_fortschreiben(conn: sqlite3.Connection, ev: dict, *, bis: str) -> di
 
 
 def reddung_fundort(conn: sqlite3.Connection, ev: dict, now: str) -> dict | None:
-    """Wo der Havarist lag -- **erst nach dem Eventende und nur, wenn er gefunden wurde** (#50).
+    """Wo der Havarist lag -- **erst nach dem Eventende** (#50), gefunden oder nicht.
 
     Bis zum 25.09.2026 verliess die Koordinate den Server nie in Richtung eines Browsers
     (Nutzerentscheidung 24.09.2026). Seit #50 zeigt die Event-Karte unter der Bilanz den
@@ -10190,8 +10190,11 @@ def reddung_fundort(conn: sqlite3.Connection, ev: dict, now: str) -> dict | None
     eine Aenderung im Admin nicht mehr -- ein verkuendeter Abend bleibt, wie er war.
     ``compute_reddung_stand`` und ``reddung_raster`` bleiben ohne Koordinate; wer den Ort
     will, fragt ausdruecklich hier.
+
+    **Auch ohne Fund** (Nutzerentscheidung 25.09.2026, #50 Frage 3: „trotzdem zeigen"): Nach
+    dem Abend soll jeder sehen, wo gesucht werden musste -- gerade dann, wenn es niemand fand.
     """
-    if not ev.get("gefunden_am") or now < (ev.get("dtend") or "9999"):
+    if now < (ev.get("dtend") or "9999"):
         return None
     alt = get_progress_snapshot(conn, "reddung", ev["id"])
     if alt and alt.get("v") == _REDDUNG_STAND_FASSUNG and alt.get("fundort"):

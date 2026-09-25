@@ -63,9 +63,17 @@ def test_solange_das_event_laeuft_gibt_es_keinen_fundort(conn):
     assert "fundort" not in json.dumps(snap)
 
 
-def test_nicht_gefunden_heisst_kein_fundort(conn):
-    """Ohne Fund gibt es keinen Fundort -- auch nicht nach dem Ende."""
+def test_nicht_gefunden_zeigt_trotzdem_wo_er_lag(conn):
+    """Nutzerentscheidung 25.09.2026 zu #50, Frage 3: „trotzdem zeigen". Nach dem Ende soll
+    jeder sehen koennen, wo gesucht werden musste -- gerade dann, wenn es niemand fand."""
     eid = _event(conn, ende_vor_min=30)
+    ort = reddung_fundort(conn, get_reddung_event(conn, eid), _iso(JETZT))
+    assert ort == {"lat": LAT, "lon": LON}
+
+
+def test_ohne_gesetzten_ort_gibt_es_keinen(conn):
+    eid = _event(conn, ende_vor_min=30)
+    update_reddung_event(conn, eid, havarist_lat=None, havarist_lon=None)
     assert reddung_fundort(conn, get_reddung_event(conn, eid), _iso(JETZT)) is None
 
 

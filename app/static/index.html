@@ -15530,8 +15530,8 @@ async function reddungAufKarte(id) {
 }
 
 // Der Fundort der offenen Reddung fuer die Event-Karte darunter (#50) -- oder null. Den Ort
-// liefert der Server erst nach dem Eventende und nur nach einem Fund; hier wird nichts
-// ausgeblendet, was schon da ist, sondern nur nicht gezeigt, was nicht zu dieser Bilanz gehoert.
+// liefert der Server erst nach dem Eventende, auch ohne Fund (Nutzer, 25.09.2026: „trotzdem
+// zeigen"); hier wird nur nicht gezeigt, was nicht zu dieser Bilanz gehoert.
 function _reddungFundort() {
   if (_reddungOffenId == null) return null;
   const r = _reddungListe.find(x => x.id === _reddungOffenId);
@@ -15539,7 +15539,7 @@ function _reddungFundort() {
   if (!fo || fo.lat == null || fo.lon == null) return null;
   const g = (r.stand || {}).gefunden;
   const text = g ? `Fundort — gefunden von ${escHtml(g.name || '?')} um ${(g.ts || '').slice(11, 16)} UTC`
-                 : 'Fundort';
+                 : 'Hier lag der Havarist — nicht gefunden';
   return { lat: fo.lat, lon: fo.lon, text };
 }
 

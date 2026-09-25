@@ -6174,8 +6174,8 @@ def reddung_events():
     des Eventtyps (#21): Der Ort geht an die FriesenBrügge, die das Wrack hinstellt, und in den
     Admin — an keinen Endpunkt, den ein Browser eines Piloten erreicht. Geliefert wird deshalb
     nur, was ``compute_reddung_stand`` herausgibt (Schlüssel, Zahlen, Namen), plus Name und
-    Zeitfenster. **Einzige Ausnahme ist ``fundort``** (#50): nach ``dtend`` und nur, wenn
-    gefunden wurde, für die Event-Karte unter der Bilanz. Tests halten beides fest.
+    Zeitfenster. **Einzige Ausnahme ist ``fundort``** (#50): nach ``dtend``, auch ohne Fund,
+    für die Event-Karte unter der Bilanz. Tests halten beides fest.
     """
     now = _now_iso()
     conn = get_connection(get_settings().DB_PATH)

@@ -1139,7 +1139,7 @@ Gezählt wird bis zum Fund; was danach geflogen wird, ist keine Suche mehr.
 
 ⚠ **Ohne die Lage des Havaristen, solange der Abend läuft** — die Kernanforderung des Eventtyps. Der Ort geht an die FriesenBrügge, die das Wrack hinstellt, und in den Admin; an keinen Endpunkt, den der Browser eines Piloten erreicht. `stand` enthält ihn nie. Tests halten das fest.
 
-`fundort` (#50, seit 15.20.0) ist die einzige Ausnahme: die Lage des Havaristen, **erst nach `dtend` und nur nach einem Fund**, sonst `null`. Die Auflösung allein genügt nicht — danach fliegen womöglich noch andere im Sektor. Maßgeblich ist die Uhr des Servers. Beim ersten Abruf nach dem Ende wandert der Ort in den Snapshot (`progress_snapshot`, `$.fundort`); eine spätere Änderung im Admin verschiebt ihn dann nicht mehr. Der Raster-Endpunkt bleibt ohne Koordinate.
+`fundort` (#50, seit 15.20.0) ist die einzige Ausnahme: die Lage des Havaristen, **erst nach `dtend`** — auch ohne Fund (Nutzerentscheidung 25.09.2026) —, sonst `null`. Die Auflösung allein genügt nicht — danach fliegen womöglich noch andere im Sektor. Maßgeblich ist die Uhr des Servers. Beim ersten Abruf nach dem Ende wandert der Ort in den Snapshot (`progress_snapshot`, `$.fundort`); eine spätere Änderung im Admin verschiebt ihn dann nicht mehr. Der Raster-Endpunkt bleibt ohne Koordinate.
 
 ---
 

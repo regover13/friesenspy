@@ -537,6 +537,12 @@ def test_die_event_karte_kennt_den_fundort_nur_bei_offener_bilanz():
     assert "Pilot X" in ort["text"] and "19:01 UTC" in ort["text"]
     assert fundort("4") is None, "ohne Fundort vom Server keine Marke"
     assert fundort("null") is None, "freie Event-Suche: keine Marke"
+    # Nicht gefunden: der Ort kommt trotzdem (Nutzerentscheidung 25.09.2026), und die Marke
+    # sagt, dass ihn niemand fand.
+    liste2 = "[{id: 5, fundort: {lat: 53.7, lon: 7.2}, stand: {}}]"
+    ort = _node(f"let _reddungListe = {liste2}, _reddungOffenId = 5;\n"
+                "function escHtml(s) { return s; }\n" + quelltext, "_reddungFundort()")
+    assert ort["lat"] == 53.7 and "nicht gefunden" in ort["text"]
 
 
 def test_die_event_karte_setzt_die_marke_und_nimmt_sie_in_den_ausschnitt():

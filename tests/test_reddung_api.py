@@ -62,6 +62,16 @@ def _anlegen(**extra):
     return asyncio.run(main.admin_create_reddung_event(FakeReq(body=body)))["id"]
 
 
+def _laufend() -> dict:
+    """Ein Zeitfenster um die echte Uhr. ⚠ Kein festes Datum fuer die Koordinaten-Riegel: Ist
+    der Abend vorbei, liefert die Liste seit #50 den Ort -- ein fester Tag machte aus dem Test
+    eine Zeitbombe, die am Folgetag rot wird."""
+    from datetime import datetime, timedelta, timezone
+    jetzt = datetime.now(timezone.utc)
+    iso = lambda d: d.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return {"dtstart": iso(jetzt - timedelta(hours=1)), "dtend": iso(jetzt + timedelta(hours=1))}
+
+
 def _liste():
     return asyncio.run(main.admin_reddung_events(FakeReq()))["events"]
 
@@ -485,8 +495,9 @@ def test_die_ecken_werden_sortiert():
 
 def test_der_oeffentliche_endpunkt_traegt_keine_koordinate(db):
     """⚠ Der Riegel fuer die Liste, die jeder Pilot sieht. Was hier durchkommt, steht in
-    jedem Browser."""
-    eid = _anlegen()
+    jedem Browser. Das Event LAEUFT -- nach dem Ende kommt der Ort seit #50 absichtlich mit
+    (s. test_der_fundort_kommt_erst_nach_dem_ende)."""
+    eid = _anlegen(**_laufend())
     asyncio.run(main.admin_update_reddung_event(
         FakeReq(body={"havarist_lat": 53.72, "havarist_lon": 7.25}), eid))
     daten = main.reddung_events()
@@ -857,7 +868,7 @@ def test_die_suche_setzt_keine_sektorecke():
 
 
 def test_die_liste_nennt_die_analyse_ohne_koordinate(db):
-    eid = _anlegen()
+    eid = _anlegen(**_laufend())
     asyncio.run(main.admin_update_reddung_event(
         FakeReq(body={"havarist_lat": 53.72, "havarist_lon": 7.25}), eid))
     e = main.reddung_events()[0]
