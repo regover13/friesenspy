@@ -13999,11 +13999,12 @@ function renderSpecialEventStats(data) {
     </div>`);
   }
   if ((rd.event_count || 0) > 0) {
-    const quote = Math.round(100 * (rd.gefunden_count || 0) / rd.event_count);
+    // Die Zeit bis zum Fund statt eines Fundanteils: Der ist bei wenigen Abenden nur 100 % oder
+    // 0 % und „1 von 1" -- er sagt nichts (Nutzer, 25.09.2026).
     rows.push(`<div class="stats-kpi-row">
       ${_kpiCard(rd.event_count, '🚨 FriesenReddung')}
       ${_kpiCard(rd.participations, 'Teilnahmen')}
-      ${_kpiCard(quote + ' %', 'Gefunden', `${rd.gefunden_count || 0} von ${rd.event_count}`)}
+      ${_kpiCard(_fmtAvgMin(rd.avg_suche_min), 'Ø bis zum Fund')}
       ${_kpiCard((rd.flaeche_km2 || 0) + ' km²', 'Abgesucht')}
       ${_kpiCard(_fmtAvgMin(rd.avg_rettung_min), 'Ø Rettung')}
     </div>`);

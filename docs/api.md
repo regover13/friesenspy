@@ -372,12 +372,12 @@ Aggregierte Kennzahlen beider Spezial-Events im Zeitfenster (`?days=30|90|365`, 
 #66-Snapshots (kein Track-Recompute). Antwort:
 `{"kutter": {event_count, participations, flights, delivered_kg, sunk_kg, sunk_count, stolen_kg, stolen_count},
   "bummel": {race_count, participations, legs, avg_absolute_min},
-  "reddung": {event_count, participations, gefunden_count, flaeche_km2, avg_rettung_min}}`.
+  "reddung": {event_count, participations, gefunden_count, flaeche_km2, avg_suche_min, avg_rettung_min}}`.
 Abgrenzung: Kutter „Flüge" = alle Flug-/Verlust-Zeilen (`flight_count`); Bummel „Flüge" = gewertete Tour-Legs
 (`Σ leg_count`). `returned` (am Ladeplatz abgeladen) ist kein Verlust (0 kg). `avg_absolute_min` ist `null` ohne
 gewertetes Rennen. NULL-`dtend`-Events werden ausgeschlossen.
 
-`reddung` zählt nur Abende, deren `dtend` vorbei ist und die mindestens einen Teilnehmer hatten. `participations` zählt auch Piloten ohne eigene Zelle; `flaeche_km2` summiert die genaue Fläche jedes Abends (Randzellen nur mit ihrem Teil im Sektor); `avg_rettung_min` mittelt nur über Abende mit Einlieferung (sonst `null`). Nachgerechnet wird nichts — gezählt wird bis zum Fund, ohne Fund bis `min(dtend, aufgeloest_am)`.
+`reddung` zählt nur Abende, deren `dtend` vorbei ist und die mindestens einen Teilnehmer hatten. `participations` zählt auch Piloten ohne eigene Zelle; `flaeche_km2` summiert die genaue Fläche jedes Abends (Randzellen nur mit ihrem Teil im Sektor); `avg_suche_min` mittelt die Zeit vom Eventbeginn bis zum Fund über die Abende mit Fund, `avg_rettung_min` die vom Fund bis zur Einlieferung über die Abende mit Einlieferung (je sonst `null`). Die Statistik zeigt `avg_suche_min` statt eines Fundanteils — der ist bei wenigen Abenden nur 100 % oder 0 %. Nachgerechnet wird nichts — gezählt wird bis zum Fund, ohne Fund bis `min(dtend, aufgeloest_am)`.
 
 ---
 
@@ -1127,6 +1127,7 @@ Alle FriesenReddungen mit ihrem Stand — für die Eventliste, später die Karte
 | `flaeche_km2`, `offen_km2` | abgesuchte und offene Fläche, **genau**: angeschnittene Randzellen nur mit ihrem Teil im Sektor; zusammen ergeben sie den Sektor |
 | `je_pilot` | `[{cid, name, zellen}]` — Zellen, die jeder als Erster abgesucht hat; auch mit `0` |
 | `gefunden`, `aufgenommen`, `eingeliefert` | `{cid, name, ts}` oder `null`; bei der Einlieferung zusätzlich `icao`. Aufnehmender und Einliefernder sind immer derselbe Pilot |
+| `suchdauer_min` | Eventbeginn bis Fund, `null` ohne Fund |
 | `dauer_min` | Fund bis Einlieferung |
 | `aufgeloest` | Fall erledigt (eingeliefert, gefunden ohne Aufnehmen, oder `dtend`) |
 | `korridor_km`, `kante_km`, `fund_radius_m` | Parameter des Abends |

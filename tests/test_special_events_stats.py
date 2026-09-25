@@ -120,7 +120,8 @@ def test_special_events_shape(tmp_path, monkeypatch):
     assert set(res["bummel"].keys()) == {
         "race_count", "participations", "legs", "avg_absolute_min"}
     assert set(res["reddung"].keys()) == {
-        "event_count", "participations", "gefunden_count", "flaeche_km2", "avg_rettung_min"}
+        "event_count", "participations", "gefunden_count", "flaeche_km2", "avg_suche_min",
+        "avg_rettung_min"}
 
 
 def test_special_events_zaehlt_abgeschlossene_reddungen(tmp_path, monkeypatch):

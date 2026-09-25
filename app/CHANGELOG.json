@@ -1,5 +1,14 @@
 [
   {
+    "version": "15.19.1",
+    "date": "2026-09-25",
+    "highlight": false,
+    "title": "Statistik: die Zeit bis zum Fund statt eines Fundanteils",
+    "items": [
+      "📊 **In der Zeile der FriesenReddung steht jetzt, wie lange die Suche im Mittel gedauert hat** — vom Eventbeginn bis zum Fund. Vorher stand dort der Anteil gefundener Abende, und der war bei wenigen Abenden nur 100 % oder 0 %."
+    ]
+  },
+  {
     "version": "15.19.0",
     "date": "2026-09-25",
     "highlight": false,

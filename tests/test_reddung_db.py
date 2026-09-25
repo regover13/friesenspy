@@ -759,3 +759,13 @@ def test_der_stand_nennt_die_flaeche_genau(conn):
     assert 0 < st["flaeche_km2"] <= st["abgedeckt"] * st["kante_km"] ** 2
     gesamt = box_flaeche_km2(ev["sued"], ev["west"], ev["nord"], ev["ost"])
     assert st["flaeche_km2"] + st["offen_km2"] == pytest.approx(gesamt, abs=0.2)
+
+
+def test_der_stand_nennt_die_suchdauer(conn):
+    """Die Zeit vom Eventbeginn bis zum Fund -- statt eines Fundanteils, der bei wenigen Abenden
+    immer 100 % oder 0 % ist (Nutzer, 25.09.2026: „das wird immer 100 % sein und eins von eins
+    oder 0 %. Schreibe doch besser die Zeit bis gefunden worden ist")."""
+    eid = _kleiner_sektor(conn)                      # dtstart = JETZT - 2 h
+    assert compute_reddung_stand(conn, get_reddung_event(conn, eid))["suchdauer_min"] is None
+    set_reddung_gefunden(conn, eid, _iso(JETZT - timedelta(minutes=83)), 111)
+    assert compute_reddung_stand(conn, get_reddung_event(conn, eid))["suchdauer_min"] == 37

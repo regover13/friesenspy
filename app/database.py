@@ -10220,6 +10220,13 @@ def compute_reddung_stand(conn: sqlite3.Connection, ev: dict) -> dict:
             eintrag["icao"] = ev.get("eingeliefert_icao")
         return eintrag
 
+    # Suchdauer: Eventbeginn bis Fund. Sagt auch bei einem einzelnen Abend etwas -- anders als
+    # ein Fundanteil, der bei wenigen Abenden nur 100 % oder 0 % sein kann (Nutzer, 25.09.2026).
+    suchdauer = None
+    if ev.get("gefunden_am") and ev.get("dtstart"):
+        suchdauer = int(round((_parse_iso(ev["gefunden_am"])
+                               - _parse_iso(ev["dtstart"])).total_seconds() / 60))
+
     dauer = None
     if ev.get("gefunden_am") and ev.get("eingeliefert_am"):
         dauer = int(round((_parse_iso(ev["eingeliefert_am"])
@@ -10244,6 +10251,7 @@ def compute_reddung_stand(conn: sqlite3.Connection, ev: dict) -> dict:
         "offen_km2": round(max(0.0, gesamt - flaeche), 1),
         "fund_radius_m": rd.fund_radius_m(ev),
         "sektor": {k: ev[k] for k in ("sued", "west", "nord", "ost")},
+        "suchdauer_min": suchdauer,
         "dauer_min": dauer,
     }
 
@@ -10500,6 +10508,7 @@ def aggregate_reddung_kpis(staende: list[dict]) -> dict:
     event_count = participations = gefunden = 0
     flaeche = 0.0
     dauern: list[float] = []
+    suchen: list[float] = []
     for st in staende:
         if not st.get("je_pilot"):
             continue
@@ -10510,11 +10519,15 @@ def aggregate_reddung_kpis(staende: list[dict]) -> dict:
         flaeche += float(st.get("flaeche_km2") or 0.0)
         if st.get("dauer_min") is not None:
             dauern.append(float(st["dauer_min"]))
+        if st.get("suchdauer_min") is not None:
+            suchen.append(float(st["suchdauer_min"]))
     return {
         "event_count": event_count,
         "participations": participations,
         "gefunden_count": gefunden,
         "flaeche_km2": int(round(flaeche)),
+        # Eventbeginn bis Fund, nur ueber Abende mit Fund. Ersetzt in der Anzeige den Fundanteil.
+        "avg_suche_min": round(sum(suchen) / len(suchen), 1) if suchen else None,
         "avg_rettung_min": round(sum(dauern) / len(dauern), 1) if dauern else None,
     }
 

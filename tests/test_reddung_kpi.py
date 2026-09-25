@@ -11,7 +11,7 @@ INDEX = (Path(__file__).resolve().parents[1] / "app" / "static" / "index.html").
 
 def _stand(**extra):
     basis = {"je_pilot": [{"cid": 1, "zellen": 5}], "abgedeckt": 5, "kante_km": 1.0,
-             "flaeche_km2": 4.6, "gefunden": None, "dauer_min": None}
+             "flaeche_km2": 4.6, "gefunden": None, "dauer_min": None, "suchdauer_min": None}
     basis.update(extra)
     return basis
 
@@ -19,7 +19,7 @@ def _stand(**extra):
 def test_leer():
     assert aggregate_reddung_kpis([]) == {"event_count": 0, "participations": 0,
                                           "gefunden_count": 0, "flaeche_km2": 0,
-                                          "avg_rettung_min": None}
+                                          "avg_suche_min": None, "avg_rettung_min": None}
 
 
 def test_ein_abend_ohne_fund():
@@ -49,6 +49,14 @@ def test_rettungsdauer_nur_ueber_abende_mit_einlieferung():
     assert r["gefunden_count"] == 3 and r["avg_rettung_min"] == 40.0
 
 
+def test_suchdauer_nur_ueber_abende_mit_fund():
+    """Mittel der Zeit vom Eventbeginn bis zum Fund -- Abende ohne Fund bleiben aussen vor."""
+    r = aggregate_reddung_kpis([_stand(gefunden={"cid": 1}, suchdauer_min=20),
+                                _stand(gefunden={"cid": 1}, suchdauer_min=40),
+                                _stand()])
+    assert r["avg_suche_min"] == 30.0
+
+
 def test_ein_abend_ohne_teilnehmer_zaehlt_nicht():
     """Wie beim Kutter: leere Probe-Events verfaelschen die Anzahl nicht."""
     assert aggregate_reddung_kpis([_stand(je_pilot=[])])["event_count"] == 0
@@ -59,6 +67,9 @@ def test_die_statistik_zeigt_eine_reddung_zeile():
     rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
     assert "data.reddung" in rumpf and "'🚨 FriesenReddung'" in rumpf
     assert "'Ø Rettung'" in rumpf
+    # Statt eines Fundanteils, der bei wenigen Abenden nur 100 % oder 0 % sein kann:
+    assert "'Ø bis zum Fund'" in rumpf and "rd.avg_suche_min" in rumpf
+    assert "'Gefunden'" not in rumpf
 
 
 def test_die_readme_nennt_die_kennzahlen():
