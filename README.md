@@ -406,13 +406,15 @@ ihn für dieses Event weg — beim nächsten meldet er sich wieder.
 - **Karte:** Die Ebene **FriesenReddung** zeigt den Sektor als rot gestrichelten Rahmen und
   darin blau, was schon abgesucht ist — so seht ihr in der Luft, wo noch niemand war, und
   teilt euch auf. Sie aktualisiert sich alle 30 Sekunden, auch im Kniebrett, und ist nur da,
-  solange eine FriesenReddung läuft oder am Vortag lief. „Zur Karte" im Live-Block springt
+  solange eine FriesenReddung läuft, am Vortag lief oder du sie mit „Zur Karte" aus ihrer
+  Bilanz geholt hast. „Zur Karte" im Live-Block springt
   direkt auf den Sektor und schaltet dabei die mitlaufende Karte ab, sonst zöge sie dich
   gleich wieder zum eigenen Flugzeug. Schaltest du die Ebene ab, gilt das für diesen Abend.
 - **Events:** Ein Klick auf die FriesenReddung in der Eventliste öffnet ihre Bilanz — Balken und
   abgesuchte Fläche, wer gefunden hat, wer aufgenommen und wo eingeliefert hat, wie lange die Rettung
   dauerte, und darunter, welche Fläche jeder als Erster abgesucht hat. Der Knopf **Teilen**
-  legt dir das Ganze als fertigen Absatz fürs Forum in die Zwischenablage.
+  legt dir das Ganze als fertigen Absatz fürs Forum in die Zwischenablage. Die Bilanz hat eine
+  eigene Adresse: Neu laden oder ein geteilter Link öffnet sie wieder.
 
 ---
 
@@ -636,7 +638,7 @@ Alle Karten in FriesenSpy (Live-Tab, Track-Ansicht, Event-Suche) verwenden diese
 
 **FSE-Plätze** und **FSE-Landeflächen**: Die Plätze aus FSEconomy mit Bahnlänge, Belag und Höhe — im Popup steht auch der Name, unter dem der Platz **im Simulator** zu finden ist (Emden heißt dort EHOW, Papenburg EDHJ). Die ICAO-Beschriftung erscheint ab Zoomstufe 11.
 
-**FriesenReddung**: Suchsektor und abgesuchte Fläche einer FriesenReddung — rot gestrichelter Rahmen, darin blau, was schon jemand abgeflogen hat. Die Ebene taucht nur auf, solange eine FriesenReddung läuft oder am Vortag lief, und ist dann eingeschaltet; schaltest du sie ab, bleibt sie bis zum Neuladen der Seite aus. Die Lage des Havaristen zeigt sie nie.
+**FriesenReddung**: Suchsektor und abgesuchte Fläche einer FriesenReddung — rot gestrichelter Rahmen, darin blau, was schon jemand abgeflogen hat. Die Ebene taucht nur auf, solange eine FriesenReddung läuft, am Vortag lief oder aus ihrer Bilanz geholt wurde, und ist dann eingeschaltet; schaltest du sie ab, bleibt sie für diesen Abend aus. In der Auswahl steht sie vor „Verkehr". Die Lage des Havaristen zeigt sie nie.
 
 **Sichtflugkarte** (blaues Symbol, ein hochkantes Blatt mit Textzeilen): Die amtliche DFS-Sichtflugkarte eines Platzes, halbtransparent über der Karte. Sie erscheint von allein, sobald du im Kartenfeld fliegst. Antippen des Symbols nagelt das Blatt fest oder nimmt es weg.
 

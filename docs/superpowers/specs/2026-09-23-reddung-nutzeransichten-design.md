@@ -318,7 +318,7 @@ auf der Karte (Abschnitt 2).
 | `event_count` | abgeschlossene Reddungen im Zeitraum |
 | `participations` | Σ Einträge in `je_pilot` — siehe Warnung darunter |
 | `gefunden_count` | wie oft der Havarist gefunden wurde |
-| `flaeche_km2` | Σ `abgedeckt` × `kante_km`², gerundet — die Kante steht seit dieser Runde im Stand |
+| `flaeche_km2` | Σ der genauen Fläche jedes Abends — siehe Nachtrag darunter |
 | `avg_rettung_min` | Mittel über `dauer_min`, nur über Abende mit Einlieferung |
 
 `/api/stats/special-events` bekommt `reddung` als dritten Schlüssel, die Oberfläche eine
@@ -332,6 +332,13 @@ ist die richtige Zählung für „Teilnahmen": Wer eine Fläche abgeflogen hat, 
 anderer dort zuerst war, ist Doppelarbeit und kein Grund, ihn aus der Statistik zu streichen.
 Wer stattdessen nur Einträge mit `zellen > 0` zählt, misst etwas anderes und muss es anders
 nennen.
+
+**Nachtrag 25.09.2026 (#44, Punkt 8): Die Fläche ist genau, nicht `abgedeckt × Kante²`.** Die
+Zellenzahl ist aufgerundet, die letzte Zeile und Spalte ragen über den Sektor; voll gezählt
+waren das bei Event 2 138 km² gegen 126 km² Sektor, rund 9 % zu viel. Der Stand liefert jetzt
+`flaeche_km2` und `offen_km2` mit angeschnittenen Randzellen nur zu ihrem Teil im Sektor
+(`zellen_flaeche_km2`, `app/abdeckung.py`); zusammen ergeben sie genau den Sektor. Bilanz,
+Live-Block, Teilen-Text und Kennzahlen lesen diese Felder.
 
 **Abgeschlossen heißt `dtend` vorbei**, nicht `aufgeloest_am` gesetzt — wie bei Bummel und
 Kutter. Seit die Abdeckung mit der Auflösung endet (Abschnitt 3), stünden die Zahlen zwar schon

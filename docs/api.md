@@ -377,7 +377,7 @@ Abgrenzung: Kutter „Flüge" = alle Flug-/Verlust-Zeilen (`flight_count`); Bumm
 (`Σ leg_count`). `returned` (am Ladeplatz abgeladen) ist kein Verlust (0 kg). `avg_absolute_min` ist `null` ohne
 gewertetes Rennen. NULL-`dtend`-Events werden ausgeschlossen.
 
-`reddung` zählt nur Abende, deren `dtend` vorbei ist und die mindestens einen Teilnehmer hatten. `participations` zählt auch Piloten ohne eigene Zelle; `flaeche_km2` nimmt die Zellkante jedes Abends; `avg_rettung_min` mittelt nur über Abende mit Einlieferung (sonst `null`). Nachgerechnet wird nichts — gezählt wird bis zum Fund, ohne Fund bis `min(dtend, aufgeloest_am)`.
+`reddung` zählt nur Abende, deren `dtend` vorbei ist und die mindestens einen Teilnehmer hatten. `participations` zählt auch Piloten ohne eigene Zelle; `flaeche_km2` summiert die genaue Fläche jedes Abends (Randzellen nur mit ihrem Teil im Sektor); `avg_rettung_min` mittelt nur über Abende mit Einlieferung (sonst `null`). Nachgerechnet wird nichts — gezählt wird bis zum Fund, ohne Fund bis `min(dtend, aufgeloest_am)`.
 
 ---
 
@@ -1114,9 +1114,25 @@ Läuft gerade eine FriesenReddung — und fehlt **diesem** Piloten die FriesenBr
 
 Alle FriesenReddungen mit ihrem Stand — für die Eventliste, später die Karte. Öffentlich (hinter dem Login-Gate wie die übrige Seite).
 
-**Response** `[{ "id": int, "name": string, "dtstart": string, "dtend": string, "source": string, "aufnehmen_noetig": 0|1, "landung_noetig": 0|1, "stand": {…} }]`
+**Response** `[{ "id": int, "name": string, "dtstart": string, "dtend": string, "laeuft": bool, "vorbei_seit_s": int|null, "source": string, "aufnehmen_noetig": 0|1, "landung_noetig": 0|1, "stand": {…} }]`
 
-`stand` kommt aus `compute_reddung_stand`: `zellen`, `abgedeckt`, `anteil`, `je_pilot`, dazu `gefunden`/`aufgenommen`/`eingeliefert` als `{cid, name, ts}` (bei der Einlieferung zusätzlich `icao`) und `dauer_min`.
+`laeuft` und `vorbei_seit_s` (Sekunden seit `dtend`, `null` solange nicht vorbei) rechnet der Server — im Kniebrett ist die Uhr des Geräts die des Sim-PCs, und nach der richtet sich sonst, ob der Live-Block „läuft gerade" sagt.
+
+`stand` kommt aus `compute_reddung_stand`:
+
+| Feld | Bedeutung |
+|---|---|
+| `zellen`, `abgedeckt`, `offen` | Zahl der Rasterzellen: insgesamt, abgesucht, noch offen |
+| `anteil` | `abgedeckt / zellen` |
+| `flaeche_km2`, `offen_km2` | abgesuchte und offene Fläche, **genau**: angeschnittene Randzellen nur mit ihrem Teil im Sektor; zusammen ergeben sie den Sektor |
+| `je_pilot` | `[{cid, name, zellen}]` — Zellen, die jeder als Erster abgesucht hat; auch mit `0` |
+| `gefunden`, `aufgenommen`, `eingeliefert` | `{cid, name, ts}` oder `null`; bei der Einlieferung zusätzlich `icao`. Aufnehmender und Einliefernder sind immer derselbe Pilot |
+| `dauer_min` | Fund bis Einlieferung |
+| `aufgeloest` | Fall erledigt (eingeliefert, gefunden ohne Aufnehmen, oder `dtend`) |
+| `korridor_km`, `kante_km`, `fund_radius_m` | Parameter des Abends |
+| `sektor` | `{sued, west, nord, ost}` — öffentlich, ohne ihn weiß niemand, wo zu suchen ist |
+
+Gezählt wird bis zum Fund; was danach geflogen wird, ist keine Suche mehr.
 
 ⚠ **Ohne die Lage des Havaristen** — die Kernanforderung des Eventtyps. Der Ort geht an die FriesenBrügge, die das Wrack hinstellt, und in den Admin; an keinen Endpunkt, den der Browser eines Piloten erreicht. Zwei Tests halten das fest.
 

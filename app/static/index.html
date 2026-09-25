@@ -4505,7 +4505,7 @@
               <li><strong>Platzrunden</strong> — 412 deutsche Platzrunden mit Höhe, über jeder Kartensorte</li>
               <li><strong>Meldepunkte</strong> — VFR-Meldepunkte weltweit; gefüllt heißt meldepflichtig, hohl heißt auf Anforderung</li>
               <li><strong>FSE-Plätze</strong> und <strong>FSE-Landeflächen</strong> — zwei eigene Haken: Plätze aus FSEconomy mit Bahnlänge, Belag und dem Namen, unter dem der Platz im Simulator zu finden ist</li>
-              <li><strong>FriesenReddung</strong> — der Suchsektor als rot gestrichelter Rahmen, darin blau, was schon abgesucht ist; erscheint nur, solange eine FriesenReddung läuft oder am Vortag lief. Wo der Havarist liegt, zeigt sie nie</li>
+              <li><strong>FriesenReddung</strong> — der Suchsektor als rot gestrichelter Rahmen, darin blau, was schon abgesucht ist; erscheint nur, solange eine FriesenReddung läuft, am Vortag lief oder aus ihrer Bilanz geholt wurde. Wo der Havarist liegt, zeigt sie nie</li>
               <li><strong>Verkehr</strong> — der fremde VATSIM-Verkehr (grau, siehe oben); aus Platzgründen erst ab Zoomstufe 7</li>
               <li><strong>Radar Label</strong> — blendet die Beschriftungen am Fremdverkehr aus, wenn das Bild ruhiger sein soll; der Haken erscheint erst mit eingeschaltetem „Verkehr"</li>
             </ul>
@@ -15170,6 +15170,12 @@ async function _refreshKutterDetail() {
 // ⚠ Alle Zustaende stehen HIER oben -- vor dem ersten Aufruf auf oberster Ebene
 // (`setInterval(_reddungTakt, …)` weiter unten). Ein `let` dahinter legte die Seite lahm.
 let _reddungListe = [];          // letzte Antwort von /api/reddung/events
+// Mindestens eine Antwort da? Sonst heisst „fehlt in der Liste" nur „noch nicht geladen".
+let _reddungListeGeladen = false;
+// Nur die juengste Antwort zaehlt: Eine aeltere Liste oder ein spaetes Raster, das nach einer
+// neueren ankommt, wuerde sie sonst ueberschreiben (#44, Punkt 4).
+let _reddungTaktNr = 0;
+const _reddungRasterNr = new Map();     // id -> Nummer des juengsten Raster-Abrufs
 let _reddungGeoeffnetId = null;         // aus Live-Block oder Bilanz auf die Karte geholt
 let _reddungGruppe = null;              // L.layerGroup der Ebene „FriesenReddung"
 let _reddungEbeneDa = false;            // steht der Eintrag gerade in der Ebenen-Auswahl?
@@ -15183,20 +15189,22 @@ const _reddungZeichnung = new Map();    // id -> { rahmen, flaeche }
 const _reddungRasterFertig = new Map(); // id -> Raster abgelaufener Reddungen: einmal geladen
 let _reddungOffenId = null;             // die gerade offene Bilanz unter Events
 
-function _jetztIso() {
-  return new Date().toISOString().slice(0, 19) + 'Z';
-}
-
 // Ein Takt fuer alles: Live-Block, Karte und Bilanz lesen dieselbe Liste.
 async function _reddungTakt() {
+  const nr = ++_reddungTaktNr;
+  let liste;
   try {
     const res = await fetch('/api/reddung/events');
     if (!res.ok) throw new Error('HTTP ' + res.status);
-    _reddungListe = (await res.json()) || [];
+    liste = (await res.json()) || [];
   } catch (e) {
     // Ein Aussetzer nimmt nichts weg: Block, Ebene und Bilanz bleiben, wie sie waren.
     return;
   }
+  // Kam inzwischen ein neuerer Abruf dazwischen, gilt dessen Antwort, nicht diese.
+  if (nr !== _reddungTaktNr) return;
+  _reddungListe = liste;
+  _reddungListeGeladen = true;
   _reddungBannerZeigen();
   _reddungKarteAbgleichen();
   _reddungBilanzZeigen();
@@ -15227,8 +15235,8 @@ function _reddungMarkenHtml(st) {
 function _reddungBannerZeigen() {
   const banner = document.getElementById('reddung-banner');
   if (!banner) return;
-  const jetzt = _jetztIso();
-  const laufend = _reddungListe.filter(r => (r.dtstart || '') <= jetzt && jetzt <= (r.dtend || ''));
+  // „Läuft" sagt der Server -- im Kniebrett ist die Uhr des Geräts die des Sim-PCs (#44).
+  const laufend = _reddungListe.filter(r => r.laeuft);
   if (!laufend.length) { banner.hidden = true; banner.innerHTML = ''; return; }
   banner.innerHTML = laufend.map(_reddungBannerBlock).join('');
   banner.hidden = false;
@@ -15237,8 +15245,8 @@ function _reddungBannerZeigen() {
 function _reddungBannerBlock(r) {
   const st = r.stand || {};
   const pct = Math.round((st.anteil || 0) * 100);
-  const kante = st.kante_km || 1;
-  const offenKm2 = Math.round((st.offen || 0) * kante * kante);
+  // Genau gerechnet auf dem Server: Randzellen nur mit ihrem Teil im Sektor (#44).
+  const offenKm2 = Math.round(st.offen_km2 || 0);
   // Nach der Aufloesung (eingeliefert, oder gefunden ohne Aufnehmen) ist der Fall erledigt,
   // auch wenn dtend noch aussteht. Der Block bleibt als Ergebnis stehen -- aber nicht mit
   // „läuft gerade" darueber (Review 24.09.2026: bei Event 2 waeren das 93 Minuten gewesen).
@@ -15256,17 +15264,25 @@ function _reddungBannerBlock(r) {
 // Welche Reddungen die Karte zeigt -- eine Liste, keine Zeitspanne (Spec Abschnitt 4):
 // die laufenden, die vor weniger als 24 h endeten (die Nachbesprechung ist am Abend danach),
 // und die eine, die jemand aus der Bilanz geholt hat, gleich welchen Alters.
-function _reddungZuZeigen(liste, jetztIso, geoeffnetId) {
-  const jetzt = Date.parse(jetztIso);
-  const TAG_MS = 24 * 3600 * 1000;
+function _reddungZuZeigen(liste, geoeffnetId) {
+  // `laeuft` und `vorbei_seit_s` rechnet der Server, nicht die Uhr des Geräts (#44).
+  const TAG_S = 24 * 3600;
   const ids = [];
   (liste || []).forEach(r => {
-    const start = Date.parse(r.dtstart || ''), ende = Date.parse(r.dtend || '');
-    const laeuft = start <= jetzt && jetzt <= ende;
-    const frisch = ende < jetzt && jetzt - ende < TAG_MS;
-    if (laeuft || frisch || r.id === geoeffnetId) ids.push(r.id);
+    const frisch = r.vorbei_seit_s != null && r.vorbei_seit_s < TAG_S;
+    if (r.laeuft || frisch || r.id === geoeffnetId) ids.push(r.id);
   });
   return ids;
+}
+
+// Einen Eintrag der Ebenen-Auswahl vor einen benannten ziehen. `addOverlay` haengt ans Ende --
+// hinter „Verkehr", der laut Nutzerwahl ganz unten steht (#44, Punkt 3).
+function _ebeneVorEinsortieren(layers, layer, vorName) {
+  const i = layers.findIndex(e => e === layer || e.layer === layer);
+  const v = layers.findIndex(e => e.name === vorName);
+  if (i < 0 || v < 0 || i < v) return;
+  const eintrag = layers.splice(i, 1)[0];
+  layers.splice(v, 0, eintrag);
 }
 
 // Die abgesuchten Zellen je Zeile zu Laeufen zusammenfassen -- ein Rechteck je Lauf. Die
@@ -15315,8 +15331,7 @@ function _reddungKarteAbgleichen() {
       _reddungKarteAbgleichen();   // wieder eingeschaltet: sofort laden, nicht erst im Takt
     });
   }
-  const jetzt = _jetztIso();
-  const ids = _reddungZuZeigen(_reddungListe, jetzt, _reddungGeoeffnetId);
+  const ids = _reddungZuZeigen(_reddungListe, _reddungGeoeffnetId);
   if (!ids.length) {
     if (_reddungEbeneDa) {
       _reddungSelbst = true;
@@ -15335,6 +15350,8 @@ function _reddungKarteAbgleichen() {
   }
   if (!_reddungEbeneDa) {
     _liveEbenenControl.addOverlay(_reddungGruppe, 'FriesenReddung');
+    _ebeneVorEinsortieren(_liveEbenenControl._layers, _reddungGruppe, 'Verkehr');
+    _liveEbenenControl._update();
     _reddungEbeneDa = true;
   }
   if (!_reddungAbgewaehlt && !liveMap.hasLayer(_reddungGruppe)) {
@@ -15348,18 +15365,23 @@ function _reddungKarteAbgleichen() {
       _reddungZeichnung.delete(id);
     }
   }
-  // Geladen wird nur, solange die Ebene an ist -- abgewaehlt kostet sie keine Anfrage.
+  // Geladen wird nur, solange die Ebene an ist -- abgewaehlt kostet sie keine Anfrage. Und nur
+  // bei sichtbarer Karte: Der Wechsel auf den Karten-Tab laedt ohnehin sofort nach (#44).
   if (!liveMap.hasLayer(_reddungGruppe)) return;
-  ids.forEach(id => _reddungRasterHolen(id, jetzt));
+  const karte = document.getElementById('tab-karte');
+  if (!karte || !karte.classList.contains('active')) return;
+  ids.forEach(id => _reddungRasterHolen(id));
 }
 
-async function _reddungRasterHolen(id, jetztIso) {
+async function _reddungRasterHolen(id) {
   const r = _reddungListe.find(x => x.id === id);
   if (!r) return;
   // Aufgeloest heisst eingefroren: Die Lesewege zaehlen danach nicht mehr weiter.
-  const vorbei = (r.dtend || '') < jetztIso || !!(r.stand && r.stand.aufgeloest);
+  const vorbei = r.vorbei_seit_s != null || !!(r.stand && r.stand.aufgeloest);
   let d = vorbei ? _reddungRasterFertig.get(id) : null;
   if (!d) {
+    const nr = (_reddungRasterNr.get(id) || 0) + 1;
+    _reddungRasterNr.set(id, nr);
     try {
       const res = await fetch('/api/reddung/events/' + id + '/raster');
       if (!res.ok) return;
@@ -15367,6 +15389,10 @@ async function _reddungRasterHolen(id, jetztIso) {
     } catch (e) {
       return;
     }
+    // Nur die juengste Antwort je Reddung zaehlt, und nur, solange sie noch gezeigt wird --
+    // sonst holte ein spaetes Raster den Rahmen einer abgewaehlten Reddung zurueck (#44).
+    if (_reddungRasterNr.get(id) !== nr) return;
+    if (!_reddungZuZeigen(_reddungListe, _reddungGeoeffnetId).includes(id)) return;
     // Abgelaufen aendert sich nichts mehr -- einmal laden, nie wieder fragen.
     if (vorbei) _reddungRasterFertig.set(id, d);
   }
@@ -15394,6 +15420,8 @@ function _reddungZeichnen(id, d) {
     _reddungGruppe.addLayer(z.flaeche);
     _reddungZeichnung.set(id, z);
   } else {
+    // Auch der Rahmen: Aendert der Admin den Sektor, zeigte er sonst den alten (#44).
+    z.rahmen.setBounds([[s.sued, s.west], [s.nord, s.ost]]);
     z.flaeche.setLatLngs(polys);
   }
 }
@@ -15403,8 +15431,13 @@ async function reddungAufKarte(id) {
   _reddungAbgewaehlt = false;
   const tab = document.querySelector('.tab-btn[data-tab="karte"]');
   if (tab) tab.click();
-  await new Promise(r => setTimeout(r, 300));
-  if (!liveMap) await initLiveMap();
+  // Warten, bis die Karte steht -- wie switchToMapAndCenter. Nach festen 300 ms entfiel
+  // fitBounds still, wenn sie beim allerersten Oeffnen noch nicht fertig war (#44, Punkt 2).
+  await new Promise(r => setTimeout(r, 250));
+  for (let versuch = 0; versuch < 20 && !liveMap; versuch++) {
+    await new Promise(r => setTimeout(r, 100));
+  }
+  if (!liveMap) return;
   _reddungKarteAbgleichen();
   const r = _reddungListe.find(x => x.id === Number(id));
   const s = r && r.stand && r.stand.sektor;
@@ -15436,6 +15469,8 @@ async function openReddungDetail(id) {
   _activeBummel = null;
   _activeBummelId = null;
   _reddungOffenId = Number(id);
+  // Eigene Adresse -- sonst oeffnete ein Neuladen, was vorher dort stand (#44, Punkt 9).
+  setUrlState({ tab: 'events', reddung: Number(id) });
   const wrap = document.getElementById('reddung-results');
   wrap.classList.remove('hidden');
   _reddungBilanzZeigen();      // sofort aus der vorhandenen Liste …
@@ -15446,10 +15481,18 @@ async function openReddungDetail(id) {
 // Im Takt aufgefrischt -- laeuft der Abend noch, waechst die Bilanz mit.
 function _reddungBilanzZeigen() {
   if (_reddungOffenId == null) return;
-  const r = _reddungListe.find(x => x.id === _reddungOffenId);
   const titel = document.getElementById('reddung-title');
   const inhalt = document.getElementById('reddung-content');
-  if (!r || !titel || !inhalt) return;
+  if (!titel || !inhalt) return;
+  const r = _reddungListe.find(x => x.id === _reddungOffenId);
+  if (!r) {
+    // Nie die vorher offene Bilanz stehen lassen (#44, Punkt 9).
+    titel.textContent = '🚨 FriesenReddung';
+    inhalt.innerHTML = _reddungListeGeladen
+      ? '<div class="bb-sub">Diese FriesenReddung gibt es nicht mehr.</div>'
+      : '<div class="loading"><div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div>Lade…</div>';
+    return;
+  }
   titel.textContent = '🚨 ' + (r.name || 'FriesenReddung');
   inhalt.innerHTML = _reddungBilanzHtml(r);
 }
@@ -15457,9 +15500,8 @@ function _reddungBilanzZeigen() {
 function _reddungBilanzHtml(r) {
   const st = r.stand || {};
   const pct = Math.round((st.anteil || 0) * 100);
-  const kante = st.kante_km || 1;
-  const km2 = Math.round((st.abgedeckt || 0) * kante * kante);
-  const vorbei = (r.dtend || '') < _jetztIso();
+  const km2 = Math.round(st.flaeche_km2 || 0);     // genau, vom Server (#44)
+  const vorbei = r.vorbei_seit_s != null;
   let html = _reddungBalken(pct);
   html += `<div class="bb-sub">${pct} % abgesucht — ${st.abgedeckt || 0} von ${st.zellen || 0} Zellen, ${km2} km²</div>`;
   if (st.gefunden) html += _reddungMarkenHtml(st);
@@ -15481,15 +15523,14 @@ function _reddungBilanzHtml(r) {
 }
 
 // Forumsfertiger Absatz. Wo der Havarist lag, steht nicht darin -- so wenig wie auf der Karte.
-function _reddungTeilenText(r, jetztIso) {
+function _reddungTeilenText(r) {
   const st = r.stand || {};
   const zeit = ts => (ts || '').slice(11, 16) + ' UTC';
   const pct = Math.round((st.anteil || 0) * 100);
-  const kante = st.kante_km || 1;
-  const km2 = Math.round((st.abgedeckt || 0) * kante * kante);
+  const km2 = Math.round(st.flaeche_km2 || 0);     // genau, vom Server (#44)
   const z = [`🚨 FriesenReddung — ${r.name || 'FriesenReddung'}`, `Abgesucht: ${pct} % (${km2} km²)`];
   if (st.gefunden) z.push(`Gefunden: ${st.gefunden.name} um ${zeit(st.gefunden.ts)}`);
-  else z.push((r.dtend || '') < jetztIso ? 'Nicht gefunden' : 'Noch nicht gefunden');
+  else z.push(r.vorbei_seit_s != null ? 'Nicht gefunden' : 'Noch nicht gefunden');
   // Derselbe Pilot nimmt auf und liefert ein (s. _reddungMarkenHtml) -- ein Name, eine Zeile.
   if (st.aufgenommen) {
     let t = `Aufgenommen: ${st.aufgenommen.name} um ${zeit(st.aufgenommen.ts)}`;
@@ -15508,7 +15549,7 @@ function _reddungTeilenText(r, jetztIso) {
 
 function copyReddungShareHeader(btn) {
   const r = _reddungListe.find(x => x.id === _reddungOffenId);
-  if (r) _copyText(_reddungTeilenText(r, _jetztIso()), btn);
+  if (r) _copyText(_reddungTeilenText(r), btn);
 }
 
 // ==========================================================================
@@ -15712,6 +15753,11 @@ async function initFromUrl() {
     if (kutterId) {
       // Deep-Link auf ein konkretes FriesenKutter-Event: Live-Ansicht direkt öffnen.
       await openKutterById(kutterId);
+    }
+    const reddungId = p.get('reddung');
+    if (reddungId) {
+      // Deep-Link auf eine FriesenReddung: Bilanz direkt öffnen (#44, Punkt 9).
+      await openReddungDetail(Number(reddungId));
     }
     const icao = p.get('icao');
     if (icao) {

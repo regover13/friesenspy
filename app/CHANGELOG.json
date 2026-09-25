@@ -9,6 +9,7 @@
       "🗺️ **Karte:** Die neue Ebene **FriesenReddung** zeigt den Suchsektor und darin, was schon abgesucht ist. So seht ihr in der Luft, wo noch niemand war — auch im Kniebrett. Wo der Havarist liegt, zeigt sie nie; das tut die Rauchsäule im Simulator.",
       "📋 **Events:** Ein Klick auf die FriesenReddung öffnet ihre Bilanz, mit einem Knopf, der sie als fertigen Absatz fürs Forum kopiert. Bisher füllte der Klick das Suchformular.",
       "📊 **Statistiken:** Eine eigene Zeile für die FriesenReddung — Abende, Teilnahmen, Funde, abgesuchte Fläche und die mittlere Rettungsdauer.",
+      "📐 **Die Fläche stimmt jetzt genau.** Die Zellen am Rand des Sektors ragen über ihn hinaus und zählten voll — rund 9 % zu viel. Jetzt zählt nur, was im Sektor liegt. Außerdem hat die Bilanz eine eigene Adresse, die Ebene steht in der Auswahl vor „Verkehr\", und ob eine FriesenReddung läuft, entscheidet die Uhr des Servers statt die des Simulator-PCs.",
       "🔧 **Die abgesuchte Fläche endet mit dem Fund.** Bisher zählte weiter, wer danach zur Rauchsäule flog — der Balken wuchs, und jeder Hinflug galt als Suchbeitrag. Dazu hing die Fläche vom Zufall ab: Nach dem Ende eines Abends zählte die Seite teils weiter, der Server nicht. Jetzt ist mit dem Fund für alle Schluss."
     ]
   },

@@ -90,18 +90,18 @@ def test_die_readme_beschreibt_den_live_block():
 def test_zu_zeigen_sind_laufende_frische_und_die_geoeffnete():
     """Review-Fokus 2: zwei laufende gleichzeitig -- beide. Dazu, was vor weniger als 24 h
     endete, und die eine aus der Bilanz, gleich welchen Alters (Spec Abschnitt 4)."""
+    # #44 Punkt 10: `laeuft` und `vorbei_seit_s` kommen vom Server, nicht von der Geraeteuhr.
     liste = [
-        {"id": 1, "dtstart": "2026-09-24T17:00:00Z", "dtend": "2026-09-24T20:00:00Z"},  # laeuft
-        {"id": 2, "dtstart": "2026-09-23T17:00:00Z", "dtend": "2026-09-23T20:30:00Z"},  # vor 22,5 h zu Ende
-        {"id": 3, "dtstart": "2026-09-20T17:00:00Z", "dtend": "2026-09-20T20:00:00Z"},  # alt
-        {"id": 4, "dtstart": "2026-09-24T17:30:00Z", "dtend": "2026-09-24T21:00:00Z"},  # laeuft auch
-        {"id": 5, "dtstart": "2026-09-25T17:00:00Z", "dtend": "2026-09-25T20:00:00Z"},  # kommt erst
+        {"id": 1, "laeuft": True, "vorbei_seit_s": None},            # laeuft
+        {"id": 2, "laeuft": False, "vorbei_seit_s": 81000},          # vor 22,5 h zu Ende
+        {"id": 3, "laeuft": False, "vorbei_seit_s": 400000},         # alt
+        {"id": 4, "laeuft": True, "vorbei_seit_s": None},            # laeuft auch
+        {"id": 5, "laeuft": False, "vorbei_seit_s": None},           # kommt erst
     ]
     q = _funktion("_reddungZuZeigen")
-    jetzt = '"2026-09-24T19:00:00Z"'
-    assert _node(q, f"_reddungZuZeigen({json.dumps(liste)}, {jetzt}, null)") == [1, 2, 4]
-    assert _node(q, f"_reddungZuZeigen({json.dumps(liste)}, {jetzt}, 3)") == [1, 2, 3, 4]
-    assert _node(q, f"_reddungZuZeigen([], {jetzt}, null)") == []
+    assert _node(q, f"_reddungZuZeigen({json.dumps(liste)}, null)") == [1, 2, 4]
+    assert _node(q, f"_reddungZuZeigen({json.dumps(liste)}, 3)") == [1, 2, 3, 4]
+    assert _node(q, "_reddungZuZeigen([], null)") == []
 
 
 @pytest.mark.skipif(not _NODE, reason="node fehlt")
@@ -232,7 +232,9 @@ def test_die_bilanz_hat_ihr_panel_mit_teilen_knopf():
 @pytest.mark.skipif(not _NODE, reason="node fehlt")
 def test_der_teilen_text_nennt_die_marken_und_keinen_ort():
     r = {"id": 3, "name": "Vermisst über der Jade", "dtend": "2026-09-24T20:00:00Z",
+         "laeuft": False, "vorbei_seit_s": 50000,
          "stand": {"anteil": 0.42, "abgedeckt": 672, "zellen": 1600, "kante_km": 1.0,
+                   "flaeche_km2": 672.0,
                    "sektor": {"sued": 53.54, "west": 6.95, "nord": 53.9, "ost": 7.55},
                    "gefunden": {"cid": 1, "name": "Stefan", "ts": "2026-09-24T19:12:00Z"},
                    "aufgenommen": {"cid": 2, "name": "Wolfgang", "ts": "2026-09-24T19:30:00Z"},
@@ -241,8 +243,7 @@ def test_der_teilen_text_nennt_die_marken_und_keinen_ort():
                    "dauer_min": 38,
                    "je_pilot": [{"cid": 1, "name": "Stefan", "zellen": 400},
                                 {"cid": 3, "name": "Nur Doppelt", "zellen": 0}]}}
-    text = _node(_funktion("_reddungTeilenText"),
-                 f"_reddungTeilenText({json.dumps(r)}, '2026-09-25T10:00:00Z')")
+    text = _node(_funktion("_reddungTeilenText"), f"_reddungTeilenText({json.dumps(r)})")
     assert "FriesenReddung" in text and "Vermisst über der Jade" in text
     assert "42 %" in text and "672 km²" in text
     assert "Stefan um 19:12 UTC" in text and "EDWF" in text and "38 Minuten" in text
@@ -253,12 +254,13 @@ def test_der_teilen_text_nennt_die_marken_und_keinen_ort():
 
 @pytest.mark.skipif(not _NODE, reason="node fehlt")
 def test_der_teilen_text_unterscheidet_noch_nicht_und_nicht_gefunden():
-    r = {"id": 3, "name": "X", "dtend": "2026-09-24T20:00:00Z",
+    r = {"id": 3, "name": "X", "laeuft": True, "vorbei_seit_s": None,
          "stand": {"anteil": 0.1, "abgedeckt": 10, "zellen": 100, "kante_km": 1.0,
-                   "je_pilot": []}}
+                   "flaeche_km2": 10.0, "je_pilot": []}}
     q = _funktion("_reddungTeilenText")
-    assert "Noch nicht gefunden" in _node(q, f"_reddungTeilenText({json.dumps(r)}, '2026-09-24T19:00:00Z')")
-    danach = _node(q, f"_reddungTeilenText({json.dumps(r)}, '2026-09-24T21:00:00Z')")
+    assert "Noch nicht gefunden" in _node(q, f"_reddungTeilenText({json.dumps(r)})")
+    r.update(laeuft=False, vorbei_seit_s=3600)
+    danach = _node(q, f"_reddungTeilenText({json.dumps(r)})")
     assert "Nicht gefunden" in danach and "Noch" not in danach
 
 
@@ -282,6 +284,7 @@ def test_nach_der_rettung_steht_nicht_mehr_laeuft_gerade():
               + _funktion("_reddungBalken") + _funktion("_reddungMarkenHtml")
               + _funktion("_reddungBannerBlock"))
     r = {"id": 2, "name": "Probe", "stand": {"anteil": 0.5, "offen": 10, "kante_km": 1.0,
+                                             "offen_km2": 9.6,
                                              "aufgeloest": True,
                                              "gefunden": {"name": "A", "ts": "2026-09-20T16:40:00Z"}}}
     html = _node(quelle, f"_reddungBannerBlock({json.dumps(r)})")
@@ -338,9 +341,92 @@ def test_die_marken_nennen_den_retter_nur_einmal():
 
 @pytest.mark.skipif(not _NODE, reason="node fehlt")
 def test_der_teilen_text_nennt_den_retter_nur_einmal():
-    r = {"id": 3, "name": "X", "dtend": "2026-09-24T20:00:00Z",
+    r = {"id": 3, "name": "X", "laeuft": False, "vorbei_seit_s": 50000,
          "stand": {"anteil": 0.4, "abgedeckt": 4, "zellen": 10, "kante_km": 1.0,
-                   "je_pilot": [], **_MARKEN}}
-    text = _node(_funktion("_reddungTeilenText"),
-                 f"_reddungTeilenText({json.dumps(r)}, '2026-09-25T10:00:00Z')")
+                   "flaeche_km2": 4.0, "je_pilot": [], **_MARKEN}}
+    text = _node(_funktion("_reddungTeilenText"), f"_reddungTeilenText({json.dumps(r)})")
     assert text.count("Wolfgang") == 1 and "EDWF" in text and "19:50" in text
+
+
+
+# --- #44: Nachbesserungen im Frontend -----------------------------------------------------
+
+def test_zur_karte_wartet_auf_die_karte():
+    """#44 Punkt 2: Nach festen 300 ms entfiel `fitBounds` still, wenn die Karte noch nicht
+    stand. Jetzt wie `switchToMapAndCenter`: bis zu 20 × 100 ms warten."""
+    rumpf = _ohne_kommentare(_funktion("reddungAufKarte"))
+    assert re.search(r"for \(let (\w+) = 0; \1 < 20\b", rumpf), "keine Warteschleife"
+    assert "setTimeout(r, 100)" in rumpf and "setTimeout(r, 300)" not in rumpf
+
+
+@pytest.mark.skipif(not _NODE, reason="node fehlt")
+def test_die_ebene_steht_vor_dem_verkehr():
+    """#44 Punkt 3: `addOverlay` haengt ans Ende -- hinter „Verkehr", der laut Nutzerwahl ganz
+    unten stehen soll."""
+    q = _funktion("_ebeneVorEinsortieren")
+    layers = [{"name": "OpenAIP"}, {"name": "Verkehr"}, {"name": "FriesenReddung", "id": "x"}]
+    erg = _node(q, f"(() => {{ const l = {json.dumps(layers)}; "
+                   f"_ebeneVorEinsortieren(l, l[2], 'Verkehr'); return l.map(e => e.name); }})()")
+    assert erg == ["OpenAIP", "FriesenReddung", "Verkehr"]
+    ohne = _node(q, "(() => { const l = [{name: 'A'}, {name: 'B'}]; "
+                    "_ebeneVorEinsortieren(l, l[1], 'Verkehr'); return l.map(e => e.name); })()")
+    assert ohne == ["A", "B"], "ohne Verkehr-Eintrag bleibt alles, wie es ist"
+    abgleich = _ohne_kommentare(_funktion("_reddungKarteAbgleichen"))
+    assert "_ebeneVorEinsortieren(" in abgleich and "_liveEbenenControl._update()" in abgleich
+
+
+def test_nur_die_juengste_antwort_zaehlt():
+    """#44 Punkt 4: Eine aeltere Liste oder ein spaetes Raster durfte eine neuere Antwort
+    ueberschreiben."""
+    takt = _ohne_kommentare(_funktion("_reddungTakt"))
+    assert "++_reddungTaktNr" in takt and "!== _reddungTaktNr" in takt
+    raster = _ohne_kommentare(_funktion("_reddungRasterHolen"))
+    assert "_reddungRasterNr" in raster
+    assert "_reddungZuZeigen(_reddungListe, _reddungGeoeffnetId).includes(id)" in raster
+
+
+def test_der_rahmen_folgt_dem_sektor():
+    """#44 Punkt 5: Nach einer Admin-Aenderung zeigte der Rahmen den alten Sektor."""
+    assert "z.rahmen.setBounds(" in _ohne_kommentare(_funktion("_reddungZeichnen"))
+
+
+def test_die_flaeche_kommt_vom_server():
+    """#44 Punkt 8: genau gerechnet auf dem Server -- nicht mehr Zellen × Kante² im Browser."""
+    assert "st.offen_km2" in _funktion("_reddungBannerBlock")
+    assert "st.flaeche_km2" in _funktion("_reddungBilanzHtml")
+    assert "st.flaeche_km2" in _funktion("_reddungTeilenText")
+    for name in ("_reddungBannerBlock", "_reddungBilanzHtml", "_reddungTeilenText"):
+        assert "kante * kante" not in _funktion(name), name
+
+
+def test_die_bilanz_hat_eine_adresse():
+    """#44 Punkt 9: Ohne eigenen URL-Zustand oeffnete ein Neuladen, was vorher in der Adresse
+    stand -- etwa einen Kutter."""
+    assert "setUrlState({ tab: 'events', reddung:" in _funktion("openReddungDetail")
+    start = _ohne_kommentare(_funktion("initFromUrl"))
+    assert "p.get('reddung')" in start and "openReddungDetail(" in start
+
+
+def test_eine_fehlende_reddung_laesst_keine_alte_bilanz_stehen():
+    """#44 Punkt 9: Fehlte das Event in der Liste, blieb der Inhalt der vorher offenen Bilanz."""
+    rumpf = _ohne_kommentare(_funktion("_reddungBilanzZeigen"))
+    assert "_reddungListeGeladen" in rumpf and "gibt es nicht mehr" in _funktion("_reddungBilanzZeigen")
+
+
+def test_die_geraeteuhr_entscheidet_nichts_mehr():
+    """#44 Punkt 10: „läuft" und „vorbei" kommen vom Server."""
+    assert "r.laeuft" in _funktion("_reddungBannerZeigen")
+    code = _ohne_kommentare(INDEX)
+    assert "_jetztIso" not in code, "die Geraeteuhr wird fuer die FriesenReddung nicht mehr gebraucht"
+
+
+def test_das_raster_wird_nur_bei_sichtbarer_karte_geholt():
+    """#44 Punkt 11: Wer zum LIVE-Tab zurueckging, holte weiter alle 30 s das Raster."""
+    rumpf = _ohne_kommentare(_funktion("_reddungKarteAbgleichen"))
+    assert "getElementById('tab-karte')" in rumpf and "classList.contains('active')" in rumpf
+
+
+def test_die_neuen_zustaende_stehen_vor_dem_ersten_aufruf():
+    erster_aufruf = INDEX.index("setInterval(_reddungTakt, 30000)")
+    for name in ("let _reddungTaktNr", "const _reddungRasterNr", "let _reddungListeGeladen"):
+        assert INDEX.index(name) < erster_aufruf, name
