@@ -486,8 +486,28 @@ Flugplatz stehen alle näher beieinander.** Bei einem Kieker-Event ist das der N
 2. Server matcht über die Position, vergibt eine
                              ←  "kennung": "a7f3…"   (secrets.token_hex(8))
 3. Brügge speichert sie und liefert sie ab jetzt bei JEDER Meldung mit
-4. Nach einem Neustart: aus der Datei gelesen, dieselbe Zuordnung
+4. Nach einem Neustart: X-Plane liest sie aus der Datei. MSFS kann das seit 1.14.0 NICHT
+   mehr (s. unten) und beginnt wieder bei 1 -- der Server gibt ihr dann die Kennung
+   zurueck, die er fuer diesen Piloten in diesem Simulator kennt (`bruegge_kennung_fuer`).
 ```
+
+⚠ **Schritt 4 ist für MSFS seit Brügge 1.14.0 anders, als er lange hier stand** („aus der
+Datei gelesen"). Ein Modul für MSFS 2020 und 2024 kann die Datei-API nicht mehr benutzen — dem
+2020er SDK fehlt `MSFS_IO.h`. Die MSFS-Brügge meldet deshalb nach **jedem** Simulatorstart ohne
+Kennung, und der Server gibt die gespeicherte zurück. **Die Kennung hängt damit am Piloten
+(CID + Simulator), nicht an der Installation** — eine „neue" Brügge bekommt keinen neuen Code,
+sondern den ihres Piloten.
+
+⚠⚠ **Genau das ist die offene Schwachstelle aus GitHub-Issue #46 (25.09.2026):** Der Server
+entscheidet über die POSITION, wem eine Brügge ohne Kennung gehört. Ist das eigene Rufzeichen
+noch nicht auf VATSIM, der Nachbar am Stand aber schon, ist der Nachbar der einzige Kandidat —
+und die Brügge bekommt SEINE Kennung. Danach sperrt die Rückkehr-Schranke („eine erinnerte
+Kennung findet nur zu ihrer eigenen CID zurück") sie dauerhaft aus; nur ein Neustart von MSFS
+löst es. Die Sperre gegen belegte Piloten (`bruegge_belegte_cids`, 10 s) greift dabei nicht
+zuverlässig: Es gibt einen zweiten Versuch ohne Sperre, und die Frist ist kurz.
+
+Seit 15.19.8 nennen die Ablehnungszeilen im Server-Log Kennung, Simulator, Position und Höhe
+(`_bruegge_melder`) — damit lässt sich ein solcher Fall nachträglich einer Brügge zuordnen.
 
 Ab Schritt 3 ändert sich **nichts** am Verfahren — das Halten der Zuordnung bleibt, wie es
 war. Es wird nur **einmal** ohne Kennung gematcht statt nie.
