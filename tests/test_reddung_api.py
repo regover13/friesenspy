@@ -590,7 +590,12 @@ def als_pilot(monkeypatch):
 
 
 def test_ohne_laufende_reddung_kein_hinweis(db, als_pilot):
-    _anlegen()                       # dtstart 2026-09-25, also nicht jetzt
+    # ⚠ Relativ zur Uhr, nicht fest: Hier stand `_anlegen()` mit dtstart 2026-09-25T17:00Z --
+    # „also nicht jetzt". Am 25.09.2026 um 17:00 UTC lief genau dieses Event, und der Test
+    # schlug fehl, ohne dass sich am Code etwas geaendert hatte.
+    from datetime import datetime, timedelta, timezone
+    spaeter = (datetime.now(timezone.utc) + timedelta(days=3)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    _anlegen(dtstart=spaeter)
     d = asyncio.run(main.meine_reddung(FakeReq()))
     assert d == {"laeuft": False}
 
@@ -788,3 +793,38 @@ def test_die_knoepfe_nennen_die_handlung_nicht_den_zustand():
         assert "Push einschalten" in rumpf and "Push ausschalten" in rumpf, name
         assert ">Push an</button>" not in rumpf and ">Push aus</button>" not in rumpf, name
         assert "'Push aus' : 'Push an'" not in rumpf, name
+
+
+# --- Reddung-Karte im Admin: Ebenen und ICAO-Suche wie auf der Live-Karte (25.09.2026) --
+
+INDEX_HTML = pathlib.Path("app/static/index.html")
+
+
+def test_die_reddung_karte_bekommt_ebenen_und_icao_suche():
+    """Nutzer, 25.09.2026: „die Karte braucht die ICAO suchfunktion und die Kartenlayers"."""
+    aufbau = _admin_funktion("_rdKarteAufbauen")
+    assert "_rdKartenEbenen(_rdKarte)" in aufbau and "_rdIcaoSuche(_rdKarte)" in aufbau
+    ebenen = _admin_funktion("_rdKartenEbenen")
+    assert "L.control.layers(" in ebenen
+    for name in ("'Satellit'", "'OpenFlightMap'", "'OpenTopo'", "'Light'", "'Dark'", "'OpenAIP'"):
+        assert name in ebenen, name
+
+
+def test_die_kachel_adressen_gleichen_denen_der_live_karte():
+    """Admin und Website teilen keinen Skriptteil -- die Adressen stehen zweimal. Dieser Test
+    haelt sie aneinander, damit eine Umstellung auf der Live-Karte nicht still im Admin fehlt."""
+    import re
+    index = INDEX_HTML.read_text(encoding="utf-8")
+    admin = ADMIN.read_text(encoding="utf-8")
+    for name in ("TILE_SAT_URL", "TILE_OFM_URL", "TILE_TOPO_URL", "TILE_LIGHT_URL",
+                 "TILE_DARK_URL", "TILE_AIP_URL"):
+        m = re.search(rf"const {name}\s*=\s*'([^']+)'", index)
+        assert m, name
+        assert m.group(1) in admin, f"{name} fehlt im Admin: {m.group(1)}"
+
+
+def test_die_suche_setzt_keine_sektorecke():
+    """Ein Klick in die Karte setzt eine Ecke -- ein Klick ins Suchfeld darf das nicht."""
+    suche = _admin_funktion("_rdIcaoSuche")
+    assert "disableClickPropagation" in suche
+    assert "/api/airports/search?q=" in suche and "/api/airport/" in suche
