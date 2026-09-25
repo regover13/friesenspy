@@ -6709,8 +6709,105 @@
         }
         _rdKarteNachziehen();
       });
+      // Ebenen und ICAO-Suche wie auf der Live-Karte (Nutzerwunsch 25.09.2026).
+      _rdKartenEbenen(_rdKarte);
+      _rdIcaoSuche(_rdKarte);
       // Erst nach dem Einblenden hat der Kasten eine Groesse -- ohne das bleibt die Karte grau.
       setTimeout(function () { _rdKarte.invalidateSize(); }, 60);
+    }
+
+    // Kachel-Adressen wie auf der Live-Karte (index.html, TILE_*). Admin und Website teilen
+    // keinen Skriptteil; tests/test_reddung_api.py haelt beide Adresslisten aneinander.
+    const _RD_TILE_SAT   = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+    const _RD_TILE_OFM   = 'https://nwy-tiles-api.prod.newaydata.com/tiles/{z}/{x}/{y}.png?path=latest/aero/latest';
+    const _RD_TILE_TOPO  = 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png';
+    const _RD_TILE_LIGHT = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+    const _RD_TILE_DARK  = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+    const _RD_TILE_AIP   = 'https://api.tiles.openaip.net/api/data/openaip/{z}/{x}/{y}.png?apiKey=';
+    const _RD_OSM = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+
+    // Die Grundkarten der Live-Karte plus OpenAIP. Das Luftbild liegt schon (s. _rdKarteAufbauen)
+    // und bleibt voreingestellt: Wer den Havaristen setzt, muss sehen, ob dort jemand landen
+    // kann. Die Schluessel fuer Carto und OpenAIP kommen aus /api/frontend-config wie auf der
+    // Website -- deshalb erst danach die Auswahl.
+    async function _rdKartenEbenen(karte) {
+      let cfg = {};
+      try {
+        const r = await fetch('/api/frontend-config', { credentials: 'same-origin' });
+        if (r.ok) cfg = await r.json();
+      } catch (e) { /* ohne Konfiguration eben ohne Carto-Schluessel und OpenAIP */ }
+      const carto = function (url) { return cfg.carto_api_key ? url + '?key=' + cfg.carto_api_key : url; };
+      let sat = null;
+      karte.eachLayer(function (l) { if (l._url === _RD_TILE_SAT) sat = l; });
+      const basis = {
+        'Satellit': sat || L.tileLayer(_RD_TILE_SAT, { maxZoom: 19, attribution: 'Tiles &copy; Esri' }),
+        'OpenFlightMap': L.tileLayer(_RD_TILE_OFM, { maxNativeZoom: 12, maxZoom: 19, minZoom: 6,
+          attribution: _RD_OSM + ' &copy; <a href="https://www.openflightmaps.org">openflightmaps.org</a>' }),
+        'OpenTopo': L.tileLayer(_RD_TILE_TOPO, { subdomains: 'abc', maxZoom: 17,
+          attribution: _RD_OSM + ', &copy; <a href="https://opentopomap.org">OpenTopoMap</a>' }),
+        'Light': L.tileLayer(carto(_RD_TILE_LIGHT), { subdomains: 'abcd', maxZoom: 19,
+          attribution: _RD_OSM + ' &copy; <a href="https://carto.com/attributions">CARTO</a>' }),
+        'Dark': L.tileLayer(carto(_RD_TILE_DARK), { subdomains: 'abcd', maxZoom: 19,
+          attribution: _RD_OSM + ' &copy; <a href="https://carto.com/attributions">CARTO</a>' }),
+      };
+      const zusatz = {};
+      if (cfg.openaip_api_key) {
+        zusatz['OpenAIP'] = L.tileLayer(_RD_TILE_AIP + cfg.openaip_api_key, {
+          maxNativeZoom: 14, maxZoom: 19, opacity: 0.8,
+          attribution: '&copy; <a href="https://www.openaip.net">OpenAIP</a>' });
+      }
+      L.control.layers(basis, zusatz, { position: 'topright', collapsed: true }).addTo(karte);
+    }
+
+    // ICAO-Suche: Kennung tippen, Vorschlag waehlen oder Enter -- die Karte springt auf den
+    // Platz. Schlichter als auf der Live-Karte: Im Admin sitzt man an einer echten Tastatur.
+    function _rdIcaoSuche(karte) {
+      const Suche = L.Control.extend({
+        options: { position: 'topleft' },
+        onAdd: function () {
+          const kasten = L.DomUtil.create('div', 'leaflet-bar');
+          kasten.style.cssText = 'background:#0d1a26;padding:4px;';
+          kasten.innerHTML = '<input type="text" maxlength="4" placeholder="ICAO" list="rd-icao-vorschlaege"'
+            + ' aria-label="Flugplatz nach ICAO-Kennung suchen" autocomplete="off" spellcheck="false"'
+            + ' style="width:5.5em;text-transform:uppercase;background:transparent;color:inherit;border:none;">'
+            + '<datalist id="rd-icao-vorschlaege"></datalist>';
+          // ⚠ Ein Klick in die Karte setzt eine Sektorecke -- einer ins Suchfeld darf es nicht.
+          L.DomEvent.disableClickPropagation(kasten);
+          L.DomEvent.disableScrollPropagation(kasten);
+          const feld = kasten.querySelector('input');
+          const liste = kasten.querySelector('datalist');
+          const springen = async function () {
+            const icao = (feld.value || '').trim().toUpperCase();
+            if (icao.length < 3) return;
+            try {
+              const r = await fetch('/api/airport/' + encodeURIComponent(icao), { credentials: 'same-origin' });
+              if (!r.ok) { feld.style.color = '#e0a33e'; return; }
+              const a = await r.json();
+              feld.style.color = '';
+              karte.setView([a.lat, a.lon], Math.max(karte.getZoom(), 12));
+            } catch (e) { /* Netzfehler: stehen bleiben */ }
+          };
+          feld.addEventListener('input', async function () {
+            feld.style.color = '';
+            const q = (feld.value || '').trim().toUpperCase();
+            if (q.length < 2) { liste.innerHTML = ''; return; }
+            try {
+              const r = await fetch('/api/airports/search?q=' + encodeURIComponent(q), { credentials: 'same-origin' });
+              if (!r.ok) return;
+              const d = await r.json();
+              liste.innerHTML = (d.results || []).map(function (x) {
+                return '<option value="' + escH(x.icao) + '">' + escH(x.name || '') + '</option>';
+              }).join('');
+              if (q.length === 4 && (d.results || []).some(function (x) { return x.icao === q; })) springen();
+            } catch (e) { /* ohne Vorschlaege weiter tippen */ }
+          });
+          feld.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') { e.preventDefault(); springen(); }
+          });
+          return kasten;
+        }
+      });
+      karte.addControl(new Suche());
     }
 
     async function _rdArtenLaden() {

@@ -1,5 +1,14 @@
 [
   {
+    "version": "15.19.3",
+    "date": "2026-09-25",
+    "highlight": false,
+    "title": "Admin: Die Karte der FriesenReddung hat Ebenen und eine ICAO-Suche",
+    "items": [
+      "🗺️ **Admin:** Die Karte, auf der Sektor und Havarist einer FriesenReddung gesetzt werden, hat jetzt dieselben Grundkarten wie die Live-Karte — Satellit, OpenFlightMap, OpenTopo, Light und Dark — und OpenAIP als Zusatzebene. Voreingestellt bleibt das Luftbild. Oben links sucht ein Feld Flugplätze nach ICAO-Kennung und springt hin; ein Klick hinein setzt keine Sektorecke."
+    ]
+  },
+  {
     "version": "15.19.2",
     "date": "2026-09-25",
     "highlight": false,
