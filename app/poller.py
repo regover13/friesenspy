@@ -417,6 +417,15 @@ def _vrp_faellig(stand: str) -> bool:
 #: `position_history` pruefen (Spec, offener Punkt 4).
 _REDDUNG_SCHONFRIST_MIN = 10
 
+#: Takt des Reddung-Jobs. Anfangs 60 s wie Bummel und Kutter -- dort geht es um Pushes nach dem
+#: Eventende, und eine Minute faellt nicht auf. Dann 30 s, als das Fortschreiben einen Lauf
+#: billig gemacht hatte. **10 s seit #49, Punkt 3** (Nutzerentscheidung 25.09.2026): Beim Test
+#: am 25.09. kamen 11 s zum Fund und 25 s zur Aufnahme dazu, und genau diese Wartezeit merkt der
+#: Pilot am Wrack. ⚠ Der Job laeuft IM Event-Loop (async ohne await): Waehrend seiner rund 70 ms
+#: beantwortet der Server nichts, auch keine Brügge-Meldung. Bei 10 s sind das im Mittel 0,7 %
+#: der Zeit. Wer kuerzer geht, misst vorher die Laufzeit mit vielen Teilnehmern.
+_REDDUNG_TAKT_S = 10
+
 
 def _meldet_noch(conn, cid: int, grenze: str) -> bool:
     """Hat dieser Pilot seit ``grenze`` gemeldet?
@@ -621,12 +630,10 @@ class VatsimPoller:
             id="transport_event_check",
         )
         # FriesenReddung: Fund, Aufnahme, Einlieferung latchen und die Fackel tauschen.
-        # 30 s statt 60: Seit die Rechnung fortgeschrieben wird, kostet ein Takt rund 30 ms --
-        # und die halbe Wartezeit ist beim Fund und bei der Einlieferung direkt zu merken.
         self._scheduler.add_job(
             self._check_reddung,
             "interval",
-            seconds=30,
+            seconds=_REDDUNG_TAKT_S,
             id="reddung_check",
         )
         # EIN Job fuer beide Kartentypen -- die Automatik ist zurueckgebaut (31.08.2026),

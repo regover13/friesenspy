@@ -110,12 +110,16 @@ def fund_hoehe_schranke_msl(ev: dict) -> float:
 
 
 def fenster_finden(ev: dict) -> Fenster:
-    """Eng und tief. Das Geschwindigkeitsfenster ist dasselbe wie beim Suchen -- wer parkt,
-    findet nicht, und wer rast, sieht nichts."""
+    """Eng und tief, mit derselben Obergrenze wie beim Suchen -- wer rast, sieht nichts.
+
+    **Aber ohne Untergrenze** (#49, Punkt 1, Nutzerentscheidung 25.09.2026). „Wer parkt,
+    findet nicht" gilt fuers Absuchen der Flaeche, nicht fuers Wrack: FRS61 schwebte mit 9 kt
+    bis auf 14 m heran und fand nicht, gefunden hat ein Ueberflug mit 90 kt. Das Fundrund ist
+    eng, und den Ort kennt vorher niemand -- wer darin langsam ist, hat es gefunden."""
     return Fenster(
         hoehe_max_ft=fund_hoehe_schranke_msl(ev),
         gs_max_kt=_zahl(ev, "gs_max_kt", _VORGABE_GS_MAX_KT),
-        gs_min_kt=_zahl(ev, "gs_min_kt", _VORGABE_GS_MIN_KT),
+        gs_min_kt=0.0,
     )
 
 

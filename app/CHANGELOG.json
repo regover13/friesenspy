@@ -1,5 +1,16 @@
 [
   {
+    "version": "15.19.11",
+    "date": "2026-09-25",
+    "highlight": false,
+    "title": "FriesenReddung: Fund und Aufnahme kommen schneller",
+    "items": [
+      "🔦 **Wer langsam oder schwebend ans Wrack herankommt, hat es jetzt gefunden.** Bisher galt dafür dieselbe Mindestgeschwindigkeit wie fürs Absuchen der Fläche — ein Hubschrauber konnte direkt über dem Wrack stehen und fand nichts.",
+      "⏱️ **FriesenSpy prüft während einer FriesenReddung dreimal so oft**, ob gefunden, aufgenommen oder eingeliefert wurde. Die Fackel im Simulator wechselt dadurch deutlich schneller.",
+      "🛰️ **Im Suchsektor meldet deine FriesenBrügge jede Sekunde**, auch wenn dein Kniebrett läuft. Bisher kam dann nur alle paar Sekunden ein Punkt an, und Fund und Aufnahme wurden später erkannt."
+    ]
+  },
+  {
     "version": "15.19.10",
     "date": "2026-09-25",
     "highlight": false,

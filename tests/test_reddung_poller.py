@@ -132,12 +132,17 @@ def test_ein_zu_hoher_ueberflug_findet_nicht(db):
 
 
 def test_der_ueberflug_des_finders_ist_nicht_gleich_die_aufnahme(db):
-    """Sonst waere jeder Fund sofort eine Rettung."""
+    """Sonst waere jeder Fund sofort eine Rettung.
+
+    Bis #49 (25.09.2026) fand ein Schwebeflug gar nicht erst -- der Fund verlangte 30 kt, und
+    der Test sah deshalb nie einen Fund, an dem er seine Aussage haette pruefen koennen. Jetzt
+    findet der langsame Anflug, und die Aufnahme bleibt trotzdem aus: Sie zaehlt nur Punkte
+    NACH dem Fund."""
     eid = _event(db, landung_noetig=0)
     _punkte(db, 111, _stand(db, 60, gs=10), alt=200, gs=10)
     _lauf(db)
     ev = _ev(db, eid)
-    assert ev["gefunden_am"] is None, "10 kt liegt unter der Suchuntergrenze von 30 kt"
+    assert ev["gefunden_von"] == 111, "langsam am Wrack ist ein Fund (#49, Punkt 1)"
     assert ev["aufgenommen_am"] is None
 
 
@@ -639,3 +644,16 @@ def test_ein_vorbeies_event_meldet_keinen_start(db):
     """Laeuft der Poller erst nach dtend wieder an, darf niemand „läuft" lesen."""
     _event(db, start_vor_h=3.0, ende_in_h=-0.5)
     assert _meldungen(db) == []
+
+
+def test_der_reddung_job_laeuft_alle_zehn_sekunden(tmp_path):
+    """#49, Punkt 3 (Nutzerentscheidung 25.09.2026): Bei 30 s kamen beim Test am 25.09.
+    11 s zum Fund und 25 s zur Aufnahme dazu. Ein Lauf kostet rund 70 ms -- bei 10 s sind das
+    im Mittel 7 ms je Sekunde, in denen der Server sonst nichts beantwortet."""
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    import app.poller as poller_modul
+    p = VatsimPoller(db_path=str(tmp_path / "t.db"), callsign_prefix="FRS", poll_interval=60)
+    p._scheduler = AsyncIOScheduler()
+    p._register_jobs()
+    job = p._scheduler.get_job("reddung_check")
+    assert job.trigger.interval.total_seconds() == poller_modul._REDDUNG_TAKT_S == 10

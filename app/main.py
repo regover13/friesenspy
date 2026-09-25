@@ -1644,6 +1644,20 @@ async def bruegge_melden(request: Request):
                 _BRUEGGE_TAKT_UNERKANNT_S if kandidaten_da else _BRUEGGE_TAKT_OHNE_VATSIM_S,
                 gilt_bis=0, fassung=fassung if isinstance(fassung, int) else None)
 
+        # ⭐ Die Lage nur uebernehmen, wenn sie zur Zuordnung passt (`lage_gilt`). Im
+        # Verstoss-Fenster steht die Zuordnung, die Position aber nicht -- dann behaelt die
+        # Karte den letzten guten Punkt, statt einem Ausreisser zu folgen. `soll` und die
+        # `steht`-Rueckmeldung laufen weiter, denn die haengen am Piloten, nicht an seiner
+        # Momentanposition.
+        spur_noetig = False
+        if lage_gilt:
+            bruegge_position_schreiben(conn, cid, lage, simulator, kennung or None)
+            # ... und den Sekundenverlauf mitschreiben, WENN eine FriesenReddung ihn brauchen
+            # kann (laufendes Event, Pilot im Sektor). Sonst schreibt der Aufruf nichts -- die
+            # Wache dafuer ist billig, sie sitzt hier in einem Pfad, der je Pilot einmal pro
+            # Sekunde laeuft.
+            spur_noetig = bruegge_spur_schreiben(conn, cid, lage)
+
         # ⭐ WER DARF SCHWEIGEN? -- Meldet das EIGENE Kniebrett dieses Piloten, darf seine
         # Bruegge langsamer fragen (GitHub-Issue #23).
         #
@@ -1661,23 +1675,16 @@ async def bruegge_melden(request: Request):
         # ⚠ SCHLIMMSTENFALLS WIRD DIE SPUR GROEBER, NIE LEER. Am 15.09.2026 ist eine Bruegge
         # nach einer Drossel auf 900 s in 30 Minuten nicht zurueckgekehrt (Issue #38) --
         # warum, ist offen. Fuenf Sekunden sind deshalb bewusst ein KLEINER Schritt.
+        #
+        # ⚠ NICHT IM SEKTOR EINER LAUFENDEN FRIESENREDDUNG (#49, Punkt 4, Nutzerentscheidung
+        # 25.09.2026). Abgelegt wird je Meldung nur `lage`, nicht die mitgeschickte `spur`.
+        # Gedrosselt fehlten der Reddung deshalb vier von fuenf Sekundenpunkten: Fund und
+        # Aufnahme kamen spaeter, die Fackel wechselte spaeter. Die Last gilt nur fuer die
+        # Dauer des Events und nur fuer Piloten im Sektor -- dieselbe Wache wie beim Schreiben.
         _p = getattr(request.app.state, "poller", None)
         _kb_meldet = getattr(_p, "kniebrett_meldet_fuer", None)
-        if _kb_meldet is not None and _kb_meldet(cid):
+        if not spur_noetig and _kb_meldet is not None and _kb_meldet(cid):
             takt = max(takt, _BRUEGGE_TAKT_MIT_KNIEBRETT_S)
-
-        # ⭐ Die Lage nur uebernehmen, wenn sie zur Zuordnung passt (`lage_gilt`). Im
-        # Verstoss-Fenster steht die Zuordnung, die Position aber nicht -- dann behaelt die
-        # Karte den letzten guten Punkt, statt einem Ausreisser zu folgen. `soll` und die
-        # `steht`-Rueckmeldung laufen weiter, denn die haengen am Piloten, nicht an seiner
-        # Momentanposition.
-        if lage_gilt:
-            bruegge_position_schreiben(conn, cid, lage, simulator, kennung or None)
-            # ... und den Sekundenverlauf mitschreiben, WENN eine FriesenReddung ihn brauchen
-            # kann (laufendes Event, Pilot im Sektor). Sonst schreibt der Aufruf nichts -- die
-            # Wache dafuer ist billig, sie sitzt hier in einem Pfad, der je Pilot einmal pro
-            # Sekunde laeuft.
-            bruegge_spur_schreiben(conn, cid, lage)
 
         # ... und denselben Wert gleich in den Sekundenstrom legen, der die offenen Karten
         # versorgt (s. `VatsimPoller.bruegge_strom_senden`). Erst HIER, nach der Zuordnung:

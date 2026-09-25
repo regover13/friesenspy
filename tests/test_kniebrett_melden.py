@@ -930,6 +930,42 @@ class TestBrueggeDarfSchweigen:
         #    nicht ab. Ein leeres `soll` hier hieße, dass sie alles abräumt.
         assert "soll" in r.json()
 
+    def test_in_einer_laufenden_reddung_bremst_der_hebel_nicht(self, env, monkeypatch):
+        """#49, Punkt 4 (Nutzerentscheidung 25.09.2026, Weg c): Der Server legt je Meldung nur
+        `lage` ab. Gedrosselt auf 5 s fehlten der Reddung vier von fünf Sekundenpunkten --
+        Fund und Aufnahme kamen später, die Fackel wechselte später. Im Sektor einer laufenden
+        FriesenReddung fragt die Brügge deshalb im Regeltakt, auch wenn ihr Kniebrett meldet."""
+        from datetime import datetime, timedelta, timezone
+        import app.database as db
+        import app.poller as poller_modul
+        jetzt = datetime.now(timezone.utc)
+        iso = lambda t: t.strftime("%Y-%m-%dT%H:%M:%SZ")
+        conn = get_connection(env.db)
+        try:
+            conn.execute("INSERT OR REPLACE INTO forum_callsign (callsign, cid, updated_at) "
+                         "VALUES (?, ?, ?)", (MELDER_CS, MELDER, "2026-09-15T00:00:00Z"))
+            db.create_reddung_event(conn, name="Probe", dtstart=iso(jetzt - timedelta(hours=1)),
+                                    dtend=iso(jetzt + timedelta(hours=1)),
+                                    sued=LAT - 0.1, west=LON - 0.1, nord=LAT + 0.1, ost=LON + 0.1)
+            conn.commit()
+        finally:
+            conn.close()
+        monkeypatch.setattr(db, "_spur_sektoren", (0.0, []))   # Zwischenspeicher leeren
+        lage = {"lat": LAT, "lon": LON, "alt_msl_ft": 500.0, "alt_agl_ft": 0.0,
+                "gs_kt": 0.0, "kurs": 210.0, "vs_ft_min": 0.0, "am_boden": True}
+        melden = lambda: env.client.post(
+            "/api/bruegge/melden", json={"protokoll": 2, "simulator": "msfs2024",
+                                         "kennung": "aaaa1111bbbb2222", "lage": lage})
+        assert melden().status_code == 200
+        t0 = env.poller._bruegge_live[MELDER]["ts"]
+        monkeypatch.setattr(poller_modul.time, "monotonic", lambda: t0 + 4.0)
+        _modus_setzen(env, "eigene")
+        assert _melden(env, [_flugzeug(cs=MELDER_CS, lat=LAT, lon=LON)]).json()["uebernommen"] == 1
+        assert env.poller.kniebrett_meldet_fuer(MELDER) is True
+        assert melden().json()["naechste_frage_in_s"] == main._BRUEGGE_TAKT_VORGABE_S
+
+        # Ohne laufende Reddung bremst er weiter: test_der_hebel_greift_im_bruegge_endpunkt_selbst.
+
     def test_eine_bruegge_ohne_zuordnung_bringt_den_hebel_nicht_zum_absturz(self, env):
         """⚠ Der Fall, an dem der erste Anlauf gescheitert ist: Vor der Zuordnung gibt es
         keine cid, und `kniebrett_meldet_fuer(None)` warf einen TypeError. In der vollen

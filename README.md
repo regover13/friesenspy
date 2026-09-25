@@ -488,7 +488,8 @@ Ist der **Board-Login** aktiv (Admin → „Betrieb“ → „Board-Login“, St
   Unglücksstelle lernt FriesenSpy aus der Rückmeldung der FriesenBrügge, die das Wrack
   hinstellt; neben der Zahl steht, ob sie gemessen oder geschätzt ist. Dazu ein
   Geschwindigkeitsfenster (30–140 kt) — die Untergrenze verhindert, dass ein geparktes Flugzeug
-  sein Feld den ganzen Abend abdeckt.
+  sein Feld den ganzen Abend abdeckt. Für den Fund selbst gilt sie nicht: Wer langsam oder
+  schwebend ans Wrack herankommt, hat es gefunden.
 - **Lage und Art des Havaristen** — die Stelle wird **von Hand** gesetzt: Ob dort Wasser liegt
   und ob jemand landen kann, sieht nur ein Mensch. Zur Auswahl stehen **nur Arten, die jeder
   Pilot sieht**: solche, die alle drei Simulatoren setzen können und kein Zusatzpaket

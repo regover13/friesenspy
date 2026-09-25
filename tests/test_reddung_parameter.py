@@ -57,10 +57,17 @@ def test_der_fund_ist_auch_in_der_hoehe_enger():
     assert reddung.fenster_finden(EV).hoehe_max_ft < reddung.fenster_suchen(EV).hoehe_max_ft
 
 
-def test_das_fundfenster_erbt_das_geschwindigkeitsfenster():
-    """Wer parkt, findet nicht; wer rast, sieht nichts -- dieselbe Regel wie beim Suchen."""
+def test_das_fundfenster_hat_keine_untergrenze():
+    """#49, Punkt 1 (Nutzerentscheidung 25.09.2026): FRS61 schwebte mit 9 kt bis auf 14 m ans
+    Wrack und fand nicht, weil der Fund die 30 kt des Absuchens erbte. Wer im Fundrund langsam
+    ist, hat gefunden. Die Obergrenze bleibt (wer rast, sieht nichts), und fuers Absuchen der
+    Flaeche bleibt es bei 30-140 kt -- auch wenn das Event die Untergrenze eigens setzt."""
     f = reddung.fenster_finden(EV)
-    assert f.gs_max_kt == 140 and f.gs_min_kt == 30
+    assert f.gs_max_kt == 140 and f.gs_min_kt == 0
+    assert reddung.fenster_suchen(EV).gs_min_kt == 30
+    eigen = {**EV, "gs_min_kt": 45.0}
+    assert reddung.fenster_finden(eigen).gs_min_kt == 0
+    assert reddung.fenster_suchen(eigen).gs_min_kt == 45
 
 
 def test_die_alten_fassungen_sind_weg():
