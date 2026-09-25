@@ -4898,6 +4898,68 @@ async def forum_login(request: Request):
     return resp
 
 
+def _ist_kniebrett(request: Request) -> bool:
+    """Kommt die Anfrage aus dem MSFS-EFB-Panel? Coherent GT nennt sich im User-Agent."""
+    return "CoherentGT" in request.headers.get("user-agent", "")
+
+
+def _rueckruf_abgelehnt(request: Request, status: int, grund: str) -> Response:
+    """Ein Rueckruf, der nicht (mehr) gilt -- und was der Pilot dann zu sehen bekommt.
+
+    ⚠ DER FALL, DER DAS ERZWUNGEN HAT (25.09.2026, GitHub-Issue #48): Ein Kniebrett rief um
+    18:56:32Z den Rueckruf von 18:17:52Z ein ZWEITES Mal auf -- gleicher `state`, kein neuer
+    Login davor. Das state-Cookie war laengst geloescht, die Antwort war
+    `400 {"detail":"Ungültiger SSO-Status"}`, und genau diese Zeile blieb im Tablet stehen:
+    schwarz, ohne Weg zurueck. Der Pilot war die ganze Zeit ANGEMELDET.
+
+    Coherent GT wiederholt alte Navigationen nachweislich -- dasselbe Muster hat
+    `/auth/device` schon einmal ein 405 und ein schwarzes Tablet eingebracht (s. dort).
+
+    Zwei Faelle:
+
+    - **Gueltige Sitzung vorhanden:** weiter zum Ziel. Das ist kein Sicherheitsverlust: Es
+      entsteht KEINE neue Sitzung, es wird nur eine bestehende benutzt -- genau das, was
+      derselbe Browser mit einem Klick auf `/` auch haette.
+    - **Keine Sitzung:** eine lesbare Seite mit dem Weg zurueck statt nacktem JSON. Der
+      Status (400/401) bleibt, damit Protokolle und Tests dasselbe sehen wie vorher.
+    """
+    settings = get_settings()
+    kniebrett = _ist_kniebrett(request)
+    if verify_user_token(request.cookies.get(USER_COOKIE, ""), settings.SECRET_KEY):
+        dest = (_safe_next_path(request.cookies.get("fs_sso_next", ""))
+                or ("/panel" if kniebrett else "/"))
+        _logger.info("SSO-Rueckruf abgelehnt (%s), Sitzung besteht -- weiter nach %s",
+                     grund, dest)
+        resp = RedirectResponse(dest, status_code=303, headers=_HTML_NO_CACHE)
+        resp.delete_cookie("fs_sso_state", path="/auth/forum")
+        resp.delete_cookie("fs_sso_next", path="/auth/forum")
+        return resp
+    _logger.info("SSO-Rueckruf abgelehnt (%s), keine Sitzung", grund)
+    zurueck, zurueck_text = ("/panel", "Zurück zum Kniebrett") if kniebrett \
+        else ("/", "Zur Startseite")
+    login = "/auth/forum/login?next=/panel" if kniebrett else "/auth/forum/login"
+    seite = f"""<!doctype html>
+<html lang="de"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FriesenSpy – Anmeldung</title>
+<style>
+body{{margin:0;background:#0d1b2a;color:#e8eef4;font-family:sans-serif;
+     display:flex;align-items:center;justify-content:center;min-height:100vh}}
+.k{{max-width:30em;padding:2em;text-align:center}}
+h1{{font-size:1.4em}} p{{line-height:1.5;color:#b8c4d0}}
+a{{display:block;margin:1em 0;padding:.9em;border-radius:8px;background:#2d9cdb;
+   color:#fff;text-decoration:none;font-size:1.1em}}
+a.zwei{{background:transparent;border:1px solid #2d9cdb;color:#2d9cdb}}
+</style></head><body><div class="k">
+<h1>Diese Anmeldung ist abgelaufen</h1>
+<p>Der Anmelde-Link wurde schon benutzt oder ist nicht mehr gültig – das passiert, wenn
+eine alte Seite noch einmal geöffnet wird. Melde dich einfach neu an.</p>
+<a href="{login}">Neu anmelden</a>
+<a class="zwei" href="{zurueck}">{zurueck_text}</a>
+</div></body></html>"""
+    return HTMLResponse(seite, status_code=status, headers=_HTML_NO_CACHE)
+
+
 @app.get("/auth/forum/callback")
 async def forum_callback(request: Request):
     """Nimmt das signierte Token der Bridge entgegen → eigene FriesenSpy-Session."""
@@ -4907,12 +4969,12 @@ async def forum_callback(request: Request):
     cookie_state = request.cookies.get("fs_sso_state", "")
     if (not state or not cookie_state
             or not hmac.compare_digest(state.encode("utf-8"), cookie_state.encode("utf-8"))):
-        raise HTTPException(status_code=400, detail="Ungültiger SSO-Status")
+        return _rueckruf_abgelehnt(request, 400, "Status ungueltig")
     claims = verify_sso_token(token, settings.SSO_SECRET)
     if claims is None:
-        raise HTTPException(status_code=401, detail="Ungültiges SSO-Token")
+        return _rueckruf_abgelehnt(request, 401, "Token ungueltig")
     if not _consume_sso_nonce(str(claims.get("nonce", ""))):
-        raise HTTPException(status_code=401, detail="SSO-Token bereits verwendet")
+        return _rueckruf_abgelehnt(request, 401, "Token bereits verwendet")
     exp = time.time() + settings.USER_SESSION_MAX_AGE_SEC
     user_token = make_user_token(
         settings.SECRET_KEY, str(claims.get("name", "")),

@@ -1294,7 +1294,9 @@ Startet den Login: erzeugt ein `state`, setzt `fs_sso_state` (httponly) und leit
 
 ### GET /auth/forum/callback
 
-Nimmt das signierte Token der Bridge entgegen (`?token=…&state=…`). Prüft `state` gegen das Cookie, verifiziert die HMAC-Signatur (`SSO_SECRET`), Frische (≤ 60 s) und Einmal-`nonce`, legt die eigene Session `fs_user` an und leitet nach `/`. Fehlerfälle: `400` (state), `401` (Token/Nonce).
+Nimmt das signierte Token der Bridge entgegen (`?token=…&state=…`). Prüft `state` gegen das Cookie, verifiziert die HMAC-Signatur (`SSO_SECRET`), Frische (≤ 60 s) und Einmal-`nonce`, legt die eigene Session `fs_user` an und leitet nach `/` (bzw. zum gemerkten `next`). Fehlerfälle: `400` (state), `401` (Token/Nonce).
+
+**Wiederaufruf (seit 15.19.9, #48):** Schlägt eine der drei Prüfungen fehl, der Aufrufer hat aber eine gültige `fs_user`-Sitzung, antwortet der Rückruf mit `303` zum Ziel – `/panel` im Kniebrett (User-Agent `CoherentGT`), sonst `/`. Es wird dabei **keine** neue Sitzung ausgestellt. Ohne Sitzung bleibt es bei `400`/`401`, aber als lesbare HTML-Seite mit „Neu anmelden“ und dem Weg zurück statt JSON. Anlass: Coherent GT rief einen längst verbrauchten Rückruf erneut auf, und die JSON-Fehlerzeile blieb als schwarzes Tablet stehen.
 
 ### GET /auth/forum/logout
 

@@ -172,6 +172,9 @@ def test_callback_rejects_replayed_nonce(env):
     ok = env.client.get(f"/auth/forum/callback?token={tok}&state=st8", follow_redirects=False)
     assert ok.status_code == 302
     env.client.cookies.set("fs_sso_state", "st8")
+    # Ohne Sitzung: abgelehnt. Mit der Sitzung aus dem ersten Aufruf waere es ein harmloser
+    # Wiederaufruf (s. test_wiederaufruf_mit_sitzung_*), deshalb hier ausdruecklich ohne.
+    env.client.cookies.delete("fs_user")
     again = env.client.get(f"/auth/forum/callback?token={tok}&state=st8", follow_redirects=False)
     assert again.status_code == 401
 
@@ -505,3 +508,62 @@ def test_callback_empty_cs_removes_all_own_rows(env):
                               "iat": time.time(), "nonce": nonce, "cs": cs})
         env.client.get(f"/auth/forum/callback?token={tok}&state=st8", follow_redirects=False)
     assert _forum_callsigns(env) == {}
+
+
+# --- #48: Wiederaufruf des Rueckrufs (Kniebrett schwarz, 25.09.2026) ------------------------
+#
+# Coherent GT rief um 18:56:32Z den Rueckruf von 18:17:52Z ein zweites Mal auf -- gleicher
+# `state`, kein neuer Login davor. Das state-Cookie war laengst geloescht, die Antwort war
+# `400 {"detail":"Ungültiger SSO-Status"}`, und diese Zeile blieb im Tablet stehen. Der Pilot
+# war die ganze Zeit angemeldet.
+
+_COHERENT_UA = ("Mozilla/5.0 (Windows NT 6.2; Win64; x64) AppleWebKit/604.1.38 "
+                "(KHTML, like Gecko) Chrome/49.0.2623 Safari/604.1.38 CoherentGT/2.0")
+
+
+def test_wiederaufruf_mit_sitzung_fuehrt_zurueck_statt_400(env):
+    tok = _mint_incoming({"sub": 1, "name": "P", "cid": "1234567", "is_admin": False,
+                          "iat": time.time(), "nonce": "n-wieder"})
+    r = env.client.get(f"/auth/forum/callback?token={tok}&state=alt",
+                       cookies=_user_cookie(False), follow_redirects=False)
+    assert r.status_code in (302, 303)
+    assert r.headers["location"] == "/"
+    assert "fs_user" not in r.cookies, "ein Wiederaufruf stellt keine neue Sitzung aus"
+
+
+def test_wiederaufruf_im_kniebrett_fuehrt_ins_kniebrett(env):
+    tok = _mint_incoming({"sub": 1, "name": "P", "cid": "1234567", "is_admin": False,
+                          "iat": time.time(), "nonce": "n-kb"})
+    r = env.client.get(f"/auth/forum/callback?token={tok}&state=alt",
+                       cookies=_user_cookie(False), headers={"User-Agent": _COHERENT_UA},
+                       follow_redirects=False)
+    assert r.status_code in (302, 303) and r.headers["location"] == "/panel"
+
+
+def test_verbrauchte_nonce_mit_sitzung_fuehrt_zurueck(env):
+    env.client.cookies.set("fs_sso_state", "st8")
+    tok = _mint_incoming({"sub": 1, "name": "P", "cid": "1234567", "is_admin": False,
+                          "iat": time.time(), "nonce": "n-zweimal"})
+    assert env.client.get(f"/auth/forum/callback?token={tok}&state=st8",
+                          follow_redirects=False).status_code == 302
+    env.client.cookies.set("fs_sso_state", "st8")
+    r = env.client.get(f"/auth/forum/callback?token={tok}&state=st8", follow_redirects=False)
+    assert r.status_code in (302, 303)
+    assert "fs_user" not in r.cookies
+
+
+def test_ablehnung_ohne_sitzung_ist_eine_lesbare_seite(env):
+    r = env.client.get("/auth/forum/callback?token=x&state=alt",
+                       headers={"User-Agent": _COHERENT_UA}, follow_redirects=False)
+    assert r.status_code == 400
+    assert r.headers["content-type"].startswith("text/html")
+    assert "/auth/forum/login?next=/panel" in r.text, "der Weg zurueck muss darauf stehen"
+    assert "detail" not in r.text
+
+
+def test_ablehnung_im_browser_fuehrt_zur_startseite(env):
+    r = env.client.get("/auth/forum/callback?token=garbage&state=st8",
+                       cookies={"fs_sso_state": "st8"}, follow_redirects=False)
+    assert r.status_code == 401
+    assert r.headers["content-type"].startswith("text/html")
+    assert 'href="/auth/forum/login"' in r.text
