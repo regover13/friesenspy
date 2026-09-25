@@ -52,6 +52,13 @@ Damit gilt die Zusage der ersten Spec unverändert, jetzt für alle Endpunkte di
 > Admin** — an keinen Endpunkt, den der Browser eines Piloten erreicht. Auch der neue
 > Raster-Endpunkt nicht, weder nach dem Fund noch nach der Auflösung.
 
+**Nachtrag 25.09.2026 (GitHub-Issue #50, Nutzerentscheidung):** Nach dem **Eventende** zeigt
+die Event-Karte unter der Bilanz den Fundort, also die Lage des Havaristen, wenn gefunden wurde.
+Dafür liefert `/api/reddung/events` das Feld `fundort` — erst nach `dtend`, nicht schon nach der
+Auflösung, und festgeschrieben im Snapshot. Die Zusage oben gilt damit für die Dauer des Abends
+unverändert; der Raster-Endpunkt und die Reddung-Ebene der Live-Karte bleiben auch danach ohne
+Ort.
+
 **Zwei Anläufe standen zuerst hier, beide zurückgenommen** — festgehalten, damit keiner ohne
 seine Gründe wiederkommt:
 

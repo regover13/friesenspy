@@ -425,7 +425,9 @@ nicht gewertet" mit dem Grund.
   legt dir das Ganze als fertigen Absatz fürs Forum in die Zwischenablage. Die Bilanz hat eine
   eigene Adresse: Neu laden oder ein geteilter Link öffnet sie wieder. Darunter zeigt die
   Event-Analyse, wer im Zeitfenster rund um den Sektor unterwegs war, mit den Flugspuren —
-  gesucht wird um den nächsten Platz zur Sektormitte, weit genug, um den ganzen Sektor zu erfassen.
+  gesucht wird um den nächsten Platz zur Sektormitte, weit genug, um den ganzen Sektor zu erfassen. Ist
+  der Abend vorbei und wurde gefunden, zeigt diese Karte mit einer Flamme auch den Fundort, also die
+  Stelle, an der das Wrack stand. Solange die FriesenReddung läuft, steht er auf keiner Karte.
 
 ---
 

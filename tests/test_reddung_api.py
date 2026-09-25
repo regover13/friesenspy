@@ -497,6 +497,32 @@ def test_der_oeffentliche_endpunkt_traegt_keine_koordinate(db):
     assert "stand" in daten[0] and "anteil" in daten[0]["stand"]
 
 
+def test_der_fundort_kommt_erst_nach_dem_ende(db):
+    """#50 (25.09.2026): Nach dem Eventende zeigt die Event-Karte, wo das Wrack stand. Solange
+    der Abend laeuft, bleibt die Liste ohne Koordinate -- auch nach Fund und Aufloesung."""
+    from datetime import datetime, timedelta, timezone
+    from app.database import create_reddung_event, set_reddung_aufgeloest, set_reddung_gefunden
+    jetzt = datetime.now(timezone.utc)
+    iso = lambda d: d.strftime("%Y-%m-%dT%H:%M:%SZ")
+    c = get_connection(db)
+    try:
+        for name, ende in (("Laeuft", jetzt + timedelta(hours=1)),
+                           ("Vorbei", jetzt - timedelta(hours=1))):
+            eid = create_reddung_event(c, name=name, dtstart=iso(ende - timedelta(hours=3)),
+                                       dtend=iso(ende), havarist_lat=53.72, havarist_lon=7.25,
+                                       **SEKTOR)
+            set_reddung_gefunden(c, eid, iso(jetzt - timedelta(hours=2)), 111)
+            set_reddung_aufgeloest(c, eid, iso(jetzt - timedelta(minutes=90)))
+        c.commit()
+    finally:
+        c.close()
+    je = {e["name"]: e for e in main.reddung_events()}
+    assert je["Vorbei"]["fundort"] == {"lat": 53.72, "lon": 7.25}
+    assert je["Laeuft"]["fundort"] is None
+    text = json.dumps(je["Laeuft"])
+    assert "53.72" not in text and "7.25" not in text
+
+
 def test_die_eventliste_holt_die_reddungen():
     """Ohne diese Zeile taucht ein Event nirgends auf -- gemeldet am 20.09.2026:
     'ich finde das event nicht in der Event ansicht??'"""

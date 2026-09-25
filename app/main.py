@@ -112,7 +112,7 @@ from app.database import (
     bruegge_fassungen_fuer,
     bruegge_soll_fuer,
     clear_reddung_aufnahme,
-    compute_reddung_stand,
+    compute_reddung_stand, reddung_fundort,
     reddung_raster,
     create_reddung_event,
     delete_reddung_event,
@@ -6170,11 +6170,12 @@ def transport_events():
 def reddung_events():
     """Alle FriesenReddungen mit ihrem Stand — für die Eventliste und später die Karte.
 
-    ⚠ **Ohne die Lage des Havaristen.** Das ist die Kernanforderung des Eventtyps (#21): Der
-    Ort geht an die FriesenBrügge, die das Wrack hinstellt, und in den Admin — an keinen
-    Endpunkt, den ein Browser eines Piloten erreicht. Geliefert wird deshalb nur, was
-    ``compute_reddung_stand`` herausgibt (Schlüssel, Zahlen, Namen), plus Name und Zeitfenster.
-    Ein Test hält es fest.
+    ⚠ **Ohne die Lage des Havaristen, solange der Abend läuft.** Das ist die Kernanforderung
+    des Eventtyps (#21): Der Ort geht an die FriesenBrügge, die das Wrack hinstellt, und in den
+    Admin — an keinen Endpunkt, den ein Browser eines Piloten erreicht. Geliefert wird deshalb
+    nur, was ``compute_reddung_stand`` herausgibt (Schlüssel, Zahlen, Namen), plus Name und
+    Zeitfenster. **Einzige Ausnahme ist ``fundort``** (#50): nach ``dtend`` und nur, wenn
+    gefunden wurde, für die Event-Karte unter der Bilanz. Tests halten beides fest.
     """
     now = _now_iso()
     conn = get_connection(get_settings().DB_PATH)
@@ -6201,6 +6202,7 @@ def reddung_events():
                 "aufnehmen_noetig": ev.get("aufnehmen_noetig"),
                 "landung_noetig": ev.get("landung_noetig"),
                 "stand": stand,
+                "fundort": reddung_fundort(conn, ev, now),
             })
         conn.commit()          # das Fortschreiben hat den Snapshot ergaenzt
         return raus

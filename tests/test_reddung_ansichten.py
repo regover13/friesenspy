@@ -517,3 +517,35 @@ def test_der_hinweis_nennt_vatsim_und_kommt_bei_neuem_zustand_wieder():
     assert "d.vatsim" in code and "d.bruegge" in code
     weg = _ohne_kommentare(_funktion("_reddungHinweisWeg"))
     assert "dataset.zustand" in weg
+
+
+# --- Fundort auf der Event-Karte nach dem Ende (#50, 25.09.2026) --------------------------
+
+@pytest.mark.skipif(not _NODE, reason="node fehlt")
+def test_die_event_karte_kennt_den_fundort_nur_bei_offener_bilanz():
+    """Der Server liefert `fundort` erst nach dem Eventende. Die Karte zeigt ihn nur, wenn
+    genau diese Reddung offen ist -- eine freie Event-Suche danach bekommt keine Marke."""
+    quelltext = _funktion("_reddungFundort")
+    liste = ("[{id: 3, fundort: {lat: 53.7, lon: 7.2}, "
+             "stand: {gefunden: {name: 'Pilot X', ts: '2026-09-25T19:01:39Z'}}}, "
+             "{id: 4, fundort: null, stand: {}}]")
+    def fundort(offen):
+        return _node(f"let _reddungListe = {liste}, _reddungOffenId = {offen};\n"
+                     "function escHtml(s) { return s; }\n" + quelltext, "_reddungFundort()")
+    ort = fundort("3")
+    assert ort["lat"] == 53.7 and ort["lon"] == 7.2
+    assert "Pilot X" in ort["text"] and "19:01 UTC" in ort["text"]
+    assert fundort("4") is None, "ohne Fundort vom Server keine Marke"
+    assert fundort("null") is None, "freie Event-Suche: keine Marke"
+
+
+def test_die_event_karte_setzt_die_marke_und_nimmt_sie_in_den_ausschnitt():
+    rumpf = _ohne_kommentare(_funktion("renderEventsMap"))
+    assert "_reddungFundort()" in rumpf
+    i = rumpf.index("_reddungFundort()")
+    assert i < rumpf.index("eventsMap.fitBounds(bounds"), "der Ausschnitt muss ihn enthalten"
+    assert "bounds.push([fo.lat, fo.lon])" in rumpf
+
+
+def test_die_readme_nennt_den_fundort():
+    assert "Fundort" in README

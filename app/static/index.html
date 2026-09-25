@@ -1241,6 +1241,8 @@
     /* FriesenReddung: ein schlichter Balken -- die Flaeche hat keine Aufschluesselung wie die
        Kutter-Fracht, nur einen Anteil. */
     .reddung-balken { height: 10px; background: rgba(45,156,219,0.15); margin: 8px 0 6px; }
+    .reddung-fundort { font-size: 22px; line-height: 26px; text-align: center; filter: drop-shadow(0 0 3px #000); }
+    .reddung-fundort .emoji-icon { width: 22px; height: 22px; }
     .reddung-balken > span { display: block; height: 100%; background: var(--green); }
     #reddung-banner .reddung-status-fehlt { color: #e0a33e; }
     .reddung-live-block + .reddung-live-block {
@@ -14756,6 +14758,18 @@ async function renderEventsMap(pilots, icaoStr, radiusKm) {
     });
   }));
 
+  // Nach dem Ende einer FriesenReddung: wo das Wrack stand (#50). Mit im Ausschnitt, sonst
+  // laege die Marke bei weit auseinanderliegenden Spuren womoeglich am Rand oder daneben.
+  const fo = _reddungFundort();
+  if (fo) {
+    L.marker([fo.lat, fo.lon], {
+      icon: L.divIcon({ className: '', html: `<div class="reddung-fundort">${emojiChar('🔥')}</div>`,
+                        iconSize: [26, 26], iconAnchor: [13, 13] }),
+      zIndexOffset: 1000,
+    }).bindTooltip(fo.text, { className: 'mono' }).addTo(eventsMap);
+    bounds.push([fo.lat, fo.lon]);
+  }
+
   await Promise.all(drawTasks);
   if (bounds.length > 0) {
     window._eventAllBounds = bounds;
@@ -15513,6 +15527,20 @@ async function reddungAufKarte(id) {
     _naviKnopfAnstrich();
   }
   liveMap.fitBounds([[s.sued, s.west], [s.nord, s.ost]], { padding: [30, 30] });
+}
+
+// Der Fundort der offenen Reddung fuer die Event-Karte darunter (#50) -- oder null. Den Ort
+// liefert der Server erst nach dem Eventende und nur nach einem Fund; hier wird nichts
+// ausgeblendet, was schon da ist, sondern nur nicht gezeigt, was nicht zu dieser Bilanz gehoert.
+function _reddungFundort() {
+  if (_reddungOffenId == null) return null;
+  const r = _reddungListe.find(x => x.id === _reddungOffenId);
+  const fo = r && r.fundort;
+  if (!fo || fo.lat == null || fo.lon == null) return null;
+  const g = (r.stand || {}).gefunden;
+  const text = g ? `Fundort — gefunden von ${escHtml(g.name || '?')} um ${(g.ts || '').slice(11, 16)} UTC`
+                 : 'Fundort';
+  return { lat: fo.lat, lon: fo.lon, text };
 }
 
 function _reddungZu() {

@@ -10153,10 +10153,15 @@ def reddung_fortschreiben(conn: sqlite3.Connection, ev: dict, *, bis: str) -> di
                     del treffer[schluessel]
                     je_pilot[int(cid)] = je_pilot.get(int(cid), 1) - 1
             bis = min(bis, fund["ts"])
-        _reddung_snapshot_schreiben(conn, ev["id"], {
+        payload = {
             "v": _REDDUNG_STAND_FASSUNG, "bis": bis, "treffer": treffer,
             "je_pilot": {str(k): v for k, v in je_pilot.items()}, "fund": fund,
-        })
+        }
+        # Der Fundort (#50) haengt nicht an der Rechnung -- mitnehmen, sonst loeschte ihn
+        # jedes Fortschreiben.
+        if alt.get("fundort"):
+            payload["fundort"] = alt["fundort"]
+        _reddung_snapshot_schreiben(conn, ev["id"], payload)
         von = bis
 
     return {
@@ -10170,6 +10175,39 @@ def reddung_fortschreiben(conn: sqlite3.Connection, ev: dict, *, bis: str) -> di
         "fund": fund,
         "bis": von,
     }
+
+
+def reddung_fundort(conn: sqlite3.Connection, ev: dict, now: str) -> dict | None:
+    """Wo der Havarist lag -- **erst nach dem Eventende und nur, wenn er gefunden wurde** (#50).
+
+    Bis zum 25.09.2026 verliess die Koordinate den Server nie in Richtung eines Browsers
+    (Nutzerentscheidung 24.09.2026). Seit #50 zeigt die Event-Karte unter der Bilanz den
+    Fundort, sobald der Abend vorbei ist. ⚠ **Vorbei heisst `dtend`, nicht die Aufloesung**:
+    Nach dem Einliefern fliegen womoeglich noch andere im Sektor, und fuer die gilt der Riegel
+    aus #21 weiter. `now` kommt vom Server, nie vom Geraet (#44, Punkt 10).
+
+    Beim ersten Aufruf nach dem Ende wandert der Ort in den Snapshot. Danach verschiebt ihn
+    eine Aenderung im Admin nicht mehr -- ein verkuendeter Abend bleibt, wie er war.
+    ``compute_reddung_stand`` und ``reddung_raster`` bleiben ohne Koordinate; wer den Ort
+    will, fragt ausdruecklich hier.
+    """
+    if not ev.get("gefunden_am") or now < (ev.get("dtend") or "9999"):
+        return None
+    alt = get_progress_snapshot(conn, "reddung", ev["id"])
+    if alt and alt.get("v") == _REDDUNG_STAND_FASSUNG and alt.get("fundort"):
+        return dict(alt["fundort"])
+    lat, lon = ev.get("havarist_lat"), ev.get("havarist_lon")
+    if lat is None or lon is None:
+        return None
+    ort = {"lat": float(lat), "lon": float(lon)}
+    if not alt or alt.get("v") != _REDDUNG_STAND_FASSUNG:
+        reddung_fortschreiben(conn, ev, bis=_reddung_lese_ende(ev))   # legt den Snapshot an
+    conn.execute(
+        "UPDATE progress_snapshot SET payload_json = json_set(payload_json, '$.fundort', json(?)) "
+        "WHERE kind = 'reddung' AND ref_id = ? AND code_version = ? "
+        "AND json_extract(payload_json, '$.fundort') IS NULL",
+        (json.dumps(ort), int(ev["id"]), _PROGRESS_SNAPSHOT_VERSION))
+    return ort
 
 
 def _reddung_lese_ende(ev: dict) -> str:
