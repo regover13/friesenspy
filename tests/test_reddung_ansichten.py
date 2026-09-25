@@ -444,6 +444,26 @@ def test_die_bilanz_zeigt_die_spuren_des_abends():
     assert rumpf.index("await _reddungTakt()") < rumpf.index("searchEvents();")
 
 
+@pytest.mark.skipif(not _NODE, reason="node fehlt")
+def test_die_spuren_ziehen_den_blick_nicht_von_der_bilanz_weg():
+    """Nutzer, 25.09.2026: „das soll aber auf das Event scrollen und nicht auf die Tracks!
+    Wie bei Bummel und Kutter!" renderEventsResults() scrollt am Ende zu seinen Ergebnissen --
+    ausser eine dieser Ansichten ist offen. Die Bedingung wird hier ausgewertet, nicht gesucht."""
+    rumpf = _ohne_kommentare(_funktion("renderEventsResults"))
+    m = re.search(r"if \((.+?)\) \{?\s*results\.scrollIntoView", rumpf)
+    assert m, "Scroll zu den Ergebnissen fehlt"
+    bedingung = m.group(1)
+
+    def scrollt(bummel, kutter, reddung):
+        return _node(f"let _activeBummel = {bummel}, _kutterOpenId = {kutter}, "
+                     f"_reddungOffenId = {reddung};", f"!!({bedingung})")
+
+    assert scrollt("null", "null", "null") is True       # freie Suche: zu den Ergebnissen
+    assert scrollt("{}", "null", "null") is False        # Bummel
+    assert scrollt("null", "3", "null") is False         # Kutter
+    assert scrollt("null", "null", "7") is False         # Reddung
+
+
 # --- Das Eventende steht dabei (Nutzer, 25.09.2026: „event Ende steht niergens") ----------
 
 @pytest.mark.skipif(not _NODE, reason="node fehlt")

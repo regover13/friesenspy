@@ -14639,10 +14639,13 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
   mapDiv.style.display = 'block';
   renderEventsMap(pilots, icaoStr, radiusKm);
 
-  // Smooth scroll to results — aber nicht im Bummel-/Kutter-Kontext: dort hat openBummel()/
-  // openKutterDetail() bereits auf das jeweilige Panel gescrollt, der Event-Scroll würde daran
-  // vorbeispringen.
-  if (!_activeBummel && _kutterOpenId == null) results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // Smooth scroll to results — aber nicht im Bummel-/Kutter-/Reddung-Kontext: dort hat
+  // openBummel()/openKutterDetail()/openReddungDetail() bereits auf das jeweilige Panel
+  // gescrollt, der Event-Scroll würde daran vorbeispringen (Nutzer, 25.09.2026: „das soll
+  // aber auf das Event scrollen und nicht auf die Tracks!").
+  if (!_activeBummel && _kutterOpenId == null && _reddungOffenId == null) {
+    results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 }
 
 // Track-URL für einen Flug — dieselbe Quellen-Auswahl wie der Track-Button in _flightRowHtml
