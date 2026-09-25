@@ -232,6 +232,16 @@ mkdir -p /opt/friesenspy/data
   `scrollTop` des **Vorfahren**, nicht der des berührten Elements. Wer eine weitere solche
   Geste baut, prüft beide Fälle — `tests/test_zieh_aktualisieren.py` ist die Vorlage.
 
+- **Ein Event öffnet sich bei seiner eigenen Ansicht, nicht bei den Spuren darunter.**
+  Bummel, Kutter und Reddung zeigen unter ihrer Ansicht die Event-Analyse (`searchEvents()`).
+  Deren `renderEventsResults()` scrollt am Ende zu ihren Ergebnissen, außer eine dieser
+  Ansichten ist offen (`_activeBummel`, `_kutterOpenId`, `_reddungOffenId`). **Jeder neue
+  Eventtyp mit eigener Ansicht (Kieker, Deichkontrolle, Baake …) gehört in diese Bedingung** —
+  sonst zieht es die Seite an seiner Ansicht vorbei nach unten zu den Flugspuren. Bei der Reddung
+  ist genau das passiert (15.19.5 bis 15.19.9, Nutzer: „das soll aber auf das Event scrollen und
+  nicht auf die Tracks! Wie bei Bummel und Kutter!“). Den Test
+  `test_die_spuren_ziehen_den_blick_nicht_von_der_bilanz_weg` um den neuen Typ erweitern.
+
 ## AIP-Kartenblätter (stehende Regeln — IMMER einhalten)
 
 Sichtflug-, Flugplatz- und Rollkarten der DFS, als Ebenen über der Live-Karte. Seit dem
