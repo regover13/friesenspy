@@ -14763,7 +14763,7 @@ async function renderEventsMap(pilots, icaoStr, radiusKm) {
   const fo = _reddungFundort();
   if (fo) {
     L.marker([fo.lat, fo.lon], {
-      icon: L.divIcon({ className: '', html: `<div class="reddung-fundort">${emojiChar('🔥')}</div>`,
+      icon: L.divIcon({ className: '', html: `<div class="reddung-fundort">${emojiChar('🚨')}</div>`,
                         iconSize: [26, 26], iconAnchor: [13, 13] }),
       zIndexOffset: 1000,
     }).bindTooltip(fo.text, { className: 'mono' }).addTo(eventsMap);

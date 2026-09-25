@@ -551,7 +551,10 @@ def test_die_event_karte_setzt_die_marke_und_nimmt_sie_in_den_ausschnitt():
     i = rumpf.index("_reddungFundort()")
     assert i < rumpf.index("eventsMap.fitBounds(bounds"), "der Ausschnitt muss ihn enthalten"
     assert "bounds.push([fo.lat, fo.lon])" in rumpf
+    # Das Zeichen der FriesenReddung, wie in Titel, Bilanz und Teilen-Text -- keine Flamme
+    # (Nutzer, 25.09.2026: „Ein Feuer als Symbol??").
+    assert "emojiChar('🚨')" in rumpf and "🔥" not in rumpf
 
 
 def test_die_readme_nennt_den_fundort():
-    assert "Fundort" in README
+    assert "Fundort" in README and "Flamme" not in README
