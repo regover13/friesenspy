@@ -852,10 +852,23 @@ TS_REJOIN_DEBOUNCE_SEC=900
 ### Tests
 
 ```bash
-pytest tests/ -v
+pytest -n 4     # parallel in 4 Prozessen, rund eine Minute
+pytest          # seriell, rund drei Minuten
 ```
 
-rund 2 370 Tests (Stand 05.09.2026), keine externen Abhängigkeiten (alles gemockt).
+Rund 3 400 Tests (Stand 25.09.2026), keine externen Abhängigkeiten (alles gemockt). Parallel
+braucht `pytest-xdist` (steht in `requirements.txt`).
+
+Temporäre Dateien — und damit die Testdatenbanken, die fast jeder Test anlegt — liegen im
+Arbeitsspeicher (`/dev/shm`, eingestellt in `tests/conftest.py`). Auf der Platte kostet jede
+neue Datenbank rund zehnmal so viel, fast alles Warten aufs Synchronisieren; die Suite brauchte
+so fast neun Minuten. Wo es kein `/dev/shm` gibt oder `TMPDIR` gesetzt ist, bleibt es bei der
+Platte.
+
+⚠ **Ein Test muss allein grün sein, nicht nur in der Suite.** Der Parallellauf verteilt die Tests
+auf mehrere Prozesse und deckt damit auf, was nur durch einen früheren Test funktionierte — so
+am 25.09.2026 fünf Poller-Tests, die sich auf Einstellungen aus dem Cache eines anderen Tests
+verließen.
 
 ### Deployment
 

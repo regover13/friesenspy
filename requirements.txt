@@ -6,6 +6,7 @@ pydantic-settings>=2.2
 airportsdata>=20240320
 pytest>=8.0
 pytest-asyncio>=0.23
+pytest-xdist>=3.5
 pywebpush>=2.0
 icalendar>=6.0
 recurring-ical-events>=3.0

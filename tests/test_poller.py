@@ -254,6 +254,20 @@ class TestStartStop:
 # ---------------------------------------------------------------------------
 
 class TestPollOnceExceptionHandling:
+    @pytest.fixture(autouse=True)
+    def _settings(self, monkeypatch):
+        """_poll_once liest get_settings() (STATSIM_API_KEY) -- minimale gueltige Settings.
+
+        Fehlte bis zum 25.09.2026: Zwei Tests hier waren nur gruen, weil ein FRUEHERER Test der
+        Suite die Settings schon im Cache abgelegt hatte. Allein oder parallel (xdist) schlugen
+        sie mit `SECRET_KEY Field required` fehl. Dasselbe Muster wie weiter unten in
+        TestFeedGlitchReopen und den uebrigen Klassen dieser Datei."""
+        monkeypatch.setenv("SECRET_KEY", "test-secret")
+        from app.config import get_settings
+        get_settings.cache_clear()
+        yield
+        get_settings.cache_clear()
+
     @pytest.mark.asyncio
     async def test_exception_does_not_propagate(self):
         """Wenn fetch_vatsim_data wirft, soll _poll_once keinen Fehler nach außen werfen."""
@@ -1818,6 +1832,17 @@ class TestSendWebPush:
 # ---------------------------------------------------------------------------
 
 class TestOnlineRejoinDebounce:
+    @pytest.fixture(autouse=True)
+    def _settings(self, monkeypatch):
+        """_poll_once liest get_settings() -- minimale gueltige Settings. Ohne sie waren die
+        Tests nur gruen, wenn ein frueherer Test der Suite den Cache gefuellt hatte (25.09.2026,
+        im Parallellauf aufgefallen; s. TestPollOnceExceptionHandling)."""
+        monkeypatch.setenv("SECRET_KEY", "test-secret")
+        from app.config import get_settings
+        get_settings.cache_clear()
+        yield
+        get_settings.cache_clear()
+
     def _vatsim_data(self):
         return {
             "pilots": [
