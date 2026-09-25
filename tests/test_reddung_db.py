@@ -640,3 +640,42 @@ def test_das_raster_enthaelt_NIEMALS_die_koordinate(conn):
         for zahl in (f"{LAT:.4f}", f"{LON:.4f}", f"{LAT:.3f}", f"{LON:.3f}"):
             assert zahl not in text, f"{schritt}: Koordinate {zahl} steht im Raster"
         assert "havarist" not in text, schritt
+
+
+# --- Die Suche endet mit dem Fund (Nutzer, 25.09.2026) ----------------------------------
+#
+# *„Sollten sie nicht aufhoeren, sobald gefunden worden ist?"* -- ja: Die Flaeche misst die
+# SUCHE. Nach dem Fund fliegen alle zur Rauchsaeule; das als abgesucht zu zaehlen, blaeht den
+# Balken und die Beitraege derer, die nur hinfliegen.
+
+from app.database import get_progress_snapshot, reddung_fortschreiben  # noqa: E402
+
+
+def test_nach_dem_fund_kommt_keine_flaeche_mehr_dazu(conn):
+    """Rote Gegenprobe: ohne die Schranke fuegt der zweite Flug Zellen hinzu."""
+    eid = _kleiner_sektor(conn)
+    _spur(conn, 111, _quer(vor_min=60))                 # findet den Havaristen
+    ev = get_reddung_event(conn, eid)
+    erst = reddung_fortschreiben(conn, ev, bis=_iso(JETZT - timedelta(minutes=50)))
+    assert erst["fund"] is not None, "Vorbedingung: der erste Flug findet"
+    # Zweiter Flug spaeter, eine Reihe weiter noerdlich -- nach dem Fund
+    t0 = JETZT - timedelta(minutes=40)
+    nord = LAT + 1.5 * GRAD_KM_LAT
+    _spur(conn, 222, [(nord, LON + k * GRAD_KM_LON, _iso(t0 + timedelta(seconds=15 * (k + 2))))
+                      for k in (-2, -1, 0, 1)])
+    dann = reddung_fortschreiben(conn, ev, bis=_iso(JETZT))
+    assert dann["abgedeckt"] == erst["abgedeckt"]
+    assert dann["je_pilot"].get(222, 0) == 0
+
+
+def test_im_selben_lauf_zaehlt_nichts_nach_dem_fund(conn):
+    """Der Fund faellt mitten in einen Aufruf: Zellen, die dieselbe Spur DANACH ueberflog,
+    zaehlen nicht -- sonst liefe die Zaehlung bis zu einem Poller-Takt ueber den Fund hinaus."""
+    eid = _kleiner_sektor(conn)
+    _spur(conn, 111, _quer(vor_min=60))   # West -> Ost, der Havarist liegt beim dritten Punkt
+    ev = get_reddung_event(conn, eid)
+    stand = reddung_fortschreiben(conn, ev, bis=_iso(JETZT))
+    assert stand["fund"] is not None
+    treffer = get_progress_snapshot(conn, "reddung", eid)["treffer"]
+    spaeter = {k: v for k, v in treffer.items() if v[1] > stand["fund"]["ts"]}
+    assert not spaeter, f"nach dem Fund gezaehlt: {spaeter}"

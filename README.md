@@ -353,6 +353,9 @@ untereinander auf und sucht ihn ab.
    knapp 150 Metern, und man muss tief darüber sein. **„Abgesucht" heißt deshalb nicht
    „hätten wir ihn gesehen"** — dafür gehört zu jedem Event eine Geschichte, die das Gebiet
    eingrenzt. Ab dem Fund steht eine **orange Rauchfackel** daneben, weithin sichtbar.
+   **Mit dem Fund endet das Suchen:** Was danach geflogen wird, zählt nicht mehr zur
+   abgesuchten Fläche — sonst bekäme jeder, der zur Rauchsäule fliegt, Fläche gutgeschrieben,
+   die er gar nicht gesucht hat.
 3. **Aufnehmen.** Jetzt muss jemand hin und den Piloten aufnehmen — **nicht zwingend der
    Finder**: Der sitzt vielleicht im falschen Flugzeug oder hat nicht mehr genug Sprit. Liegt
    das Wrack an Land, verlangt das eine **Landung an der Unglücksstelle**; über Wasser oder an

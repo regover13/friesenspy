@@ -155,6 +155,32 @@ ihr Ende. Snapshots, die schon über die Auflösung hinaus fortgeschrieben sind,
 sind — `bis > von` ist dann falsch und es wird nichts angefasst. Ein Erhöhen würde dagegen genau
 die Neuberechnung ohne Brügge-Punkte auslösen, vor der Nachtrag 3 der ersten Spec warnt.
 
+### Nachtrag 25.09.2026: Die Suche endet schon mit dem Fund
+
+Frage des Nutzers nach der Umsetzung: *„Seite und Server hören jetzt beide bei der Auflösung
+auf zu zählen. Sollten sie nicht aufhören, sobald gefunden worden ist?"* — ja. Die Fläche misst
+das **Suchen**. Nach dem Fund fliegen alle zur Rauchsäule, um aufzunehmen oder zuzusehen; das
+als abgesucht zu zählen, blähte den Balken und schrieb jedem, der nur hinflog, Zellen als
+„Beitrag" gut. Die Auflösung liegt bei einem Abend mit Aufnehmen erst bei der Einlieferung —
+dazwischen zählte es also weiter.
+
+Die Schranke steht in **`reddung_fortschreiben`** selbst und nicht bei den Aufrufern:
+
+1. Steht der Fund schon im Snapshot, wird höchstens bis zu seiner Zeit gerechnet. Damit hört
+   der Poller von selbst auf, und ebenso ein Browser-Aufruf, der den Fund bemerkt, bevor der
+   Poller `gefunden_am` festschreibt.
+2. Fällt der Fund mitten in einen Aufruf, zählen Zellen nicht, die dieselbe Spur **danach**
+   überflog — sonst liefe die Zählung bis zu einem Takt über den Fund hinaus.
+
+Die Stufen nach dem Fund (Aufnehmen, Einliefern) holen ihre Spuren selbst über
+`reddung_spuren`; sie hängen nicht an der Fortschreibung. Die Schranke bei `aufgeloest_am`
+bleibt stehen — sie ist durch den Fund jetzt meist früher erreicht, schadet aber nicht und
+deckt den Abend ohne Fund.
+
+`_REDDUNG_STAND_FASSUNG` wird wieder **nicht** erhöht: Abende, die schon über den Fund hinaus
+gezählt haben (Event 2 vom 20.09.2026), behalten ihre Zahl — eine Neuberechnung fände keine
+Brügge-Punkte mehr und setzte die Fläche auf null.
+
 ### Der Stand bekommt die Zellkante
 
 `compute_reddung_stand` gibt `korridor_km`, `fund_radius_m` und den Sektor heraus, aber **nicht

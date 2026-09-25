@@ -10079,6 +10079,13 @@ def reddung_fortschreiben(conn: sqlite3.Connection, ev: dict, *, bis: str) -> di
     je_pilot: dict[int, int] = {int(k): int(v) for k, v in (alt.get("je_pilot") or {}).items()}
     fund = alt.get("fund")
     von = alt.get("bis") or ev["dtstart"]
+    # ⚠ DIE SUCHE ENDET MIT DEM FUND (Nutzer, 25.09.2026). Die Flaeche misst das Suchen; danach
+    # fliegen alle zur Rauchsaeule, und das als abgesucht zu zaehlen, blaehte Balken und
+    # Beitraege derer, die nur hinfliegen. Die Schranke steht HIER und nicht bei den Aufrufern:
+    # So gilt sie fuer Poller, Liste und Raster zugleich -- auch fuer einen Browser-Aufruf, der
+    # den Fund bemerkt, bevor der Poller `gefunden_am` festschreibt.
+    if fund:
+        bis = min(bis, fund["ts"])
 
     if bis > von:
         box = (ev["sued"], ev["west"], ev["nord"], ev["ost"])
@@ -10099,6 +10106,15 @@ def reddung_fortschreiben(conn: sqlite3.Connection, ev: dict, *, bis: str) -> di
                     t = erg_f.treffer.get(rd.HAVARIST)
                     if t:
                         fund = {"cid": t.cid, "ts": t.ts}
+        if fund:
+            # Faellt der Fund mitten in diesen Lauf, zaehlt nicht, was dieselbe Spur DANACH
+            # ueberflog -- sonst liefe die Zaehlung bis zu einem Takt ueber den Fund hinaus.
+            # Aeltere Treffer liegen vor `von` und damit vor dem Fund; sie bleiben unberuehrt.
+            for schluessel, (cid, ts) in list(treffer.items()):
+                if ts > fund["ts"]:
+                    del treffer[schluessel]
+                    je_pilot[int(cid)] = je_pilot.get(int(cid), 1) - 1
+            bis = min(bis, fund["ts"])
         write_progress_snapshot(conn, "reddung", ev["id"], {
             "v": _REDDUNG_STAND_FASSUNG, "bis": bis, "treffer": treffer,
             "je_pilot": {str(k): v for k, v in je_pilot.items()}, "fund": fund,
@@ -10125,6 +10141,9 @@ def _reddung_lese_ende(ev: dict) -> str:
     (``_check_reddung``). Ohne die Schranke hinge die Fläche eines früh aufgelösten Abends
     davon ab, ob zwischen Auflösung und ``dtend`` zufällig jemand die Seite offen hatte --
     und nach zwölf Stunden ist ``bruegge_spur`` weg (Spec 2026-09-23, Abschnitt 3).
+
+    Die noch frühere Grenze -- der FUND -- steht in ``reddung_fortschreiben`` selbst, damit sie
+    auch für den Poller gilt (Nachtrag 25.09.2026).
     """
     return min(_now_utc(), ev["dtend"], ev.get("aufgeloest_am") or ev["dtend"])
 

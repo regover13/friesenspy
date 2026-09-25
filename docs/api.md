@@ -377,7 +377,7 @@ Abgrenzung: Kutter „Flüge" = alle Flug-/Verlust-Zeilen (`flight_count`); Bumm
 (`Σ leg_count`). `returned` (am Ladeplatz abgeladen) ist kein Verlust (0 kg). `avg_absolute_min` ist `null` ohne
 gewertetes Rennen. NULL-`dtend`-Events werden ausgeschlossen.
 
-`reddung` zählt nur Abende, deren `dtend` vorbei ist und die mindestens einen Teilnehmer hatten. `participations` zählt auch Piloten ohne eigene Zelle; `flaeche_km2` nimmt die Zellkante jedes Abends; `avg_rettung_min` mittelt nur über Abende mit Einlieferung (sonst `null`). Nachgerechnet wird nichts — der Leseweg endet bei `min(dtend, aufgeloest_am)`.
+`reddung` zählt nur Abende, deren `dtend` vorbei ist und die mindestens einen Teilnehmer hatten. `participations` zählt auch Piloten ohne eigene Zelle; `flaeche_km2` nimmt die Zellkante jedes Abends; `avg_rettung_min` mittelt nur über Abende mit Einlieferung (sonst `null`). Nachgerechnet wird nichts — gezählt wird bis zum Fund, ohne Fund bis `min(dtend, aufgeloest_am)`.
 
 ---
 
@@ -1132,7 +1132,7 @@ Zelle `z{i}_{j}` reicht von `sued + i·d_lat` bis `sued + (i+1)·d_lat` und von 
 
 ⚠ **Ohne die Lage des Havaristen — vor dem Fund, danach und nach der Auflösung.** Den Ort zeigt die Rauchsäule im Simulator.
 
-Geschrieben wird höchstens bis `min(jetzt, dtend, aufgeloest_am)` — dasselbe Ende wie im Poller.
+Gezählt wird bis zum Fund — was danach geflogen wird, ist keine Suche mehr —, ohne Fund höchstens bis `min(jetzt, dtend, aufgeloest_am)`. Die Grenze steht in `reddung_fortschreiben` und gilt damit für Poller und Lesewege gleich.
 
 ---
 
