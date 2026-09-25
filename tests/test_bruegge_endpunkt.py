@@ -1368,3 +1368,56 @@ def test_verschwunden_sagt_nichts_ueber_den_titel(klient, tmp_path):
     assert not _lauf(db), "`verschwunden` ist kein Urteil"
     z = [x for x in _katalog_lesen(db, "tier_gross") if x["titel"] == "nur_der.obj"][0]
     assert z["status"] == "aktiv"
+
+
+# ---------------------------------------------------------------------------------------
+# Die Ablehnungszeilen nennen Kennung und Position (25.09.2026)
+# ---------------------------------------------------------------------------------------
+#
+# Am 25.09.2026 lehnte der Server elf Minuten lang im Sekundentakt eine Bruegge ab — „kein
+# Kandidat innerhalb 400 m" —, und hinterher liess sich nicht mehr sagen, welche es war und
+# wo sie stand. Zwei Piloten parkten 22 m auseinander; ohne Kennung und Position in der Zeile
+# blieb nur Raten.
+
+def test_keine_zuordnung_nennt_kennung_und_position(klient, tmp_path, caplog):
+    import logging
+    _friese_anlegen(str(tmp_path / "t.db"))
+    with caplog.at_level(logging.INFO, logger="app.main"):
+        # rund 5 km neben dem einzigen Friesen: niemand passt
+        klient.post("/api/bruegge/melden", json=_meldung(lat=53.82727))
+    zeilen = [r.getMessage() for r in caplog.records
+              if "keine Zuordnung" in r.getMessage()]
+    assert zeilen, "die Ablehnung muss im Log stehen"
+    assert "a3f9c1e0b2d48576" in zeilen[0]
+    assert "53.82727" in zeilen[0] and "7.92593" in zeilen[0]
+    assert "msfs2024" in zeilen[0]
+
+
+def test_keine_zuordnung_ohne_kennung_sagt_das(klient, tmp_path, caplog):
+    import logging
+    _friese_anlegen(str(tmp_path / "t.db"))
+    with caplog.at_level(logging.INFO, logger="app.main"):
+        klient.post("/api/bruegge/melden", json=_meldung(lat=53.82727, kennung=""))
+    zeilen = [r.getMessage() for r in caplog.records
+              if "keine Zuordnung" in r.getMessage()]
+    assert zeilen and "(ohne Kennung)" in zeilen[0]
+
+
+def test_abgelehnte_zuordnung_nennt_kennung_und_position(klient, tmp_path, caplog):
+    import logging
+    from app.database import (get_connection, bruegge_zuordnung_setzen,
+                              bruegge_zuordnung_loesen)
+    db = str(tmp_path / "t.db")
+    _friese_anlegen(db)
+    conn = get_connection(db)
+    # Diese Kennung gehoerte schon einmal einem anderen Piloten -- sie darf nur zu ihm zurueck.
+    bruegge_zuordnung_setzen(conn, "fremdfremdfremd1", 7654321, "msfs2024")
+    bruegge_zuordnung_loesen(conn, "fremdfremdfremd1")
+    conn.commit()
+    conn.close()
+    with caplog.at_level(logging.INFO, logger="app.main"):
+        klient.post("/api/bruegge/melden", json=_meldung(kennung="fremdfremdfremd1"))
+    zeilen = [r.getMessage() for r in caplog.records if "ABGELEHNT" in r.getMessage()]
+    assert zeilen, "die Schranke muss greifen"
+    assert "fremdfremdfremd1" in zeilen[0]
+    assert "53.78227" in zeilen[0] and "7.92593" in zeilen[0]

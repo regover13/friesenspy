@@ -1,5 +1,14 @@
 [
   {
+    "version": "15.19.8",
+    "date": "2026-09-25",
+    "highlight": false,
+    "title": "FriesenBrügge: abgelehnte Meldungen sind nachvollziehbar",
+    "items": [
+      "🔍 **Lehnt der Server eine FriesenBrügge ab, steht im Protokoll jetzt, welche es war und wo sie stand** — Kennung, Simulator, Position und Höhe. Bisher nannte die Zeile nur die Zahl der Kandidaten, und bei zwei Piloten auf demselben Vorfeld ließ sich hinterher nicht mehr sagen, wessen FriesenBrügge gemeint war."
+    ]
+  },
+  {
     "version": "15.19.7",
     "date": "2026-09-25",
     "highlight": false,

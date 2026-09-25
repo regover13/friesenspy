@@ -1906,6 +1906,19 @@ def _bruegge_zahl(wert):
         return None
 
 
+def _bruegge_melder(kennung: str, simulator: str | None, lat: float, lon: float,
+                    alt_ft: float) -> str:
+    """Wer meldet und von wo -- fuer die Ablehnungszeilen im Log.
+
+    Am 25.09.2026 lehnte der Server elf Minuten lang im Sekundentakt eine Bruegge ab, und
+    hinterher liess sich nicht mehr sagen, welche es war und wo sie stand: Zwei Piloten
+    parkten 22 m auseinander, die Zeile nannte nur die Zahl der Kandidaten. Die Kennung ist
+    kein Geheimnis (PROTOKOLL.md, "Identifikation, keine Authentifizierung").
+    """
+    return (f"{kennung or '(ohne Kennung)'} {simulator or '?'} "
+            f"@ {lat:.5f},{lon:.5f} {alt_ft:.0f} ft")
+
+
 def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
                       gs_kt: float, simulator: str | None, settings,
                       vs_ft_min: float = 0.0) -> tuple[int | None, bool, str | None, bool]:
@@ -2067,15 +2080,17 @@ def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
     # `geloest_am` weg). Endgueltig frei wird die Kennung mit `bruegge_aufraeumen`.
     if treffer is not None and erinnert_cid is not None and treffer.cid != erinnert_cid:
         _logger.info(
-            "Bruegge: Zuordnung ABGELEHNT -- Kennung gehoert zu %d, Treffer waere %d (%s)",
-            erinnert_cid, treffer.cid, grund)
+            "Bruegge: Zuordnung ABGELEHNT -- Kennung gehoert zu %d, Treffer waere %d (%s) "
+            "-- %s", erinnert_cid, treffer.cid, grund,
+            _bruegge_melder(kennung, simulator, lat, lon, alt_ft))
         return None, bool(kandidaten), None, False
 
     if treffer is None and kandidaten:
         # Nur wenn es ueberhaupt Friesen in der Luft gab -- sonst ist "niemand passt" der
         # Normalfall und faellt nicht auf. Mit Kandidaten ist es ein Hinweis, und ohne diese
         # Zeile sucht man ihn im Simulator statt im Log.
-        _logger.info("Bruegge: keine Zuordnung (%d Kandidaten) -- %s", len(kandidaten), grund)
+        _logger.info("Bruegge: keine Zuordnung (%d Kandidaten) -- %s -- %s", len(kandidaten),
+                     grund, _bruegge_melder(kennung, simulator, lat, lon, alt_ft))
     if treffer is None:
         return None, bool(kandidaten), None, False
     if not cid_ist_authentifiziert(conn, treffer.cid):
