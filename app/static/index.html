@@ -15210,8 +15210,16 @@ function _reddungMarkenHtml(st) {
   const zeit = ts => (ts || '').slice(11, 16) + ' UTC';
   const z = [];
   if (st.gefunden) z.push(`Gefunden von ${escHtml(st.gefunden.name || '?')} um ${zeit(st.gefunden.ts)}`);
-  if (st.aufgenommen) z.push(`Aufgenommen von ${escHtml(st.aufgenommen.name || '?')} um ${zeit(st.aufgenommen.ts)}`);
-  if (st.eingeliefert) z.push(`Eingeliefert in ${escHtml(st.eingeliefert.icao || '?')} von ${escHtml(st.eingeliefert.name || '?')} um ${zeit(st.eingeliefert.ts)}`);
+  // Aufnehmen und Einliefern ist immer DERSELBE Pilot: Der Poller setzt `eingeliefert_von`
+  // ausnahmslos auf `aufgenommen_von`, eingeliefert wird durch dessen Landung. Deshalb eine
+  // Zeile mit einem Namen -- zweimal derselbe liest sich wie zwei Leute.
+  if (st.aufgenommen) {
+    let t = `Aufgenommen von ${escHtml(st.aufgenommen.name || '?')} um ${zeit(st.aufgenommen.ts)}`;
+    if (st.eingeliefert) t += `, eingeliefert in ${escHtml(st.eingeliefert.icao || '?')} um ${zeit(st.eingeliefert.ts)}`;
+    z.push(t);
+  } else if (st.eingeliefert) {
+    z.push(`Eingeliefert in ${escHtml(st.eingeliefert.icao || '?')} von ${escHtml(st.eingeliefert.name || '?')} um ${zeit(st.eingeliefert.ts)}`);
+  }
   if (!z.length) return '<div class="bb-sub">Noch nicht gefunden.</div>';
   return z.map(t => `<div class="bb-sub">${t}</div>`).join('');
 }
@@ -15482,8 +15490,12 @@ function _reddungTeilenText(r, jetztIso) {
   const z = [`🚨 FriesenReddung — ${r.name || 'FriesenReddung'}`, `Abgesucht: ${pct} % (${km2} km²)`];
   if (st.gefunden) z.push(`Gefunden: ${st.gefunden.name} um ${zeit(st.gefunden.ts)}`);
   else z.push((r.dtend || '') < jetztIso ? 'Nicht gefunden' : 'Noch nicht gefunden');
-  if (st.aufgenommen) z.push(`Aufgenommen: ${st.aufgenommen.name} um ${zeit(st.aufgenommen.ts)}`);
-  if (st.eingeliefert) {
+  // Derselbe Pilot nimmt auf und liefert ein (s. _reddungMarkenHtml) -- ein Name, eine Zeile.
+  if (st.aufgenommen) {
+    let t = `Aufgenommen: ${st.aufgenommen.name} um ${zeit(st.aufgenommen.ts)}`;
+    if (st.eingeliefert) t += `, eingeliefert in ${st.eingeliefert.icao} um ${zeit(st.eingeliefert.ts)}`;
+    z.push(t);
+  } else if (st.eingeliefert) {
     z.push(`Eingeliefert: ${st.eingeliefert.icao} von ${st.eingeliefert.name} um ${zeit(st.eingeliefert.ts)}`);
   }
   if (st.dauer_min != null) z.push(`Rettung in ${st.dauer_min} Minuten`);

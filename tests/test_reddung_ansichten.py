@@ -315,3 +315,32 @@ def test_die_abwahl_endet_mit_dem_abend():
     leer = rumpf[rumpf.index("if (!ids.length) {"):]
     leer = leer[:leer.index("return;")]
     assert "_reddungAbgewaehlt = false" in leer
+
+
+# --- Aufnehmen und Einliefern sind derselbe Pilot (Nutzer, 25.09.2026) ------------------
+
+_MARKEN = {"gefunden": {"cid": 1, "name": "Stefan", "ts": "2026-09-24T19:12:00Z"},
+           "aufgenommen": {"cid": 2, "name": "Wolfgang", "ts": "2026-09-24T19:30:00Z"},
+           "eingeliefert": {"cid": 2, "name": "Wolfgang", "icao": "EDWF",
+                            "ts": "2026-09-24T19:50:00Z"}}
+
+
+@pytest.mark.skipif(not _NODE, reason="node fehlt")
+def test_die_marken_nennen_den_retter_nur_einmal():
+    """*„Aufnehmendem und Einlieferndem? Das ist doch immer derselbe"* -- ja: Der Poller setzt
+    `eingeliefert_von` ausnahmslos auf `aufgenommen_von` (eingeliefert wird durch dessen
+    Landung). Zweimal denselben Namen zu nennen, liest sich wie zwei Leute."""
+    quelle = "function escHtml(s){return String(s);}\n" + _funktion("_reddungMarkenHtml")
+    html = _node(quelle, f"_reddungMarkenHtml({json.dumps(_MARKEN)})")
+    assert html.count("Wolfgang") == 1 and "EDWF" in html and "19:50" in html
+    assert "Stefan" in html
+
+
+@pytest.mark.skipif(not _NODE, reason="node fehlt")
+def test_der_teilen_text_nennt_den_retter_nur_einmal():
+    r = {"id": 3, "name": "X", "dtend": "2026-09-24T20:00:00Z",
+         "stand": {"anteil": 0.4, "abgedeckt": 4, "zellen": 10, "kante_km": 1.0,
+                   "je_pilot": [], **_MARKEN}}
+    text = _node(_funktion("_reddungTeilenText"),
+                 f"_reddungTeilenText({json.dumps(r)}, '2026-09-25T10:00:00Z')")
+    assert text.count("Wolfgang") == 1 and "EDWF" in text and "19:50" in text
