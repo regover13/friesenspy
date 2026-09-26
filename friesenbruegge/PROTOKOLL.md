@@ -293,11 +293,13 @@ Pilot nicht auf VATSIM — der Poller löscht die Zeile beim Ausloggen
 (`app/database.py:2299`). Der Server tut dann **nichts**:
 
 ```
-kein VATSIM  →  { "protokoll": 1, "naechste_frage_in_s": 60, "gilt_bis_s": 0, "soll": [] }
+kein VATSIM  →  { "protokoll": 1, "naechste_frage_in_s": 10, "gilt_bis_s": 0, "soll": [] }
 ```
 
-Keine Anzeige, keine Ablage, keine Objekte. Die Brügge räumt ab und fragt im Minutentakt
-weiter, bis der Pilot online geht.
+Keine Anzeige, keine Ablage, keine Objekte. Die Brügge räumt ab und fragt alle 10 s weiter
+(`_BRUEGGE_TAKT_OHNE_VATSIM_S`; bis zum 26.09.2026 stand hier „Minutentakt“, das war veraltet),
+bis der Pilot online geht. Gibt es Kandidaten, passt aber keiner, sind es 3 s
+(`_BRUEGGE_TAKT_UNERKANNT_S`).
 
 ⚠ **Eine Ausnahme, und sie ist im ersten Flug erzwungen worden:** Sind Friesen in der Luft,
 aber passt keiner, antwortet der Server mit **3 s** statt 60. Ohne diese Unterscheidung
@@ -508,6 +510,13 @@ zuverlässig: Es gibt einen zweiten Versuch ohne Sperre, und die Frist ist kurz.
 
 Seit 15.19.8 nennen die Ablehnungszeilen im Server-Log Kennung, Simulator, Position und Höhe
 (`_bruegge_melder`) — damit lässt sich ein solcher Fall nachträglich einer Brügge zuordnen.
+
+**Stand der Besprechung (26.09.2026):** Die Szenarien am vollen Flugplatz und die Bausteine
+dagegen stehen als Kommentar in #46, die Seite des Kniebretts in #47. Vorrang hat eine Kennung, die einen Neustart übersteht: Sie machte die
+meisten Szenarien gegenstandslos. **Nie versucht wurde dafür `fopen` aus der wasi-libc im
+`\work`-Ordner des Pakets.** Die frühere Ablage lief über `MSFS_IO.h`, das es nur im 2024er SDK
+gibt. Die Probe dazu liegt in `probe-kennung/`, die Übergabe an die Sitzung am
+Simulator-Rechner in `probe-kennung/UEBERGABE.md`.
 
 Ab Schritt 3 ändert sich **nichts** am Verfahren — das Halten der Zuordnung bleibt, wie es
 war. Es wird nur **einmal** ohne Kennung gematcht statt nie.
@@ -1141,7 +1150,9 @@ etwas anderes — und keine Folge des ersten. Seit 17.09.2026 löscht eine gelö
 ihre Zeile nicht mehr, sondern setzt `geloest_am`. Die Bindung ruht, die Erinnerung bleibt:
 Eine erinnerte Kennung findet danach nur noch zu **ihrer eigenen** CID zurück. Meldet sich
 der eigene Pilot wieder und passt die Position, bindet dieselbe Zeile erneut. Endgültig frei
-wird die Kennung erst nach 24 h ohne Meldung (`bruegge_aufraeumen`).
+wird die Kennung erst nach 400 Tagen ohne Meldung (`bruegge_aufraeumen`,
+`BRUEGGE_ZUORDNUNG_HALTEN_STUNDEN`; bis zum 26.09.2026 stand hier „24 h“, seit dem 20.09. gilt
+das nicht mehr).
 
 **Warum das Kniebrett diesen Fehler nicht kennt, obwohl es dieselben Regeln benutzt:** Es
 muss seinen *eigenen* Piloten nie erraten — wer es ist, weiß es aus der Anmeldung. Eine
