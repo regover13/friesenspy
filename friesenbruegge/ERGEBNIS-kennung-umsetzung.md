@@ -193,3 +193,26 @@ Auf Wunsch der Server-Sitzung, freigegeben vom Nutzer.
   `git add -f` eingecheckt, damit die Server-Sitzung sie hochladen kann. Die `.gitignore` bleibt
   unverändert (`msfs-panel/*.zip`); die Vorgänger-ZIPs liegen weiter nur lokal.
 - **Praxistest Kniebrett (zweites Flugzeug dicht am eigenen):** weiter offen.
+
+## Nachtrag 26.09.2026, 18:25: Bewährung gemessen (MSFS 2024, echter Server 15.22.3)
+
+Brügge 1.18.1, Kennung `fe62f1b33138c9e4` (aus der Datei gelesen), Kniebrett 2.3.2, vPilot nach der
+ersten Meldung der Brügge im Stand verbunden, dann Flug bis 106 kt:
+
+```
+bruegge_zuordnung: fe62f1b3 | cid 1602713 (FRS49) | msfs2024 | 1.18.1 | protokoll 3
+  zugeordnet_am 2026-09-26T16:11:09Z | bewaehrt_am 2026-09-26T16:18:04Z | verstoesse 0 | geloest_am leer
+  gesehen_am    2026-09-26T16:23:54Z
+```
+
+- **Erste Zuordnung im Stand:** 15:59:07Z, sofort nach dem Verbinden von vPilot (erste Bindung).
+  Danach eine neue Zuordnung um 16:11:09Z (`zugeordnet_am`), Ursache nicht untersucht (Nutzer war
+  zwischendurch an einen anderen Ort gesprungen; der Server band nach dem Sprung neu).
+- **Bewährt** 7 Minuten später, im Flug. Vorher, vor dem Fund des Servers (15.22.3), war eine
+  unbewährte Bindung beim Neustart an anderem Ort vergessen worden (Befund 4 oben); das ist damit
+  serverseitig behoben und in der Praxis nicht wieder aufgetreten.
+- **Noch offen:** Neustart nach einer *bewährten* Bindung. Erkennt der Server die Kennung ohne
+  Suche sofort wieder? (Der Nutzer wollte nicht mehr neu starten.)
+- **Kniebrett-Praxistest:** Der Nutzer stand mit FRS61 (CID 1031301) etwa 50 m entfernt (beide im
+  VATSIM-Datenstrom des Servers, beide stehend). „Ich sehe nur mich“ auf dem Kniebrett, ohne
+  Bildschirmfoto und ohne Angabe, ob FRS61 im Simulator selbst sichtbar war. **Nicht ausgewertet.**
