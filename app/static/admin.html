@@ -2960,19 +2960,21 @@
                 // nicht gemeldet" und NICHT „alt" — deshalb steht dort ein Strich und keine
                 // Warnung. `fassung_veraltet` entscheidet der Server, damit Admin, Website und
                 // Kniebrett dieselbe Antwort geben.
+                // ⚠ Maskiert: `bruegge_version` und `simulator` schickt die Brügge selbst,
+                // Namen kommen von VATSIM -- alles von außen (Sicherheitsprüfung 26.09.2026).
                 const fassung = !m.bruegge_version ? '—'
                   : m.fassung_veraltet
                     ? '<span style="color:#e2a93b;" title="aktuell ist ' +
-                      (m.fassung_aktuell || '?') + '">' + m.bruegge_version + ' ⚠</span>'
-                    : m.bruegge_version;
+                      escH(m.fassung_aktuell || '?') + '">' + escH(m.bruegge_version) + ' ⚠</span>'
+                    : escH(m.bruegge_version);
                 // Die Bindung (#46): bewährt hält gegen einen Widerspruch, unbewährt nicht;
                 // „ruht" heißt: Der Pilot ist gerade nicht auf VATSIM, die Erinnerung bleibt.
                 const bindung = m.geloest_am ? 'ruht'
                   : m.bewaehrt_am ? 'bewährt' : (m.protokoll >= 3 ? 'unbewährt' : '—');
-                return '<tr' + blass + '><td>' + (m.callsign || m.name || m.cid) + '</td><td>' +
-                       (m.simulator || '—') + '</td><td class="mono">' + fassung +
-                       '</td><td>' + bindung + '</td><td class="mono">' + pos +
-                       '</td><td>' + (m.gesehen_am || '—') + wieAlt + '</td><td>' +
+                return '<tr' + blass + '><td>' + escH(m.callsign || m.name || m.cid) + '</td><td>' +
+                       escH(m.simulator || '—') + '</td><td class="mono">' + fassung +
+                       '</td><td>' + bindung + '</td><td class="mono">' + escH(pos) +
+                       '</td><td>' + escH(m.gesehen_am || '—') + wieAlt + '</td><td>' +
                        bgVergessenKnopf(m.kennung) + '</td></tr>';
               }).join('')
             : '<tr><td colspan="7" class="empty-hint">Niemand meldet gerade.</td></tr>';
@@ -2980,7 +2982,9 @@
         const hb = document.getElementById('bg-hinweise');
         if (hb) {
           hb.innerHTML = (d.hinweise || []).map(function (h) {
-            const wer = function (name, cid) { return name ? name + ' (' + cid + ')' : String(cid); };
+            const wer = function (name, cid) {
+              return name ? escH(name) + ' (' + escH(cid) + ')' : escH(cid);
+            };
             return '<div style="background:#3a2a10;border:1px solid #e2a93b;border-radius:6px;' +
                    'padding:8px 10px;margin-bottom:6px;font-size:0.85rem;color:#f3d9a4;">' +
                    '⚠ Eine FriesenBrügge wird seit ' + Math.round(h.dauer_s / 60) +

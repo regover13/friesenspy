@@ -1,5 +1,14 @@
 [
   {
+    "version": "15.22.1",
+    "date": "2026-09-26",
+    "highlight": false,
+    "title": "Verwaltung: FriesenBrügge-Liste abgesichert",
+    "items": [
+      "🛡️ **Die Liste der FriesenBrügges in der Verwaltung zeigt Namen und Angaben der Brügge jetzt als reinen Text.** Vorher ließ sich über einen Pilotennamen oder eine erfundene Meldung HTML in die Seite schmuggeln."
+    ]
+  },
+  {
     "version": "15.22.0",
     "date": "2026-09-26",
     "highlight": false,

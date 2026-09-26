@@ -284,3 +284,22 @@ def test_der_knopf_steht_in_der_verwaltung():
         encoding="utf-8")
     assert "'/api/admin/bruegge/vergessen'" in admin
     assert "bg-hinweise" in admin
+
+
+def test_melder_und_hinweise_maskieren_fremde_texte():
+    """Sicherheitsprüfung 26.09.2026: Pilotennamen kommen von VATSIM, `simulator` und
+    `bruegge_version` aus der Meldung der Brügge -- beides von außen. Unmaskiert in die
+    Verwaltung gesetzt, wäre jede davon ein Weg für eingeschleustes HTML."""
+    import re
+    from pathlib import Path
+    admin = (Path(__file__).resolve().parents[1] / "app" / "static" / "admin.html").read_text(
+        encoding="utf-8")
+    start = admin.index("async function bgLaden()")
+    rumpf = admin[start:admin.index("const sb = document.getElementById('bg-soll');", start)]
+    for roh in ("'<td>' + (m.callsign", "'</td><td>' +\n                       (m.simulator",
+                "'\">' + m.bruegge_version", ": m.bruegge_version;",
+                "'</td><td>' + (m.gesehen_am", "return name ? name + "):
+        assert roh not in rumpf, f"unmaskiert: {roh}"
+    for gemaskt in ("escH(m.callsign || m.name || m.cid)", "escH(m.simulator || '—')",
+                    "escH(m.bruegge_version)", "escH(name)"):
+        assert gemaskt in rumpf, gemaskt
