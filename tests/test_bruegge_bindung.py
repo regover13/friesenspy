@@ -35,6 +35,7 @@ def conn(tmp_path):
     c = get_connection(p)
     bb._SITZUNGEN.clear()
     bb.ABGELEHNT.clear()
+    bb._OHNE_ANMELDEZEIT.clear()
     yield c
     c.close()
 
@@ -254,3 +255,113 @@ def test_eine_abgelehnte_bruegge_erscheint_als_hinweis(conn):
         bb.zuordnen(conn, "k1", _m(), [_k(111, n=0.3)], jetzt=T0 + i)
     h = bb.hinweise(jetzt=T0 + 200)
     assert h and h[0]["kennung"] == "k1" and h[0]["gebunden"] == 49 and h[0]["passt"] == 111
+
+
+# --- Nacharbeit nach dem Fable-Review und dem Test am Simulator-Rechner (26.09.2026) --------
+
+def test_hinweis_auch_wenn_der_gebundene_online_ist_aber_nicht_passt(conn):
+    """Fable 1: Gerade der Fall für „vergessen" -- A fliegt woanders, B steht auf der Brügge."""
+    _gebunden(conn, "k1", 49)
+    conn.execute("UPDATE bruegge_zuordnung SET bewaehrt_am = '2026-09-26T00:00:00Z'")
+    conn.commit()
+    for i in range(0, 200, 5):
+        bb.zuordnen(conn, "k1", _m(), [_k(49, n=500000), _k(111, n=0.3)], jetzt=T0 + i)
+    h = bb.hinweise(jetzt=T0 + 200)
+    assert h and h[0]["gebunden"] == 49 and h[0]["passt"] == 111
+
+
+def test_nach_vergessen_bindet_sie_im_stand_neu(conn):
+    """Fable 2: Nach „vergessen" gilt These 8 einmal nicht -- der Pilot ist ja längst verbunden."""
+    _gebunden(conn, "k1", 49)
+    from app.database import bruegge_zuordnung_vergessen
+    bruegge_zuordnung_vergessen(conn, "k1")
+    bb.vergessen_im_speicher("k1")
+    conn.commit()
+    e = bb.zuordnen(conn, "k1", _m(), [_k(111, n=0.3, logon=T0 - 3600)], jetzt=T0)
+    assert e.cid == 111
+
+
+def test_ein_sprung_laesst_auch_eine_unbewaehrte_bindung_nur_ruhen(conn):
+    """Fable 4 / Simulator-Rechner: Einen neuen Flug zu laden ist kein Widerspruch zur Identität.
+    Danach bindet die Brügge ohne Suche zurück -- auch wenn der Pilot längst verbunden ist."""
+    _gebunden(conn, "k1", 49)
+    bb.zuordnen(conn, "k1", _m(), [_k(49, n=0.4)], jetzt=T0)
+    bb.zuordnen(conn, "k1", _m(n=50000), [_k(49, n=0.4)], jetzt=T0 + 1)      # Sprung
+    z = bruegge_zuordnung_holen(conn, "k1")
+    assert z is not None and z["geloest_am"] is not None
+    e = bb.zuordnen(conn, "k1", _m(n=50000), [_k(49, n=50000.4, logon=T0 - 3600)],
+                    jetzt=T0 + 60)
+    assert e.cid == 49
+
+
+def _mit_spur(m, sekunden, gs=100.0):
+    """Eine Meldung im langsamen Takt: mit Spur -- und mit dem Abstand zur vorigen Meldung,
+    sonst hielte die Sprungschranke 771 m in 15 s für einen Sprung (Fable-Hinweis)."""
+    m.spur_s = float(sekunden)
+    m.spur_min_gs = gs
+    m.sekunden_her = float(sekunden)
+    return m
+
+
+def test_bewaehrung_bei_langsamem_takt_ueber_die_sekundenspur(conn):
+    """Fable 3: Bei 15 s Takt riss das „am Stück" an jeder Meldung. Die Sekundenspur deckt die
+    Lücke -- so war es beschlossen."""
+    _gebunden(conn)
+    for i in range(0, 150, 15):
+        n = i * 51.4
+        m = _mit_spur(_m(n=n, gs=100, boden=False, alt=1500), 15)
+        bb.zuordnen(conn, "k1", m, [_k(1, n=n - 30, gs=100, alt=1500)], jetzt=T0 + i)
+    assert bruegge_zuordnung_holen(conn, "k1")["bewaehrt_am"] is not None
+
+
+def test_eine_langsame_stelle_in_der_spur_unterbricht(conn):
+    _gebunden(conn)
+    for i in range(0, 150, 15):
+        n = i * 51.4
+        m = _mit_spur(_m(n=n, gs=100, boden=False, alt=1500), 15,
+                      gs=(30.0 if i == 60 else 100.0))
+        bb.zuordnen(conn, "k1", m, [_k(1, n=n - 30, gs=100, alt=1500)], jetzt=T0 + i)
+    assert bruegge_zuordnung_holen(conn, "k1")["bewaehrt_am"] is None
+
+
+def test_ein_halt_nach_dem_anrollen_verwirft_den_gleichstand_nicht(conn):
+    """Fable 5: an der Haltelinie kurz stehen bleiben -- die Entscheidung läuft weiter."""
+    bb.zuordnen(conn, "k1", _m(), [], jetzt=T0)
+    beide = [_k(1, n=0.5), _k(2, n=1.0)]
+    bb.zuordnen(conn, "k1", _m(), beide, jetzt=T0 + 60)
+    bb.zuordnen(conn, "k1", _m(n=5, gs=8), beide, jetzt=T0 + 70)
+    bb.zuordnen(conn, "k1", _m(n=30, gs=0.5), beide, jetzt=T0 + 75)       # Halt
+    e = bb.zuordnen(conn, "k1", _m(n=60, gs=10), [_k(1, n=0.5), _k(2, n=40, gs=9)],
+                    jetzt=T0 + 85)
+    assert e.cid == 2
+
+
+def test_eine_zweite_installation_desselben_piloten_bindet_im_flug(conn):
+    """Fable 11: Die andere, bewährte Brügge desselben Piloten stand eben noch woanders -- sie
+    deckt seine Verbindung hier nicht ab, er ist also nicht „vergeben"."""
+    _gebunden(conn, "rechner1", 7)
+    conn.execute("UPDATE bruegge_zuordnung SET bewaehrt_am = '2026-09-26T00:00:00Z', "
+                 "gesehen_am = strftime('%Y-%m-%dT%H:%M:%SZ','now')")
+    conn.execute("INSERT OR REPLACE INTO bruegge_positions (cid, lat, lon, gemeldet_am) "
+                 "VALUES (7, 50.0, 10.0, strftime('%Y-%m-%dT%H:%M:%SZ','now'))")
+    conn.commit()
+    e = _fliegen(conn, "rechner2", 7, T0, 125)
+    assert e.cid == 7
+
+
+def test_der_sitzungsbeginn_uebersteht_einen_neustart_des_servers(conn):
+    """Fable 7: Nach einem Deploy begann jede Sitzung neu -- These 8 sperrte dann jeden, der sich
+    zwischen dem wirklichen Start der Brügge und dem Deploy angemeldet hatte."""
+    bb.zuordnen(conn, "k1", _m(), [], jetzt=T0)
+    conn.commit()
+    bb._SITZUNGEN.clear()                                   # Deploy
+    e = bb.zuordnen(conn, "k1", _m(), [_k(49, n=0.4, logon=T0 + 60)], jetzt=T0 + 90)
+    assert e.cid == 49
+
+
+def test_die_kollisionskennung_wird_nie_gebunden(conn):
+    """Die Fassungen vom 11.–14.09. schrieben auf JEDEM Rechner dieselbe Kennung nach \\work."""
+    bb.zuordnen(conn, "9e3711c100000000", _m(), [], jetzt=T0)
+    e = bb.zuordnen(conn, "9e3711c100000000", _m(), [_k(49, n=0.4)], jetzt=T0 + 60)
+    assert e.cid is None
+    assert bruegge_zuordnung_holen(conn, "9e3711c100000000") is None

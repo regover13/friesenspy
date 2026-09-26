@@ -68,6 +68,11 @@ LOGON_TOLERANZ_S = 10.0
 VATSIM_FRISCH_S = 60.0
 #: These 5: Ab so langer Ablehnung erscheint eine Brügge als Hinweis in der Verwaltung.
 HINWEIS_AB_S = 120.0
+#: ⚠ Die Kennung, die die MSFS-Fassungen vom 11.–14.09.2026 auf JEDEM Rechner gleich erzeugt und
+#: in MSFS 2024 nach `\work` geschrieben haben. Spätere Fassungen haben sie nicht überschrieben;
+#: 1.18.0 liest sie wieder. Sie wird nie gebunden -- sonst teilten sich wieder mehrere Brügges
+#: eine Kennung (der Fehler vom 14.09.). Der Endpunkt vergibt dafür eine frische.
+KOLLISIONSKENNUNG = "9e3711c100000000"
 
 
 @dataclass
@@ -94,6 +99,11 @@ class Meldung:
     sekunden_her: float = 1.0   # seit der letzten angenommenen Meldung (Sprungschranke)
     simulator: str | None = None
     protokoll: int | None = None
+    # These 3 (Fable 3): Wie weit die mitgeschickte Sekundenspur zurückreicht, und ihre kleinste
+    # Geschwindigkeit. Sie deckt die Lücke zwischen zwei Meldungen -- bei 15 s Takt riss das
+    # „am Stück" sonst an jeder Meldung. `None`: keine Spur mitgekommen.
+    spur_s: float = 0.0
+    spur_min_gs: float | None = None
 
 
 @dataclass
@@ -118,19 +128,45 @@ class Ergebnis:
 
 
 _SITZUNGEN: dict[str, Sitzung] = {}
+#: Nach „vergessen" (Admin) gilt These 8 einmal nicht: Der Pilot ist ja längst verbunden, und die
+#: Brügge soll im Stand neu gebunden werden können (Fable 2). Verbraucht beim Binden; wachsen
+#: kann die Menge nur mit Klicks auf „vergessen".
+_OHNE_ANMELDEZEIT: set[str] = set()
 #: These 5: kennung -> {gebunden, passt, seit, zuletzt} -- Brügges, die abgelehnt werden.
 ABGELEHNT: dict[str, dict] = {}
 
 
-def sitzung(kennung: str, jetzt: float) -> Sitzung:
-    """Die Sitzung dieser Kennung -- neu, wenn es die erste Meldung nach einer Pause ist."""
+def sitzung(kennung: str, jetzt: float, conn=None) -> Sitzung:
+    """Die Sitzung dieser Kennung -- neu, wenn es die erste Meldung nach einer Pause ist.
+
+    Fehlt sie im Speicher (etwa nach einem Deploy), wird ihr Beginn aus `bruegge_sitzung`
+    zurückgeholt, sofern die letzte Meldung keine Pause her ist (Fable 7)."""
     s = _SITZUNGEN.get(kennung)
+    if s is None and conn is not None:
+        row = conn.execute("SELECT seit, zuletzt FROM bruegge_sitzung WHERE kennung = ?",
+                           (kennung,)).fetchone()
+        if row and jetzt - float(row[1]) <= SITZUNG_PAUSE_S:
+            s = Sitzung(seit=float(row[0]), zuletzt=float(row[1]))
+            _SITZUNGEN[kennung] = s
     if s is None or jetzt - s.zuletzt > SITZUNG_PAUSE_S:
         s = Sitzung(seit=jetzt, zuletzt=jetzt)
         _SITZUNGEN[kennung] = s
         _aufraeumen(jetzt)
     s.zuletzt = jetzt
     return s
+
+
+def _sitzung_festhalten(conn, kennung: str, s: Sitzung, jetzt: float) -> None:
+    """Nur für NICHT gebundene Brügges: Ihr Beginn entscheidet These 8."""
+    conn.execute("INSERT INTO bruegge_sitzung (kennung, seit, zuletzt) VALUES (?, ?, ?) "
+                 "ON CONFLICT(kennung) DO UPDATE SET seit = excluded.seit, "
+                 "zuletzt = excluded.zuletzt", (kennung, s.seit, jetzt))
+    if int(jetzt) % 60 == 0:
+        conn.execute("DELETE FROM bruegge_sitzung WHERE zuletzt < ?",
+                     (jetzt - SITZUNG_VERFALL_S,))
+        conn.execute("DELETE FROM bruegge_sitzung WHERE kennung NOT IN ("
+                     "SELECT kennung FROM bruegge_sitzung ORDER BY zuletzt DESC LIMIT ?)",
+                     (SITZUNG_MAX,))
 
 
 def _aufraeumen(jetzt: float) -> None:
@@ -145,9 +181,13 @@ def _aufraeumen(jetzt: float) -> None:
 
 
 def vergessen_im_speicher(kennung: str) -> None:
-    """Was der Speicher zu dieser Kennung weiß, verwerfen (Admin „vergessen")."""
+    """Was der Speicher zu dieser Kennung weiß, verwerfen (Admin „vergessen").
+
+    Die nächste Zuordnung im Stand verlangt dann EINMAL keine Anmeldung nach dem Sitzungsbeginn
+    (These 8): Der Pilot ist längst verbunden, sonst bände sie erst im Flug (Fable 2)."""
     _SITZUNGEN.pop(kennung, None)
     ABGELEHNT.pop(kennung, None)
+    _OHNE_ANMELDEZEIT.add(kennung)
 
 
 def _abstand(m: Meldung, k: Kand) -> float:
@@ -156,6 +196,20 @@ def _abstand(m: Meldung, k: Kand) -> float:
 
 def _plausibel(m: Meldung, k: Kand) -> bool:
     return bruegge.bleibt_plausibel(m.lat, m.lon, m.alt_ft, m.gs_kt, k, m.vs_wirksam)
+
+
+def _vergeben(conn, kennung: str, kands: list[Kand]) -> set[int]:
+    """These 9: CIDs, deren bewährte Brügge gerade meldet UND dort ist, wo ihre Verbindung ist."""
+    raus = set()
+    for cid, lage in bruegge_vergebene_cids(conn, kennung, VERGEBEN_S).items():
+        k = next((k for k in kands if k.cid == cid), None)
+        if k is None or lage is None:
+            raus.add(cid)
+            continue
+        if bruegge.abstand_m(lage[0], lage[1], k.lat, k.lon) <= bruegge.schranke_m(
+                k.gs_kt, bruegge.PAARUNG_LOESEN_FAKTOR):
+            raus.add(cid)
+    return raus
 
 
 def eindeutig_im_flug(m: Meldung, kands: list[Kand], vergeben: set[int]) -> Kand | None:
@@ -174,19 +228,28 @@ def eindeutig_im_flug(m: Meldung, kands: list[Kand], vergeben: set[int]) -> Kand
     return pool[0]
 
 
-def _beweis(s: Sitzung, cid: int | None, jetzt: float) -> bool:
-    """These 3: 2 Minuten am Stück. Gibt zurück, ob die Dauer jetzt erreicht ist."""
+def _beweis(s: Sitzung, cid: int | None, jetzt: float, m: Meldung | None = None) -> bool:
+    """These 3: 2 Minuten am Stück. Gibt zurück, ob die Dauer jetzt erreicht ist.
+
+    Die Lücke zwischen zwei Meldungen darf so groß sein, wie die Sekundenspur zurückreicht --
+    und ist dort eine Stelle unter 40 kt, war es nicht am Stück (Fable 3)."""
     if cid is None:
         s.beweis_cid = s.beweis_seit = s.beweis_zuletzt = None
         return False
-    luecke = s.beweis_zuletzt is None or jetzt - s.beweis_zuletzt > BEWAEHRT_LUECKE_S
-    if s.beweis_cid != cid or luecke:
+    erlaubt = BEWAEHRT_LUECKE_S
+    langsam = False
+    if m is not None:
+        erlaubt = max(erlaubt, m.spur_s + 2.0)
+        langsam = m.spur_min_gs is not None and m.spur_min_gs < BEWAEHRT_GS_KT
+    luecke = s.beweis_zuletzt is None or jetzt - s.beweis_zuletzt > erlaubt
+    if s.beweis_cid != cid or luecke or langsam:
         s.beweis_cid, s.beweis_seit = cid, jetzt
     s.beweis_zuletzt = jetzt
     return jetzt - s.beweis_seit >= BEWAEHRT_S
 
 
 def _binden(conn, kennung: str, cid: int, m: Meldung, bewaehrt: bool = False) -> Ergebnis:
+    conn.execute("DELETE FROM bruegge_sitzung WHERE kennung = ?", (kennung,))
     bruegge_zuordnung_setzen(conn, kennung, cid, m.simulator, m.protokoll or 3)
     bruegge_zuordnung_bestaetigen(conn, kennung, m.lat, m.lon)
     bruegge_vs_spitze_merken(conn, kennung, m.vs_wirksam)
@@ -218,11 +281,14 @@ def zuordnen(conn, kennung: str, m: Meldung, kands: list[Kand],
              jetzt: float | None = None) -> Ergebnis:
     """Wer meldet hier? Für eine Brügge mit Kennung, ab Protokoll 3 oder X-Plane."""
     jetzt = time.time() if jetzt is None else jetzt
-    s = sitzung(kennung, jetzt)
     da = bool(kands)
+    if kennung == KOLLISIONSKENNUNG:
+        return Ergebnis(None, False, da)
+    s = sitzung(kennung, jetzt, conn)
     zeile = bruegge_zuordnung_holen(conn, kennung)
     if zeile:
         return _bekannt(conn, kennung, zeile, m, kands, s, jetzt)
+    _sitzung_festhalten(conn, kennung, s, jetzt)
     return _neu(conn, kennung, m, kands, s, jetzt, da)
 
 
@@ -234,10 +300,17 @@ def _bekannt(conn, kennung: str, zeile: dict, m: Meldung, kands: list[Kand], s: 
     gilt = not zeile.get("geloest_am")
     bewaehrt = bool(zeile.get("bewaehrt_am"))
 
-    # Ein Sprung (Ladevorgang, Slew, Flugwechsel) ist ein Widerspruch wie jeder andere.
+    # Ein Sprung (Ladevorgang, Slew, Flugwechsel) lässt die Bindung RUHEN -- auch eine
+    # unbewährte. Einen neuen Flug zu laden ist kein Widerspruch zur Identität; derselbe Pilot
+    # bindet danach ohne Suche zurück (These 10). Bis zum 26.09. abends vergaß der Sprung eine
+    # unbewährte Bindung, und These 8 sperrte dann den längst verbundenen eigenen Piloten
+    # (Fable-Befund 4; beobachtet am Simulator-Rechner beim Neustart an anderem Ort).
     if gilt and bruegge.ist_sprung(m.lat, m.lon, zeile.get("vor_lat"), zeile.get("vor_lon"),
                                    m.sekunden_her, m.gs_kt):
-        return _widerspruch(conn, kennung, cid, bewaehrt, s, da)
+        bruegge_zuordnung_loesen(conn, kennung)
+        bruegge_position_loeschen(conn, cid)
+        _beweis(s, None, jetzt)
+        return Ergebnis(None, False, da)
 
     partner = next((k for k in kands if k.cid == cid), None)
     if partner is None:
@@ -261,13 +334,18 @@ def _bekannt(conn, kennung: str, zeile: dict, m: Meldung, kands: list[Kand], s: 
             bruegge_zuordnung_bestaetigen(conn, kennung, m.lat, m.lon)
         ABGELEHNT.pop(kennung, None)
         if not bewaehrt:
-            vergeben = bruegge_vergebene_cids(conn, kennung, VERGEBEN_S)
-            treffer = eindeutig_im_flug(m, kands, vergeben)
-            if _beweis(s, treffer.cid if treffer and treffer.cid == cid else None, jetzt):
+            treffer = eindeutig_im_flug(m, kands, _vergeben(conn, kennung, kands))
+            if _beweis(s, treffer.cid if treffer and treffer.cid == cid else None, jetzt, m):
                 bruegge_zuordnung_bewaehren(conn, kennung)
         return Ergebnis(cid, True, da)
 
-    # Die Lage passt nicht. These 4: Ein Widerspruch zählt nur mit frischen VATSIM-Daten.
+    # Die Lage passt nicht. These 5 (Fable 1): Passt sie zu jemand anderem, gehört das in den
+    # Hinweis der Verwaltung -- gerade das ist der Fall für „vergessen".
+    andere = [k for k in kands if k.cid != cid]
+    b = _passt_im_stand(m, andere) or eindeutig_im_flug(m, andere, set())
+    if b is not None:
+        _hinweis(kennung, cid, b.cid, jetzt)
+    # These 4: Ein Widerspruch zählt nur mit frischen VATSIM-Daten.
     _beweis(s, None, jetzt)
     if not gilt:
         return Ergebnis(None, False, da)
@@ -309,16 +387,24 @@ def _neu(conn, kennung: str, m: Meldung, kands: list[Kand], s: Sitzung, jetzt: f
     steht = m.am_boden and m.gs_kt < STEHT_KT
 
     if steht:
+        # Ein Halt kurz nach dem Anrollen (Haltelinie) verwirft den Gleichstand nicht -- die
+        # Frist aus These 7 läuft weiter (Fable 5).
+        if s.gleichstand and s.anroll_ts is not None and jetzt - s.anroll_ts <= ANROLLEN_S:
+            return Ergebnis(None, False, da)
         # These 6 und 8: stehend, höchstens 5 m, angemeldet NACH dem Sitzungsbeginn der Brügge.
         # Die Reihenfolge ist immer: Flug laden, die Brügge meldet, dann erst die eigene
-        # Verbindung. Wer vorher da war, ist ein Nachbar (25.09.2026).
+        # Verbindung. Wer vorher da war, ist ein Nachbar (25.09.2026). Nach „vergessen" gilt die
+        # Anmeldezeit einmal nicht (Fable 2).
+        ohne = kennung in _OHNE_ANMELDEZEIT
         nah = [k for k in kands
                if _stehend(k) and _abstand(m, k) <= STAND_M
-               and k.logon_ts is not None and k.logon_ts >= s.seit - LOGON_TOLERANZ_S]
+               and (ohne or (k.logon_ts is not None
+                             and k.logon_ts >= s.seit - LOGON_TOLERANZ_S))]
         s.anroll_ts = None
         s.anroll_lage.clear()
         if len(nah) == 1:
             s.gleichstand.clear()
+            _OHNE_ANMELDEZEIT.discard(kennung)
             return _binden(conn, kennung, nah[0].cid, m)
         # These 7: Gleichstand -- merken und auf das Anrollen warten.
         s.gleichstand = {k.cid for k in nah} if len(nah) > 1 else set()
@@ -332,9 +418,8 @@ def _neu(conn, kennung: str, m: Meldung, kands: list[Kand], s: Sitzung, jetzt: f
 
     # These 6 (im Flug): nach dem Bewährt-Maßstab, dann sofort bewährt.
     s.gleichstand.clear()
-    vergeben = bruegge_vergebene_cids(conn, kennung, VERGEBEN_S)
-    treffer = eindeutig_im_flug(m, kands, vergeben)
-    if _beweis(s, treffer.cid if treffer else None, jetzt):
+    treffer = eindeutig_im_flug(m, kands, _vergeben(conn, kennung, kands))
+    if _beweis(s, treffer.cid if treffer else None, jetzt, m):
         return _binden(conn, kennung, treffer.cid, m, bewaehrt=True)
     return Ergebnis(None, False, da)
 

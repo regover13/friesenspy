@@ -760,6 +760,16 @@ CREATE TABLE IF NOT EXISTS bruegge_spur (
 );
 CREATE INDEX IF NOT EXISTS idx_bruegge_spur_ts ON bruegge_spur(ts);
 
+-- Der Sitzungsbeginn noch nicht gebundener FriesenBruegges (#46, These 8). Nur er, und nur so
+-- lange, wie er gebraucht wird: Ohne diese Tabelle begann nach jedem Deploy jede Sitzung neu,
+-- und These 8 sperrte jeden, der sich dazwischen angemeldet hatte (Fable-Review 26.09.2026).
+-- Gedeckelt und mit Verfall (`bruegge_bindung`) -- die Meldung ist nicht angemeldet.
+CREATE TABLE IF NOT EXISTS bruegge_sitzung (
+    kennung  TEXT PRIMARY KEY,
+    seit     REAL NOT NULL,
+    zuletzt  REAL NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS bruegge_zuordnung (
     kennung      TEXT PRIMARY KEY,
     cid          INTEGER NOT NULL,
@@ -3163,7 +3173,7 @@ def bruegge_zuordnung_bewaehren(conn: sqlite3.Connection, kennung: str) -> None:
 
 
 def bruegge_vergebene_cids(conn: sqlite3.Connection, ausser_kennung: str,
-                           frist_s: float) -> set[int]:
+                           frist_s: float) -> dict[int, tuple[float, float] | None]:
     """CIDs, fuer die gerade eine ANDERE, BEWAEHRTE Bruegge meldet (These 9).
 
     Gebraucht nur beim Bewaehren: Wer neben einem fliegt und schon eindeutig er selbst ist,
@@ -3172,13 +3182,17 @@ def bruegge_vergebene_cids(conn: sqlite3.Connection, ausser_kennung: str,
     """
     grenze = (datetime.now(timezone.utc) - timedelta(seconds=frist_s)).strftime(
         "%Y-%m-%dT%H:%M:%SZ")
+    # Mit der letzten Brügge-Lage der CID: Vergeben ist er nur dort, wo seine andere Brügge
+    # gerade ist. Wechselt ein Pilot Rechner oder Simulator, deckt die alte Brügge seine
+    # Verbindung am neuen Ort nicht ab (Fable-Review 26.09.2026, Befund 11).
     rows = conn.execute(
-        "SELECT DISTINCT cid FROM bruegge_zuordnung "
-        "WHERE kennung <> ? AND bewaehrt_am IS NOT NULL AND geloest_am IS NULL "
-        "  AND gesehen_am >= ?",
+        "SELECT DISTINCT z.cid, p.lat, p.lon FROM bruegge_zuordnung z "
+        "LEFT JOIN bruegge_positions p ON p.cid = z.cid "
+        "WHERE z.kennung <> ? AND z.bewaehrt_am IS NOT NULL AND z.geloest_am IS NULL "
+        "  AND z.gesehen_am >= ?",
         (ausser_kennung or "", grenze),
     ).fetchall()
-    return {int(r[0]) for r in rows}
+    return {int(r[0]): (None if r[1] is None else (float(r[1]), float(r[2]))) for r in rows}
 
 
 def forum_cids(conn: sqlite3.Connection) -> set[int]:

@@ -7132,6 +7132,9 @@ function _ankerMerken(liste) {
 // auch wenn es bisher an einer fremden Verbindung hing. Der Login ist sicherer als jede Naehe.
 function _ankerZuordnen(sim, vatJetzt) {
   const jetzt = Date.now();
+  // Ein Anker gilt nur fuer den Takt, in dem er sein Flugzeug klar findet (Fable-Review
+  // 26.09.2026). Sonst hielte er eine Zuordnung an Plausibilitaet und Bewegung vorbei fest.
+  for (const id in _paarungen) delete _paarungen[id].anker;
   for (const cid in _kbAnker) {
     const a = _kbAnker[cid];
     if (jetzt - a.ts > _ANKER_FRIST_MS) { delete _kbAnker[cid]; continue; }

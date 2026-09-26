@@ -3,7 +3,11 @@
 **Der Vertrag zwischen dem FriesenSpy-Server und einer Brügge im Simulator.**
 Verbindlich für alle Umsetzungen — MSFS 2020, MSFS 2024, X-Plane 12.
 
-> Stand 20.09.2026 · Protokollfassung **2** · ✅ **im Flug abgenommen** — Server, MSFS **1.17.0** und X-Plane **1.4.0**
+> Stand 26.09.2026 · Protokollfassung **3** · Server spricht 3 (15.22.0); MSFS **1.18.0** (Kennung in `\work`) am
+> Simulator-Rechner gegen den Server getestet, **noch nicht verteilt**; X-Plane **1.4.0** läuft mit Fassung 2 über
+> die neuen Regeln (Abschnitt 9, Fassung 3). Die alte MSFS-Brügge (bis 1.17.0) läuft weiter bis zum Stichtag.
+>
+> *Bis 26.09.2026:* Protokollfassung **2** · ✅ **im Flug abgenommen** — Server, MSFS **1.17.0** und X-Plane **1.4.0**
 >
 > ⭐ **MSFS 1.17.0 und X-Plane 1.4.0 (20.09.2026): Marken** — Würfel, Lichtsäulen und ein Licht als eigene Objekte in MSFS 2020/2024
 > und X-Plane (Arten `wuerfel_*`, `saeule_*`, `licht`; s. `docs/bruegge-arten-ausbau.md`). Die Module sind unverändert, neu sind die

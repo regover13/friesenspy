@@ -1,5 +1,17 @@
 [
   {
+    "version": "15.22.3",
+    "date": "2026-09-26",
+    "highlight": false,
+    "title": "FriesenBrügge: Nacharbeit an der neuen Zuordnung",
+    "items": [
+      "✈️ **Lädst du einen neuen Flug, bleibt deine FriesenBrügge dir zugeordnet.** Der Sprung an einen anderen Ort löst die Bindung nur; sobald du dort wieder auf VATSIM passt, ist sie ohne Suche zurück.",
+      "⏱️ **Auch bei langsamem Meldetakt wird eine FriesenBrügge im Flug bestätigt**, weil die mitgeschickte Sekundenspur die Pausen zwischen zwei Meldungen abdeckt.",
+      "🛑 **Ein kurzer Halt an der Haltelinie** unterbricht die Zuordnung zweier Flugzeuge am selben Startpunkt nicht mehr.",
+      "🛠️ **In der Verwaltung** erscheint der Hinweis auf eine abgelehnte FriesenBrügge jetzt auch, wenn der gebundene Pilot online ist, und nach „vergessen“ wird sie im Stand gleich neu zugeordnet."
+    ]
+  },
+  {
     "version": "15.22.2",
     "date": "2026-09-26",
     "highlight": false,

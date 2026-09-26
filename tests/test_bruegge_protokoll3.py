@@ -303,3 +303,37 @@ def test_melder_und_hinweise_maskieren_fremde_texte():
     for gemaskt in ("escH(m.callsign || m.name || m.cid)", "escH(m.simulator || '—')",
                     "escH(m.bruegge_version)", "escH(name)"):
         assert gemaskt in rumpf, gemaskt
+
+
+# --- Nacharbeit 26.09.2026 abends -----------------------------------------------------------
+
+def test_die_kollisionskennung_bekommt_eine_frische(env):
+    """Alte Kennungsdateien vom 11.–14.09. tragen auf JEDEM Rechner dieselbe Kennung."""
+    a = _melden(env, kennung="9e3711c100000000")
+    assert re.fullmatch(r"[0-9a-f]{16}", a["kennung"]) and a["kennung"] != "9e3711c100000000"
+    assert _zeile(env.db, "9e3711c100000000") is None
+
+
+def test_die_sekundenspur_geht_in_die_meldung():
+    import app.main as main
+    spur = [{"alter_s": 14.0, "gs_kt": 98.0}, {"alter_s": 7.0, "gs_kt": 101.0},
+            {"alter_s": "x"}, "kaputt"]
+    assert main._bruegge_spur_kennzahlen(spur) == (14.0, 98.0)
+    assert main._bruegge_spur_kennzahlen([]) == (0.0, None)
+    assert main._bruegge_spur_kennzahlen(None) == (0.0, None)
+
+
+def test_vergessen_prueft_die_kennung(env):
+    r = env.client.post("/api/admin/bruegge/vergessen", cookies=_admin(env),
+                        json={"kennung": "a b<script>"})
+    assert r.status_code == 400
+
+
+def test_verwaltungskarte_und_bindungsspalte():
+    from pathlib import Path
+    admin = (Path(__file__).resolve().parents[1] / "app" / "static" / "admin.html").read_text(
+        encoding="utf-8")
+    assert "bindTooltip((m.callsign || m.cid)" not in admin
+    assert "escH(m.callsign || m.cid)" in admin
+    # X-Plane-Altzeilen laufen nach den neuen Regeln: unbewährt statt „—".
+    assert "/^xplane/.test(m.simulator || '')" in admin

@@ -299,3 +299,20 @@ def test_der_strom_wird_im_kniebrett_fuer_die_anker_gelesen():
     i_anker = rumpf.index("_ankerMerken(")
     i_panel = rumpf.index("if (_PANEL_MODUS) return;")
     assert i_anker < i_panel
+
+
+def test_ein_anker_ohne_eindeutiges_flugzeug_haelt_nicht_mehr():
+    """Fable 12: Findet der Anker in diesem Takt kein klares Flugzeug mehr, darf er die
+    Zuordnung nicht an Plausibilität und Bewegung vorbei festhalten."""
+    erg = _lauf(_ANKER + """
+      sim([{ id: 1, lat: nord(0), lon: ost(0), alt: 900, hdg: 0, gs: 90, cs: '' }]);
+      _ankerMerken([{ cid: 111, lat: nord(0), lon: ost(0), alt: 900, gs: 90, q: 'e' }]);
+      takt(1);
+      const vorher = _paarungen[1] && _paarungen[1].anker;
+      // Der Anker meldet jetzt weit weg -- kein Flugzeug passt mehr zu ihm.
+      _ankerMerken([{ cid: 111, lat: nord(50000), lon: ost(0), alt: 900, gs: 90, q: 'e' }]);
+      sim([{ id: 1, lat: nord(46), lon: ost(0), alt: 900, hdg: 0, gs: 90, cs: '' }]);
+      takt(1);
+      console.log(JSON.stringify([vorher != null, _paarungen[1] ? _paarungen[1].anker != null : null]));
+    """)
+    assert erg == [True, False]

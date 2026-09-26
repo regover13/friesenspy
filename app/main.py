@@ -1648,6 +1648,10 @@ async def bruegge_melden(request: Request):
             # naechsten Meldung kennt der Server ihre Sitzung. In die Datenbank kommt sie erst
             # mit der Bindung (`bruegge_bindung`).
             zugeteilt = None
+            # Die Kollisionskennung aus den Fassungen vom 11.–14.09. zählt wie keine: Sie steht
+            # auf JEDEM Rechner gleich in alten Kennungsdateien (Befund am Simulator-Rechner).
+            if kennung == bruegge_bindung.KOLLISIONSKENNUNG:
+                kennung = ""
             if not kennung:
                 kennung = zugeteilt = secrets.token_hex(8)
             kands = _bruegge_kandidaten_v3(conn, getattr(request.app.state, "poller", None))
@@ -1658,6 +1662,7 @@ async def bruegge_melden(request: Request):
                 am_boden=bool(lage.get("am_boden")),
                 vs_wirksam=max(abs(vs_ft_min), _bruegge_vs_spitze(_g)),
                 sekunden_her=_bruegge_sekunden_her(_g), simulator=simulator, protokoll=3)
+            meldung.spur_s, meldung.spur_min_gs = _bruegge_spur_kennzahlen(body.get("spur"))
             erg = bruegge_bindung.zuordnen(conn, kennung, meldung, kands)
             cid, kandidaten_da, lage_gilt = erg.cid, erg.kandidaten_da, erg.lage_gilt
             if cid is not None:
@@ -1974,6 +1979,26 @@ def _bruegge_melder(kennung: str, simulator: str | None, lat: float, lon: float,
     """
     return (f"{kennung or '(ohne Kennung)'} {simulator or '?'} "
             f"@ {lat:.5f},{lon:.5f} {alt_ft:.0f} ft")
+
+
+def _bruegge_spur_kennzahlen(spur) -> tuple[float, float | None]:
+    """Wie weit die mitgeschickte Sekundenspur zurückreicht, und ihre kleinste Geschwindigkeit.
+
+    Für die Bewährung (#46, These 3): Die Spur deckt die Lücke zwischen zwei Meldungen, sonst
+    risse das „am Stück" bei langsamem Takt an jeder Meldung (Fable-Review 26.09.2026).
+    Kaputte Punkte werden übergangen -- die Meldung ist nicht angemeldet."""
+    weit, langsam = 0.0, None
+    for p in spur if isinstance(spur, list) else []:
+        if not isinstance(p, dict):
+            continue
+        try:
+            alter = float(p.get("alter_s"))
+            gs = float(p.get("gs_kt"))
+        except (TypeError, ValueError):
+            continue
+        weit = max(weit, alter)
+        langsam = gs if langsam is None else min(langsam, gs)
+    return weit, langsam
 
 
 def _iso_epoch(text) -> float | None:
@@ -2694,8 +2719,8 @@ async def admin_bruegge_vergessen(request: Request):
     require_admin(request)
     body = await request.json()
     kennung = str(body.get("kennung") or "")[:64]
-    if not kennung:
-        raise HTTPException(status_code=400, detail="kennung fehlt")
+    if not re.fullmatch(r"[0-9A-Za-z]{1,64}", kennung):
+        raise HTTPException(status_code=400, detail="kennung fehlt oder ist ungültig")
     conn = get_connection(get_settings().DB_PATH)
     try:
         bruegge_zuordnung_vergessen(conn, kennung)

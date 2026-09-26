@@ -2970,7 +2970,9 @@
                 // Die Bindung (#46): bewährt hält gegen einen Widerspruch, unbewährt nicht;
                 // „ruht" heißt: Der Pilot ist gerade nicht auf VATSIM, die Erinnerung bleibt.
                 const bindung = m.geloest_am ? 'ruht'
-                  : m.bewaehrt_am ? 'bewährt' : (m.protokoll >= 3 ? 'unbewährt' : '—');
+                  : m.bewaehrt_am ? 'bewährt'
+                  // X-Plane läuft seit 15.22.0 nach den neuen Regeln, auch mit Altzeilen.
+                  : (m.protokoll >= 3 || /^xplane/.test(m.simulator || '') ? 'unbewährt' : '—');
                 return '<tr' + blass + '><td>' + escH(m.callsign || m.name || m.cid) + '</td><td>' +
                        escH(m.simulator || '—') + '</td><td class="mono">' + fassung +
                        '</td><td>' + bindung + '</td><td class="mono">' + escH(pos) +
@@ -3960,7 +3962,7 @@
         const punkt_m = L.circleMarker([m.lat, m.lon], {
           radius: ist_ziel ? 8 : 6, color: '#2d9cdb', weight: ist_ziel ? 3 : 2,
           fillColor: '#2d9cdb', fillOpacity: 0.4,
-        }).bindTooltip((m.callsign || m.cid) + ' (Brügge)' + (ist_ziel ? ' — zuletzt gemeldet' : ''),
+        }).bindTooltip(escH(m.callsign || m.cid) + ' (Brügge)' + (ist_ziel ? ' — zuletzt gemeldet' : ''),
                        { direction: 'right' }).addTo(_bgKarte);
         punkt_m.on('click', function (e) {
           // Nicht die Koordinate übernehmen -- wer auf einen Piloten klickt, will zu ihm,
