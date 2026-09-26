@@ -221,6 +221,11 @@ global.liveData = [];
 global._eigenes = null;
 function _istEigenesFlugzeug(cs) { return global._eigenes === cs; }
 
+// Seit dem 26.09.2026 merkt sich der Empfaenger auch die Anker fuers Sim-Matching (#47,
+// These 18). Das geschieht an anderer Stelle der Datei -- hier nur mitgeschrieben, was ankommt.
+global._ankerGemerkt = [];
+function _ankerMerken(liste) { global._ankerGemerkt.push(liste); }
+
 // Im Original oben in der Datei gesetzt (aus der CSS-Klasse `vr-panel`). Der Ausschnitt
 // beginnt weiter unten, deshalb hier: Vorgabe ist die WEBSITE -- das Kniebrett bekommt den
 // Strom seit dem 15.09.2026 nicht mehr, dort traegt das Sim-Matching.
@@ -300,6 +305,7 @@ def test_im_kniebrett_kommt_der_strom_gar_nicht_an():
       _brueggeStromEinarbeiten([{ cid: 1234567, lat: 53.5, lon: 8.1, gs: 92.6 }]);
       assert.deepStrictEqual(Object.keys(_positionsRoh), [],
         'im Kniebrett darf der Bruegge-Strom _positionsRoh nicht anfassen');
+      assert.strictEqual(global._ankerGemerkt.length, 1, 'die Anker kommen trotzdem an');
       assert.deepStrictEqual(Object.keys(_brueggeWerte), []);
       assert.strictEqual(_brueggeFrisch('FRS49'), false);
     """)

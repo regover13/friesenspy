@@ -2516,8 +2516,10 @@ def test_ausschluss_kommt_nach_der_naehe():
     Naehe-Zuordnung einen Kandidaten weg, den der Ausschluss sicher zugeordnet haette."""
     stelle = INDEX.index("function _verkehrZusammenfuehren(")
     rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
-    assert "nochOffen.length === 1 && uebrigVat.length === 1" in rumpf
-    assert rumpf.index("kandidaten.length === 1") < rumpf.index("uebrigVat.length === 1")
+    # Seit 26.09.2026 nur innerhalb der Schranken (#47, These 14): der eine uebrige Kandidat
+    # kommt aus `_verkehrKandidaten`, nicht mehr aus der ganzen Welt.
+    assert "if (nochOffen.length === 1) {" in rumpf and "nah.length === 1" in rumpf
+    assert rumpf.index("kandidaten.length === 1") < rumpf.index("nah.length === 1")
 
 
 def test_schranke_wird_aus_der_geschwindigkeit_gerechnet():
@@ -2722,7 +2724,7 @@ def test_ein_vatsim_flugzeug_wird_nur_einmal_vergeben():
     assert rumpf.count("delete frei[") >= 3, "gehalten, erstzugeordnet und per Ausschluss"
     stelle = INDEX.index("function _verkehrKandidaten(")
     such = INDEX[stelle:INDEX.index("\n}", stelle)]
-    assert "if (!frei[e.v.cs]) continue;" in such
+    assert "if (!frei[e.v.cs] || (gesperrt && gesperrt[e.v.cs])) continue;" in such
 
 
 def test_zuordnungen_werden_aufgeraeumt():

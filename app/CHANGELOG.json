@@ -1,5 +1,17 @@
 [
   {
+    "version": "15.21.1",
+    "date": "2026-09-26",
+    "highlight": false,
+    "title": "Kniebrett: weniger falsche Rufzeichen am Verkehr",
+    "items": [
+      "🧭 **Ein Flugzeug in deinem Simulator bekommt nur noch das Rufzeichen eines Piloten, der auch in der Nähe ist.** Bisher konnte ein Friese, der gerade in den USA flog, an einem Flugzeug über der Nordsee stehen.",
+      "🅿️ **Ein auf VATSIM geparktes Flugzeug hält kein fliegendes mehr fest.** Bewegt sich das Flugzeug in deinem Simulator, sein Partner auf VATSIM aber nicht, löst das Kniebrett die Zuordnung nach einer halben Minute.",
+      "🔗 **Friesen, deren eigenes Kniebrett meldet, erkennt dein Kniebrett jetzt sicher** über ihre Anmeldung, auch dicht neben fremdem Verkehr.",
+      "⏸️ **Stockt der Simulator kurz, bleiben die Rufzeichen erhalten.** Bisher waren danach alle Zuordnungen weg und mussten neu gefunden werden."
+    ]
+  },
+  {
     "version": "15.21.0",
     "date": "2026-09-26",
     "highlight": false,

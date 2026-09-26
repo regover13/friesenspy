@@ -6405,6 +6405,34 @@ let _simHoehenSpur = Object.create(null);
 // VATSIM nicht besser weiss; Position und Kurs gehen ueber _positionsRoh (s. dort).
 let _friesenSimWerte = Object.create(null);
 
+// uId -> { bewegt, seit }: seit wann ein Sim-Flugzeug faehrt oder steht (These 17, #47).
+// Ein stehender VATSIM-Partner haelt kein bewegtes Flugzeug, und umgekehrt -- aber erst nach
+// der Frist: So lange kann die VATSIM-Position auf der Karte hinterherhinken (bis 35 s,
+// Kartenlegende, gemessen 13.09.2026). Anlass: Die geparkte VJH3RX hielt am 25.09.2026 das
+// fliegende Flugzeug von FRS111N fest, weil `_paarungMaxM` mit der Geschwindigkeit des
+// SIM-Flugzeugs rechnet -- bei 119 kt ueber 5 km, auch fuer einen Partner mit 0 kt.
+let _simBewegung = Object.create(null);
+const _BEWEGUNG_FRIST_MS = 35000;
+// Fehlt ein Flugzeug in einer neuen Sim-Liste, bleibt seine Zuordnung so lange gemerkt
+// (These 16). Bis zum 26.09.2026 war sie sofort weg -- und bei einer veralteten Liste waren
+// es ALLE, mitten im Flug.
+const _PAARUNG_GNADE_MS = 30000;
+// cid -> { lat, lon, alt, gs, cs, ts }: Anker aus dem Sekundenstrom (These 18). Ein Anker ist
+// ein Friese, dessen Position NICHT geraten ist: sein eigenes Kniebrett mit Login (`q: 'e'`)
+// oder eine bewaehrte FriesenBruegge (`q: 'b'` mit `bw: true`). Das Sim-Flugzeug, das ihm
+// klar am naechsten ist, ist er -- Fremdverkehr kann es nicht bekommen.
+let _kbAnker = Object.create(null);
+const _ANKER_FRIST_MS = 5000;      // der Strom kommt jede Sekunde; aelter ist kein Anker mehr
+// vPilot zeichnet das fremde Flugzeug im EIGENEN Simulator mit ein paar Sekunden Verzug --
+// der Anker ist sekundengenau aus dem Simulator des ANDEREN. Deshalb eine Grenze und der
+// Vorsprung, nicht "auf den Meter".
+const _ANKER_LATENZ_S = 5;
+const _ANKER_MIN_M = 100;
+// Wie oft ein Sim-Flugzeug genau auf der eigenen Position stand (These 15): Der Filter
+// „das bin ich" ist im Paket gestrichen; diese Zahl zeigt, ob das eigene Flugzeug je in der
+// Verkehrsliste auftaucht.
+let _simAmEigenenOrt = 0;
+
 // Zaehler fuer die einmalige Diagnose. Was man beim Hinschauen NICHT sieht, ist die Zahl der
 // geloesten Zuordnungen -- das waere das Flackern in Zahlen. Steht eine Zuordnung stabil,
 // bleibt der Zaehler bei null; kippt sie staendig, ist es hier zu lesen und muss nicht aus
@@ -6488,6 +6516,17 @@ function _verkehrZusammenfuehren() {
     frei[friesen[i].v.cs] = true;
   }
 
+  // --- 0. Anker: Friesen, deren Position nicht geraten ist (These 18) -------------------
+  for (let i = 0; i < sim.length; i++) _simBewegungFortschreiben(sim[i]);
+  if (sim.length) _ankerZuordnen(sim, vatJetzt);
+
+  // Partner von Zuordnungen, deren Flugzeug gerade fehlt, sind gesperrt: gezeichnet werden
+  // sie weiter (von VATSIM), aber kein anderes Sim-Flugzeug darf sie in der Frist nehmen.
+  const da = Object.create(null);
+  for (let i = 0; i < sim.length; i++) da[sim[i].id] = true;
+  const gesperrt = Object.create(null);
+  for (const id in _paarungen) if (!da[id]) gesperrt[_paarungen[id].cs] = true;
+
   // --- 1. Bestehende Zuordnungen halten oder loesen -------------------------------------
   // Zuerst, damit die gehaltenen Rufzeichen fuer die Suche unten schon vergeben sind.
   const zugeordnet = Object.create(null);   // uId -> VATSIM-Datensatz
@@ -6504,7 +6543,10 @@ function _verkehrZusammenfuehren() {
       offen.push(s);
       continue;
     }
-    if (_paarungPlausibel(s, partner)) {
+    // Ein frischer Anker ist keine Vermutung -- er haelt, auch wenn die VATSIM-Position noch
+    // hinterherhinkt. Sonst loeste die Latenz, was der Login gerade sicher zugeordnet hat.
+    const verankert = gemerkt.anker != null && !!_kbAnker[gemerkt.anker];
+    if (verankert || (_paarungPlausibel(s, partner) && !_bewegungWiderspricht(s, partner.v))) {
       gemerkt.verstoesse = 0;
     } else if (++gemerkt.verstoesse >= _PAARUNG_LOESEN_TAKTE) {
       // Erst nach mehreren Verstoessen IN FOLGE. Bei einem einzelnen Ausreisser zu loesen
@@ -6522,7 +6564,7 @@ function _verkehrZusammenfuehren() {
   const nochOffen = [];
   for (let i = 0; i < offen.length; i++) {
     const s = offen[i];
-    const kandidaten = _verkehrKandidaten(s, vatJetzt, frei);
+    const kandidaten = _verkehrKandidaten(s, vatJetzt, frei, gesperrt);
     kandidaten.sort(function (a, b) { return a._m - b._m; });
     const eindeutig = kandidaten.length === 1
       || (kandidaten.length > 1 && kandidaten[0]._m <= kandidaten[1]._m * _PAARUNG_VORSPRUNG);
@@ -6545,16 +6587,23 @@ function _verkehrZusammenfuehren() {
   // laengst bekannt -- dann ist auch er klar (Nutzer, 16.08.2026). Erst NACH allen sicheren
   // Zuordnungen, sonst nimmt eine schwache Naehe-Zuordnung einen Kandidaten weg, den der
   // Ausschluss sicher zugeordnet haette.
-  const uebrigVat = vatJetzt.filter(function (e) { return frei[e.v.cs]; });
-  if (nochOffen.length === 1 && uebrigVat.length === 1) {
+  //
+  // ⚠ NUR INNERHALB DER SCHRANKEN (These 14, #47). Bis zum 26.09.2026 paarte der Schritt ohne
+  // jeden Abstand -- und die Friesen kommen aus `liveData`, also aus der ganzen Welt. Engelhard
+  // hatte so Reiner auf seinem Kniebrett, der in den USA flog. Die Spec vom 16.08. verlangte
+  // „im Gebiet"; in der Umsetzung ging das verloren.
+  if (nochOffen.length === 1) {
     const s = nochOffen[0];
-    const v = uebrigVat[0].v;
-    _paarungen[s.id] = { cs: v.cs, verstoesse: 0 };
-    zugeordnet[s.id] = v;
-    delete frei[v.cs];
-    _zuordnungGetroffen++;
-    _zuordnungPerAusschluss++;
-    nochOffen.length = 0;
+    const nah = _verkehrKandidaten(s, vatJetzt, frei, gesperrt);
+    if (nah.length === 1) {
+      const v = nah[0].v;
+      _paarungen[s.id] = { cs: v.cs, verstoesse: 0 };
+      zugeordnet[s.id] = v;
+      delete frei[v.cs];
+      _zuordnungGetroffen++;
+      _zuordnungPerAusschluss++;
+      nochOffen.length = 0;
+    }
   }
 
   // --- 3b. Verdecken: Sim-Position schlaegt VATSIM-Identitaet ----------------------------
@@ -6570,7 +6619,7 @@ function _verkehrZusammenfuehren() {
   // ohnehin schon stehen. Einer je unzugeordnetem Sim-Eintrag, damit die ANZAHL der Symbole
   // stimmt -- sonst verschwaende ein Flugzeug, das nur VATSIM kennt.
   for (let i = 0; i < nochOffen.length; i++) {
-    const kandidaten = _verkehrKandidaten(nochOffen[i], vatJetzt, frei);
+    const kandidaten = _verkehrKandidaten(nochOffen[i], vatJetzt, frei, gesperrt);
     if (!kandidaten.length) continue;
     kandidaten.sort(function (a, b) { return a._m - b._m; });
     delete frei[kandidaten[0].v.cs];
@@ -6663,7 +6712,18 @@ function _verkehrZusammenfuehren() {
     out.push(e);
   }
 
-  _paarungenAufraeumen(sim);
+  // Steht ein Sim-Flugzeug genau auf der eigenen Position? Seit der Filter im Paket fehlt,
+  // waere das ein Geisterbild unter dem eigenen Symbol (These 15) -- gezaehlt fuer die Diagnose.
+  if (_simPos && _simPos.lat != null) {
+    for (let i = 0; i < sim.length; i++) {
+      if (L.latLng(_simPos.lat, _simPos.lon).distanceTo([sim[i].lat, sim[i].lon]) < 10) {
+        _simAmEigenenOrt++;
+        break;
+      }
+    }
+  }
+
+  _paarungenAufraeumen(sim, _simVerkehrFrisch() && !!_simVerkehr);
   _zuordnungDiagnose(sim, vat, zugeordnet, nochOffen);
   return out;
 }
@@ -6948,6 +7008,9 @@ function _zuordnungDiagnose(sim, vat, zugeordnet, offen) {
     // Bewegt, meldet aber 0 kt -- die abgeleitete Geschwindigkeit faellt bei einzelnen aus.
     // Der Wert ist die tatsaechlich gemessene Geschwindigkeit in m/s.
     gsFehlt: _simGsFehlt,
+    // Takte, in denen ein Sim-Flugzeug auf der eigenen Position stand (These 15). Bleibt die
+    // Zahl ueber Wochen null, taucht das eigene Flugzeug nie in der Verkehrsliste auf.
+    amEigenenOrt: _simAmEigenenOrt,
   });
 }
 
@@ -7010,7 +7073,7 @@ function _paarungPlausibel(s, kandidat) {
 // Alle freien VATSIM-Flugzeuge, die zu dieser Sim-Meldung passen KOENNTEN. Zugeordnet wird
 // nur, wenn es genau einer ist -- die Sicherheit kommt aus der Eindeutigkeit, nicht aus der
 // Enge der Schranke.
-function _verkehrKandidaten(s, vatJetzt, frei) {
+function _verkehrKandidaten(s, vatJetzt, frei, gesperrt) {
   if (!isFinite(s.lat) || !isFinite(s.lon)) return [];
   const p = L.latLng(s.lat, s.lon);
   const maxM = _paarungMaxM(s, _PAARUNG_FAKTOR);
@@ -7019,14 +7082,86 @@ function _verkehrKandidaten(s, vatJetzt, frei) {
   const treffer = [];
   for (let i = 0; i < vatJetzt.length; i++) {
     const e = vatJetzt[i];
-    if (!frei[e.v.cs]) continue;
+    if (!frei[e.v.cs] || (gesperrt && gesperrt[e.v.cs])) continue;
     if (Math.abs((Number(e.v.alt) || 0) - hoehe) > maxFt) continue;
+    // Faehrt das Sim-Flugzeug laenger als die Frist und der Kandidat steht (oder umgekehrt),
+    // ist er es nicht -- auch nicht bei der Erstzuordnung (These 17).
+    if (_bewegungWiderspricht(s, e.v)) continue;
     const m = p.distanceTo([e.lat, e.lon]);
     if (m > maxM) continue;
     e._m = m;
     treffer.push(e);
   }
   return treffer;
+}
+
+// Seit wann faehrt oder steht dieses Sim-Flugzeug? 5 kt wie ueberall hier (_SIM_STEHT_KT).
+function _simBewegungFortschreiben(s) {
+  const bewegt = (Number(s.gs) || 0) >= _SIM_STEHT_KT;
+  const vorher = _simBewegung[s.id];
+  if (!vorher || vorher.bewegt !== bewegt) _simBewegung[s.id] = { bewegt: bewegt, seit: Date.now() };
+}
+
+// Widerspricht die Bewegung des Sim-Flugzeugs der seines VATSIM-Partners? Erst nach der Frist:
+// Beim echten Partner zeigt VATSIM das Anrollen (oder Anhalten) spaetestens dann auch.
+function _bewegungWiderspricht(s, v) {
+  const b = _simBewegung[s.id];
+  if (!b || Date.now() - b.seit < _BEWEGUNG_FRIST_MS) return false;
+  return b.bewegt !== ((Number(v.gs) || 0) >= _SIM_STEHT_KT);
+}
+
+// Anker aus dem Sekundenstrom merken (These 18). Nur, was nicht geraten ist: das eigene
+// Kniebrett eines Friesen (`e`) oder eine BEWAEHRTE FriesenBruegge (`b` mit `bw`). Eine
+// unbewaehrte Bruegge ist eine Zuordnung des Servers ueber die Position -- nicht mehr, als das
+// Kniebrett selbst kann. Ein fremdes Kniebrett (`k`) meldet ebenfalls nur Zugeordnetes.
+function _ankerMerken(liste) {
+  if (!Array.isArray(liste)) return;
+  const jetzt = Date.now();
+  for (let i = 0; i < liste.length; i++) {
+    const e = liste[i];
+    if (!e || e.cid == null || e.lat == null || e.lon == null) continue;
+    const sicher = e.q === 'e' || (e.q === 'b' && e.bw === true);
+    if (!sicher) { delete _kbAnker[e.cid]; continue; }
+    _kbAnker[e.cid] = { lat: Number(e.lat), lon: Number(e.lon),
+                        alt: (e.alt == null) ? null : Number(e.alt), gs: Number(e.gs) || 0,
+                        cs: (typeof e.cs === 'string' && e.cs) ? e.cs : null, ts: jetzt };
+  }
+}
+
+// Das Sim-Flugzeug, das einem frischen Anker klar am naechsten ist, gehoert diesem Friesen --
+// auch wenn es bisher an einer fremden Verbindung hing. Der Login ist sicherer als jede Naehe.
+function _ankerZuordnen(sim, vatJetzt) {
+  const jetzt = Date.now();
+  for (const cid in _kbAnker) {
+    const a = _kbAnker[cid];
+    if (jetzt - a.ts > _ANKER_FRIST_MS) { delete _kbAnker[cid]; continue; }
+    if (_meineCid != null && String(cid) === String(_meineCid)) continue;
+    let cs = a.cs;
+    if (!cs) {
+      for (let k = 0; k < liveData.length; k++) {
+        if (String(liveData[k].cid) === String(cid)) { cs = liveData[k].callsign; break; }
+      }
+    }
+    if (!cs || !_vatsimFinden(vatJetzt, cs)) continue;
+    const p = L.latLng(a.lat, a.lon);
+    let best = null, bestM = Infinity, zweitM = Infinity;
+    for (let i = 0; i < sim.length; i++) {
+      const s = sim[i];
+      if (a.alt != null && Math.abs((Number(s.alt) || 0) - a.alt) > 500) continue;
+      const m = p.distanceTo([s.lat, s.lon]);
+      if (m < bestM) { zweitM = bestM; bestM = m; best = s; }
+      else if (m < zweitM) zweitM = m;
+    }
+    const grenze = Math.max(_ANKER_MIN_M, a.gs * 0.514444 * _ANKER_LATENZ_S * 2);
+    // Klar am naechsten: der doppelte Abstand zum Zweitnaechsten, und STRENG -- zwei Flugzeuge
+    // auf demselben Punkt (0 m gegen 0 m) sind nicht eindeutig.
+    if (!best || bestM > grenze || !(bestM < zweitM * _PAARUNG_VORSPRUNG)) continue;
+    const gemerkt = _paarungen[best.id];
+    if (gemerkt && gemerkt.cs === cs) { gemerkt.anker = cid; continue; }
+    for (const id in _paarungen) if (_paarungen[id].cs === cs) delete _paarungen[id];
+    _paarungen[best.id] = { cs: cs, verstoesse: 0, anker: cid };
+    _zuordnungGetroffen++;
+  }
 }
 
 // Steig-/Sinkrate in ft/min aus zwei aufeinanderfolgenden Sim-Hoehen, exponentiell geglaettet
@@ -7066,15 +7201,30 @@ function _simSinkrate(id) {
 
 // Was der Simulator nicht mehr meldet, braucht auch keine Zuordnung mehr. Ohne dieses
 // Aufraeumen wuechsen beide Ablagen ueber einen langen Flug hinweg unbegrenzt.
-function _paarungenAufraeumen(sim) {
+// ⚠ MERKEN IST NICHT ANZEIGEN (These 16, #47, 26.09.2026). Bis dahin galt eine veraltete
+// Sim-Liste als leer, und hier wurden ALLE Zuordnungen geloescht -- mitten im Flug, bei jedem
+// Stocken des Simulators. Jetzt: Ist die Liste veraltet, bleibt alles gemerkt (die Karte
+// zeigt in der Zeit ohnehin VATSIM, s. `_markerGehoertDemSim`). Fehlt ein einzelnes
+// Flugzeug, behaelt es seine Zuordnung `_PAARUNG_GNADE_MS` lang. Nach einem Sim-Neustart
+// tragen alle Flugzeuge neue uIds; die alten Zuordnungen verfallen dann nach dieser Frist.
+function _paarungenAufraeumen(sim, frisch) {
+  if (!frisch) return;
   const da = Object.create(null);
   for (let i = 0; i < sim.length; i++) da[sim[i].id] = true;
-  for (const id in _paarungen) if (!da[id]) delete _paarungen[id];
+  const jetzt = Date.now();
+  for (const id in _paarungen) {
+    const p = _paarungen[id];
+    if (da[id]) { delete p.fehltSeit; continue; }
+    if (!p.fehltSeit) p.fehltSeit = jetzt;
+    else if (jetzt - p.fehltSeit >= _PAARUNG_GNADE_MS) delete _paarungen[id];
+  }
   for (const id in _simHoehenSpur) if (!da[id]) delete _simHoehenSpur[id];
-  // Und die Friesen, die der Simulator nicht mehr liefert: Ihr Marker muss zurueck an den
-  // VATSIM-Zulauf, sonst stuende er fuer immer auf der letzten Sim-Position.
+  for (const id in _simBewegung) if (!da[id]) delete _simBewegung[id];
+  // Und die Friesen, deren Flugzeug der Simulator gerade nicht liefert: Ihr Marker muss
+  // zurueck an den VATSIM-Zulauf, sonst stuende er auf der letzten Sim-Position -- auch
+  // waehrend ihre Zuordnung noch in der Frist gemerkt ist.
   const simCs = Object.create(null);
-  for (const id in _paarungen) simCs[_paarungen[id].cs] = true;
+  for (const id in _paarungen) if (da[id]) simCs[_paarungen[id].cs] = true;
   for (const cs in _friesenSimWerte) if (!simCs[cs]) delete _friesenSimWerte[cs];
 }
 
@@ -11402,6 +11552,10 @@ function _brueggeStromEinarbeiten(liste) {
   //
   // Auf der WEBSITE bleibt der Strom, was er ist: die einzige Echtzeitquelle, denn dort gibt
   // es keine Simulatordaten. Genau dafuer ist er gebaut (v14.36.0).
+  //
+  // Die ANKER dagegen braucht gerade das Kniebrett (These 18, #47): Ein Friese, dessen eigenes
+  // Kniebrett mit Login meldet, ist keine Vermutung. Angezeigt wird weiter aus dem Sim-Matching.
+  _ankerMerken(liste);
   if (_PANEL_MODUS) return;
   if (!Array.isArray(liste) || !liste.length) return;
   const jetzt = Date.now();
