@@ -216,6 +216,13 @@ Ebene wieder entfernt.
 ⚠ Punkt 3 fehlte zuerst, und damit widersprach dieser Abschnitt dem Abschnitt 6: Das
 Bilanz-Panel hat einen Knopf zur Karte, und er stünde bei jedem älteren Abend ins Leere.
 
+> **Nachtrag 26.09.2026, Nutzerentscheidung: Punkt 2 und 3 sind aufgehoben.** *„Das Event muss
+> zum Event-Ende aus der Karte verschwinden!!"* Die Live-Karte zeigt nur noch laufende
+> Reddungen. Die Nachbesprechung findet auf der Event-Karte unter der Bilanz statt: Dort
+> stehen Sektor und abgesuchte Zellen dauerhaft, während des Abends wie danach
+> (`_reddungEventKarte`). Der Knopf „Zur Karte" in der Bilanz erscheint nur noch, solange
+> das Event läuft.
+
 **Die Ebene erscheint eingeschaltet**, und der Knopf „Zur Karte" schaltet sie ein, falls jemand
 sie abgewählt hat. Eine Ebene, die man erst im zugeklappten Ebenen-Knopf suchen muss, findet
 während eines laufenden Abends niemand. Ein Abwählen gilt bis zum Neuladen der Seite und wird

@@ -1,5 +1,15 @@
 [
   {
+    "version": "15.21.0",
+    "date": "2026-09-26",
+    "highlight": false,
+    "title": "FriesenReddung: Sektor und Zellen gehören zur Bilanz",
+    "items": [
+      "🗺️ **Die Karte unter der Bilanz zeigt jetzt immer den Sektor und die abgesuchte Fläche** einer FriesenReddung, während des Abends wie danach. Dort findet die Nachbesprechung statt.",
+      "🧹 **Auf der Live-Karte verschwindet eine FriesenReddung mit ihrem Ende.** Bisher blieb sie noch einen Tag stehen. Den Knopf „Zur Karte“ in der Bilanz gibt es entsprechend nur noch, solange das Event läuft."
+    ]
+  },
+  {
     "version": "15.20.2",
     "date": "2026-09-25",
     "highlight": false,

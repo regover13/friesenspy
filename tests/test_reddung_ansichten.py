@@ -87,21 +87,30 @@ def test_die_readme_beschreibt_den_live_block():
 # --- Kartenebene -----------------------------------------------------------------------
 
 @pytest.mark.skipif(not _NODE, reason="node fehlt")
-def test_zu_zeigen_sind_laufende_frische_und_die_geoeffnete():
-    """Review-Fokus 2: zwei laufende gleichzeitig -- beide. Dazu, was vor weniger als 24 h
-    endete, und die eine aus der Bilanz, gleich welchen Alters (Spec Abschnitt 4)."""
-    # #44 Punkt 10: `laeuft` und `vorbei_seit_s` kommen vom Server, nicht von der Geraeteuhr.
+def test_die_live_karte_zeigt_nur_laufende():
+    """Nutzer, 26.09.2026: „Das Event muss zum Event-Ende aus der Karte verschwinden!!" Bis
+    dahin zeigte die Live-Karte auch, was vor weniger als 24 h endete, und jede aus der Bilanz
+    geholte Reddung. Die Nachbesprechung laeuft jetzt auf der Event-Karte unter der Bilanz.
+    Zwei laufende gleichzeitig bleiben beide (Review-Fokus 2)."""
     liste = [
         {"id": 1, "laeuft": True, "vorbei_seit_s": None},            # laeuft
-        {"id": 2, "laeuft": False, "vorbei_seit_s": 81000},          # vor 22,5 h zu Ende
+        {"id": 2, "laeuft": False, "vorbei_seit_s": 600},            # seit 10 min vorbei
         {"id": 3, "laeuft": False, "vorbei_seit_s": 400000},         # alt
         {"id": 4, "laeuft": True, "vorbei_seit_s": None},            # laeuft auch
         {"id": 5, "laeuft": False, "vorbei_seit_s": None},           # kommt erst
     ]
     q = _funktion("_reddungZuZeigen")
-    assert _node(q, f"_reddungZuZeigen({json.dumps(liste)}, null)") == [1, 2, 4]
-    assert _node(q, f"_reddungZuZeigen({json.dumps(liste)}, 3)") == [1, 2, 3, 4]
-    assert _node(q, "_reddungZuZeigen([], null)") == []
+    assert _node(q, f"_reddungZuZeigen({json.dumps(liste)})") == [1, 4]
+    assert _node(q, "_reddungZuZeigen([])") == []
+    assert "_reddungGeoeffnetId" not in INDEX, "die aus der Bilanz geholte gibt es nicht mehr"
+
+
+def test_zur_karte_steht_in_der_bilanz_nur_solange_das_event_laeuft():
+    """Nach dem Ende zeigt die Live-Karte die Reddung nicht mehr -- der Knopf fuehrte ins Leere.
+    Sektor und Zellen stehen dann auf der Event-Karte darunter."""
+    rumpf = _ohne_kommentare(_funktion("_reddungBilanzHtml"))
+    i = rumpf.index("reddungAufKarte(")
+    assert "if (r.laeuft)" in rumpf[:i], "der Knopf haengt an r.laeuft"
 
 
 @pytest.mark.skipif(not _NODE, reason="node fehlt")
@@ -175,7 +184,7 @@ def test_die_karte_holt_sich_die_ebene_beim_oeffnen():
 
 def test_die_kartenzustaende_stehen_vor_dem_ersten_aufruf():
     erster_aufruf = INDEX.index("setInterval(_reddungTakt, 30000)")
-    for name in ("let _reddungGruppe", "let _reddungGeoeffnetId", "const _reddungZeichnung",
+    for name in ("let _reddungGruppe", "const _reddungZeichnung",
                  "const _reddungRasterFertig", "let _reddungAbgewaehlt", "let _reddungSelbst"):
         assert INDEX.index(name) < erster_aufruf, name
 
@@ -383,7 +392,7 @@ def test_nur_die_juengste_antwort_zaehlt():
     assert "++_reddungTaktNr" in takt and "!== _reddungTaktNr" in takt
     raster = _ohne_kommentare(_funktion("_reddungRasterHolen"))
     assert "_reddungRasterNr" in raster
-    assert "_reddungZuZeigen(_reddungListe, _reddungGeoeffnetId).includes(id)" in raster
+    assert "_reddungZuZeigen(_reddungListe).includes(id)" in raster
 
 
 def test_der_rahmen_folgt_dem_sektor():
@@ -554,6 +563,21 @@ def test_die_event_karte_setzt_die_marke_und_nimmt_sie_in_den_ausschnitt():
     # Das Zeichen der FriesenReddung, wie in Titel, Bilanz und Teilen-Text -- keine Flamme
     # (Nutzer, 25.09.2026: „Ein Feuer als Symbol??").
     assert "emojiChar('🚨')" in rumpf and "🔥" not in rumpf
+    # Sektor und abgesuchte Zellen dauerhaft, laufend wie abgeschlossen (Nutzer, 26.09.2026) --
+    # als Aufgabe im selben Warten wie die Spuren, damit der Ausschnitt den Sektor enthaelt.
+    assert "drawTasks.push(_reddungEventKarte(bounds))" in rumpf
+    assert rumpf.index("drawTasks.push(_reddungEventKarte(bounds))") < rumpf.index(
+        "await Promise.all(drawTasks)")
+
+
+def test_die_event_karte_zeichnet_sektor_und_zellen():
+    rumpf = _ohne_kommentare(_funktion("_reddungEventKarte"))
+    assert "'/api/reddung/events/' + id + '/raster'" in rumpf
+    assert "_reddungLaeufe(" in rumpf
+    # Wer waehrend des Ladens eine andere Bilanz oeffnet, bekommt nicht den alten Sektor.
+    assert rumpf.count("_reddungOffenId") >= 2
+    for stueck in ("s.sued", "s.nord", "s.west", "s.ost", "bounds.push"):
+        assert stueck in rumpf, stueck
 
 
 def test_die_readme_nennt_den_fundort():

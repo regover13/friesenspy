@@ -4511,7 +4511,7 @@
               <li><strong>Platzrunden</strong> — 412 deutsche Platzrunden mit Höhe, über jeder Kartensorte</li>
               <li><strong>Meldepunkte</strong> — VFR-Meldepunkte weltweit; gefüllt heißt meldepflichtig, hohl heißt auf Anforderung</li>
               <li><strong>FSE-Plätze</strong> und <strong>FSE-Landeflächen</strong> — zwei eigene Haken: Plätze aus FSEconomy mit Bahnlänge, Belag und dem Namen, unter dem der Platz im Simulator zu finden ist</li>
-              <li><strong>FriesenReddung</strong> — der Suchsektor als rot gestrichelter Rahmen, darin blau, was schon abgesucht ist; erscheint nur, solange eine FriesenReddung läuft, am Vortag lief oder aus ihrer Bilanz geholt wurde. Wo der Havarist liegt, zeigt sie nie</li>
+              <li><strong>FriesenReddung</strong> — der Suchsektor als rot gestrichelter Rahmen, darin blau, was schon abgesucht ist; erscheint nur, solange eine FriesenReddung läuft, und verschwindet mit ihrem Ende. Danach stehen Sektor und Zellen auf der Karte unter ihrer Bilanz. Wo der Havarist liegt, zeigt sie nie</li>
               <li><strong>Verkehr</strong> — der fremde VATSIM-Verkehr (grau, siehe oben); aus Platzgründen erst ab Zoomstufe 7</li>
               <li><strong>Radar Label</strong> — blendet die Beschriftungen am Fremdverkehr aus, wenn das Bild ruhiger sein soll; der Haken erscheint erst mit eingeschaltetem „Verkehr"</li>
             </ul>
@@ -14758,6 +14758,10 @@ async function renderEventsMap(pilots, icaoStr, radiusKm) {
     });
   }));
 
+  // Sektor und abgesuchte Zellen der offenen Reddung -- dauerhaft, laufend wie abgeschlossen
+  // (Nutzer, 26.09.2026). Im selben Warten wie die Spuren, damit der Ausschnitt ihn enthaelt.
+  drawTasks.push(_reddungEventKarte(bounds));
+
   // Nach dem Ende einer FriesenReddung: wo das Wrack stand (#50). Mit im Ausschnitt, sonst
   // laege die Marke bei weit auseinanderliegenden Spuren womoeglich am Rand oder daneben.
   const fo = _reddungFundort();
@@ -15224,7 +15228,6 @@ let _reddungListeGeladen = false;
 // neueren ankommt, wuerde sie sonst ueberschreiben (#44, Punkt 4).
 let _reddungTaktNr = 0;
 const _reddungRasterNr = new Map();     // id -> Nummer des juengsten Raster-Abrufs
-let _reddungGeoeffnetId = null;         // aus Live-Block oder Bilanz auf die Karte geholt
 let _reddungGruppe = null;              // L.layerGroup der Ebene „FriesenReddung"
 let _reddungEbeneDa = false;            // steht der Eintrag gerade in der Ebenen-Auswahl?
 // Vom Nutzer abgewaehlt -- gilt bis zum Neuladen und wird bewusst NICHT gespeichert: Sonst
@@ -15337,18 +15340,13 @@ function _reddungBannerBlock(r) {
   return html;
 }
 
-// Welche Reddungen die Karte zeigt -- eine Liste, keine Zeitspanne (Spec Abschnitt 4):
-// die laufenden, die vor weniger als 24 h endeten (die Nachbesprechung ist am Abend danach),
-// und die eine, die jemand aus der Bilanz geholt hat, gleich welchen Alters.
-function _reddungZuZeigen(liste, geoeffnetId) {
-  // `laeuft` und `vorbei_seit_s` rechnet der Server, nicht die Uhr des Geräts (#44).
-  const TAG_S = 24 * 3600;
-  const ids = [];
-  (liste || []).forEach(r => {
-    const frisch = r.vorbei_seit_s != null && r.vorbei_seit_s < TAG_S;
-    if (r.laeuft || frisch || r.id === geoeffnetId) ids.push(r.id);
-  });
-  return ids;
+// Welche Reddungen die Live-Karte zeigt: NUR die laufenden. „Das Event muss zum Event-Ende
+// aus der Karte verschwinden!!" (Nutzer, 26.09.2026). Bis dahin blieben auch die gezeigt, die
+// vor weniger als 24 h endeten, und jede aus der Bilanz geholte (Spec Abschnitt 4, fuer die
+// Nachbesprechung am Abend danach). Die findet jetzt auf der Event-Karte unter der Bilanz
+// statt (_reddungEventKarte). `laeuft` rechnet der Server, nicht die Uhr des Geraets (#44).
+function _reddungZuZeigen(liste) {
+  return (liste || []).filter(r => r.laeuft).map(r => r.id);
 }
 
 // Einen Eintrag der Ebenen-Auswahl vor einen benannten ziehen. `addOverlay` haengt ans Ende --
@@ -15407,7 +15405,7 @@ function _reddungKarteAbgleichen() {
       _reddungKarteAbgleichen();   // wieder eingeschaltet: sofort laden, nicht erst im Takt
     });
   }
-  const ids = _reddungZuZeigen(_reddungListe, _reddungGeoeffnetId);
+  const ids = _reddungZuZeigen(_reddungListe);
   if (!ids.length) {
     if (_reddungEbeneDa) {
       _reddungSelbst = true;
@@ -15468,7 +15466,7 @@ async function _reddungRasterHolen(id) {
     // Nur die juengste Antwort je Reddung zaehlt, und nur, solange sie noch gezeigt wird --
     // sonst holte ein spaetes Raster den Rahmen einer abgewaehlten Reddung zurueck (#44).
     if (_reddungRasterNr.get(id) !== nr) return;
-    if (!_reddungZuZeigen(_reddungListe, _reddungGeoeffnetId).includes(id)) return;
+    if (!_reddungZuZeigen(_reddungListe).includes(id)) return;
     // Abgelaufen aendert sich nichts mehr -- einmal laden, nie wieder fragen.
     if (vorbei) _reddungRasterFertig.set(id, d);
   }
@@ -15503,7 +15501,6 @@ function _reddungZeichnen(id, d) {
 }
 
 async function reddungAufKarte(id) {
-  _reddungGeoeffnetId = Number(id);
   _reddungAbgewaehlt = false;
   const tab = document.querySelector('.tab-btn[data-tab="karte"]');
   if (tab) tab.click();
@@ -15541,6 +15538,36 @@ function _reddungFundort() {
   const text = g ? `Fundort — gefunden von ${escHtml(g.name || '?')} um ${(g.ts || '').slice(11, 16)} UTC`
                  : 'Hier lag der Havarist — nicht gefunden';
   return { lat: fo.lat, lon: fo.lon, text };
+}
+
+// Sektor und abgesuchte Zellen der offenen Reddung auf der Event-Karte (Nutzer, 26.09.2026:
+// „Hier möchte ich den Sector und die gesuchten Zellen dauerhaft anzeigen"). Dieselben Daten
+// und dieselbe Zeichnung wie auf der Live-Karte (_reddungZeichnen), nur hier fuer JEDEN Abend,
+// nicht nur den laufenden. Die Antwort traegt keine Lage des Havaristen (Raster-Endpunkt).
+async function _reddungEventKarte(bounds) {
+  const id = _reddungOffenId;
+  if (id == null || !eventsMap) return;
+  let d;
+  try {
+    const res = await fetch('/api/reddung/events/' + id + '/raster');
+    if (!res.ok) return;
+    d = await res.json();
+  } catch (e) {
+    return;
+  }
+  // Wer inzwischen eine andere Bilanz geoeffnet hat, bekommt nicht diesen Sektor.
+  if (_reddungOffenId !== id || !eventsMap || !d || !d.sektor || !d.raster) return;
+  const s = d.sektor;
+  const polys = _reddungLaeufe(d.abgedeckt, d.raster, s).map(r => [r]);
+  const flaeche = L.polygon(polys, { stroke: false, fillColor: '#2d9cdb', fillOpacity: 0.3,
+                                     interactive: false }).addTo(eventsMap);
+  const rahmen = L.rectangle([[s.sued, s.west], [s.nord, s.ost]],
+    { color: '#e05555', weight: 2, dashArray: '8 6', fill: false, interactive: false })
+    .addTo(eventsMap);
+  // Unter die Spuren: Die kommen im selben Warten und koennen vorher gezeichnet sein.
+  flaeche.bringToBack();
+  rahmen.bringToBack();
+  bounds.push([s.sued, s.west], [s.nord, s.ost]);
 }
 
 function _reddungZu() {
@@ -15620,7 +15647,11 @@ function _reddungBilanzHtml(r) {
     });
     html += '</tbody></table></div>';
   }
-  html += `<div style="margin-top:8px;"><button class="btn-share" onclick="reddungAufKarte(${Number(r.id)})">${icon('map')} Zur Karte</button></div>`;
+  // Nur solange das Event laeuft: Danach zeigt die Live-Karte die Reddung nicht mehr, und
+  // Sektor und Zellen stehen auf der Event-Karte gleich darunter (Nutzer, 26.09.2026).
+  if (r.laeuft) {
+    html += `<div style="margin-top:8px;"><button class="btn-share" onclick="reddungAufKarte(${Number(r.id)})">${icon('map')} Zur Karte</button></div>`;
+  }
   return html;
 }
 
