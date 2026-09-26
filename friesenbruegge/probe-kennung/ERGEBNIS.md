@@ -129,7 +129,8 @@ beide Simulatoren („EIN MODUL" in `../msfs/bruegge.cpp`). Sie braucht `fopen`/
 `fclose` und keinen der Wettläufe der asynchronen Datei-API (`aadf482`). Die Probe hat keinen
 Bauauftrag: Wie `KENNUNG_HAELT` zurückkommt, ist eine eigene Entscheidung.
 
-Aufgeräumt: Das Probe-Paket `friesenprobe` ist aus dem Community-Ordner von MSFS 2020 entfernt. In
-MSFS 2024 läuft der Simulator noch, dort wird es nach dem Beenden entfernt
-(`probe_paket.ps1 -Entfernen`). Die `work`-Ordner der Probe (siehe Tabelle oben) sind bewusst
-nicht gelöscht.
+Aufgeräumt (26.09.2026): Das Probe-Paket `friesenprobe` ist aus beiden Community-Ordnern entfernt und
+die `friesenprobe`-Ordner unter `LocalState` sind gelöscht. **Das Löschen des Pakets allein hat sie
+nicht mitgenommen:** Dort lagen neben der `work`-Datei auch die vom Simulator übersetzten Module
+(`.dll`, `.lib`, `.obj`, `.cache`, in 2024 auch `.pdb`). Wer die FriesenBrügge deinstalliert, lässt
+also mehr als nur die Kennung zurück. Festgehalten in #46.
