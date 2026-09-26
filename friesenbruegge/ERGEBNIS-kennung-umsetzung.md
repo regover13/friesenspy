@@ -216,3 +216,23 @@ bruegge_zuordnung: fe62f1b3 | cid 1602713 (FRS49) | msfs2024 | 1.18.1 | protokol
 - **Kniebrett-Praxistest:** Der Nutzer stand mit FRS61 (CID 1031301) etwa 50 m entfernt (beide im
   VATSIM-Datenstrom des Servers, beide stehend). „Ich sehe nur mich“ auf dem Kniebrett, ohne
   Bildschirmfoto und ohne Angabe, ob FRS61 im Simulator selbst sichtbar war. **Nicht ausgewertet.**
+
+## Nachtrag 26.09.2026, 18:35: Pakete hochgeladen (auf ausdrückliches Wort des Nutzers)
+
+Der Nutzer: „sind die neuen Pakete online? schieb sie rein“. Auf dem Server (`/opt/friesenspy/data/efb/`):
+
+- `friesenbruegge.zip` **1.17.0 → 1.18.1** (396 038 Bytes); die alte Fassung liegt als `friesenbruegge-1.17.0.zip` daneben.
+- `friesenspy-efb.zip` **2.3.1 → 2.3.2** (137 766 Bytes); die alte Fassung liegt als `friesenspy-efb-2.3.1.zip` daneben.
+- Per `scp` hochgeladen, SHA-256 lokal und auf dem Server verglichen (identisch), Manifest im Archiv
+  liest 1.18.1 bzw. 2.3.2. Die Download-Seite selbst ist nur mit Login erreichbar und wurde nicht
+  angesehen. `friesenbruegge-xplane.zip` blieb unberührt.
+- **Kniebrett 2.3.2 ist noch nicht praktisch getestet** (der erste Test lief gegen 2.3.1, s. u.); das
+  Hochladen erfolgte auf Wunsch des Nutzers trotzdem.
+
+### Fund: zweiter Ordner `Community2024`
+
+MSFS 2024 kennt neben `LocalCache\Packages\Community` einen zweiten Ordner
+`LocalCache\Packages\Community2024`. Beim Nutzer lag dort noch das Kniebrett **2.3.1** (mit dem
+Eigenfilter) und hat das in `Community` abgelegte 2.3.2 offenbar überdeckt: Das Gerät meldete um
+15:55Z weiter `paket_version` 2.3.1. Jetzt liegt 2.3.2 in beiden Ordnern. Die Anleitung auf der
+Download-Seite sollte das erwähnen: Wer `Community2024` benutzt, muss das Paket dort tauschen.
