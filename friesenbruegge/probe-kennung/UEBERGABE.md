@@ -93,7 +93,7 @@ zu fragen.
 
 ## Ergebnis
 
-In diese Ordner als `ERGEBNIS.md`, dann committen und pushen. `friesenbruegge/**` löst keinen
+In diesen Ordner als `ERGEBNIS.md`, dann committen und pushen. `friesenbruegge/**` löst keinen
 Deploy aus. Hinein gehören:
 
 - SDK, gegen das gebaut wurde
