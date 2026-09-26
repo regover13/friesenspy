@@ -71,11 +71,14 @@ def _friese_anlegen(db_pfad, cid=1234567, callsign="FRS61",
     """Ein Friese auf VATSIM -- und, wenn gewollt, mit Forum-Login."""
     from app.database import get_connection, _now_utc
     conn = get_connection(db_pfad)
+    # Mit Anmeldezeit, wie VATSIM sie immer liefert: Ab Protokoll 3 (und fuer X-Plane) zaehlt
+    # bei der ersten Zuordnung nur, wer sich nach dem Start der Bruegge verbunden hat (#46).
     conn.execute(
         "INSERT OR REPLACE INTO live_positions "
-        "(cid, callsign, latitude, longitude, altitude, groundspeed, heading, updated_at) "
-        "VALUES (?, ?, ?, ?, 5, 0, 210, ?)",
-        (cid, callsign, lat, lon, _now_utc()),
+        "(cid, callsign, latitude, longitude, altitude, groundspeed, heading, logon_time, "
+        " updated_at) "
+        "VALUES (?, ?, ?, ?, 5, 0, 210, ?, ?)",
+        (cid, callsign, lat, lon, _now_utc(), _now_utc()),
     )
     if mit_forum_login:
         conn.execute(

@@ -178,6 +178,11 @@ def test_endpunkt_legt_die_position_in_den_strom(tmp_path, monkeypatch):
         "INSERT OR REPLACE INTO forum_callsign (callsign, cid, updated_at) VALUES (?, ?, ?)",
         ("FRS49", 1234567, _now_utc()),
     )
+    # Die Kennung ist schon gebunden: Geprueft wird der Strom, nicht die erste Zuordnung. Eine
+    # unbekannte X-Plane-Bruegge im Flug wird seit dem 26.09.2026 erst nach 2 Minuten
+    # eindeutigem Flug gebunden (#46, Thesen 2, 3 und 6).
+    from app.database import bruegge_zuordnung_setzen
+    bruegge_zuordnung_setzen(conn, "a3f9c1e0b2d48576", 1234567, "xplane12", 3)
     conn.commit()
     conn.close()
 

@@ -844,7 +844,8 @@ class VatsimPoller:
     #: einen Begriff waeren zwei Stellen, an denen sie auseinanderlaufen koennen.
     BRUEGGE_FRIST_S = bruegge.MELDUNG_FRIST_S
 
-    def bruegge_position_merken(self, cid: int, lage: dict) -> None:
+    def bruegge_position_merken(self, cid: int, lage: dict, bewaehrt: bool = False,
+                                cs: str | None = None) -> None:
         """Eine frisch gemeldete Bruegge-Position fuer den Sekundenstrom vormerken.
 
         Aufgerufen aus `/api/bruegge/melden`, NACHDEM die Zuordnung zu einer cid steht. Ohne
@@ -883,6 +884,11 @@ class VatsimPoller:
             "alt": None if lage.get("alt_msl_ft") is None else round(float(lage["alt_msl_ft"])),
             "agl": None if lage.get("alt_agl_ft") is None else round(float(lage["alt_agl_ft"])),
             "gnd": bool(lage.get("am_boden")),
+            # ⭐ „bewaehrt" und Rufzeichen (#46/#47, 26.09.2026): Eine BEWAEHRTE Bruegge nimmt
+            # das Kniebrett als Anker. Das Rufzeichen steht dabei, weil ein Friese unter
+            # fremdem Rufzeichen in keiner Friesenliste steht, ueber die es sich fanden liesse.
+            "bw": bool(bewaehrt),
+            **({"cs": cs} if cs else {}),
             "ts": time.monotonic(),
         }
 

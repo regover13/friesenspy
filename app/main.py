@@ -96,7 +96,7 @@ from app.database import (
     cid_ist_authentifiziert,
     bruegge_belegte_cids,
     bruegge_kennung_fuer,
-    bruegge_zuordnung_holen,
+    bruegge_zuordnung_holen, forum_cids,
     bruegge_zuordnung_setzen,
     bruegge_zuordnung_bestaetigen,
     bruegge_vs_spitze_merken,
@@ -209,6 +209,7 @@ from app.database import (
 )
 from app import geo
 from app import bruegge
+from app import bruegge_bindung
 from app.reddung import analyse_platz as reddung_analyse_platz
 from app.geo import filter_event_pilots
 from app.poller import VatsimPoller, create_poller, send_web_push
@@ -1363,7 +1364,14 @@ _BRUEGGE_MAX_BYTES = 64 * 1024       # eine Meldung mit voller spur liegt weit d
 # (der Server wirft es weg, wie immer) und uebergeht `arten` als unbekanntes Feld -- sie
 # nimmt ihre eigene Tabelle. Genau dafuer ist die Regel "unbekannte Felder werden auf
 # beiden Seiten uebergangen" da.
-_BRUEGGE_PROTOKOLL = 2               # was dieser Server spricht
+_BRUEGGE_PROTOKOLL = 3               # was dieser Server spricht
+# ⭐ PROTOKOLL 3 (26.09.2026, #46): Die MSFS-Bruegge speichert ihre Kennung wieder, und die
+# Kennung benennt die INSTALLATION. Sie laeuft ueber `bruegge_bindung` -- genauso jede
+# X-Plane-Bruegge, die ihre Kennung schon immer selbst speichert. Die alte MSFS-Bruegge
+# (Protokoll 2, bis 1.17.0) laeuft bis zu diesem Stichtag ueber `_bruegge_zuordnen` weiter,
+# danach bekommt sie 426. `None` heisst: kein Stichtag gesetzt. Gesetzt wird er beim Release
+# der neuen Bruegge, vier Wochen danach (Nutzerentscheidung 26.09.2026).
+_BRUEGGE_P2_MSFS_BIS: str | None = None
 _BRUEGGE_GILT_BIS_S = 300            # so lange gilt "soll" ohne neue Auskunft
 # Wer nicht auf VATSIM ist, fragt selten -- aber nicht SO selten, dass er eine Minute lang
 # nicht merkt, dass er sich gerade verbunden hat.
@@ -1571,6 +1579,15 @@ async def bruegge_melden(request: Request):
     kennung = str(body.get("kennung") or "")[:64]
     simulator = str(body.get("simulator") or "")[:20] or None
 
+    # Welcher Weg? Protokoll 3 und jede X-Plane-Bruegge ueber `bruegge_bindung`; die alte
+    # MSFS-Bruegge ueber `_bruegge_zuordnen`, bis zum Stichtag.
+    neuer_weg = ((isinstance(fassung, int) and fassung >= 3)
+                 or (simulator or "").startswith("xplane"))
+    if (not neuer_weg and (simulator or "").startswith("msfs") and _BRUEGGE_P2_MSFS_BIS
+            and _now_iso() >= _BRUEGGE_P2_MSFS_BIS):
+        raise HTTPException(status_code=426,
+                            detail="Diese FriesenBrügge ist zu alt -- bitte die neue installieren")
+
     # ⚠ DIE KOLLISIONSKENNUNG -- melden, nicht behandeln.
     #
     # Bis zum 14.09.2026 baute die MSFS-Bruegge ihre Kennung aus der Modul-Adresse und
@@ -1624,10 +1641,34 @@ async def bruegge_melden(request: Request):
     conn = get_connection(settings.DB_PATH)
     try:
         takt = _bruegge_takt(conn)
-        cid, kandidaten_da, zugeteilt, lage_gilt = _bruegge_zuordnen(
-            conn, kennung, lat, lon, alt_ft, gs_kt, simulator, settings, vs_ft_min)
-        # Ab jetzt gilt die zugeteilte auch hier -- `steht` und die Ablage haengen daran.
-        kennung = kennung or (zugeteilt or "")
+        bewaehrt, rufzeichen = False, None
+        if neuer_weg:
+            # ⭐ EINE NEUE INSTALLATION BEKOMMT SOFORT EINE FRISCHE KENNUNG -- vor jeder
+            # Zuordnung und nie die eines Piloten (#46). Die Bruegge speichert sie; ab der
+            # naechsten Meldung kennt der Server ihre Sitzung. In die Datenbank kommt sie erst
+            # mit der Bindung (`bruegge_bindung`).
+            zugeteilt = None
+            if not kennung:
+                kennung = zugeteilt = secrets.token_hex(8)
+            kands = _bruegge_kandidaten_v3(conn, getattr(request.app.state, "poller", None))
+            _z = bruegge_zuordnung_holen(conn, kennung)
+            _g = _z if (_z and not _z.get("geloest_am")) else None
+            meldung = bruegge_bindung.Meldung(
+                lat=lat, lon=lon, alt_ft=alt_ft, gs_kt=gs_kt,
+                am_boden=bool(lage.get("am_boden")),
+                vs_wirksam=max(abs(vs_ft_min), _bruegge_vs_spitze(_g)),
+                sekunden_her=_bruegge_sekunden_her(_g), simulator=simulator, protokoll=3)
+            erg = bruegge_bindung.zuordnen(conn, kennung, meldung, kands)
+            cid, kandidaten_da, lage_gilt = erg.cid, erg.kandidaten_da, erg.lage_gilt
+            if cid is not None:
+                _z = bruegge_zuordnung_holen(conn, kennung)
+                bewaehrt = bool(_z and _z.get("bewaehrt_am"))
+                rufzeichen = next((k.callsign for k in kands if k.cid == cid), None)
+        else:
+            cid, kandidaten_da, zugeteilt, lage_gilt = _bruegge_zuordnen(
+                conn, kennung, lat, lon, alt_ft, gs_kt, simulator, settings, vs_ft_min)
+            # Ab jetzt gilt die zugeteilte auch hier -- `steht` und die Ablage haengen daran.
+            kennung = kennung or (zugeteilt or "")
 
         if cid is None:
             # Ohne Zuordnung geschieht NICHTS -- keine Anzeige, keine Ablage, keine Objekte.
@@ -1640,9 +1681,12 @@ async def bruegge_melden(request: Request):
             # voraussetzt. Fuer die Bruegge bleiben beide Faelle ununterscheidbar, denn sie
             # sieht nur eine Zahl, keinen Grund.
             conn.commit()
+            # Auch ohne Zuordnung geht eine frisch vergebene Kennung hinaus (Protokoll 3) --
+            # sonst bekaeme die Bruegge bei jeder Meldung eine neue.
             return _bruegge_antwort(
                 _BRUEGGE_TAKT_UNERKANNT_S if kandidaten_da else _BRUEGGE_TAKT_OHNE_VATSIM_S,
-                gilt_bis=0, fassung=fassung if isinstance(fassung, int) else None)
+                gilt_bis=0, fassung=fassung if isinstance(fassung, int) else None,
+                kennung=zugeteilt if neuer_weg else None)
 
         # ⭐ Die Lage nur uebernehmen, wenn sie zur Zuordnung passt (`lage_gilt`). Im
         # Verstoss-Fenster steht die Zuordnung, die Position aber nicht -- dann behaelt die
@@ -1696,7 +1740,13 @@ async def bruegge_melden(request: Request):
         # Rangfolge.
         _poller = getattr(request.app.state, "poller", None)
         if _poller is not None and lage_gilt:
-            _poller.bruegge_position_merken(cid, lage)
+            if neuer_weg:
+                # Rufzeichen und „bewaehrt" gehen mit: Das Kniebrett nimmt eine BEWAEHRTE
+                # Bruegge als Anker (#47, These 18), und ueber die CID gefunden steht der
+                # Pilot womoeglich unter fremdem Rufzeichen in keiner Friesenliste.
+                _poller.bruegge_position_merken(cid, lage, bewaehrt=bewaehrt, cs=rufzeichen)
+            else:
+                _poller.bruegge_position_merken(cid, lage)
 
         # ⭐ WELCHE FASSUNG FLIEGT DA? -- beide Bruegge senden es seit jeher mit, und bis zum
         # 16.09.2026 hat der Server es weggeworfen. Ohne diese Zeile laesst sich nicht einmal
@@ -1924,6 +1974,59 @@ def _bruegge_melder(kennung: str, simulator: str | None, lat: float, lon: float,
     """
     return (f"{kennung or '(ohne Kennung)'} {simulator or '?'} "
             f"@ {lat:.5f},{lon:.5f} {alt_ft:.0f} ft")
+
+
+def _iso_epoch(text) -> float | None:
+    """VATSIM-Zeitstempel (``2026-09-26T12:34:56.1234567Z``) als epoch -- oder None."""
+    if not text:
+        return None
+    try:
+        return datetime.strptime(str(text)[:19], "%Y-%m-%dT%H:%M:%S").replace(
+            tzinfo=_timezone.utc).timestamp()
+    except ValueError:
+        return None
+
+
+def _bruegge_kandidaten_v3(conn, poller) -> list:
+    """Alle VATSIM-Verbindungen, deren CID sich im Forum angemeldet hat -- gleich unter welchem
+    Rufzeichen (Nutzer, 26.09.2026: „Lass über die CID gehen"). Friesen aus `live_positions`,
+    alle anderen aus dem Verkehrs-Schnappschuss des Pollers; beide auf jetzt fortgerechnet.
+    Ein nicht angemeldeter FRS-Pilot ist KEIN Kandidat mehr (vorher erst nach dem Treffer
+    geprueft, dann konnte er den Treffer schlucken)."""
+    forum = forum_cids(conn)
+    jetzt = time.time()
+    out: dict[int, bruegge_bindung.Kand] = {}
+    for r in conn.execute(
+            "SELECT cid, callsign, latitude, longitude, altitude, groundspeed, heading, "
+            "       logon_time, updated_at FROM live_positions "
+            "WHERE latitude IS NOT NULL AND longitude IS NOT NULL").fetchall():
+        r = dict(r)
+        cid = int(r["cid"])
+        if cid not in forum:
+            continue
+        alter = bruegge._alter_s(r.get("updated_at"), jetzt)
+        gs = float(r.get("groundspeed") or 0.0)
+        g_lat, g_lon = bruegge.jetzt_gerechnet(float(r["latitude"]), float(r["longitude"]),
+                                               float(r.get("heading") or 0.0), gs, alter)
+        out[cid] = bruegge_bindung.Kand(cid, str(r.get("callsign") or ""), g_lat, g_lon,
+                                        float(r.get("altitude") or 0.0), gs,
+                                        _iso_epoch(r.get("logon_time")), alter)
+    ts = float(getattr(poller, "traffic_snapshot_ts", 0.0) or 0.0)
+    alter_snap = max(0.0, jetzt - ts) if ts else 9999.0
+    for e in (getattr(poller, "traffic_snapshot", None) or []):
+        try:
+            cid = int(e.get("cid"))
+        except (TypeError, ValueError):
+            continue
+        if cid in out or cid not in forum:
+            continue
+        gs = float(e.get("gs") or 0.0)
+        g_lat, g_lon = bruegge.jetzt_gerechnet(float(e["lat"]), float(e["lon"]),
+                                               float(e.get("hdg") or 0.0), gs, alter_snap)
+        out[cid] = bruegge_bindung.Kand(cid, str(e.get("cs") or ""), g_lat, g_lon,
+                                        float(e.get("alt") or 0.0), gs,
+                                        _iso_epoch(e.get("logon")), alter_snap)
+    return list(out.values())
 
 
 def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
@@ -3180,7 +3283,10 @@ async def get_traffic(
     # cid bleibt serverseitig — der Client braucht sie nicht.
     return {
         "age": round(alter, 1),
-        "traffic": [{k: v for k, v in e.items() if k != "cid"} for _, e in nah[:_TRAFFIC_MAX]],
+        # `cid` dient nur dem Aussortieren, `logon` nur der FriesenBruegge (#46) -- beides
+        # geht nicht an den Client.
+        "traffic": [{k: v for k, v in e.items() if k not in ("cid", "logon")}
+                    for _, e in nah[:_TRAFFIC_MAX]],
     }
 
 

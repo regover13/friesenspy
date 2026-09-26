@@ -186,5 +186,9 @@ def snapshot_other_traffic(callsign_prefix: str, vatsim_data: dict) -> list[dict
             "ac": str(fp.get("aircraft_short") or ""),
             "dep": str(fp.get("departure") or ""),
             "arr": str(fp.get("arrival") or ""),
+            # Die Anmeldezeit bei VATSIM -- fuer die FriesenBruegge (#46, These 8): Bei der
+            # ersten Zuordnung zaehlt nur, wer sich NACH dem Start der Bruegge verbunden hat.
+            # Geht nicht an den Client (s. `/api/traffic`).
+            "logon": str(p.get("logon_time") or ""),
         })
     return out

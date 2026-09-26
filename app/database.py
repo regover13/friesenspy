@@ -1204,6 +1204,17 @@ _BRUEGGE_MIGRATIONS = [
     "    hoehe_ft = excluded.hoehe_ft, geprueft_am = excluded.geprueft_am "
     "WHERE excluded.geprueft_am > bruegge_titel_lauf.geprueft_am "
     "  AND bruegge_titel_lauf.quelle <> 'hand'",
+    # ------------------------------------------------------------------------------------
+    # 26.09.2026: DIE KENNUNG BENENNT DIE INSTALLATION (#46, Protokoll 3).
+    #
+    # `bewaehrt_am`: Seit wann die Bindung bewaehrt ist -- in der Luft, mindestens 40 kt,
+    # 2 Minuten am Stueck eindeutig (Spec 2026-09-26, Thesen 2 und 3). Nur eine bewaehrte
+    # Bindung haelt gegen einen Widerspruch; eine unbewaehrte wird dann vergessen (These 4).
+    # `protokoll`: In welcher Fassung die Bruegge gebunden wurde. Protokoll 2 (alte
+    # MSFS-Bruegge, speichert nichts) bekommt ihre Kennung weiter vom Server zurueck; ab 3
+    # nie mehr -- sonst teilte sich eine alte Bruegge die Kennung einer neuen Installation.
+    "ALTER TABLE bruegge_zuordnung ADD COLUMN bewaehrt_am TEXT",
+    "ALTER TABLE bruegge_zuordnung ADD COLUMN protokoll INTEGER",
 ]
 
 _KNIEBRETT_MIGRATIONS = [
@@ -3034,7 +3045,7 @@ def bruegge_belegte_cids(conn: sqlite3.Connection, ausser_kennung: str,
 
 
 def bruegge_zuordnung_setzen(conn: sqlite3.Connection, kennung: str, cid: int,
-                             simulator: str | None) -> None:
+                             simulator: str | None, protokoll: int | None = None) -> None:
     """Eine neue Zuordnung merken (kein commit).
 
     Aeltere Zuordnungen DERSELBEN CID fallen dabei weg. Der Grund ist gemessen: Die Kennung
@@ -3062,22 +3073,33 @@ def bruegge_zuordnung_setzen(conn: sqlite3.Connection, kennung: str, cid: int,
     WASM-Sandkasten und damit seine eigene Kennung. Dass nicht ZWEI gleichzeitig melden,
     sichert weiterhin `bruegge_belegte_cids` -- ueber die Frist, nicht ueber das Loeschen.
     """
-    conn.execute(
-        "DELETE FROM bruegge_zuordnung "
-        "WHERE cid = ? AND kennung <> ? AND COALESCE(simulator, '') = COALESCE(?, '')",
-        (int(cid), kennung, simulator),
-    )
+    # ⚠ AB PROTOKOLL 3 WIRD NICHTS MEHR WEGGERAEUMT (26.09.2026, These 9). Die Kennung benennt
+    # dann die Installation, und ein Pilot hat so viele, wie er Rechner und Simulatoren hat.
+    # Weggeraeumt werden nur noch Zeilen alter Brueggen (Protokoll 2 oder ohne Angabe), und das
+    # nur, wenn auch die neue Zeile von einer alten stammt.
+    if protokoll is None or protokoll < 3:
+        conn.execute(
+            "DELETE FROM bruegge_zuordnung "
+            "WHERE cid = ? AND kennung <> ? AND COALESCE(simulator, '') = COALESCE(?, '') "
+            "  AND COALESCE(protokoll, 2) < 3",
+            (int(cid), kennung, simulator),
+        )
     now = _now_utc()
     conn.execute(
         "INSERT INTO bruegge_zuordnung (kennung, cid, simulator, zugeordnet_am, gesehen_am, "
-        "                               verstoesse) "
-        "VALUES (?, ?, ?, ?, ?, 0) "
+        "                               verstoesse, protokoll) "
+        "VALUES (?, ?, ?, ?, ?, 0, ?) "
         "ON CONFLICT(kennung) DO UPDATE SET cid = excluded.cid, "
         "    simulator = excluded.simulator, zugeordnet_am = excluded.zugeordnet_am, "
         "    gesehen_am = excluded.gesehen_am, verstoesse = 0, "
+        "    protokoll = COALESCE(excluded.protokoll, bruegge_zuordnung.protokoll), "
+        # Bewaehrt gilt nur fuer DIESELBE CID. Wird die Kennung einem anderen Piloten
+        # gebunden, beginnt die Bewaehrung von vorn.
+        "    bewaehrt_am = CASE WHEN bruegge_zuordnung.cid = excluded.cid "
+        "                       THEN bruegge_zuordnung.bewaehrt_am ELSE NULL END, "
         # Wieder gebunden -- die Erinnerung an das Loesen ist damit gegenstandslos.
         "    geloest_am = NULL",
-        (kennung, int(cid), simulator, now, now),
+        (kennung, int(cid), simulator, now, now, protokoll),
     )
 
 
@@ -3108,13 +3130,60 @@ def bruegge_kennung_fuer(conn: sqlite3.Connection, cid: int,
     auch ohne sie gewinnt: nichts (PROTOKOLL.md, "Identifikation, keine Authentifizierung").
     Zurueckgegeben wird sie ohnehin erst NACH einem geglueckten Positionsmatch.
     """
+    # ⚠ NUR KENNUNGEN ALTER BRUEGGEN (26.09.2026). Eine Kennung aus Protokoll 3 benennt eine
+    # Installation; gaebe der Server sie einer alten Bruegge desselben Piloten, teilten sich
+    # zwei Brueggen eine Kennung -- genau der Fehler vom 25.09.2026 (#46).
     row = conn.execute(
         "SELECT kennung FROM bruegge_zuordnung "
         "WHERE cid = ? AND COALESCE(simulator, '') = COALESCE(?, '') "
+        "  AND COALESCE(protokoll, 2) < 3 "
         "ORDER BY gesehen_am DESC LIMIT 1",
         (int(cid), simulator),
     ).fetchone()
     return str(row[0]) if row else None
+
+
+def bruegge_zuordnung_vergessen(conn: sqlite3.Connection, kennung: str) -> None:
+    """Bindung UND Erinnerung loeschen (kein commit).
+
+    Zwei Wege fuehren hierher (Spec 2026-09-26): Eine UNBEWAEHRTE Bindung, der die Bewegung
+    widerspricht (These 4) -- und der Admin-Knopf „vergessen" (These 5). Danach ist die
+    Kennung dem Server unbekannt und wird wie eine neue Installation zugeordnet.
+    """
+    conn.execute("DELETE FROM bruegge_zuordnung WHERE kennung = ?", (kennung,))
+
+
+def bruegge_zuordnung_bewaehren(conn: sqlite3.Connection, kennung: str) -> None:
+    """Die Bindung ist bewaehrt (kein commit). Ein zweites Mal aendert den Zeitpunkt nicht."""
+    conn.execute(
+        "UPDATE bruegge_zuordnung SET bewaehrt_am = ? "
+        "WHERE kennung = ? AND bewaehrt_am IS NULL",
+        (_now_utc(), kennung),
+    )
+
+
+def bruegge_vergebene_cids(conn: sqlite3.Connection, ausser_kennung: str,
+                           frist_s: float) -> set[int]:
+    """CIDs, fuer die gerade eine ANDERE, BEWAEHRTE Bruegge meldet (These 9).
+
+    Gebraucht nur beim Bewaehren: Wer neben einem fliegt und schon eindeutig er selbst ist,
+    soll dessen Bewaehrung nicht blockieren. „Gerade" heisst: letzte Meldung innerhalb der
+    Frist -- ein Pilot fliegt nur an einem Rechner, der andere schweigt dann.
+    """
+    grenze = (datetime.now(timezone.utc) - timedelta(seconds=frist_s)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ")
+    rows = conn.execute(
+        "SELECT DISTINCT cid FROM bruegge_zuordnung "
+        "WHERE kennung <> ? AND bewaehrt_am IS NOT NULL AND geloest_am IS NULL "
+        "  AND gesehen_am >= ?",
+        (ausser_kennung or "", grenze),
+    ).fetchall()
+    return {int(r[0]) for r in rows}
+
+
+def forum_cids(conn: sqlite3.Connection) -> set[int]:
+    """Alle CIDs, die sich je ueber das Forum angemeldet haben (s. cid_ist_authentifiziert)."""
+    return {int(r[0]) for r in conn.execute("SELECT DISTINCT cid FROM forum_callsign")}
 
 
 def bruegge_zuordnung_bestaetigen(conn: sqlite3.Connection, kennung: str,
