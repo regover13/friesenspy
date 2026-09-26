@@ -8,6 +8,17 @@ und prüfen, ob eine andere die Aufgabe schon erledigt hat.
 
 ---
 
+## FriesenBrügge-Kennung und Zuordnung im Kniebrett (#46, #47), beschlossen am 26.09.2026
+
+Alle Entscheidungen stehen in
+[`docs/superpowers/specs/2026-09-26-bruegge-kennung-und-zuordnung-design.md`](superpowers/specs/2026-09-26-bruegge-kennung-und-zuordnung-design.md),
+einzeln mit Wortlaut in #46 und #47. Umgesetzt wird in drei Paketen: (1) Kniebrett-Seite,
+(2) Server und neue MSFS-Brügge mit gespeicherter Kennung, (3) Kniebrett-Paket ohne
+Eigenfilter, zusammen mit (2). **Reihenfolge und Zeitpunkt entscheidet der Nutzer**; die neue
+Brügge nicht direkt vor einem Event verteilen.
+
+---
+
 ## ⚠ Zwei Titel lassen sich nicht setzen — und es liegt NICHT am Streaming
 
 > **Zuständigkeit seit 15.09.2026: eine andere Sitzung** (Nutzerentscheidung *„mast und kran

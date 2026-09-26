@@ -518,6 +518,13 @@ meisten Szenarien gegenstandslos. **Nie versucht wurde dafür `fopen` aus der wa
 gibt. Die Probe dazu liegt in `probe-kennung/`, die Übergabe an die Sitzung am
 Simulator-Rechner in `probe-kennung/UEBERGABE.md`.
 
+**Beschlossen, noch nicht umgesetzt (26.09.2026):** Die MSFS-Brügge speichert ihre Kennung
+wieder, per `fopen` in `\work`, und die Kennung benennt künftig die **Installation**, nicht den
+Piloten. Der Server vergibt beim ersten Kontakt eine frische Zufallskennung und nie mehr die
+eines Piloten. Dazu kommen Protokoll 3, die Bewährung im Flug und neue Regeln für die erste
+Zuordnung. Alles in `docs/superpowers/specs/2026-09-26-bruegge-kennung-und-zuordnung-design.md`.
+**Bis zur Umsetzung gilt dieses Protokoll unverändert.**
+
 **Ein Absturz des Simulators beendet auch die VATSIM-Verbindung** (Nutzer, 26.09.2026: *„Wenn
 der Sim crasht, wird auch vPilot das merken und beenden.“*). Nach jedem Neustart der Brügge ist
 die eigene VATSIM-Verbindung also neu. Eine Regel „nur Verbindungen, die nach der Brügge kamen“
