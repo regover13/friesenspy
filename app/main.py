@@ -1371,7 +1371,7 @@ _BRUEGGE_PROTOKOLL = 3               # was dieser Server spricht
 # (Protokoll 2, bis 1.17.0) laeuft bis zu diesem Stichtag ueber `_bruegge_zuordnen` weiter,
 # danach bekommt sie 426. `None` heisst: kein Stichtag gesetzt. Gesetzt wird er beim Release
 # der neuen Bruegge, vier Wochen danach (Nutzerentscheidung 26.09.2026).
-_BRUEGGE_P2_MSFS_BIS: str | None = None
+_BRUEGGE_P2_MSFS_BIS: str | None = "2026-10-24T00:00:00Z"   # Release 1.18.1: 26.09.2026
 _BRUEGGE_GILT_BIS_S = 300            # so lange gilt "soll" ohne neue Auskunft
 # Wer nicht auf VATSIM ist, fragt selten -- aber nicht SO selten, dass er eine Minute lang
 # nicht merkt, dass er sich gerade verbunden hat.

@@ -389,9 +389,10 @@ alle 15 Sekunden — dazwischen liegt bei Reisegeschwindigkeit fast ein Kilomete
 Fund, der 150 Meter verlangt, ist das der Unterschied zwischen gemessen und geschätzt.
 Schweigt deine Brügge einmal kurz, springt VATSIM ein und füllt die Lücke.
 
-**Und du musst mit Friesen-Rufzeichen auf VATSIM sein.** Die FriesenBrügge erkennt dich über
-deine VATSIM-Position; ohne Verbindung kann sie dich niemandem zuordnen, und für dich steht dann
-genauso wenig im Sektor wie ohne sie.
+**Und du musst mit Friesen-Rufzeichen auf VATSIM sein.** Die FriesenBrügge erkennt dich beim
+ersten Mal über deine VATSIM-Position und merkt sich danach, wer du bist (ab Fassung 1.18.0);
+ohne Verbindung kann sie dich niemandem zuordnen, und für dich steht dann genauso wenig im Sektor
+wie ohne sie.
 
 **Fehlt eins von beiden, sagt es dir die Live-Ansicht — solange du noch etwas ändern kannst.**
 Läuft eine FriesenReddung, erscheint unten links ein Hinweis, der sagt, *was* fehlt: die
@@ -785,6 +786,24 @@ Prüfergebnis**, weiß also, was tatsächlich funktioniert, und schickt gar nich
 nachweislich scheitert. Das Urteil gilt seit dem 19.09.2026 **je Simulator** (MSFS 2020,
 MSFS 2024, X-Plane 12): Scheitert ein Titel in einem, geht er in den anderen weiter hinaus. Im Flug belegt: Ein Windrad steht im Simulator, obwohl keine einzige
 Brügge weiß, was ein Windrad ist. Ältere Brüggen laufen unverändert weiter.
+
+#### Sie merkt sich, wer du bist (ab 1.18.0)
+
+**Seit dem 26.09.2026 behält die FriesenBrügge ihre Kennung über jeden Neustart**, in MSFS 2020
+und 2024 wie in X-Plane. Beim allerersten Start ordnet FriesenSpy sie dir über die Position zu:
+im Stand, sobald du dich nach dem Laden des Flugs bei VATSIM verbindest. **Bestätigt ist die
+Zuordnung nach zwei Minuten Flug**, bei denen kein anderer Friese dicht neben dir fliegt. Danach
+findet sie dich bei jedem Start sofort wieder, auch wenn ein anderer Friese direkt neben dir
+steht. **Mach deinen ersten Flug nach der Installation deshalb möglichst allein.**
+
+Gefunden wirst du dabei über deine VATSIM-Nummer, nicht über das Rufzeichen. Auf der Karte ändert
+das nichts: Friese ist weiter, wer mit FRS-Rufzeichen fliegt.
+
+Die ältere Fassung bis 1.17.0 läuft noch bis zum **24.10.2026**, danach nimmt FriesenSpy ihre
+Meldungen nicht mehr an. In **MSFS 2024** gibt es bei manchen neben `Community` einen zweiten
+Ordner `Community2024`; liegt dort eine ältere Fassung, lädt MSFS sie von dort. Beim Update also
+beide prüfen. Wer die FriesenBrügge wieder entfernt: Ihre Kennung und die vom Simulator
+übersetzten Modulteile bleiben unter `LocalState` liegen; das stört nicht.
 
 #### Zwei Modelle bringt sie selbst mit
 

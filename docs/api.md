@@ -2364,7 +2364,7 @@ ohne `kennung` bekommt **sofort** `"kennung": "<16 hex>"` — frisch gewürfelt,
 kein Pilot gefunden ist, und nie die Kennung eines Piloten. Protokoll 3 und jede X-Plane-Brügge
 laufen über `app/bruegge_bindung.py` (Kandidaten über die CID, erste Zuordnung im Stand auf
 höchstens 5 m nach dem Start der Brügge, Bewährung im Flug); die alte MSFS-Brügge (1/2) bis
-zum Stichtag `_BRUEGGE_P2_MSFS_BIS` über den bisherigen Weg, danach `426`. Die Einträge der
+zum Stichtag `_BRUEGGE_P2_MSFS_BIS` (**24.10.2026**) über den bisherigen Weg, danach `426`. Die Einträge der
 Brügge im Sekundenstrom tragen zusätzlich `bw` (Bindung bewährt) und `cs` (Rufzeichen).
 
 **Request**

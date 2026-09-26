@@ -173,6 +173,14 @@ def test_die_alte_msfs_bruegge_laeuft_bis_zum_stichtag_weiter(env):
     assert a["protokoll"] == 2
 
 
+def test_der_stichtag_liegt_vier_wochen_nach_dem_release():
+    """Nutzerentscheidung 26.09.2026: vier Wochen parallel, dann abweisen. Release von
+    FriesenBrügge 1.18.1 war am 26.09.2026."""
+    import importlib, app.main
+    quelle = open(app.main.__file__, encoding="utf-8").read()
+    assert '_BRUEGGE_P2_MSFS_BIS: str | None = "2026-10-24T00:00:00Z"' in quelle
+
+
 def test_nach_dem_stichtag_bekommt_die_alte_msfs_bruegge_426(env, monkeypatch):
     monkeypatch.setattr(env.main, "_BRUEGGE_P2_MSFS_BIS", "2000-01-01T00:00:00Z")
     r = env.client.post("/api/bruegge/melden", json=_meldung(protokoll=2))

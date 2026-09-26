@@ -1,5 +1,17 @@
 [
   {
+    "version": "15.22.4",
+    "date": "2026-09-26",
+    "highlight": false,
+    "title": "Die neue FriesenBrügge ist da",
+    "items": [
+      "🔑 **Die FriesenBrügge 1.18.1 merkt sich, wer du bist**, über jeden Neustart hinweg. Ein Nachbar am Stand kann sie dir nicht mehr wegnehmen. Mach deinen ersten Flug damit möglichst allein auf VATSIM: Nach zwei Minuten eindeutigem Flug ist die Zuordnung bestätigt.",
+      "📅 **Die ältere FriesenBrügge bis 1.17.0 funktioniert noch bis zum 24.10.2026.** Danach nimmt FriesenSpy ihre Meldungen nicht mehr an.",
+      "🗂️ **In MSFS 2024 gibt es bei manchen einen zweiten Community-Ordner** (`Community2024`). Liegt dort eine ältere Fassung, lädt MSFS sie von dort. Die Download-Seite sagt jetzt, worauf du achten musst.",
+      "📟 **Das Kniebrett 2.3.2 zeigt auch Flugzeuge dicht neben deinem eigenen**, etwa den Nachbarn am Stand oder den Rottenflieger. Bisher verschwand alles, was näher als 150 m stand."
+    ]
+  },
+  {
     "version": "15.22.3",
     "date": "2026-09-26",
     "highlight": false,

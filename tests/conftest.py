@@ -20,3 +20,17 @@ _RAM = "/dev/shm"
 
 if "TMPDIR" not in os.environ and os.path.isdir(_RAM) and os.access(_RAM, os.W_OK):
     tempfile.tempdir = _RAM
+
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _kein_stichtag_fuer_die_alte_bruegge(monkeypatch):
+    """Ab dem Stichtag (`_BRUEGGE_P2_MSFS_BIS`, 24.10.2026) weist der Server die alte
+    MSFS-Brügge mit 426 ab. Viele Tests spielen genau diese alte Brügge -- sie würden an dem Tag
+    alle rot, ohne dass sich am Code etwas geändert hätte. Deshalb gilt in den Tests kein
+    Stichtag; wer ihn prüfen will, setzt ihn selbst (tests/test_bruegge_protokoll3.py)."""
+    import app.main as main
+    monkeypatch.setattr(main, "_BRUEGGE_P2_MSFS_BIS", None)
+    yield
