@@ -87,6 +87,17 @@ den USA flog.
 | 18 | **Anker:** Friesen mit eigenem Kniebrett (`e`) und bewährte Brügges (`b`). Das Sim-Flugzeug, das einem Anker klar am nächsten ist, gehört diesem Friesen. Über die CID; der Strom trägt das Rufzeichen und die Angabe „bewährt“ mit. Der Strom wird im Panel dafür wieder verarbeitet (heute verworfen, seit v14.45.0). |
 | 19 | **Keine weiteren Umbauten** („nur bei Ereignissen zuordnen“, „Wechsel am Boden“). Nach den ersten Abenden die Diagnose der gelösten Zuordnungen ansehen. |
 
+### Was „Kandidaten über die CID“ fachlich heißt (Nachfrage des Nutzers, 26.09.2026)
+Es betrifft nur, **wem der Server eine FriesenBrügge zuordnet** — nicht, wer als Friese gilt
+oder wie jemand angezeigt wird.
+- Ein Friese unter fremdem Rufzeichen (etwa „DLH12“) bekommt seine Brügge jetzt zugeordnet:
+  Objekte im Simulator (Wrack, Rauch) und Brügge-Punkte in der Reddung. Vorher blieb sie
+  unerkannt.
+- Ein nie im Forum angemeldeter FRS-Pilot ist kein Kandidat mehr und kann den Treffer eines
+  anderen nicht mehr schlucken.
+- **Unverändert:** Friese ist, wer mit FRS-Rufzeichen fliegt (Karte, Listen, Statistik, Bummel,
+  Kutter). Unter fremdem Rufzeichen bleibt er auf der Karte grauer Fremdverkehr.
+
 ## 5. Umsetzung in drei Paketen
 
 1. **Kniebrett-Seite:** Thesen 14, 16, 17 und die `e`-Anker aus 18. Nur ein Deploy, sofort wirksam.
@@ -96,3 +107,16 @@ den USA flog.
 3. **Kniebrett-Paket:** These 15, zusammen mit Paket 2 in einem Zug an die Piloten.
 
 Reihenfolge und Zeitpunkt entscheidet der Nutzer.
+
+### Stand 26.09.2026
+- **Paket 1 ist live** (15.21.1): Thesen 14, 16, 17, `e`-Anker aus 18; Tests
+  `tests/test_kniebrett_zuordnung_regeln.py` (führt die echte Zuordnung in Node aus).
+- **Paket 2, Server-Seite, ist live** (15.22.0): `app/bruegge_bindung.py`, Protokoll 3,
+  Verwaltung (Hinweis, „vergessen“), `bw`/`cs` im Strom; Tests `tests/test_bruegge_bindung.py`
+  und `tests/test_bruegge_protokoll3.py`. Plan: `docs/superpowers/plans/2026-09-26-bruegge-protokoll3-server.md`.
+  X-Plane-Brügges laufen bereits über die neuen Regeln; die alte MSFS-Brügge über den alten Weg,
+  **ohne Stichtag** (`_BRUEGGE_P2_MSFS_BIS = None`).
+- **Offen:** MSFS-Brügge 1.18.0 und Kniebrett-Paket ohne Eigenfilter (Simulator-Rechner,
+  `friesenbruegge/UEBERGABE-kennung-umsetzung.md`). Danach, auf Wort des Nutzers und an einem
+  Tag ohne Event: Pakete hochladen, Satz auf die Download-Seite, Stichtag setzen, Handbuch zum
+  Deinstallieren.

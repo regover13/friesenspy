@@ -379,6 +379,24 @@ für ein abgeschlossenes Event nur VATSIM vor, verwürfe es mangels Brügge-Meld
 die abgesuchte Fläche eines längst verkündeten Abends auf null. Beim Umstieg selbst wurde die
 Zahl deshalb bewusst **nicht** erhöht.
 
+## Wem eine FriesenBrügge gehört — ab Protokoll 3 (stehende Regeln, Beschluss 26.09.2026)
+
+**Die Kennung benennt die Installation, nicht den Piloten.** Eine Brügge ohne Kennung bekommt
+beim ersten Kontakt eine frische Zufallskennung, **nie** die eines Piloten; welche CID dazugehört,
+steht nur auf dem Server. So kam am 25.09.2026 die Kennung von FRS111N zu FRS49 (#46) — das darf
+nicht wiederkommen. Die Regeln (erste Zuordnung im Stand auf 5 m nach dem Start der Brügge,
+Anrollen bei Gleichstand, Bewährung in der Luft ab 40 kt über 2 Minuten, Vergessen nur nach
+Widerspruch) stehen je These in `app/bruegge_bindung.py`, der Beschluss in
+`docs/superpowers/specs/2026-09-26-bruegge-kennung-und-zuordnung-design.md`.
+
+- **Kandidaten über die CID** (Forum-Anmeldung), nicht über das Rufzeichen. Das betrifft NUR die
+  Zuordnung der Brügge — **Friese ist weiter, wer mit FRS-Rufzeichen fliegt** (Karte, Listen,
+  Bummel, Kutter). Nicht verwechseln.
+- **Kein Wechsel zu einem „besseren“ Partner** — weder hier noch im Kniebrett. Zweimal gebaut,
+  zweimal zurückgenommen (Kniebrett 16.08., Server 14./15.09.2026).
+- Die alte MSFS-Brügge (Protokoll 1/2) läuft über `_bruegge_zuordnen` bis zum Stichtag
+  `_BRUEGGE_P2_MSFS_BIS`; danach 426. Den Stichtag setzt man beim Release der neuen Brügge.
+
 ## Die FriesenBrügge: Arten (stehende Regeln — IMMER einhalten)
 
 - **Eine Art hat je Simulator einen Zustand — und wird nur ganz gesperrt, wenn KEIN

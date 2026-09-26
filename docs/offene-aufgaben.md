@@ -12,10 +12,12 @@ und prüfen, ob eine andere die Aufgabe schon erledigt hat.
 
 Alle Entscheidungen stehen in
 [`docs/superpowers/specs/2026-09-26-bruegge-kennung-und-zuordnung-design.md`](superpowers/specs/2026-09-26-bruegge-kennung-und-zuordnung-design.md),
-einzeln mit Wortlaut in #46 und #47. Umgesetzt wird in drei Paketen: (1) Kniebrett-Seite,
-(2) Server und neue MSFS-Brügge mit gespeicherter Kennung, (3) Kniebrett-Paket ohne
-Eigenfilter, zusammen mit (2). **Reihenfolge und Zeitpunkt entscheidet der Nutzer**; die neue
-Brügge nicht direkt vor einem Event verteilen.
+einzeln mit Wortlaut in #46 und #47. Paket 1 (Kniebrett-Seite, 15.21.1) und die
+Server-Seite von Paket 2 (15.22.0) sind live. **Offen:** die neue MSFS-Brügge 1.18.0 und das
+Kniebrett-Paket ohne Eigenfilter vom Simulator-Rechner
+(`friesenbruegge/UEBERGABE-kennung-umsetzung.md`), danach — **auf Wort des Nutzers, an einem Tag
+ohne Event** — Pakete hochladen, Satz „ersten Flug allein auf VATSIM“ auf die Download-Seite,
+Stichtag `_BRUEGGE_P2_MSFS_BIS` vier Wochen später setzen, Handbuch zum Deinstallieren.
 
 ---
 
