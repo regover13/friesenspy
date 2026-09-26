@@ -2359,6 +2359,14 @@ eine Position, und der Server sucht den Piloten dazu (Positionsmatching gegen
 `live_positions`). Die mitgeschickte `kennung` ist kein Geheimnis, sondern ein
 Wiedererkennungszeichen, das den vollen Match je Meldung erspart.
 
+**Protokoll 3 (seit 15.22.0, #46).** Der Server spricht Fassung 3. Eine Brügge der Fassung 3
+ohne `kennung` bekommt **sofort** `"kennung": "<16 hex>"` — frisch gewürfelt, auch wenn noch
+kein Pilot gefunden ist, und nie die Kennung eines Piloten. Protokoll 3 und jede X-Plane-Brügge
+laufen über `app/bruegge_bindung.py` (Kandidaten über die CID, erste Zuordnung im Stand auf
+höchstens 5 m nach dem Start der Brügge, Bewährung im Flug); die alte MSFS-Brügge (1/2) bis
+zum Stichtag `_BRUEGGE_P2_MSFS_BIS` über den bisherigen Weg, danach `426`. Die Einträge der
+Brügge im Sekundenstrom tragen zusätzlich `bw` (Bindung bewährt) und `cs` (Rufzeichen).
+
 **Request**
 
 ```json
@@ -2812,7 +2820,8 @@ Alle brauchen eine Admin-Sitzung.
 
 | Endpunkt | Zweck |
 |---|---|
-| `GET /api/admin/bruegge` | Melder, Takt, `soll` **und** `steht` in einer Antwort — der Vergleich ist der Punkt: Ein Objekt in `soll`, das in `steht` fehlt, ist der interessante Fall |
+| `GET /api/admin/bruegge` | Melder, Takt, `soll` **und** `steht` in einer Antwort — der Vergleich ist der Punkt: Ein Objekt in `soll`, das in `steht` fehlt, ist der interessante Fall. Je Melder zusätzlich `bewaehrt_am`, `geloest_am`, `protokoll`; dazu `hinweise`: Brügges, die seit mindestens 2 Minuten abgelehnt werden (`kennung`, `gebunden`, `passt`, `dauer_s`, Namen) |
+| `POST /api/admin/bruegge/vergessen` | `{kennung}` — Bindung **und** Erinnerung einer Brügge löschen; sie wird danach wie eine neue Installation zugeordnet (#46, These 5) |
 | `POST /api/admin/bruegge/soll` | Objekt anfordern: `art`, `lat`, `lon`, optional `id`, `cid`, `kurs`, **`kurs_zufall`**, `erwartete_hoehe_ft`, `gilt_bis`, `auf_boden`. Gleiche `id` überschreibt. Unbekannte oder **leere** `art` → `400`. **Matrix** (20.09.2026): `laengs` × `quer` (Vorgabe 1 × 1) mit `abstand_m` (`abstand_quer_m` optional) und `raster_kurs` (Vorgabe: `kurs`, sonst Nord) stellt mehrere auf einmal — **Startpunkt ist die erste Ecke**, die Reihen laufen in Rasterrichtung, die Spalten quer dazu nach **rechts**; ids `<id>-<reihe>-<spalte>`; jedes Objekt würfelt bei `kurs_zufall` seine eigene Richtung; höchstens **200** im ganzen Soll (`400` darüber, ohne Abstand oder bei 0). Antwort: `{id, ids, anzahl}` |
 | ⭐ `kurs_zufall` | **Würfelt die Richtung, und zwar im Server** (14.09.2026). Ohne ihn schickt der Server `kurs: null`, und beide Brügge-Fassungen machen daraus 0 — jedes Objekt zeigte exakt nach Norden. Bei einem einzelnen fällt das nicht auf, bei einer Robbenkolonie sofort. Gewürfelt wird hier und nicht im Browser, damit der künftige Kieker dieselbe Streuung bekommt, ohne durch die Admin-Oberfläche zu müssen. Jedes Hinstellen würfelt neu, auch beim Überschreiben derselben `id` |
 | `GET /api/admin/bruegge/arten` | Alle Arten mit Zahlen: Titel gesamt/aktiv, je Simulator, Beispiele, `anforderbar`, `addon`, dazu `zustand` je Simulator (`kann` / `ungeprueft` / `kann_nicht`), `ueberall` und `kann_in`. **Die einzige Quelle der Artenliste** — bis zum 14.09.2026 stand dieselbe Aufzählung viermal (zwei C++-Quelltexte, `main.py`, `admin.html`) |

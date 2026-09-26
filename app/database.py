@@ -4222,7 +4222,7 @@ def bruegge_uebersicht(conn: sqlite3.Connection, frisch_s: int = 120) -> list[di
     """
     rows = conn.execute(
         "SELECT z.kennung, z.cid, z.simulator, z.zugeordnet_am, z.gesehen_am, z.verstoesse, "
-        "       z.bruegge_version, "
+        "       z.bruegge_version, z.bewaehrt_am, z.geloest_am, z.protokoll, "
         "       p.lat, p.lon, p.gs_kt, p.am_boden, p.gemeldet_am, "
         "       (SELECT callsign FROM live_positions l WHERE l.cid = z.cid) AS callsign, "
         "       (SELECT name FROM pilots pi WHERE pi.cid = z.cid) AS name "

@@ -96,7 +96,7 @@ from app.database import (
     cid_ist_authentifiziert,
     bruegge_belegte_cids,
     bruegge_kennung_fuer,
-    bruegge_zuordnung_holen, forum_cids,
+    bruegge_zuordnung_holen, forum_cids, bruegge_zuordnung_vergessen,
     bruegge_zuordnung_setzen,
     bruegge_zuordnung_bestaetigen,
     bruegge_vs_spitze_merken,
@@ -2668,11 +2668,42 @@ async def admin_bruegge(request: Request):
             m["fassung_veraltet"] = bool(
                 m.get("bruegge_version") and soll
                 and _version_kleiner(m["bruegge_version"], soll))
+        # These 5 (#46): Bruegges, die seit Minuten abgelehnt werden -- „gebunden an A, passt
+        # zu B". Bis dahin stand das nur im Server-Log, und dort liest es im Flug niemand.
+        namen = {int(r[0]): r[1] for r in conn.execute(
+            "SELECT cid, COALESCE((SELECT callsign FROM live_positions l WHERE l.cid = p.cid), "
+            "                     name) FROM pilots p").fetchall()}
+        hinweise = [{**h, "gebunden_name": namen.get(h["gebunden"]),
+                     "passt_name": namen.get(h["passt"]) if h.get("passt") else None}
+                    for h in bruegge_bindung.hinweise()]
         return {"takt_s": _bruegge_takt(conn), "melder": melder,
-                "fassung_aktuell": aktuell,
+                "fassung_aktuell": aktuell, "hinweise": hinweise,
                 "soll": bruegge_soll_alle(conn), "steht": bruegge_steht_alle(conn)}
     finally:
         conn.close()
+
+
+@app.post("/api/admin/bruegge/vergessen")
+async def admin_bruegge_vergessen(request: Request):
+    """Bindung UND Erinnerung einer FriesenBruegge loeschen (These 5, #46).
+
+    Danach beginnt sie wie eine neue Installation. Gedacht fuer den seltenen Fall, dass sich
+    eine falsche Bindung doch bewaehrt hat -- statt einer Automatik, die Bindungen umhaengen
+    koennte (Nutzerentscheidung 26.09.2026).
+    """
+    require_admin(request)
+    body = await request.json()
+    kennung = str(body.get("kennung") or "")[:64]
+    if not kennung:
+        raise HTTPException(status_code=400, detail="kennung fehlt")
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        bruegge_zuordnung_vergessen(conn, kennung)
+        conn.commit()
+    finally:
+        conn.close()
+    bruegge_bindung.vergessen_im_speicher(kennung)
+    return {"status": "ok", "kennung": kennung}
 
 
 @app.post("/api/admin/bruegge/takt")

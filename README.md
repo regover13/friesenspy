@@ -451,6 +451,12 @@ was zu ihm gehört, steht dahinter beieinander.
 wo du warst, und du kannst dir eine Stelle als Link ablegen — `…/admin#tab=events&typ=kutter`
 führt direkt zum Kutter.
 
+**Im Bereich Brügge siehst du je FriesenBrügge, ob ihre Bindung an den Piloten bewährt ist.**
+Bewährt wird sie nach zwei Minuten eindeutigem Flug. Steht dort „ruht“, ist der Pilot gerade
+nicht auf VATSIM. Wird eine FriesenBrügge seit Minuten abgelehnt, weil sie an einen Piloten
+gebunden ist, aber zu einem anderen passt, erscheint darüber ein Hinweis. Mit **„vergessen“**
+löschst du ihre Bindung; sie wird dann neu zugeordnet.
+
 **Jeder Bereich holt seine Daten erst, wenn du ihn zum ersten Mal öffnest.** Das Anmelden geht
 dadurch spürbar schneller. Die beiden Bereiche, die sich laufend selbst auffrischen — Brügge und
 Kniebrett — tun das nur, solange sie zu sehen sind.

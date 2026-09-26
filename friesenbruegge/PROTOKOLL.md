@@ -518,12 +518,12 @@ meisten Szenarien gegenstandslos. **Nie versucht wurde dafür `fopen` aus der wa
 gibt. Die Probe dazu liegt in `probe-kennung/`, die Übergabe an die Sitzung am
 Simulator-Rechner in `probe-kennung/UEBERGABE.md`.
 
-**Beschlossen, noch nicht umgesetzt (26.09.2026):** Die MSFS-Brügge speichert ihre Kennung
+**Beschlossen am 26.09.2026, Server umgesetzt, MSFS-Brügge in Arbeit (s. Abschnitt 9, Fassung 3):** Die MSFS-Brügge speichert ihre Kennung
 wieder, per `fopen` in `\work`, und die Kennung benennt künftig die **Installation**, nicht den
 Piloten. Der Server vergibt beim ersten Kontakt eine frische Zufallskennung und nie mehr die
 eines Piloten. Dazu kommen Protokoll 3, die Bewährung im Flug und neue Regeln für die erste
 Zuordnung. Alles in `docs/superpowers/specs/2026-09-26-bruegge-kennung-und-zuordnung-design.md`.
-**Bis zur Umsetzung gilt dieses Protokoll unverändert.**
+Für die alte MSFS-Brügge (Protokoll 1/2) gilt das hier Beschriebene bis zum Stichtag weiter.
 
 **Ein Absturz des Simulators beendet auch die VATSIM-Verbindung** (Nutzer, 26.09.2026: *„Wenn
 der Sim crasht, wird auch vPilot das merken und beenden.“*). Nach jedem Neustart der Brügge ist
@@ -1448,6 +1448,39 @@ werden auf beiden Seiten übergangen). Bedeutungen ändern oder Felder entfernen
 Brügge, die 1 spricht, bekäme sonst eine 2 zurück und müsste daraus schließen, dass sie etwas
 nicht versteht, obwohl der Server ihr genau das schickt, was Fassung 1 vorsieht. Die Zahl
 steht in *beiden* Richtungen; dann muss sie auch beide Seiten meinen.
+
+### Fassung 3 (26.09.2026) — die Kennung benennt die Installation (#46)
+
+| | |
+|---|---|
+| **neu** | Die Brügge **speichert** ihre Kennung (MSFS: `\work\friesenbruegge.kennung` per `fopen`, beide Simulatoren; X-Plane seit jeher). Meldet sie ohne, antwortet der Server **sofort** mit einer frischen Zufallskennung — vor jeder Zuordnung und **nie** der eines Piloten. |
+| **geändert** | Die Bedeutung der Kennung: Sie steht für eine Installation (Rechner × Simulator), nicht mehr für einen Piloten. Welche CID dazugehört, steht nur auf dem Server. |
+| **unverändert** | alle Felder. `kennung`, `lage` mit `am_boden`, `spur`, `steht`, `soll`, `arten`. |
+
+Die Bedeutung eines Feldes ändert sich, deshalb 3. Welche Brügge welchen Weg nimmt:
+
+| Brügge | Weg |
+|---|---|
+| MSFS, Protokoll 3 (ab 1.18.0) | `app/bruegge_bindung.py` |
+| X-Plane, jede Fassung | `app/bruegge_bindung.py` — sie speichert ihre Kennung schon immer selbst |
+| MSFS, Protokoll 1/2 (bis 1.17.0) | `_bruegge_zuordnen` wie bisher, bis zum Stichtag `_BRUEGGE_P2_MSFS_BIS` (vier Wochen nach dem Release), danach `426` |
+
+**Die Regeln des neuen Wegs** stehen im Beschluss
+[`docs/superpowers/specs/2026-09-26-bruegge-kennung-und-zuordnung-design.md`](../docs/superpowers/specs/2026-09-26-bruegge-kennung-und-zuordnung-design.md)
+und je These in `app/bruegge_bindung.py`. Kurz:
+- **Kandidaten über die CID**: jede VATSIM-Verbindung einer im Forum angemeldeten CID, gleich
+  unter welchem Rufzeichen.
+- **Erste Zuordnung im Stand**: höchstens 5 m, und die Verbindung kam **nach** dem ersten
+  Melden der Brügge. Gleichstand entscheidet das Anrollen (30 s). Im Flug: der Bewährt-Maßstab.
+- **Bewährt**: in der Luft, mindestens 40 kt, klar die nächste Verbindung (doppelter Abstand),
+  2 Minuten am Stück.
+- **Eine bekannte Kennung** wird ohne Suche zurückgebunden, sobald ihr Pilot online ist und passt.
+- **Widerspruch** (vier Verstöße mit frischen VATSIM-Daten, oder ein Sprung): Eine unbewährte
+  Bindung wird vergessen, eine bewährte ruht. Fehlt der Pilot nur, ruht jede Bindung.
+- Belegt-Sperre und „Rückfall ohne Sperre" gibt es im neuen Weg nicht.
+
+Stand 26.09.2026: **Server umgesetzt, die MSFS-Brügge 1.18.0 entsteht am Simulator-Rechner**
+(`friesenbruegge/UEBERGABE-kennung-umsetzung.md`).
 
 ### Fassung 2 (14.09.2026) — die Titel kommen vom Server
 

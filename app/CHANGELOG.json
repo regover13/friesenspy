@@ -1,5 +1,17 @@
 [
   {
+    "version": "15.22.0",
+    "date": "2026-09-26",
+    "highlight": false,
+    "title": "Vorbereitet für die nächste FriesenBrügge",
+    "items": [
+      "🔑 **FriesenSpy ist bereit für eine FriesenBrügge, die sich merkt, wer sie ist.** Die nächste Fassung behält ihre Kennung über jeden Neustart. Dann muss sie nicht mehr bei jedem Start neu ihrem Piloten zugeordnet werden, und ein Nachbar am Stand kann sie nicht mehr bekommen.",
+      "🛫 **Eine FriesenBrügge wird künftig im Flug bestätigt:** Zwei Minuten eindeutig in der Luft, dann gilt ihre Bindung an den Piloten als bewährt.",
+      "🪪 **Erkannt wirst du künftig über deine VATSIM-Nummer, nicht über das Rufzeichen.** Wer im Forum angemeldet ist, wird auch unter einem anderen Rufzeichen gefunden.",
+      "🛠️ **In der Verwaltung** steht je FriesenBrügge, ob ihre Bindung bewährt ist, dazu ein Hinweis, wenn eine seit Minuten abgelehnt wird, und ein Knopf „vergessen“."
+    ]
+  },
+  {
     "version": "15.21.1",
     "date": "2026-09-26",
     "highlight": false,

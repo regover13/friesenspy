@@ -227,3 +227,60 @@ def test_der_strom_traegt_rufzeichen_und_bewaehrt(env):
         del env.main.app.state._state["poller"]
     assert gemerkt and gemerkt[-1][0] == 49
     assert gemerkt[-1][1] == {"bewaehrt": False, "cs": "FRS49"}
+
+
+# --- Verwaltung: Hinweis und „vergessen“ (These 5) ------------------------------------------
+
+def _admin(env):
+    from app.auth import make_admin_token, make_confirm_token
+    s = env.main.get_settings()
+    return {"fs_admin": make_admin_token(s.SECRET_KEY, s.ADMIN_PASSWORD),
+            "fs_confirm": make_confirm_token(s.SECRET_KEY, s.ADMIN_PASSWORD, 9_999_999_999)}
+
+
+def test_die_verwaltung_zeigt_abgelehnte_bruegges_und_ihre_bindung(env):
+    from app import bruegge_bindung
+    from app.database import get_connection, bruegge_zuordnung_setzen
+    c = get_connection(env.db)
+    bruegge_zuordnung_setzen(c, "k1k1k1k1k1k1k1k1", 49, "msfs2024", 3)
+    c.commit()
+    c.close()
+    bruegge_bindung.ABGELEHNT["k1k1k1k1k1k1k1k1"] = {
+        "gebunden": 49, "passt": 111, "seit": 0.0, "zuletzt": 10_000.0}
+    import time as _t
+    bruegge_bindung.ABGELEHNT["k1k1k1k1k1k1k1k1"]["zuletzt"] = _t.time()
+    bruegge_bindung.ABGELEHNT["k1k1k1k1k1k1k1k1"]["seit"] = _t.time() - 300
+    d = env.client.get("/api/admin/bruegge", cookies=_admin(env)).json()
+    assert d["hinweise"] and d["hinweise"][0]["kennung"] == "k1k1k1k1k1k1k1k1"
+    assert d["hinweise"][0]["gebunden"] == 49 and d["hinweise"][0]["passt"] == 111
+    zeile = next(m for m in d["melder"] if m["kennung"] == "k1k1k1k1k1k1k1k1")
+    assert "bewaehrt_am" in zeile and "geloest_am" in zeile
+
+
+def test_vergessen_loescht_bindung_und_erinnerung(env):
+    from app import bruegge_bindung
+    from app.database import get_connection, bruegge_zuordnung_setzen
+    c = get_connection(env.db)
+    bruegge_zuordnung_setzen(c, "k1k1k1k1k1k1k1k1", 49, "msfs2024", 3)
+    c.commit()
+    c.close()
+    bruegge_bindung.ABGELEHNT["k1k1k1k1k1k1k1k1"] = {"gebunden": 49, "passt": 111,
+                                                     "seit": 0.0, "zuletzt": 0.0}
+    r = env.client.post("/api/admin/bruegge/vergessen", cookies=_admin(env),
+                        json={"kennung": "k1k1k1k1k1k1k1k1"})
+    assert r.status_code == 200
+    assert _zeile(env.db, "k1k1k1k1k1k1k1k1") is None
+    assert "k1k1k1k1k1k1k1k1" not in bruegge_bindung.ABGELEHNT
+
+
+def test_vergessen_nur_fuer_den_admin(env):
+    r = env.client.post("/api/admin/bruegge/vergessen", json={"kennung": "x"})
+    assert r.status_code in (401, 403)
+
+
+def test_der_knopf_steht_in_der_verwaltung():
+    from pathlib import Path
+    admin = (Path(__file__).resolve().parents[1] / "app" / "static" / "admin.html").read_text(
+        encoding="utf-8")
+    assert "'/api/admin/bruegge/vergessen'" in admin
+    assert "bg-hinweise" in admin

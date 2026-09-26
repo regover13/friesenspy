@@ -1791,11 +1791,15 @@
                jetzt eine je Pilot UND Simulator. `.scroll-list .table-wrap` bekommt die
                Hoehenbegrenzung dabei selbst -- ohne sie sitzt die waagerechte Leiste an
                ihrem eigenen unteren Rand, weit unterhalb des sichtbaren Fensters (v8.6.6). -->
+          <!-- These 5 (#46): Brügges, die seit Minuten abgelehnt werden. Bis dahin stand das nur
+               im Server-Log. Der Knopf „vergessen" löscht Bindung und Erinnerung; danach beginnt
+               die Brügge wie eine neue Installation. -->
+          <div id="bg-hinweise" style="margin-bottom:10px;"></div>
           <div class="scroll-list" style="margin-bottom:14px;">
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Pilot</th><th>Simulator</th><th>Fassung</th><th>Position</th><th>zuletzt</th></tr></thead>
-              <tbody id="bg-melder"><tr><td colspan="5" class="empty-hint">Lädt …</td></tr></tbody>
+              <thead><tr><th>Pilot</th><th>Simulator</th><th>Fassung</th><th>Bindung</th><th>Position</th><th>zuletzt</th><th></th></tr></thead>
+              <tbody id="bg-melder"><tr><td colspan="7" class="empty-hint">Lädt …</td></tr></tbody>
             </table>
           </div>
           </div>
@@ -2898,6 +2902,25 @@
     }
 
     // ---------------------------------------------------------------- Brügge
+    function bgVergessenKnopf(kennung) {
+      if (!kennung) return '';
+      return '<button class="btn btn-sm" style="opacity:.8;" onclick="bgVergessen(\'' +
+             String(kennung).replace(/[^0-9a-zA-Z]/g, '') + '\')">vergessen</button>';
+    }
+
+    // These 5 (#46): Bindung und Erinnerung einer Brügge löschen. Sie beginnt danach wie eine
+    // neue Installation -- im Stand auf den Meter, nach ihrem Start angemeldet.
+    async function bgVergessen(kennung) {
+      if (!confirm('Bindung und Erinnerung dieser FriesenBrügge löschen? Sie wird danach neu zugeordnet.')) return;
+      const r = await fetch('/api/admin/bruegge/vergessen', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kennung: kennung }),
+      });
+      if (!r.ok) { alert('Vergessen fehlgeschlagen (' + r.status + ')'); return; }
+      bgLaden();
+    }
+
     async function bgLaden() {
       try {
         const r = await fetch('/api/admin/bruegge', { credentials: 'same-origin' });
@@ -2942,12 +2965,29 @@
                     ? '<span style="color:#e2a93b;" title="aktuell ist ' +
                       (m.fassung_aktuell || '?') + '">' + m.bruegge_version + ' ⚠</span>'
                     : m.bruegge_version;
+                // Die Bindung (#46): bewährt hält gegen einen Widerspruch, unbewährt nicht;
+                // „ruht" heißt: Der Pilot ist gerade nicht auf VATSIM, die Erinnerung bleibt.
+                const bindung = m.geloest_am ? 'ruht'
+                  : m.bewaehrt_am ? 'bewährt' : (m.protokoll >= 3 ? 'unbewährt' : '—');
                 return '<tr' + blass + '><td>' + (m.callsign || m.name || m.cid) + '</td><td>' +
                        (m.simulator || '—') + '</td><td class="mono">' + fassung +
-                       '</td><td class="mono">' + pos +
-                       '</td><td>' + (m.gesehen_am || '—') + wieAlt + '</td></tr>';
+                       '</td><td>' + bindung + '</td><td class="mono">' + pos +
+                       '</td><td>' + (m.gesehen_am || '—') + wieAlt + '</td><td>' +
+                       bgVergessenKnopf(m.kennung) + '</td></tr>';
               }).join('')
-            : '<tr><td colspan="5" class="empty-hint">Niemand meldet gerade.</td></tr>';
+            : '<tr><td colspan="7" class="empty-hint">Niemand meldet gerade.</td></tr>';
+        }
+        const hb = document.getElementById('bg-hinweise');
+        if (hb) {
+          hb.innerHTML = (d.hinweise || []).map(function (h) {
+            const wer = function (name, cid) { return name ? name + ' (' + cid + ')' : String(cid); };
+            return '<div style="background:#3a2a10;border:1px solid #e2a93b;border-radius:6px;' +
+                   'padding:8px 10px;margin-bottom:6px;font-size:0.85rem;color:#f3d9a4;">' +
+                   '⚠ Eine FriesenBrügge wird seit ' + Math.round(h.dauer_s / 60) +
+                   ' min abgelehnt: gebunden an ' + wer(h.gebunden_name, h.gebunden) +
+                   (h.passt ? ', passt zu ' + wer(h.passt_name, h.passt) : '') + '. ' +
+                   bgVergessenKnopf(h.kennung) + '</div>';
+          }).join('');
         }
 
         const sb = document.getElementById('bg-soll');
