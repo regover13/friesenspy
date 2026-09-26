@@ -1,7 +1,7 @@
 // Die FriesenBrügge für MSFS 2020 und 2024.
 //
 // Sie meldet dem FriesenSpy-Server, wo der Pilot gerade ist, und stellt hin, was der Server
-// ihr nennt. Der Vertrag steht in ../PROTOKOLL.md (Fassung 1, abgenommen 11.09.2026).
+// ihr nennt. Der Vertrag steht in ../PROTOKOLL.md (Fassung 3 seit 1.18.0, s. den Nachtrag unten).
 //
 //     Die Brügge ist dumm. Alle Klugheit bleibt auf dem Server.
 //
@@ -41,8 +41,9 @@
 // des Simulators und das Loeschen/Neuablegen des Pakets (Beleg: `../probe-kennung/ERGEBNIS.md`).
 // `fopen` zieht sieben wasi-Importe herein (`path_open`, `fd_read`, `fd_fdstat_get`,
 // `fd_fdstat_set_flags`, `fd_prestat_get`, `fd_prestat_dir_name`, `proc_exit`), die beide
-// Simulatoren annehmen -- es bleibt EIN Modul. Der Text darunter beschreibt, warum die
-// asynchrone Datei-API 1.14.0 weichen musste; er gilt fuer sie weiter, nicht fuer `fopen`.
+// Simulatoren annehmen -- es bleibt EIN Modul. Vom Text darunter gilt nur, was die
+// asynchrone Datei-API (`MSFS_IO.h`) betrifft. "DER PREIS" und "DER WEG ZURUECK" sind
+// ueberholt und dort so gekennzeichnet.
 //   * `fopen` ist synchron: Die drei Wettlaeufe vom 14.09.2026 (`aadf482`) gibt es nicht.
 //   * Ein Lesefehler heisst "keine Kennung". Eine fehlende Datei meldet `errno` 29, nicht
 //     `ENOENT` -- wer auf `ENOENT` abfragt, erkennt den Fall nicht.
@@ -66,22 +67,23 @@
 // bauen.ps1). Lautlos: kein module_init, keine Meldung, kein Objekt. Es gibt also keinen
 // Weg, die Datei-API "nur in 2024" zu benutzen und trotzdem ein Modul auszuliefern.
 //
-// DER PREIS, und er ist kleiner als er aussieht: Die Kennung haelt jetzt in KEINEM
-// Simulator ueber einen Neustart. Der Server matcht damit einmal je SITZUNG voll statt
-// einmal je Installation -- bei einer Flugstunde im Sekundentakt ein voller Match statt
-// 3600. Karteileichen entstehen dabei nicht: `bruegge_zuordnung_setzen` loescht aeltere
-// Zeilen derselben CID bereits selbst (database.py:2820).
+// DER PREIS (UEBERHOLT seit 1.18.0 -- s. den Nachtrag oben; galt von 1.14.0 bis 1.17.0):
+// Die Kennung haelt in KEINEM Simulator ueber einen Neustart. Der Server matcht damit einmal
+// je SITZUNG voll statt einmal je Installation. Dass `bruegge_zuordnung_setzen` aeltere Zeilen
+// derselben CID selbst loescht, galt damals; die Spec vom 26.09.2026 (These 9) laesst sie
+// stehen.
 //
 // ⚠ WAS DAMIT AUCH VERSCHWUNDEN IST: die drei asynchronen Wettlaeufe, die am 14.09.2026 je
 // einen Anlauf gekostet haben (Schreiben gegen Lesen, Schliessen gegen Schreiben, Server
 // gegen Platte). Sie sind in der Git-Historie nachzulesen, falls die Datei-API je
 // zurueckkommt -- wer sie wieder einbaut, lese sie ZUERST.
 //
-// DER WEG ZURUECK FUEHRT NICHT UEBER DEN CLIENT. Soll die Kennung wieder halten, gehoert
-// das auf den Server: Er gibt bei leerer Kennung die zuletzt fuer diese (CID, Simulator)
-// vergebene zurueck, statt neu zu wuerfeln (app/main.py:1992). Das haelt sie in BEIDEN
-// Simulatoren, kostet kein Client-Release -- und entspricht dem Leitbild des Protokolls:
-// "Die Bruegge ist dumm. Alle Klugheit bleibt auf dem Server."
+// DER WEG ZURUECK FUEHRT NICHT UEBER DEN CLIENT -- WIDERRUFEN am 26.09.2026. Das stand hier
+// als Empfehlung: Der Server gebe bei leerer Kennung die zuletzt fuer diese (CID, Simulator)
+// vergebene zurueck (`bruegge_kennung_fuer`). Genau dieser Weg hat am 25.09.2026 die Kennung
+// von FRS111N an FRS49 gegeben und ihn dauerhaft ausgesperrt (GitHub-Issue #46). Seit
+// Protokoll 3 vergibt der Server bei leerer Kennung eine FRISCHE, nie die eines Piloten, und
+// die Kennung liegt wieder beim Client (`kennung_lesen`/`kennung_schreiben`, per `fopen`).
 
 #include <cstdio>
 #include <cstdarg>
@@ -450,8 +452,8 @@ static char    g_antwort[ANTWORT_PUFFER] = {0};
 //      vom 16.08.2026). Die Zuordnung gelingt auf Meter.
 //   2. Er antwortet mit `"kennung": "..."`.
 //   3. Die Bruegge speichert sie und liefert sie ab jetzt bei jeder Meldung mit.
-//   4. Nach einem Simulator-Neustart beginnt das von vorn -- seit dem 16.09.2026 gibt es
-//      keine Datei mehr, in der sie ueberdauern koennte (s. ganz oben, "EIN MODUL").
+//   4. Nach einem Simulator-Neustart liest die Bruegge sie aus \work\friesenbruegge.kennung
+//      (seit 1.18.0; von 1.14.0 bis 1.17.0 begann hier alles von vorn, s. ganz oben).
 //
 // Bis Schritt 2 meldet sie mit LEERER Kennung. Das ist kein Notbehelf: Der Server matcht
 // dann voll, was er ohnehin kann, und genau das stand seit jeher im Kommentar unten.
@@ -1012,7 +1014,14 @@ static void kennung_schreiben() {
     }
     size_t geschrieben = std::fwrite(g_kennung, 1, KENNUNG_LAENGE, f);
     int zu = std::fclose(f);
-    log_zeile("Kennung gespeichert: %u Bytes, fclose=%d", (unsigned)geschrieben, zu);
+    if (geschrieben == KENNUNG_LAENGE && zu == 0) {
+        log_zeile("Kennung gespeichert: %u Bytes, fclose=%d", (unsigned)geschrieben, zu);
+    } else {
+        // Platte voll o. ae.: nicht als Erfolg melden. Der Lesepfad verwirft eine kurze Datei
+        // beim naechsten Start und vergibt neu -- hier steht dann der Grund dafuer.
+        log_zeile("Kennung NICHT vollstaendig gespeichert: %u von %u Bytes, fclose=%d, errno %d",
+                  (unsigned)geschrieben, (unsigned)KENNUNG_LAENGE, zu, errno);
+    }
 }
 
 // Eine vom Server zugeteilte Kennung entgegennehmen -- einmal, und dann nie wieder.
@@ -1022,7 +1031,17 @@ static void kennung_schreiben() {
 // Zuordnung darf keine neue Kennung bekommen -- das waere genau das Flackern, das die
 // Zuordnungs-Spec vermeiden will ("Zuordnung halten, sobald sie steht").
 static void kennung_uebernehmen(const char* json) {
-    if (g_kennung[0] != '\0') return;
+    if (g_kennung[0] != '\0') {
+        // Der Vertrag: Eine vorhandene Kennung wird nie ersetzt. Bietet der Server doch eine
+        // andere an, wird sie uebergangen -- aber nicht stumm, sonst ist ein solcher Fall
+        // von aussen nicht zu erkennen.
+        char andere[40] = {0};
+        if (json_text_in(json, "kennung", andere, sizeof(andere)) &&
+            std::strcmp(andere, g_kennung) != 0) {
+            log_zeile("Server bot Kennung %s an -- uebergangen, behalte %s", andere, g_kennung);
+        }
+        return;
+    }
 
     // ⚠⚠ HIER STAND `if (!g_kennung_fest) return;` -- UND DAS WAERE AM 16.09.2026 BEINAHE
     // ZUM SCHWEREN FEHLER GEWORDEN.
@@ -1048,13 +1067,12 @@ static void kennung_uebernehmen(const char* json) {
     // ersetzt. Das ist das Flackern, das die Zuordnungs-Spec verbietet.
     char neu[40] = {0};
     if (!json_text_in(json, "kennung", neu, sizeof(neu))) return;
-    size_t n = std::strlen(neu);
-    // Dieselbe Pruefung wie beim Lesen aus der Datei, nur weiter gefasst: Der Server schickt
-    // 16 Hexziffern (`secrets.token_hex(8)`), aber eine spaetere Laenge soll nicht scheitern.
-    if (n < 8 || n >= sizeof(g_kennung)) return;
-    for (size_t i = 0; i < n; ++i) {
-        char c = neu[i];
-        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return;
+    // EINE Regel fuer Datei und Antwort: genau 16 Zeichen 0-9a-f (`kennung_gueltig`). Vorher
+    // nahm diese Stelle 8..39 Zeichen an, waehrend `kennung_schreiben` nur 16 ablegte -- eine
+    // laengere Kennung haette die Sitzung ueberlebt, den Neustart aber nicht.
+    if (!kennung_gueltig(neu)) {
+        log_zeile("Kennung vom Server verworfen: nicht genau %u Zeichen 0-9a-f", (unsigned)KENNUNG_LAENGE);
+        return;
     }
     std::snprintf(g_kennung, sizeof(g_kennung), "%s", neu);
 

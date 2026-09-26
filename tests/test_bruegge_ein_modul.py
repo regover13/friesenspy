@@ -119,12 +119,35 @@ def test_von_der_datei_api_ist_nichts_uebrig(cpp):
     gebaut wird, verrottet unbemerkt — und eine Variable, die nur dort gesetzt wurde, kippt
     lautlos eine Bedingung, die anderswo noch abgefragt wird.
     """
-    for spur in ("KENNUNG_HAELT", "g_kennung_fest", "fsIOOpen", "fsIOWrite", "fsIOClose",
-                 "KENNUNG_DATEI"):
+    # `KENNUNG_DATEI` steht seit 1.18.0 wieder im Code: Die Ablage laeuft ueber gewoehnliches
+    # `fopen` (Probe `probe-kennung/ERGEBNIS.md`), nicht ueber die Datei-API. Verboten bleibt
+    # allein, was zu `MSFS_IO.h` gehoert -- die Importe waeren in MSFS 2020 lautlos tot.
+    for spur in ("KENNUNG_HAELT", "g_kennung_fest", "fsIOOpen", "fsIOWrite", "fsIOClose"):
         # Kommentare dürfen die Geschichte erzählen -- Code nicht.
         code = [z for z in cpp.splitlines()
                 if spur in z and not z.lstrip().startswith("//")]
         assert not code, f"`{spur}` steht wieder im Code: {code}"
+
+
+def test_die_kennung_liegt_per_fopen_in_work(cpp):
+    """1.18.0: Die Ablage ist zurueck -- mit gewoehnlichem `fopen`, ohne `MSFS_IO.h`.
+
+    Gemessen in `probe-kennung/ERGEBNIS.md`: haelt Neustart und Paket-Update in MSFS 2020 UND
+    2024. Der Test bindet die drei Dinge, die zusammen die Ablage ausmachen: lesen beim Start,
+    schreiben nach dem Empfang, und nur genau 16 Zeichen 0-9a-f gelten (eine Regel fuer Datei
+    UND Serverantwort -- der Review vom 26.09.2026 fand zwei verschiedene).
+    """
+    includes = [z for z in cpp.splitlines() if z.lstrip().startswith("#include")]
+    assert not any("MSFS_IO.h" in z for z in includes), "Die Datei-API darf nicht eingebunden werden -- MSFS 2020 verwirft das Modul lautlos."
+    assert "friesenbruegge.kennung" in cpp
+    assert "std::fopen(KENNUNG_DATEI" in cpp
+    assert "kennung_lesen();" in cpp, "Beim Start muss die Kennung gelesen werden."
+    assert "kennung_schreiben();" in cpp, "Nach dem Empfang muss sie abgelegt werden."
+    assert '"protokoll");       j.ganzzahl(3)' in cpp, "Die Meldung traegt Protokoll 3."
+    # Eine Regel: `kennung_uebernehmen` prueft mit derselben Funktion wie das Lesen.
+    uebernehmen = cpp.split("static void kennung_uebernehmen", 1)[1].split("static void antwort_lesen", 1)[0]
+    assert "kennung_gueltig(neu)" in uebernehmen
+    assert "n < 8" not in uebernehmen, "Zwei Gueltigkeitsregeln fuer dieselbe Kennung."
 
 
 def test_die_kennung_geht_ins_log(cpp):
