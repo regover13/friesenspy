@@ -125,7 +125,7 @@ static void log_zeile(const char* format, ...) {
 // Feste Größen
 // ---------------------------------------------------------------------------------------
 
-#define BRUEGGE_VERSION   "1.18.0"
+#define BRUEGGE_VERSION   "1.18.1"
 #define BRUEGGE_URL       "https://friesenspy.devprops.de/api/bruegge/melden"
 // ⭐ WELCHER SIMULATOR -- ZUR LAUFZEIT, NICHT BEIM UEBERSETZEN (16.09.2026).
 //
@@ -963,6 +963,16 @@ static void soll_abgleichen(const char* json) {
 static const char* const KENNUNG_DATEI = "\\work\\friesenbruegge.kennung";
 static const size_t      KENNUNG_LAENGE = 16;
 
+// ⚠ DIE KOLLISIONSKENNUNG (1.18.1). Die MSFS-Fassungen vom 11. bis 14.09.2026 erfanden ihre
+// Kennung selbst und erfanden auf JEDEM Rechner dieselbe: in einem WASM-Modul ist der Speicher
+// linear und bei jedem Start identisch, `std::rand()` ohne `srand()` liefert ueberall dieselbe
+// Folge (s. den Block "HIER ERFAND DIE BRUEGGE IHRE KENNUNG SELBST"). Die Fassungen mit der
+// Datei-API haben diesen Wert nach \work geschrieben, und spaetere Fassungen haben ihn nicht
+// ueberschrieben -- also liegt er dort noch, ist formal gueltig (16 Zeichen 0-9a-f) und wuerde
+// von 1.18.0 gelesen und mitgeschickt. Mehrere Installationen teilten sich dann EINE Kennung
+// (der Fehler vom 14.09.2026). Er wird deshalb wie eine verdorbene Datei behandelt.
+static const char* const KENNUNG_KOLLISION = "9e3711c100000000";
+
 // Genau 16 Zeichen `0-9a-f` -- die Form, die der Server vergibt (`secrets.token_hex(8)`).
 static bool kennung_gueltig(const char* text) {
     if (std::strlen(text) != KENNUNG_LAENGE) return false;
@@ -993,6 +1003,11 @@ static void kennung_lesen() {
     if (!kennung_gueltig(puffer)) {
         log_zeile("Kennungsdatei verworfen: Inhalt ist nicht genau %u Zeichen 0-9a-f (%u Bytes)"
                   " -- melde ohne", (unsigned)KENNUNG_LAENGE, (unsigned)n);
+        return;
+    }
+    if (std::strcmp(puffer, KENNUNG_KOLLISION) == 0) {
+        log_zeile("Kennungsdatei verworfen: %s ist die Kollisionskennung der Fassungen vom "
+                  "11. bis 14.09.2026 (auf jedem Rechner dieselbe) -- melde ohne", puffer);
         return;
     }
     std::snprintf(g_kennung, sizeof(g_kennung), "%s", puffer);

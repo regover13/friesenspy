@@ -167,3 +167,29 @@ In `Community` beider Simulatoren liegt jetzt die **Brügge 1.18.0** (nicht mehr
 Protokoll 3. Das Testpaket
 `friesentest` und der lokale Testserver sind entfernt. Die alte 2024-Kennungsdatei vom 16.09.2026 ist
 gesichert (Scratchpad der Sitzung) und nicht mehr am Ort.
+
+## Nachtrag 26.09.2026, Abend: 1.18.1 (Kollisionskennung) und Kniebrett-ZIP im Repo
+
+Auf Wunsch der Server-Sitzung, freigegeben vom Nutzer.
+
+- **Brügge 1.18.1:** Liest sie genau `9e3711c100000000`, verwirft sie die Datei-Kennung und meldet
+  ohne Kennung, wie bei einer verdorbenen Datei. Das ist die Kennung, die die Fassungen vom 11. bis
+  14.09.2026 auf jedem Rechner gleich erfanden und mit der Datei-API nach `\work` schrieben; spätere
+  Fassungen haben sie nicht überschrieben. Neuer Test `test_die_kollisionskennung_der_fruehen_fassungen_wird_verworfen`.
+- **Gemessen in MSFS 2020** (Datei von Hand auf `9e3711c100000000` gesetzt, Neustart, Flug):
+  ```
+  [FriesenBruegge] Fassung 1.18.1 startet -- verbinde mit SimConnect...
+  [FriesenBruegge] Kennungsdatei verworfen: 9e3711c100000000 ist die Kollisionskennung der Fassungen vom 11. bis 14.09.2026 (auf jedem Rechner dieselbe) -- melde ohne
+  [FriesenBruegge] bereit -- Takt 1 s, Kennung (noch keine), meldet an …
+  [FriesenBruegge] Kennung vom Server: 426a0e92883bfb63 (msfs2020)
+  [FriesenBruegge] Kennung gespeichert: 16 Bytes, fclose=0
+  ```
+  In MSFS 2024 nicht gemessen: Dort liegt keine solche Datei (Erststart mit `fe62…`). Der Code ist
+  derselbe, aber der Fall ist dort nicht durchgespielt.
+- **Gebaut:** `bruegge.wasm` 77 683 Bytes, 26 Importe (unverändert), beide Fallen ok.
+  `friesenbruegge/friesenbruegge.zip` neu (396 038 Bytes, Fassung 1.18.1). In beiden Community-Ordnern
+  liegt jetzt 1.18.1.
+- **Kniebrett-ZIP im Repo:** `msfs-panel/friesenspy-efb.zip` (2.3.2, 137 766 Bytes) ist mit
+  `git add -f` eingecheckt, damit die Server-Sitzung sie hochladen kann. Die `.gitignore` bleibt
+  unverändert (`msfs-panel/*.zip`); die Vorgänger-ZIPs liegen weiter nur lokal.
+- **Praxistest Kniebrett (zweites Flugzeug dicht am eigenen):** weiter offen.

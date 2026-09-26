@@ -162,3 +162,21 @@ def test_die_kennung_geht_ins_log(cpp):
         "Die Log-Zeile in `kennung_uebernehmen` fehlt. Der frühere Grund dagegen "
         "(\"die MSFS-Fassung hat keinen Ausgabeweg\") ist mit `log_zeile` seit 1.13.0 weg."
     )
+
+
+def test_die_kollisionskennung_der_fruehen_fassungen_wird_verworfen(cpp):
+    """1.18.1: `9e3711c100000000` -- auf JEDEM Rechner dieselbe -- darf nicht gelesen werden.
+
+    Die MSFS-Fassungen vom 11. bis 14.09.2026 erfanden ihre Kennung selbst und erfanden überall
+    dieselbe (`&g_sim` und `std::rand()` ohne `srand()` sind in einem WASM-Modul bei jedem Start
+    identisch). Sie schrieben sie mit der Datei-API nach ``\work``; spätere Fassungen haben sie
+    nicht überschrieben. Formal ist sie gültig (16 Zeichen 0-9a-f) -- ohne eigene Prüfung läse
+    1.18.x sie wieder ein, und mehrere Installationen teilten sich eine Kennung (Fehler vom
+    14.09.2026).
+    """
+    assert 'KENNUNG_KOLLISION = "9e3711c100000000"' in cpp
+    lesen = cpp.split("static void kennung_lesen", 1)[1].split("static void kennung_schreiben", 1)[0]
+    assert "KENNUNG_KOLLISION" in lesen, "kennung_lesen muss die Kollisionskennung verwerfen."
+    # Verworfen heisst: nicht uebernehmen -- die Zeile mit dem Vergleich darf nicht zu g_kennung fuehren.
+    verwerfen = lesen.split("KENNUNG_KOLLISION", 1)[1].split("std::snprintf(g_kennung", 1)[0]
+    assert "return;" in verwerfen
