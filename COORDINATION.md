@@ -6,6 +6,21 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-26 — #46/#47 umsetzen: Aufteilung Server-Sitzung und Simulator-Rechner
+
+Grundlage: `docs/superpowers/specs/2026-09-26-bruegge-kennung-und-zuordnung-design.md`.
+
+| Sitzung | Dateien |
+|---|---|
+| **Server-Sitzung** (`projects-c3`) | `app/**`, `tests/**`, README, `docs/api.md`, Hochladen nach `/opt/friesenspy/data/efb/` |
+| **Simulator-Rechner** (Probe-Sitzung) | `friesenbruegge/msfs/bruegge.cpp`, `msfs-panel/**`, gebaute ZIPs im Repo |
+
+**Reihenfolge:** Erst geht Protokoll 3 auf dem Server live (heute: 426 für alles über 2), dann wird
+die neue MSFS-Brügge gegen den Server getestet. Verteilt wird nur auf Wort des Nutzers, an einem
+Tag ohne Event. Übergabe: `friesenbruegge/UEBERGABE-kennung-umsetzung.md`.
+
+---
+
 ## 2026-09-24 — Kniebrett 2.3.1 ausgeliefert (Download-ZIP)
 
 **Auf der Download-Seite liegt jetzt `friesenspy-efb.zip` 2.3.1** (24.09.2026, sha256 lokal =
