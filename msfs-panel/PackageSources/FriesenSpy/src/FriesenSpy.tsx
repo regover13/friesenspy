@@ -36,7 +36,7 @@ const DEVICE_KEY = "friesenspy_device";
  * WICHTIG fuer die Auswertung auf der Seite: Ein Paket VOR 2.0.0 schickt dieses Feld gar
  * nicht. Sein Fehlen ist deshalb kein Fehler, sondern die Aussage "aelter als 2.0.0".
  */
-const PAKET_VERSION = "2.3.1";
+const PAKET_VERSION = "2.3.2";
 
 /**
  * Das globale Objekt -- OHNE sich auf `globalThis` zu verlassen.
@@ -263,10 +263,6 @@ const VERKEHR_MAX_GS_KT = 1500;
  * Glaettung zappelt die Zahl im Label bei jedem Abruf um zweistellige Betraege.
  */
 const VERKEHR_GLAETTUNG_S = 2 / Math.LN2;
-
-/** Naeher und hoehengleicher als das ist kein fremdes Flugzeug -- das sind wir selbst. */
-const VERKEHR_EIGEN_M = 150;
-const VERKEHR_EIGEN_FT = 100;
 
 /** Erdradius in Metern -- fuer die Entfernung zwischen zwei Meldungen. */
 const ERDRADIUS_M = 6371000;
@@ -805,11 +801,6 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
       const gs = Math.round(this.verkehrGsAbleiten(id, lat, lon, jetztMs));
       const abstand = eigen ? entfernungM(eigen.lat, eigen.lon, lat, lon) : 0;
 
-      // Wir selbst. Nach heutigem Stand steht das eigene Flugzeug gar nicht in der Liste --
-      // aber falls doch, laege sein Symbol genau ueber dem eigenen.
-      if (eigen && abstand < VERKEHR_EIGEN_M && Math.abs(altFt - eigen.alt) < VERKEHR_EIGEN_FT) {
-        continue;
-      }
       // Hier stand ein Filter, der stehende Flugzeuge am Boden aussortierte. Er ist raus
       // (Nutzer-Wahl 15.08.2026): Im Flug erwiesen sich geparkte Maschinen als das, was man am
       // Platz sehen will, und die Erkennung "steht am Boden" war ohnehin nicht verlaesslich --

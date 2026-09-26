@@ -2386,14 +2386,11 @@ def test_stehende_flugzeuge_werden_mitgemeldet():
 
 
 @ohne_panel
-def test_eigenes_flugzeug_wird_ausgefiltert():
-    """Nach heutigem Stand steht es gar nicht in der Liste (Messung 6 = 6; Asobos eigene Karte
-    filtert es auch nicht heraus und zeichnet trotzdem kein Doppelsymbol). Der Filter kostet
-    nichts und verhindert ein zweites Symbol genau dort, wo es am meisten stoeren wuerde."""
-    stelle = PANEL_TSX.index("private verkehrAufbereiten(")
-    rumpf = PANEL_TSX[stelle:PANEL_TSX.index("\n  }", stelle)]
-    assert "VERKEHR_EIGEN_M" in rumpf
-    assert "VERKEHR_EIGEN_FT" in rumpf
+def test_eigenes_flugzeug_wird_nicht_mehr_ausgefiltert():
+    """Der Filter "das bin ich" (150 m / 100 ft) ist ersatzlos gestrichen (Paket 2.3.2, Spec
+    2026-09-26 These 15): Er war gegen ein Geisterbild gedacht, das laut Code nie vorkam, und
+    hat Nachbarn am Stand und den Rottenflieger gekostet."""
+    assert "VERKEHR_EIGEN" not in _ohne_kommentare(PANEL_TSX)
 
 
 @ohne_panel
@@ -3263,8 +3260,8 @@ def test_paketversion_gehoben_und_gleichlaufend():
     manifest = json.loads(
         (Path(__file__).resolve().parents[1] / "msfs-panel" / "PackageSources" / "FriesenSpy"
          / "manifest.json").read_text(encoding="utf-8"))
-    assert 'const PAKET_VERSION = "2.3.1"' in PANEL_TSX
-    assert manifest["package_version"] == "2.3.1"
+    assert 'const PAKET_VERSION = "2.3.2"' in PANEL_TSX
+    assert manifest["package_version"] == "2.3.2"
 
 
 def test_seite_nimmt_den_brueckenzustand_entgegen():

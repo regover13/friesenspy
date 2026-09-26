@@ -33,6 +33,23 @@
 #include <MSFS/MSFS_Network.h>
 #include <SimConnect.h>
 
+// ⭐⭐ NACHTRAG 26.09.2026 (1.18.0): DIE ABLAGE IST ZURUECK -- OHNE `MSFS_IO.h`.
+//
+// Die Kennung liegt wieder in `\work\friesenbruegge.kennung`, geschrieben und gelesen mit den
+// gewoehnlichen C-Funktionen `fopen`/`fread`/`fwrite`/`fclose` aus der wasi-libc. Die Probe
+// `../probe-kennung/` hat das in MSFS 2020 UND 2024 gemessen: Die Datei ueberlebt den Neustart
+// des Simulators und das Loeschen/Neuablegen des Pakets (Beleg: `../probe-kennung/ERGEBNIS.md`).
+// `fopen` zieht sieben wasi-Importe herein (`path_open`, `fd_read`, `fd_fdstat_get`,
+// `fd_fdstat_set_flags`, `fd_prestat_get`, `fd_prestat_dir_name`, `proc_exit`), die beide
+// Simulatoren annehmen -- es bleibt EIN Modul. Der Text darunter beschreibt, warum die
+// asynchrone Datei-API 1.14.0 weichen musste; er gilt fuer sie weiter, nicht fuer `fopen`.
+//   * `fopen` ist synchron: Die drei Wettlaeufe vom 14.09.2026 (`aadf482`) gibt es nicht.
+//   * Ein Lesefehler heisst "keine Kennung". Eine fehlende Datei meldet `errno` 29, nicht
+//     `ENOENT` -- wer auf `ENOENT` abfragt, erkennt den Fall nicht.
+//   * Gueltig ist nur ein Inhalt aus genau 16 Zeichen `0-9a-f`; alles andere wird verworfen.
+//   * Eine vorhandene Kennung wird nie ersetzt (`kennung_uebernehmen`).
+//   * Protokoll 3: Der Server vergibt bei leerer Kennung eine FRISCHE, nie die eines Piloten.
+//
 // ⭐⭐ EIN MODUL FUER MSFS 2020 UND 2024 -- und warum dafuer die Datei-API weichen musste
 // (16.09.2026, Nutzerentscheidung "Ein Modul").
 //
@@ -70,6 +87,7 @@
 #include <cstdarg>
 #include <cstring>
 #include <cstdlib>
+#include <cerrno>
 
 #include "../json.h"
 
@@ -105,7 +123,7 @@ static void log_zeile(const char* format, ...) {
 // Feste Größen
 // ---------------------------------------------------------------------------------------
 
-#define BRUEGGE_VERSION   "1.17.0"
+#define BRUEGGE_VERSION   "1.18.0"
 #define BRUEGGE_URL       "https://friesenspy.devprops.de/api/bruegge/melden"
 // ⭐ WELCHER SIMULATOR -- ZUR LAUFZEIT, NICHT BEIM UEBERSETZEN (16.09.2026).
 //
@@ -493,7 +511,7 @@ static bool art_bekannt(const char* art) {
 static void meldung_bauen(char* puffer, size_t groesse) {
     JsonSchreiber j(puffer, groesse);
     j.roh("{");
-    j.feld("protokoll");       j.ganzzahl(2);                 j.komma();
+    j.feld("protokoll");       j.ganzzahl(3);                 j.komma();
     j.feld("simulator");       j.text(g_simulator);           j.komma();
     j.feld("bruegge_version"); j.text(BRUEGGE_VERSION);       j.komma();
 
@@ -933,6 +951,70 @@ static void soll_abgleichen(const char* json) {
 // Die Antwort lesen
 // ---------------------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------------------
+// Die Kennung in \work ablegen und wieder lesen (1.18.0, Protokoll 3)
+// ---------------------------------------------------------------------------------------
+//
+// Gewoehnliches `fopen`, ausdruecklich NICHT die Datei-API aus `MSFS_IO.h` -- s. den Nachtrag
+// ganz oben. Alle drei Schreibweisen des Pfads landen laut Probe in derselben Datei; benutzt
+// wird die der frueheren Fassung.
+static const char* const KENNUNG_DATEI = "\\work\\friesenbruegge.kennung";
+static const size_t      KENNUNG_LAENGE = 16;
+
+// Genau 16 Zeichen `0-9a-f` -- die Form, die der Server vergibt (`secrets.token_hex(8)`).
+static bool kennung_gueltig(const char* text) {
+    if (std::strlen(text) != KENNUNG_LAENGE) return false;
+    for (size_t i = 0; i < KENNUNG_LAENGE; ++i) {
+        char c = text[i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
+    }
+    return true;
+}
+
+// Beim Start. Ein Lesefehler heisst "keine Kennung", kein Fehlerfall: Dann meldet die Bruegge
+// ohne, und der Server vergibt eine frische.
+static void kennung_lesen() {
+    FILE* f = std::fopen(KENNUNG_DATEI, "rb");
+    if (!f) {
+        // errno 29 (I/O error) ist hier der Normalfall "Datei gibt es noch nicht" -- NICHT
+        // ENOENT, s. die Probe. Deshalb wird nicht nach der Art des Fehlers unterschieden.
+        log_zeile("keine Kennung gespeichert (errno %d) -- melde ohne", errno);
+        return;
+    }
+    char puffer[64] = {0};
+    size_t n = std::fread(puffer, 1, sizeof(puffer) - 1, f);
+    std::fclose(f);
+    // Ein nachgestellter Zeilenumbruch (von Hand bearbeitete Datei) ist kein Verstoss.
+    while (n > 0 && (puffer[n - 1] == '\n' || puffer[n - 1] == '\r' || puffer[n - 1] == ' ')) {
+        puffer[--n] = '\0';
+    }
+    if (!kennung_gueltig(puffer)) {
+        log_zeile("Kennungsdatei verworfen: Inhalt ist nicht genau %u Zeichen 0-9a-f (%u Bytes)"
+                  " -- melde ohne", (unsigned)KENNUNG_LAENGE, (unsigned)n);
+        return;
+    }
+    std::snprintf(g_kennung, sizeof(g_kennung), "%s", puffer);
+    log_zeile("Kennung gelesen: %s", g_kennung);
+}
+
+// Sofort nach dem Empfang. Scheitert das Schreiben, ist es kein Fehlerfall: Die Bruegge
+// behaelt die Kennung im Speicher und bekommt nach dem naechsten Start eine frische.
+static void kennung_schreiben() {
+    if (!kennung_gueltig(g_kennung)) {
+        log_zeile("Kennung nicht gespeichert: %s ist nicht %u Zeichen 0-9a-f",
+                  g_kennung, (unsigned)KENNUNG_LAENGE);
+        return;
+    }
+    FILE* f = std::fopen(KENNUNG_DATEI, "wb");
+    if (!f) {
+        log_zeile("Kennung NICHT gespeichert: fopen scheitert, errno %d", errno);
+        return;
+    }
+    size_t geschrieben = std::fwrite(g_kennung, 1, KENNUNG_LAENGE, f);
+    int zu = std::fclose(f);
+    log_zeile("Kennung gespeichert: %u Bytes, fclose=%d", (unsigned)geschrieben, zu);
+}
+
 // Eine vom Server zugeteilte Kennung entgegennehmen -- einmal, und dann nie wieder.
 //
 // ⚠ NUR WENN WIR NOCH KEINE HABEN. Der Server schickt das Feld ohnehin nur bei der Meldung
@@ -987,6 +1069,8 @@ static void kennung_uebernehmen(const char* json) {
     // anderer Pilot gemeldet hatte. Beide Faelle sehen von aussen gleich aus. Eine Zeile
     // hier haette die Frage in einer Sekunde beantwortet.
     log_zeile("Kennung vom Server: %s (%s)", g_kennung, g_simulator);
+    // Und sofort ablegen -- ab jetzt uebersteht sie den Neustart des Simulators.
+    kennung_schreiben();
 }
 
 static void antwort_lesen(const char* json) {
@@ -1397,6 +1481,8 @@ extern "C" MSFS_CALLBACK void module_init(void) {
     // gemeldet und damit eine Auskunft vorgetaeuscht, die es noch nicht gibt. Der
     // Simulator steht eine Zeile spaeter im Log, dort dann gemessen.
     log_zeile("Fassung %s startet -- verbinde mit SimConnect...", BRUEGGE_VERSION);
+    // Vor dem ersten Kontakt: Eine gespeicherte Kennung geht ab der ersten Meldung mit.
+    kennung_lesen();
 
     // ⚠ MEHR ALS DIESE DREI VERSUCHE IST NICHT BAUBAR -- und das ist keine Bequemlichkeit.
     //
