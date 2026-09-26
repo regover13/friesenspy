@@ -263,6 +263,12 @@
     "empty_kg": 1168.0,
     "fuel_full_kg": 277.0
   },
+  "D228": {
+    "make_model": "Dornier 228NG",
+    "mtow_kg": 6575.0,
+    "empty_kg": 3900.0,
+    "fuel_full_kg": 1885.0
+  },
   "DA20": {
     "make_model": "Diamond DA20-C1 Eclipse",
     "mtow_kg": 800.0,
