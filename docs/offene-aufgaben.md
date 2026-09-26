@@ -19,6 +19,13 @@ Kniebrett-Paket ohne Eigenfilter vom Simulator-Rechner
 ohne Event** — Pakete hochladen, Satz „ersten Flug allein auf VATSIM“ auf die Download-Seite,
 Stichtag `_BRUEGGE_P2_MSFS_BIS` vier Wochen später setzen, Handbuch zum Deinstallieren.
 
+⚠ **Für die Anleitung auf der Download-Seite (Befund 26.09.2026):** MSFS 2024 hatte beim Nutzer
+neben `Community` einen zweiten Ordner `LocalCache\Packages\Community2024\`. Dort lag noch das
+Kniebrett 2.3.1, und MSFS 2024 hat es von dort geladen; 2.3.2 in `Community` blieb wirkungslos.
+Die Anleitung muss sagen: das alte Paket **in beiden Ordnern** ersetzen bzw. löschen. Ob
+`Community2024` bei jeder Installation existiert oder nur bei manchen, ist nicht geklärt. Für die
+FriesenBrügge gilt dasselbe.
+
 ---
 
 ## ⚠ Zwei Titel lassen sich nicht setzen — und es liegt NICHT am Streaming
