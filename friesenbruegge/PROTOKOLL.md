@@ -518,6 +518,11 @@ meisten Szenarien gegenstandslos. **Nie versucht wurde dafür `fopen` aus der wa
 gibt. Die Probe dazu liegt in `probe-kennung/`, die Übergabe an die Sitzung am
 Simulator-Rechner in `probe-kennung/UEBERGABE.md`.
 
+**Ein Absturz des Simulators beendet auch die VATSIM-Verbindung** (Nutzer, 26.09.2026: *„Wenn
+der Sim crasht, wird auch vPilot das merken und beenden.“*). Nach jedem Neustart der Brügge ist
+die eigene VATSIM-Verbindung also neu. Eine Regel „nur Verbindungen, die nach der Brügge kamen“
+sperrt damit nie die eigene Verbindung aus (Szenario S7 in #46).
+
 Ab Schritt 3 ändert sich **nichts** am Verfahren — das Halten der Zuordnung bleibt, wie es
 war. Es wird nur **einmal** ohne Kennung gematcht statt nie.
 

@@ -85,11 +85,10 @@ Brügge denselben `\work`-Ordner, und die installierte Brügge des Nutzers würd
 - Keinen Umweg bauen, falls `fopen` scheitert (keine JavaScript-Hülle, kein Kniebrett-Weg).
   Ergebnis festhalten, fertig.
 
-## Nebenfrage, nur falls es sich ohne Aufwand ergibt
+## Keine Nebenfrage mehr
 
-**Trennt vPilot die VATSIM-Verbindung, wenn MSFS abstürzt oder hart beendet wird?** Davon hängt
-Szenario S7 in #46 ab. **Nicht absichtlich** im Live-Netz herbeiführen, ohne den Nutzer vorher
-zu fragen.
+Ob vPilot die VATSIM-Verbindung trennt, wenn MSFS abstürzt, ist geklärt (Nutzer, 26.09.2026):
+*„Wenn der Sim crasht, wird auch vPilot das merken und beenden.“* Nicht prüfen.
 
 ## Ergebnis
 
